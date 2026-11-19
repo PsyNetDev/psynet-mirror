@@ -750,9 +750,12 @@ game." Change it with the page's ``player_left_message``, such as
 ``LiveGamePage(..., player_left_message="Your partner has left.")``. To
 show it your own way, set ``player_left_message=None`` and use
 ``onPlayersAway``, which gets the numbers of the players who are away,
-and an empty list once they're all back. The notice only says what
-happened: a game that should end when a player leaves ends through its
-``away_timeout``, ``on_leave`` or ``is_over``.
+and an empty list once they're all back. Like the notice, it counts a
+player once they've been away for a few seconds, so a reload doesn't. One
+of the game's first players who hasn't opened the page yet hasn't left, but
+a player added while the game runs is away until their page opens. The
+notice only says what happened: a game that should end when a player
+leaves ends through its ``away_timeout``, ``on_leave`` or ``is_over``.
 
 Reloading and dropped connections
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -74,41 +74,24 @@
   }
 
   /**
-   * ``psynet.liveGame`` lets a ``LiveGamePage`` play
-   * the live game its group started: send the game messages, and show
-   * the views the game sends back.
+   * Create ``psynet.liveGame``, which lets a ``LiveGamePage`` play the live
+   * game its group started. The live games reference
+   * (``docs/code/multiplayer/live_games.rst``) describes how it behaves.
    *
-   * The page joins the game when it first uses ``psynet.liveGame``,
-   * and leaves it when the participant moves on. Once it has checked the
-   * server's time, it tells the game the player is ready, and the game
-   * starts when every player is. Unless the page's ``auto_advance`` is
-   * ``False``, the page hides its Next button and moves on by itself once
-   * the game's result is saved, or if the server refuses its connection.
-   * If the connection drops, it reconnects by itself and rejoins. The same
-   * page open in another tab plays as the same player.
+   * The connection is Dallinger's ``/experiment-socket``, joined to the
+   * game, with the scope ``websocketScope.pageScope.n``: the participant's
+   * scope, which ``accept_websocket_connection`` checks, then
+   * ``dallinger.pageScope``, which tells the participant's tabs apart, then
+   * a count of the connections the tab has opened, since the game pages it
+   * shows one after another each open one.
    *
-   * ``PsyNetLiveGame.activatePage``, the page code of a
-   * ``LiveGamePage``, creates ``psynet.liveGame`` with this
-   * function. The connection is Dallinger's ``/experiment-socket``, joined
-   * to the game. Its scope is
-   * the participant's ``websocketScope``, which the experiment's
-   * ``accept_websocket_connection`` checks, then a ``.`` and a name for this
-   * page's connection: ``dallinger.pageScope``, which tells the
-   * participant's tabs apart, and a count of the connections the tab has
-   * opened, since the game pages it shows one after another each open one.
-   *
-   * @param {function} liveGame - Returns the page's ``liveGame``
-   *   variable: the page's ``playId``, ``autoAdvance``,
-   *   ``showResultFor``, ``playerLeftMessage`` and ``noGameMessage``, and the game's
-   *   ``liveGameId`` and ``gameChannel``, which are ``null`` without a
-   *   game, or nothing on a page that isn't a ``LiveGamePage``
-   * @param {Object} page - ``websocketScope()`` returns the participant's
-   *   websocket scope, ``ready()`` says whether the page
-   *   is ready to submit, ``nextPage()`` submits it,
-   *   ``setNextButtonHidden(hidden)`` hides or shows its Next button, and
-   *   ``showNotice(id, text)`` shows ``text`` in a notice at the top of the
-   *   page, or removes the notice if ``text`` is null, and
-   *   ``hideGame()`` hides the page's elements marked ``data-live-game``
+   * @param {function} liveGame - Returns the page's ``liveGame`` variable,
+   *   from ``LiveGameControl.get_participant_js_vars``, or nothing on a page
+   *   that isn't a ``LiveGamePage``
+   * @param {Object} page - The page's hooks: ``websocketScope()``,
+   *   ``ready()``, ``nextPage()``, ``setNextButtonHidden(hidden)``,
+   *   ``showNotice(id, text)``, which removes the notice for a ``null``
+   *   text, ``hideGame()`` and ``fetchPlayers(playId)``
    */
   function createLiveGame(liveGame, page) {
     let api = null;
@@ -183,8 +166,7 @@
           clearTimeout(state.connectionTimer);
           clearTimeout(state.moveOnTimer);
           clearTimeout(state.playersTimer);
-          clearInterval(state.timeLeftTimer);
-          state.resultTimers.forEach(clearInterval);
+          state.intervals.forEach(clearInterval);
           page.showNotice(AWAY_NOTICE, null);
         }
       };
@@ -217,9 +199,9 @@
         awayCallbacks: [],
         connectionTimer: null,
         moveOnTimer: null,
-        timeLeftTimer: null,
-        timeLeftCallbacks: [],
-        resultTimers: [],
+        // onTimeLeft's countdowns, run again with each view.
+        timeLeftTicks: [],
+        intervals: [],
         rejectionElements: [],
         statusCallbacks: [],
       };
@@ -250,41 +232,43 @@
       if (view === null) {
         view = state.lastView;
       }
-      if (view === null) {
-        // A page that opened after its game failed has no view to show.
-        if (state.ended) {
-          state.playingElements.forEach((element) => (element.disabled = true));
-          callEach(state.statusCallbacks);
+      if (view !== null) {
+        state.lastView = view;
+        fetchPlayers(state);
+        // A page that opens after the end gets no onStarted, which would
+        // turn its controls back on.
+        if (
+          !state.ended &&
+          state.startedView === null &&
+          view.psynet.started_at !== null
+        ) {
+          state.startedView = view;
+          callEach(state.startedCallbacks.splice(0), view);
         }
+        state.player = view.psynet.you;
+        callEach(state.receiveCallbacks, view, details);
+        notifyChange(state);
+      } else if (!state.ended) {
+        // A page that opened after its game failed has no view to show.
         return;
-      }
-      state.lastView = view;
-      fetchPlayers(state);
-      // A page that opens after the end gets no onStarted, which would turn
-      // its controls back on.
-      if (
-        !state.ended &&
-        state.startedView === null &&
-        view.psynet.started_at !== null
-      ) {
-        state.startedView = view;
-        callEach(state.startedCallbacks.splice(0), view);
-      }
-      state.player = view.psynet.you;
-      callEach(state.receiveCallbacks, view, details);
-      if (state.changeCallbacks.length > 0) {
-        callEach(state.changeCallbacks, shownView(state, view));
       }
       callEach(state.statusCallbacks);
       // So a countdown shows the time left as soon as the page knows it.
-      if (!state.left && state.timeLeftCallbacks.length > 0) {
-        showTimeLeft(state);
+      if (view !== null && !state.left) {
+        callEach(state.timeLeftTicks);
       }
       if (state.ended) {
         state.playingElements.forEach((element) => (element.disabled = true));
         state.away.update([]);
       } else {
         state.away.update(view.psynet.away);
+      }
+    }
+
+    // Calls onChange's callbacks with the game as the page shows it now.
+    function notifyChange(state) {
+      if (state.lastView !== null && state.changeCallbacks.length > 0) {
+        callEach(state.changeCallbacks, shownView(state, state.lastView));
       }
     }
 
@@ -396,10 +380,8 @@
     }
 
     /**
-     * Call ``callback`` once the game has started, with the first view
-     * after the game starts, or at once if it already has. Until then the game
-     * rejects the page's messages. Once the game has ended, it doesn't
-     * run, so a page that opens after the end keeps its controls disabled.
+     * Call ``callback`` with the first view after the game starts, or at
+     * once if it already has. It never runs once the game has ended.
      *
      * @param {function} callback - Called with the view
      * @returns {Object} ``psynet.liveGame``
@@ -419,12 +401,7 @@
     }
 
     /**
-     * Enable each of ``elements`` only while the game is being played:
-     * disable it until the game starts, and again once it ends, when the
-     * game would ignore anything the participant sends.
-     *
-     * @example
-     * psynet.liveGame.enableWhilePlaying(...root.querySelectorAll("button"));
+     * Enable each of ``elements`` only while the game is being played.
      *
      * @param {...HTMLElement} elements - Elements with a ``disabled``
      *   property, such as buttons and inputs
@@ -442,12 +419,7 @@
 
     /**
      * Send the game a message, which it reads as the ``LiveMessage`` with
-     * this ``type``. If the game rejects it, ``onRejected``'s callback gets
-     * its number and the reason. The game ignores messages sent after the
-     * game ends, which still get a number.
-     *
-     * @example
-     * psynet.liveGame.send("choose", { action: "rock" });
+     * this ``type``.
      *
      * @param {string} type - The message's ``type``
      * @param {Object} [message] - Its fields
@@ -464,12 +436,8 @@
       if (number !== undefined) {
         state.rejectionElements.forEach((element) => (element.textContent = ""));
         // The game as the page sees it now includes the message.
-        if (
-          state.predict !== null &&
-          state.lastView !== null &&
-          state.changeCallbacks.length > 0
-        ) {
-          callEach(state.changeCallbacks, shownView(state, state.lastView));
+        if (state.predict !== null) {
+          notifyChange(state);
         }
         callEach(state.statusCallbacks);
       }
@@ -513,9 +481,7 @@
           }
           if (players.length > state.players.length) {
             state.players = players;
-            if (state.lastView !== null && state.changeCallbacks.length > 0) {
-              callEach(state.changeCallbacks, shownView(state, state.lastView));
-            }
+            notifyChange(state);
           }
         })
         .catch((error) => console.error(error))
@@ -538,9 +504,6 @@
      * Show the reason the game rejected the page's latest message in
      * ``element``, until the page sends its next message.
      *
-     * @example
-     * psynet.liveGame.showRejections(root.querySelector("#rejection"));
-     *
      * @param {HTMLElement} element - Where to show the reason
      * @returns {Object} ``psynet.liveGame``
      */
@@ -553,27 +516,14 @@
     }
 
     /**
-     * Keep ``element`` showing the game's status: nothing until the
-     * page's first view, the page's
-     * ``waiting_status`` until the game starts, what ``playing(view)``
-     * returns for each view while it's played, or nothing if ``playing``
-     * is ``null``, and the page's
-     * ``ended_status`` once the player's game has ended. ``texts`` can
-     * replace the page's two texts, as ``{waiting, ended}``, and
-     * ``ended`` can be a function that gets the final view, for an ending
-     * that depends on how the game went. With a
-     * ``predict`` callback, ``playing`` gets the predicted view, so the
-     * status shows the player's own messages at once.
-     *
-     * @example
-     * psynet.liveGame.showStatus(status, (view) =>
-     *   view.chosen ? "Waiting for your partner to choose" : "Your turn"
-     * );
+     * Keep ``element`` showing the game's status, as "The status line" in
+     * the live games reference describes.
      *
      * @param {HTMLElement} element - Where to show the status
      * @param {function|null} playing - Returns the status for a view while
      *   the game is played
-     * @param {Object} [texts] - ``waiting`` and ``ended`` texts
+     * @param {Object} [texts] - ``waiting`` and ``ended`` texts, to replace
+     *   the page's; ``ended`` can be a function of the final view
      * @returns {Object} ``psynet.liveGame``
      */
     function showStatus(element, playing, texts = {}) {
@@ -613,10 +563,9 @@
     }
 
     /**
-     * Call ``callback`` once, when the page learns this player's game
-     * has ended (see ``ended``), with why it ended and this player's
-     * final view, the last view the page had if the game failed.
-     * Dallinger's ``Socket.onEnded`` lists the reasons.
+     * Call ``callback`` once, when this player's game has ended, with
+     * Dallinger's reason (see ``Socket.onEnded``) and the final view, which
+     * for a failed game is the last view the page had.
      *
      * @param {function} callback - Called with the reason and the view
      * @returns {Object} ``psynet.liveGame``
@@ -630,15 +579,9 @@
     }
 
     /**
-     * Call ``callback`` with ``secondsLeft()`` with each view and a few times
-     * a second, for a countdown, once the page knows the time left, which is 0 once the game
-     * has ended, until the participant leaves the page. A game without a
-     * ``duration`` has no time left, so it never runs.
-     *
-     * @example
-     * psynet.liveGame.onTimeLeft((left) => {
-     *   timer.textContent = Math.ceil(left);
-     * });
+     * Call ``callback`` with ``secondsLeft()``, with each view and a few
+     * times a second, until the participant leaves the page. It never runs
+     * for a game without a ``duration``.
      *
      * @param {function} callback - Called with the seconds left
      * @returns {Object} ``psynet.liveGame``
@@ -646,35 +589,28 @@
     function onTimeLeft(callback) {
       pageSocket();
       let state = pageState();
-      state.timeLeftCallbacks.push(callback);
-      if (state.timeLeftTimer === null) {
-        state.timeLeftTimer = setInterval(
-          () => showTimeLeft(state),
-          TIME_LEFT_INTERVAL_MS
-        );
-        showTimeLeft(state);
-      }
+      state.timeLeftTicks.push(countdown(state, secondsLeft, callback));
       return api;
     }
 
-    function showTimeLeft(state) {
-      let left = secondsLeft();
-      if (left !== null) {
-        callEach(state.timeLeftCallbacks, left);
-      }
+    // Calls callback with seconds(), unless it's null, now and every
+    // TIME_LEFT_INTERVAL_MS until the page leaves, and returns the call.
+    function countdown(state, seconds, callback) {
+      let tick = () => {
+        let left = seconds();
+        if (left !== null) {
+          callEach([callback], left);
+        }
+      };
+      state.intervals.push(setInterval(tick, TIME_LEFT_INTERVAL_MS));
+      tick();
+      return tick;
     }
 
     /**
-     * Call ``callback`` with the seconds left before the page moves on by
-     * itself, a few times a second, from when this player's result is
-     * saved until the page moves on, for a countdown on the result: the
-     * page's ``show_result_for`` seconds, counting down to 0. Without
-     * ``show_result_for``, it never runs.
-     *
-     * @example
-     * psynet.liveGame.onResultTimeLeft((left) => {
-     *   next.textContent = `Continuing in ${Math.ceil(left)} s`;
-     * });
+     * Call ``callback`` with the seconds left of the page's
+     * ``show_result_for``, a few times a second, from when this player's
+     * result is saved. Without ``show_result_for``, it never runs.
      *
      * @param {function} callback - Called with the seconds left
      * @returns {Object} ``psynet.liveGame``
@@ -689,9 +625,7 @@
             return;
           }
           let until = Date.now() + seconds * 1000;
-          let tick = () => callback(Math.max(0, (until - Date.now()) / 1000));
-          state.resultTimers.push(setInterval(tick, TIME_LEFT_INTERVAL_MS));
-          tick();
+          countdown(state, () => Math.max(0, (until - Date.now()) / 1000), callback);
         });
       }
       return api;
@@ -699,23 +633,9 @@
 
     /**
      * Call ``callback`` with the game as this player sees it, whenever that
-     * changes: with each new view, starting when the page joins and ending
-     * with the final view, and, with a ``predict`` callback, after each
-     * ``send``, with the message's prediction applied. Update the page
-     * here: what it shows, which controls work, and any state the page
-     * keeps from the view. Once the game has ended, ``ended`` is ``true``,
-     * and no more views come. A page that opens after the game has ended
-     * gets just the final view. The view's ``psynet`` says who is ready and
-     * who has left.
-     *
-     * If the game failed, the page keeps the view it had, which comes again
-     * with ``ended`` set. A page that opens after its game failed gets no
-     * view, so ``onChange`` doesn't run there.
-     *
-     * @example
-     * psynet.liveGame.onChange((view) => {
-     *   score.textContent = `Score: ${view.score}`;
-     * });
+     * changes, ending with the final view: with each new view, and, with a
+     * ``predict`` callback, after each ``send``. A page that opens after its
+     * game failed has no view, so it never runs there.
      *
      * @param {function} callback - Called with the view
      * @returns {Object} ``psynet.liveGame``
@@ -728,13 +648,9 @@
 
     /**
      * Call ``callback`` with each view as the game sends it, without the
-     * page's predictions, and its details, which Dallinger's
-     * ``Socket.onView`` describes. Most pages need ``onChange`` instead;
-     * this is for code that reacts to the views arriving, such as a
-     * measure of how far behind the page is. The details are ``null`` for a
-     * final view that came with the ending, so check ``ended`` and not
-     * ``details.ended``. A failed game sends no final view, so the page
-     * keeps its last one; if it never had one, ``callback`` isn't called.
+     * page's predictions, and Dallinger's details of it (see
+     * ``Socket.onView``). The details are ``null`` for a final view that
+     * came with the ending, so check ``ended`` rather than ``details.ended``.
      *
      * @param {function} callback - Called with each view, and its details,
      *   which can be ``null``
@@ -747,18 +663,10 @@
     }
 
     /**
-     * Call ``callback`` with the numbers of the other players who have
-     * left the game page and not come back, each time that list changes,
-     * including to an empty list when they're all back or the game ends.
-     * A player counts once they've been away for a few seconds, so a reload
-     * doesn't. One of the game's first players who hasn't opened the game
-     * page yet hasn't left, but a player added while the game runs counts
-     * as away until their page opens. A callback added while players are
-     * away gets them at once.
-     *
-     * PsyNet shows the page's ``player_left_message`` in a notice while
-     * anyone is away, so use this for a display of your own, with
-     * ``player_left_message=None``.
+     * Call ``callback`` with the numbers of the other players who have been
+     * away from the game page for a few seconds, each time that list
+     * changes, including to an empty list. A callback added while players
+     * are away gets them at once.
      *
      * @param {function} callback - Called with a list of player numbers
      * @returns {Object} ``psynet.liveGame``
@@ -776,25 +684,13 @@
 
     /**
      * Say how the game changes this player's view when it applies one of the
-     * page's messages, so that ``predictedView`` can show the page's
-     * messages as soon as they're sent, before the game's view arrives.
+     * page's messages, so that ``onChange`` and ``predictedView`` show the
+     * page's messages as soon as they're sent. Set it before the page sends
+     * anything.
      *
-     * ``callback(view, type, message, sentAt)`` gets a copy of a view, and a
-     * message as it was passed to ``send``, and returns the view as it will
-     * be once the game has applied the message. It can change the view it's
-     * given and return nothing. Set it before the page sends anything.
-     * ``sentAt`` is the game time when the page sent the message, as
-     * ``gameTime()`` gives it, or ``null`` if it wasn't known yet. The
-     * callback runs again for each new
-     * view until the game applies the message, and ``sentAt`` stays the same,
-     * so use it rather than the time now to predict when something happens.
-     *
-     * @example
-     * psynet.liveGame.predict((view, type, message) => {
-     *   if (type === "choose" && message.round === view.round) {
-     *     view.chosen = true;
-     *   }
-     * });
+     * ``callback(view, type, message, sentAt)`` can change the copy of the
+     * view it gets and return nothing. It runs again for each new view until
+     * the game applies the message, with the same ``sentAt``.
      *
      * @param {function} callback - Called with a view, the message's
      *   ``type``, its fields and the game time it was sent
@@ -807,14 +703,9 @@
     }
 
     /**
-     * Return the newest view, with the page's messages that the game hasn't
-     * applied yet applied by ``predict``'s callback, in the order they were
-     * sent. ``onChange`` already gets it, and runs again after ``send``, so
-     * call this only to draw at other times, such as in an animation loop.
-     * A message the game rejects is
-     * undone by the next view. Before the first view it's ``null``, and once
-     * the game has ended it's the final view. Don't change the view it
-     * returns.
+     * Return the newest view with ``predict``'s callback applied to the
+     * page's messages that the game hasn't applied yet, or ``null`` before
+     * the first view. Don't change the view it returns.
      *
      * @returns {Object|null} The predicted view
      */
@@ -823,21 +714,10 @@
     }
 
     /**
-     * Say how to draw the game between two of its tick views, so that
-     * ``interpolatedView`` can show other players moving smoothly instead
-     * of jumping from one tick to the next. It needs a game whose
-     * ``tick_rate`` is above 0.
-     *
-     * ``callback(a, b, fraction)`` gets two tick views and how far between
-     * them to draw, from 0 to 1, and returns a new view in between. Unlike
-     * ``predict``'s callback, it must leave ``a`` and ``b`` unchanged, since
-     * they're the tick views the page keeps.
-     *
-     * @example
-     * psynet.liveGame.interpolate((a, b, fraction) => ({
-     *   ...b,
-     *   x: a.x + (b.x - a.x) * fraction,
-     * }));
+     * Say how to draw the game between two of its tick views, for
+     * ``interpolatedView``, in a game whose ``tick_rate`` is above 0.
+     * ``callback(a, b, fraction)`` returns a new view, and must leave ``a``
+     * and ``b`` unchanged, since they're the tick views the page keeps.
      *
      * @param {function} callback - Called with two views and a fraction
      * @returns {Object} ``psynet.liveGame``
@@ -849,12 +729,9 @@
     }
 
     /**
-     * Return the view to draw other players from: the game two tick
-     * intervals in the past, made by ``interpolate``'s callback from the
-     * tick views either side of that time. Call it each time the page
-     * draws, and draw the player's own piece from ``predictedView``. Before
-     * the first tick view it's ``null``, and once the game has ended it's
-     * the final view. Don't change the view it returns.
+     * Return the game two tick intervals in the past, made by
+     * ``interpolate``'s callback, to draw the other players from, or
+     * ``null`` before the first tick view. Don't change the view it returns.
      *
      * @returns {Object|null} The interpolated view
      */
@@ -888,26 +765,28 @@
     }
 
     /**
-     * Return the seconds left until the game's time is up, for a countdown:
-     * 0 once the game has ended, and ``null`` while ``duration`` is
-     * ``null`` or before the page knows the time.
+     * Return the seconds left until the game's time is up: 0 once the game
+     * has ended, and ``null`` without a ``duration`` or before the page
+     * knows the time.
      *
      * @returns {number|null} The seconds left
      */
     function secondsLeft() {
       let times = startedTimes();
-      if (times === null || pageState().ended) {
-        return times === null ? null : 0;
+      if (times === null) {
+        return null;
+      }
+      if (pageState().ended) {
+        return 0;
       }
       let now = pageSocket().sessionTime();
       return now === null ? null : Math.max(0, times.ends_at - now);
     }
 
     /**
-     * Return the seconds since the game started, the same clock as ``now``
-     * in the game's methods on the server, or ``null`` before the game
-     * starts or before the page knows the time. Use it with a time the game
-     * put in the view, such as when a move ends.
+     * Return the seconds since the game started, the clock of ``now`` in the
+     * game's methods, or ``null`` before the game starts or before the page
+     * knows the time.
      *
      * @returns {number|null} The game time
      */
@@ -924,9 +803,8 @@
 
     api = {
       /**
-       * This player's number in the game, as the game's methods on the
-       * server see it: 0 for the first player, 1 for the next, and so on.
-       * It's ``null`` until the page's first view.
+       * This player's number in the game, from 0, or ``null`` until the
+       * page's first view.
        *
        * @member {number|null} player
        */
@@ -934,18 +812,8 @@
         return noGame() ? null : pageState().player;
       },
       /**
-       * How to show each player, by player number, so that a page can label
-       * them as the group's other pages do: ``players[i].label`` is "You"
-       * for this player, and otherwise the player's pseudonym, such as
-       * "Pink koala", or, on a page whose control has
-       * ``names="anonymous"``, "Your partner" in a game for two and "Another
-       * player" otherwise. Each also has ``you``, ``name``,
-       * ``css_color``, ``emoji`` and ``sticker_html``, the pseudonym's
-       * parts, which are ``null`` on an anonymous page, where
-       * ``sticker_html`` is the same neutral figure for everyone. A player
-       * who joins while the game runs is added a moment after the views
-       * first show them, and ``onChange`` then runs again. Empty without a
-       * game.
+       * How to show each player, by player number, as "Who's who" in the
+       * live games reference describes. Empty without a game.
        *
        * @member {Object[]} players
        */
@@ -954,11 +822,8 @@
       },
       /**
        * Whether the participant's group started a game at the page's
-       * PlayLiveGame. A participant removed from their group there has none.
-       * PsyNet then shows the page's ``no_game_message`` in a notice,
-       * hides the page's elements marked ``data-live-game``, and the
-       * other methods do nothing: ``send`` returns ``undefined``, and the
-       * page's callbacks never run. Reading it doesn't join the game.
+       * PlayLiveGame. Without one, the other methods do nothing. Reading it
+       * doesn't join the game.
        *
        * @member {boolean} hasGame
        */
@@ -967,11 +832,9 @@
         return Boolean(current && current.liveGameId != null);
       },
       /**
-       * Whether the page has had a view from after the game started
-       * and before it ended, so it stays ``false`` on a page that opens
-       * after the end. Check ``ended`` first. ``onChange``'s callbacks see it
-       * already updated for the view they get. Reading it doesn't join the
-       * game.
+       * Whether the page has had a view from after the game started and
+       * before it ended, so it stays ``false`` on a page that opens after
+       * the end. Reading it doesn't join the game.
        *
        * @member {boolean} started
        */
@@ -979,11 +842,8 @@
         return !noGame() && pageState().startedView !== null;
       },
       /**
-       * Whether this player's game has ended, so the page gets no more
-       * views and the game ignores its messages. That's when the game
-       * ends, or before, when the game's ``is_done`` says the player is
-       * done. ``onChange``'s callbacks see it already updated for the
-       * final view. Reading it doesn't join the game.
+       * Whether this player's game has ended, at the game's end or when its
+       * ``is_done`` says so. Reading it doesn't join the game.
        *
        * @member {boolean} ended
        */
@@ -991,10 +851,8 @@
         return !noGame() && pageState().ended;
       },
       /**
-       * Whether the game is being played: it has started and hasn't
-       * ended. Check it before sending a message from a key press, for
-       * example, and use ``enableWhilePlaying`` for controls that are
-       * enabled whenever it's ``true``. Reading it doesn't join the game.
+       * Whether the game has started and this player's game hasn't ended.
+       * Reading it doesn't join the game.
        *
        * @member {boolean} playing
        */
@@ -1002,11 +860,9 @@
         return !noGame() && pageState().startedView !== null && !pageState().ended;
       },
       /**
-       * The game's ``duration`` in seconds, once the page has had a view
-       * from after the game starts or once the game has ended, or ``null``,
-       * as for a game without one.
-       * Use it with ``secondsLeft()`` for a time bar. Reading it doesn't join the
-       * game.
+       * The game's ``duration`` in seconds, or ``null`` for a game without
+       * one and until the page has a view from after the start. Reading it
+       * doesn't join the game.
        *
        * @member {number|null} duration
        */
@@ -1045,10 +901,7 @@
       onEnded: onEnded,
       /**
        * Call ``callback`` once this player's result, their answer and
-       * reward, has been saved, after their game ends. The page then moves
-       * on by itself, after the page's
-       * ``show_result_for`` seconds, unless its ``auto_advance`` is
-       * ``False``.
+       * reward, has been saved, after their game ends.
        *
        * @function onResultSaved
        * @param {function} callback - Called once the result is saved
@@ -1058,9 +911,7 @@
       /**
        * Call ``callback`` with the close code and reason if the server
        * refuses the page's connection, as it does long after the game
-       * ended. The page then gets no ``onEnded`` or ``onResultSaved``. It
-       * moves on by itself unless the page's ``auto_advance`` is
-       * ``False``, in which case move on here too.
+       * ended. A page with ``auto_advance=False`` moves on here too.
        *
        * @function onRefused
        * @param {function} callback - Called with the code and the reason
