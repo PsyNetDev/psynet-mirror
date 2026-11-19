@@ -1,9 +1,7 @@
-`dev-lucid-recruiter` (`get_lucid_settings(debug_recruiter=True)`) now
-simulates Lucid: the server logs survey and respondent requests instead of
-sending them, so local runs and deployments with it no longer create, change
-or close a real survey, and no longer need Lucid credentials. Previously it
-created a real survey on launch, which went live on the marketplace in a live
-deployment with `publish_experiment = true`. The dashboard's Lucid status
-buttons also no longer fail before the first Lucid status has been recorded,
-and the dev recruiter's status no longer breaks the recruiter status check
-every minute.
+`dev-lucid-recruiter`, which `get_lucid_settings(debug_recruiter=True)`
+selects for `psynet debug local`, now simulates Lucid: the server logs survey
+and respondent requests instead of sending them. Local runs no longer create a
+real Lucid survey and no longer need Lucid credentials, and a deployment that
+sets `recruiter = dev-lucid-recruiter` no longer publishes a real survey on the
+marketplace. The dev recruiter's status also no longer breaks the recruiter
+status check every minute.

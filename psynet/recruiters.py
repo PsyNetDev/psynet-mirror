@@ -2636,7 +2636,7 @@ class LucidRecruitmentStatus(RecruitmentStatus):
     earnings_per_click: float
     system_conversion: int
     termination_loi: int
-    last_complete_date: datetime | None
+    last_complete_date: str | None
     config: dict
 
 
@@ -3874,8 +3874,9 @@ def get_lucid_settings(
     initial_response_within_s: int, default 180 seconds (3 minutes). If the participant does not proceed to the consent
         within this time, the participant is terminated via the backend-end.
 
-    debug_recruiter: bool, default False, whether debug runs use ``dev-lucid-recruiter``, which logs Lucid survey
-        requests instead of sending them. This is useful for local testing.
+    debug_recruiter: bool, default False, whether ``psynet debug local`` uses ``dev-lucid-recruiter``, which logs
+        Lucid survey requests instead of sending them. This is useful for local testing. Remote debug deployments
+        such as ``psynet debug ssh`` still use the real Lucid recruiter.
 
     """
 

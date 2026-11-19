@@ -1,3 +1,14 @@
+"""Client for the Lucid (Cint) Marketplace API used by the Lucid recruiters.
+
+:class:`LucidService` wraps the HTTP API. :class:`DevLucidService` simulates
+it for ``dev-lucid-recruiter``, so that recruiter never reaches Lucid. That
+guarantee depends on every Lucid HTTP request going through
+:meth:`LucidService._request`, which the development service overrides to
+raise. Don't call ``requests`` directly from new service methods; if
+``dev-lucid-recruiter`` needs a new call, simulate it in
+:class:`DevLucidService`.
+"""
+
 import json
 import os.path
 from datetime import datetime, timedelta

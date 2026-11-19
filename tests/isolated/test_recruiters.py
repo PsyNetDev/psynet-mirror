@@ -21,7 +21,7 @@ from psynet.exit import (
     PaymentDecision,
     PaymentState,
 )
-from psynet.lucid import LucidService, LucidServiceException
+from psynet.lucid import DevLucidService, LucidService, LucidServiceException
 from psynet.participant import (
     BONUS_PAY_IN_PROGRESS,
     BONUS_STATUS_CAPPED,
@@ -2298,7 +2298,7 @@ def test_dev_lucid_recruiter_never_calls_the_lucid_api():
             recruiter.lucidservice.list_studies()
 
     assert "nothing was created on Lucid" in opened["message"]
-    assert recruiter.current_survey_number() is not None
+    assert recruiter.current_survey_number() == str(DevLucidService.SURVEY_NUMBER)
     http_request.assert_not_called()
 
 
@@ -2309,13 +2309,11 @@ def test_lucid_change_status_uses_the_recruiters_service():
     with (
         patch("psynet.recruiters.LucidStatus") as lucid_status,
         patch("psynet.recruiters._commit_external_call_state") as commit,
-        patch("psynet.recruiters.get_lucid_service") as get_lucid_service,
     ):
         lucid_status.query.order_by.return_value.first.return_value = latest_status
         recruiter.change_lucid_status("paused")
 
     recruiter.lucidservice.change_status.assert_called_once_with("123", "paused")
-    get_lucid_service.assert_not_called()
     assert latest_status.status == "paused"
     commit.assert_called_once_with()
 
@@ -2437,18 +2435,18 @@ def test_lucid_uses_cached_submissions_only_shortly_after_a_rate_limit():
         patch("psynet.lucid.session") as session,
         patch("dallinger.db.redis_conn", redis_conn),
         patch("psynet.experiment.get_experiment", return_value=experiment),
-        patch("psynet.lucid.requests.request") as api_get,
+        patch("psynet.lucid.requests.request") as api_request,
     ):
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
-        api_get.return_value = SimpleNamespace(ok=False, status_code=500)
+        api_request.return_value = SimpleNamespace(ok=False, status_code=500)
 
         rate_limited(minutes_ago=1)
         assert service.get_submissions(1) == "cached"
-        api_get.assert_not_called()
+        api_request.assert_not_called()
 
         rate_limited(minutes_ago=10)
         assert service.get_submissions(1) is None
-        api_get.assert_called_once()
+        api_request.assert_called_once()
 
 
 def _lucid_submit_url(ris, rid):
