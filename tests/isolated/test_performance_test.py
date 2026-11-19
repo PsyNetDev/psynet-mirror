@@ -1441,6 +1441,18 @@ def test_live_game_delays_are_reported_and_limit_capacity():
         format_performance_summary([dead])
     )
 
+    # A game without ticks has no tick delays, so the summary leaves out the
+    # live delay and its limit, unless a browser's messages were measured.
+    untimed = _base_result(actual_duration=100, live_games=_live_games([], busy_s=0.1))
+    report = _join(format_test_results(untimed))
+    assert "busy <1% of the test" in report and "no ticks" in report
+    assert "its Avg pass can be a whole game" in report
+    summary = _join(format_performance_summary([untimed]))
+    assert "live game delay" not in summary.lower()
+    assert "of live games failing" in summary
+    untimed.live_games["games"]["snake"]["message_delays"][4] = 1000
+    assert capacity_failures(untimed) == ["p95 message delay 100-200 ms in snake"]
+
     # Games that the runner failed for falling behind fail their players.
     behind = _base_result(
         n_bots=4,

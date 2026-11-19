@@ -456,30 +456,39 @@ def _live_game_lines(result):
     # once all have failed.
     if all(_all_failed(g) for g in games.values()):
         utilization = None
-    busy = f", busy {utilization:.0%} of the test" if utilization is not None else ""
+    busy = (
+        f", busy {_share(utilization)} of the test" if utilization is not None else ""
+    )
     rows = []
+    untimed = False
     for game, played in sorted(games.items()):
         ticks = live_delay_p95(result, game, "tick_delays")
         messages = live_delay_p95(result, game, "message_delays")
+        # Failed passes measure nothing, even with a browser playing.
+        measured = played["passes"] and not _all_failed(played)
+        untimed |= bool(measured and ticks is None)
         rows.append(
             [
                 game,
                 f"{played['games']:,}",
                 f"{played['failed']:,}",
-                _EMPTY if ticks is None else describe_delay(ticks),
-                # Failed passes measure nothing, even with a browser playing.
+                describe_delay(ticks)
+                if ticks is not None
+                else "no ticks"
+                if measured
+                else _EMPTY,
                 describe_delay(messages)
                 if messages is not None
-                else _EMPTY
-                if _all_failed(played) or not played["passes"]
-                else "(needs browser)",
+                else "(needs browser)"
+                if measured
+                else _EMPTY,
                 _ms(played["seconds"] / played["passes"] if played["passes"] else None),
             ]
         )
     lines = [
         *_section(f"LIVE GAMES ({plural(live['runners'], 'game runner')}{busy})"),
-        "  The p95 delays are how late ticks ran and how long players' messages "
-        "waited for the pass that applied them; a pass is the runner's turn at one game.",
+        "  The p95 delays are how late ticks ran and how long players' messages",
+        "  waited for the pass that applied them; a pass is the runner's turn at one game.",
         *_table_lines(
             rows,
             headers=[
@@ -496,6 +505,12 @@ def _live_game_lines(result):
         ),
         "",
     ]
+    if untimed:
+        lines += [
+            "  A game without ticks runs only when a message arrives, and bots'",
+            "  messages can all arrive at once, so its Avg pass can be a whole game.",
+            "",
+        ]
     if failed:
         lines += [warning(f"  {text}") for text in _live_failure_texts(result)]
         lines.append("")
@@ -507,13 +522,18 @@ def _live_game_lines(result):
     ):
         lines += [
             warning(
-                f"  The game runners were busy {utilization:.0%} of the test, so "
+                f"  The game runners were busy {_share(utilization)} of the test, so "
                 "they can't keep up with many more games. "
                 f"{_LIVE_SPEED_ADVICE}"
             ),
             "",
         ]
     return lines
+
+
+def _share(fraction):
+    """Format a share as a percentage, with ``<1%`` rather than ``0%`` for a small one."""
+    return "<1%" if 0 < fraction < 0.005 else f"{fraction:.0%}"
 
 
 _LIVE_SPEED_ADVICE = (
@@ -767,6 +787,7 @@ def _measures_seen(results):
         "chains": any(r.busy_early_finishes for r in results),
         "waits": any(count_wait_timeouts(r) for r in results),
         "live": any(r.live_games for r in results),
+        "live_delay": any(_worst_live_delay(r) != _EMPTY for r in results),
     }
     for priority in PRIORITIES:
         seen[priority] = any(queue_wait_p95(r, priority) is not None for r in results)
@@ -848,7 +869,7 @@ def _summary_columns(results, limits):
         for priority in PRIORITIES
         if priority in seen
     ]
-    if "live" in seen:
+    if "live_delay" in seen:
         extra.append(
             (
                 "Live game\ndelay p95",
@@ -868,7 +889,9 @@ def _worst_live_delay(result):
         for kind in ("tick_delays", "message_delays")
         if (delay := live_delay_p95(result, game, kind)) is not None
     ]
-    return describe_delay(max(delays)) if delays else _EMPTY
+    # By the top of each range first, since the last range's top is infinite.
+    worst = max(delays, key=lambda delay: (delay[1], delay[0]), default=None)
+    return _EMPTY if worst is None else describe_delay(worst)
 
 
 def _summary_table(results, columns, outcome):
@@ -914,10 +937,11 @@ def _checked_limits(results, limits):
         checked.append(
             f"p95 high-priority queue wait under {limits.max_queue_p95_s:g} s"
         )
-    if "live" in seen:
+    if "live_delay" in seen:
         checked.append(
             f"p95 live game delay at most {limits.max_live_delay_p95_s * 1000:g} ms"
         )
+    if "live" in seen:
         checked.append(
             f"at most {rate(limits.max_bot_error_rate)} of live games failing"
         )

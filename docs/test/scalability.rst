@@ -346,6 +346,7 @@ A performance test of an experiment with live games reports them under *Live
 games*::
 
     LIVE GAMES (1 game runner, busy 3% of the test)
+    ------------------------------------
     The p95 delays are how late ticks ran and how long players' messages
     waited for the pass that applied them; a pass is the runner's turn at one game.
       Game      Games    Failed    p95 tick delay    p95 message delay    Avg pass
@@ -354,7 +355,11 @@ games*::
 
 *Games* counts the games started during the test and those already running
 when it started, and *Avg pass* is the time the game's code took in a pass.
-The runners count delays in ranges, so the 95th percentiles are ranges. When
+The runners count delays in ranges, so the 95th percentiles are ranges. A
+game without a ``tick_rate`` shows *no ticks* for its tick delay, and the
+summary checks the delay limit only for the delays a test measured. Such a
+game runs only when a message arrives, so with bots, whose messages can all
+arrive at once, a pass can be a whole game. When
 games fail, the section gives each game's most common errors. The report
 warns when the runners were busy for more than 85% of the test: raise
 ``worker_processes`` (see :ref:`performance_testing_async_workers`), which
@@ -384,7 +389,10 @@ join the game in a browser, and run
 ``psynet performance-test local --existing --force`` (``--force`` because
 your participant isn't a bot). The bots share games with you, and the *p95
 message delay* column shows how long your moves waited to be applied. The
-test then reports no capacity, since it didn't run on bots alone.
+summary's numbers, its recommended cap included, are worked out as usual,
+but a note says that the database had participants that bots didn't
+create, so treat them as a check of how the experiment ran rather than as
+an estimate of how many participants it can handle.
 
 No test measures the views' trip to the page, so also watch the game in a
 browser on the deployed server (see :ref:`performance_testing_server`) while
