@@ -1,1 +1,1 @@
-`psynet debug local` now needs the pinned Dallinger, whose `run_debug` it uses to start the server, and no longer falls back for older Dallinger versions.
+`psynet debug local` now starts its server with `run_debug` from Dallinger 13.0.0 or later and no longer falls back for older Dallinger versions.

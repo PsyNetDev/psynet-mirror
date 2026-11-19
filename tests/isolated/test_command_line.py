@@ -135,8 +135,12 @@ class TestCommandLine(object):
         from psynet import command_line, experiment_scaffold
 
         monkeypatch.chdir(tmp_path)
+        running_checkout = Path(command_line.__file__).resolve().parent.parent
+        editable_source = running_checkout
         monkeypatch.setattr(
-            experiment_scaffold, "get_editable_psynet_source", lambda: tmp_path
+            experiment_scaffold,
+            "get_editable_psynet_source",
+            lambda: editable_source,
         )
 
         def build_and_place(source, destination):
@@ -157,6 +161,10 @@ class TestCommandLine(object):
             command_line._check_local_image_packages(local_packages)
 
         Path("Dockerfile").write_text("COPY *local-image-pins.txt ./\n")
+        editable_source = tmp_path
+        with pytest.raises(click.UsageError, match=str(running_checkout)):
+            command_line._check_local_image_packages(local_packages)
+        editable_source = running_checkout
         command_line._check_local_image_packages(local_packages)
         with command_line._local_image_packages(local_packages):
             assert Path("psynet-1.0-py3-none-any.whl").exists()
@@ -239,8 +247,6 @@ class TestCommandLine(object):
         from psynet.command_line import _awaken_ssh_app
 
         dssh = importlib.import_module("dallinger.command_line.docker_ssh")
-        if not hasattr(dssh, "awaken_app"):
-            pytest.skip("installed Dallinger has no docker-ssh hibernation")
         with patch.object(dssh, "awaken_app", return_value=False) as awaken_app:
             _awaken_ssh_app("musix", "consonance")
         awaken_app.assert_called_once_with("musix", "consonance", required=False)
@@ -249,21 +255,11 @@ class TestCommandLine(object):
         from psynet.command_line import _awaken_ssh_app
 
         dssh = importlib.import_module("dallinger.command_line.docker_ssh")
-        if not hasattr(dssh, "awaken_app"):
-            pytest.skip("installed Dallinger has no docker-ssh hibernation")
         with patch.object(
             dssh, "awaken_app", side_effect=RuntimeError("controller failed")
         ):
             with pytest.raises(RuntimeError, match="controller failed"):
                 _awaken_ssh_app("musix", "consonance")
-
-    def test_hibernate_ssh_needs_a_dallinger_with_hibernation(self):
-        from psynet.command_line import _dallinger_hibernation_command
-
-        dssh = importlib.import_module("dallinger.command_line.docker_ssh")
-        with patch.object(dssh, "hibernate", None, create=True):
-            with pytest.raises(click.UsageError, match="does not support"):
-                _dallinger_hibernation_command("hibernate")
 
     @pytest.mark.parametrize("action", ["hibernate", "awaken"])
     def test_hibernation_ssh_accepts_names_of_apps_deployed_without_app(self, action):
@@ -277,7 +273,7 @@ class TestCommandLine(object):
 
         dssh = importlib.import_module("dallinger.command_line.docker_ssh")
         with (
-            patch.object(dssh, action, dallinger_command, create=True),
+            patch.object(dssh, action, dallinger_command),
             patch.object(dssh, "get_configured_hosts", lambda: {"musix": {}}),
         ):
             result = CliRunner().invoke(
@@ -315,9 +311,6 @@ class TestCommandLine(object):
         from psynet.command_line import _invoke_docker_ssh_deploy
 
         command = Mock()
-        ingress_param = Mock()
-        ingress_param.name = "ingress"
-        command.params = [ingress_param]
         ctx = Mock()
         ctx.invoke.return_value = {"dashboard_user": "admin"}
         _invoke_docker_ssh_deploy(
@@ -337,7 +330,6 @@ class TestCommandLine(object):
         from psynet.command_line import _invoke_docker_ssh_deploy
 
         command = Mock()
-        command.params = []
         ctx = Mock()
         _invoke_docker_ssh_deploy(
             ctx,
@@ -349,10 +341,7 @@ class TestCommandLine(object):
         )
         assert ctx.invoke.call_args.kwargs["update"] is True
 
-    @pytest.mark.parametrize("new_dallinger", [False, True])
-    def test_deploy_ssh_ends_with_a_ready_block(
-        self, monkeypatch, tmp_path, new_dallinger
-    ):
+    def test_deploy_ssh_ends_with_a_ready_block(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("DALLINGER_NO_EGG_BUILD", "1")
         monkeypatch.chdir(tmp_path)
@@ -363,11 +352,8 @@ class TestCommandLine(object):
             if show_summary:
                 print(f"Dashboard password: secret\n{message}")
             return {
-                **(
-                    {"recruitment_msg": message, "image_name": "my-app:abc123"}
-                    if new_dallinger
-                    else {}
-                ),
+                "recruitment_msg": message,
+                "image_name": "my-app:abc123",
                 "dashboard_user": "admin",
                 "dashboard_password": "secret",
                 "dashboard_link": "https://my-app.example.org/dashboard",
@@ -380,23 +366,21 @@ class TestCommandLine(object):
             ["--summary/--no-summary", "show_summary"], default=True
         )
         dallinger_deploy = click.Command(
-            "deploy", callback=deploy, params=[summary_option] if new_dallinger else []
+            "deploy", callback=deploy, params=[summary_option]
         )
         result, _ = _invoke_stubbed_ssh_command(dallinger_deploy, "deploy")
 
         assert result.exit_code == 0, result.output
         launch_info = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
-        image = ["  Image:            my-app:abc123"] if new_dallinger else []
-        assert result.output.splitlines()[-5 - len(image) :] == [
+        assert result.output.splitlines()[-6:] == [
             "Ready: my-app on host",
             "  Participant link: https://my-app.example.org/ad?mode=live",
             "  Dashboard:        https://my-app.example.org/dashboard (user: admin)",
             f"  Password:         saved in {launch_info}",
             "  Logs:             ssh host 'docker compose logs -f'",
-            *image,
+            "  Image:            my-app:abc123",
         ]
-        assert ("secret" in result.output) is not new_dallinger
-        assert "secret" not in result.output.split("Ready:")[1]
+        assert "secret" not in result.output
         assert launch_info.stat().st_mode & 0o777 == 0o600
         assert [p.name for p in launch_info.parent.iterdir()] == ["launch-info.json"]
         saved = json.loads(launch_info.read_text())
@@ -464,9 +448,7 @@ class TestCommandLine(object):
     def test_participant_link_needs_a_single_recruitment_link(self, recruitment_msg):
         from psynet.command_line import _participant_link
 
-        printed = "Single recruitment link: https://my-app.example.org/ad"
-        result = {"recruitment_msg": recruitment_msg}
-        assert _participant_link(result, printed) is None
+        assert _participant_link({"recruitment_msg": recruitment_msg}) is None
 
     def test_ready_block_shows_the_recruitment_message_without_a_link(self, capsys):
         from psynet.command_line import _print_ssh_ready
@@ -1757,10 +1739,13 @@ _PERF_DEPLOY_RESULT = {
 }
 
 
-def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None):
+def _invoke_performance_test_ssh(
+    args, *, apps, app_info, calls=None, compose="services:\n"
+):
     """Invoke ``performance-test ssh`` on a fake server with ``apps``, whose web containers report ``app_info``.
 
-    ``calls`` records the experiment directory check and the server's app listing.
+    ``calls`` records the experiment directory check and the server's app
+    listing, and ``compose`` is the app's compose file.
     """
     from types import SimpleNamespace
 
@@ -1780,6 +1765,7 @@ def _invoke_performance_test_ssh(args, *, apps, app_info, calls=None):
             calls.check_experiment_directory,
         ),
         patch("psynet.command_line._ssh_executor"),
+        patch("psynet.command_line._read_ssh_compose_file", return_value=compose),
         patch("psynet.command_line._awaken_ssh_app"),
         patch("psynet.perf_ssh.RemoteApp.run_psynet", return_value=app_info),
         patch(
@@ -1891,6 +1877,54 @@ def test_performance_test_ssh_scaffolds_before_contacting_the_server():
     assert deploy.call_args.kwargs["use_local_psynet"] is True
 
 
+@pytest.mark.parametrize(
+    "recorded, args, reused",
+    [
+        ("psynet", [], "--use-local-psynet"),
+        ("psynet", ["--use-local-psynet"], None),
+        ("dallinger", [], "--use-local-dallinger"),
+        ("psynet,dallinger", [], "--use-local-psynet and --use-local-dallinger"),
+        ("psynet,dallinger", ["--use-local-psynet"], "--use-local-dallinger"),
+        (None, ["--use-local-psynet", "--use-local-dallinger"], None),
+    ],
+)
+def test_performance_test_ssh_updates_reuse_the_deploys_local_packages(
+    recorded, args, reused
+):
+    result, deploy, _ = _invoke_performance_test_ssh(
+        args,
+        apps=["my-app"],
+        app_info=_MARKED,
+        compose=(
+            None
+            if recorded is None
+            else f'      performance_test_local_packages: "{recorded}"\n'
+        ),
+    )
+
+    assert result.exit_code == 0, result.output
+    for package in ("psynet", "dallinger"):
+        expected = f"--use-local-{package}" in args or package in (
+            recorded or ""
+        ).split(",")
+        assert deploy.call_args.kwargs[f"use_local_{package}"] is expected
+    if reused:
+        assert f"Using {reused}, as when my-app was deployed." in result.output
+    else:
+        assert ", as when" not in result.output
+
+
+@pytest.mark.parametrize("args", [[], ["--use-local-psynet"]])
+def test_performance_test_ssh_updates_need_the_compose_file_for_local_packages(args):
+    result, deploy, _ = _invoke_performance_test_ssh(
+        args, apps=["my-app"], app_info=_MARKED, compose=None
+    )
+
+    assert result.exit_code == 1
+    assert "Could not read my-app's compose file" in result.output
+    deploy.assert_not_called()
+
+
 @pytest.mark.parametrize("args", [[], ["--reset-database"]])
 def test_performance_test_ssh_refuses_apps_it_did_not_deploy(args):
     result, deploy, run = _invoke_performance_test_ssh(
@@ -1928,7 +1962,18 @@ def test_performance_test_ssh_needs_the_apps_experiment_to_load():
     run.assert_not_called()
 
 
-def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
+@pytest.mark.parametrize(
+    "use_local_psynet, use_local_dallinger, recorded",
+    [
+        (False, False, {}),
+        (True, False, {"performance_test_local_packages": "psynet"}),
+        (False, True, {"performance_test_local_packages": "dallinger"}),
+        (True, True, {"performance_test_local_packages": "psynet,dallinger"}),
+    ],
+)
+def test_performance_test_deploys_mark_the_app(
+    use_local_psynet, use_local_dallinger, recorded, capsys, fresh_dallinger_config
+):
     from psynet.command_line import _debug_ssh
 
     ctx = Mock()
@@ -1944,12 +1989,10 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
         patch("psynet.command_line._post_deploy"),
         patch("psynet.command_line._cleanup_exp_directory"),
         patch(
-            "dallinger.command_line.docker_ssh.sandbox",
-            click.Command(
-                "sandbox",
-                params=[click.Option(["--summary/--no-summary", "show_summary"])],
-            ),
+            "psynet.command_line._local_image_packages",
+            return_value=contextlib.nullcontext(),
         ),
+        patch("dallinger.command_line.docker_ssh.sandbox", click.Command("sandbox")),
     ):
         deployed = _debug_ssh(
             ctx,
@@ -1957,6 +2000,8 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
             server="server",
             dns_host=None,
             update=True,
+            use_local_psynet=use_local_psynet,
+            use_local_dallinger=use_local_dallinger,
             performance_test_app=True,
         )
 
@@ -1964,6 +2009,7 @@ def test_performance_test_deploys_mark_the_app(capsys, fresh_dallinger_config):
     assert ctx.invoke.call_args.kwargs["config_options"] == {
         "debug_ssh_app": "true",
         "performance_test_app": "true",
+        **recorded,
     }
     assert pre_launch.call_args.kwargs["performance_test_app"] is True
     assert pre_launch.call_args.kwargs["confirm_update"] is False
@@ -4506,6 +4552,7 @@ def test_test_local_existing_bypasses_scaffold_gate(tmp_path, monkeypatch):
         patch("psynet.command_line.load_runtime_server_config") as load_runtime_config,
         patch("psynet.command_line._check_existing_server_answers"),
         patch("psynet.experiment.get_experiment", return_value=mock_exp),
+        patch("psynet.sync.fail_on_group_divergence", contextlib.nullcontext),
     ):
         result = runner.invoke(psynet, ["test", "local", "--existing"])
 
@@ -5338,7 +5385,6 @@ def test_pre_launch_records_the_server_dns_host(ingress, expected):
     assert write.call_args.kwargs["server_dns_host"] == expected
 
 
-@pytest.mark.parametrize("dallinger_has_check", [True, False])
 @pytest.mark.parametrize(
     "command, args",
     [
@@ -5349,13 +5395,11 @@ def test_pre_launch_records_the_server_dns_host(ingress, expected):
     ],
 )
 def test_ssh_launches_check_the_cloudflare_token_before_contacting_the_server(
-    monkeypatch, tmp_path, command, args, dallinger_has_check
+    monkeypatch, tmp_path, command, args
 ):
     from psynet import command_line
 
     docker_ssh = importlib.import_module("dallinger.command_line.docker_ssh")
-    if dallinger_has_check and not hasattr(docker_ssh, "check_deploy_credentials"):
-        pytest.skip("Dallinger has no check_deploy_credentials")
     from dallinger.command_line.lib.cloudflare import CloudflareError
 
     hosts = {"lab.example.org": {"host": "lab", "default_ingress": "classic"}}
@@ -5365,8 +5409,6 @@ def test_ssh_launches_check_the_cloudflare_token_before_contacting_the_server(
     monkeypatch.setattr(
         docker_ssh, "load_api_token", Mock(side_effect=CloudflareError("no token"))
     )
-    if not dallinger_has_check:
-        monkeypatch.delattr(docker_ssh, "check_deploy_credentials", raising=False)
     reached = Mock(side_effect=RuntimeError("went past the token check"))
     monkeypatch.setattr(docker_ssh, "get_apps", reached)
     monkeypatch.setattr("psynet.services.ensure_local_services", reached)
@@ -5381,12 +5423,9 @@ def test_ssh_launches_check_the_cloudflare_token_before_contacting_the_server(
         ["--server", "lab", "--ingress", "cloudflare", *args],
     )
 
-    if dallinger_has_check:
-        assert result.exit_code == 1, result.output
-        assert "Error: Cloudflare error: no token" in result.output
-        reached.assert_not_called()
-    else:
-        assert str(result.exception) == "went past the token check"
+    assert result.exit_code == 1, result.output
+    assert "Error: Cloudflare error: no token" in result.output
+    reached.assert_not_called()
 
 
 def test_pre_launch_skips_dependency_check_for_in_repo_experiments(
@@ -6872,7 +6911,7 @@ def _invoke_destroy_ssh(
             yes=yes,
             discard_pending_jobs=discard_pending_jobs,
             remove_data=False,
-            keep_data=False,
+            keep_data=True,
         )
 
     return CliRunner().invoke(parent)
@@ -6919,25 +6958,22 @@ def test_debug_heroku_docker_runs_heroku_pre_launch_checks(tmp_path, monkeypatch
 _PENDING = {"counts": {"high": 0, "low": 2, "local": 0}, "total": 2, "oldest_age": 600}
 
 
-def _patch_dallinger_destroy_ssh(
-    monkeypatch, check_pending_jobs=False, data_options=False
-):
-    """Fake Dallinger's ``docker-ssh destroy``, with Dallinger #10129's data options if ``data_options``."""
+def _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=False):
+    """Fake Dallinger's ``docker-ssh destroy``, recording each app's data options."""
     destroyed = []
 
     def fake_destroy(app, server, delete_data_command=None, **data):
-        destroyed.append((app, server, data) if data_options else (app, server))
-        if app == "gone":  # older Dallinger aborts when no data is left
+        destroyed.append((app, server, data))
+        if app == "declined":  # e.g. a changed SSH host key was not accepted
             raise click.Abort()
         if app == "empty":
             click.echo(f"Nothing left to delete for {app} on example.com.")
         if data.get("keep_data"):
             click.echo(f"To delete it, run: {delete_data_command}")
 
-    if data_options:
-        for flag in ("--remove-data", "--keep-data", "--yes"):
-            fake_destroy = click.option(flag, is_flag=True)(fake_destroy)
-        fake_destroy = click.option("--delete-data-command")(fake_destroy)
+    for flag in ("--remove-data", "--keep-data", "--yes"):
+        fake_destroy = click.option(flag, is_flag=True)(fake_destroy)
+    fake_destroy = click.option("--delete-data-command")(fake_destroy)
     fake_destroy = click.option("--server")(fake_destroy)
     fake_destroy = click.command()(click.option("--app", required=True)(fake_destroy))
 
@@ -6976,7 +7012,9 @@ def test_destroy_ssh_confirmation_defaults_to_no(monkeypatch, app_args, target):
 def test_destroy_ssh_without_a_terminal_asks_for_yes(monkeypatch):
     destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
 
-    result = CliRunner().invoke(psynet, ["destroy", "ssh", "--app", "one"])
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "--app", "one", "--keep-data"]
+    )
     assert result.exit_code == 1
     assert (
         "Confirmation needed to destroy 1 app on musix: one; re-run with --yes."
@@ -7087,11 +7125,16 @@ def test_destroy_ssh_combines_app_option_and_arguments(monkeypatch):
     monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
 
     result = CliRunner().invoke(
-        psynet, ["destroy", "ssh", "--app", "one", "two", "one"], input="y\n"
+        psynet,
+        ["destroy", "ssh", "--app", "one", "two", "one", "--keep-data"],
+        input="y\n",
     )
     assert result.exit_code == 0, result.output
     assert result.output.count("Destroy 2 apps on musix: one, two?") == 1
-    assert destroyed == [("one", "musix"), ("two", "musix")]
+    assert [(app, server) for app, server, _ in destroyed] == [
+        ("one", "musix"),
+        ("two", "musix"),
+    ]
 
 
 def test_destroy_ssh_requires_an_app_name(monkeypatch):
@@ -7117,7 +7160,7 @@ def test_destroy_ssh_data_question_for_one_or_several_apps(
     """Dallinger asks about a single app's data; PsyNet asks once about several."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
-    destroyed = _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
 
     result = CliRunner().invoke(psynet, ["destroy", "ssh", *apps], input="y\nn\n")
     assert result.exit_code == 0, result.output
@@ -7128,7 +7171,7 @@ def test_destroy_ssh_data_question_for_one_or_several_apps(
 
 def test_destroy_ssh_remove_data_skips_dallinger_confirmation(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
-    destroyed = _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
 
     result = CliRunner().invoke(
         psynet, ["destroy", "ssh", "one", "-y", "--remove-data"]
@@ -7139,12 +7182,24 @@ def test_destroy_ssh_remove_data_skips_dallinger_confirmation(monkeypatch, tmp_p
     ]
 
 
+def test_destroy_ssh_remove_data_reports_an_abort_for_an_undeployed_app(monkeypatch):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
+
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "declined", "one", "-y", "--remove-data"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "Failed to destroy declined" in result.output
+    assert "Nothing left to delete" not in result.output
+    assert [app for app, _, _ in destroyed] == ["declined", "one"]
+
+
 def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
     monkeypatch, tmp_path
 ):
     """Its leftover data is Dallinger's to find, without PsyNet's wake-up or name suggestions."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    destroyed = _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
     woken = []
     monkeypatch.setattr(
         "psynet.command_line._awaken_ssh_app", lambda server, app: woken.append(app)
@@ -7152,22 +7207,20 @@ def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
 
     result = CliRunner().invoke(
         psynet,
-        ["destroy", "ssh", "twoo", "gone", "empty", "one", "-y", "--remove-data"],
+        ["destroy", "ssh", "twoo", "empty", "one", "-y", "--remove-data"],
     )
     assert result.exit_code == 0, result.output
     assert "did you mean" not in result.output
-    assert "Nothing left to delete for gone on musix." in result.output
-    assert result.output.count("Nothing left to delete") == 2
+    assert result.output.count("Nothing left to delete") == 1
     assert "run this command again" not in result.output
-    assert [app for app, _, _ in destroyed] == ["twoo", "gone", "empty", "one"]
+    assert [app for app, _, _ in destroyed] == ["twoo", "empty", "one"]
     assert woken == ["one"]
 
-    for name in "gone", "empty":
-        result = CliRunner().invoke(
-            psynet, ["destroy", "ssh", name, "-y", "--remove-data"]
-        )
-        assert result.exit_code == 0, result.output
-        assert result.output.count("Nothing left to delete") == 1
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", "empty", "-y", "--remove-data"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Nothing left to delete") == 1
 
     monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
     result = CliRunner().invoke(
@@ -7187,7 +7240,7 @@ def test_destroy_ssh_remove_data_reaches_an_already_destroyed_app(
 
 
 def test_destroy_ssh_kept_data_names_the_psynet_delete_command(monkeypatch):
-    _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+    _patch_dallinger_destroy_ssh(monkeypatch)
 
     result = CliRunner().invoke(psynet, ["destroy", "ssh", "one", "-y", "--keep-data"])
     assert result.exit_code == 0, result.output
@@ -7197,21 +7250,14 @@ def test_destroy_ssh_kept_data_names_the_psynet_delete_command(monkeypatch):
     )
 
 
-@pytest.mark.parametrize(
-    "data_options, flags, message",
-    [
-        (True, [], "pass --remove-data or --keep-data in non-interactive sessions"),
-        (False, ["--keep-data"], "need a newer Dallinger"),
-    ],
-)
-def test_destroy_ssh_data_choice_usage_errors(
-    monkeypatch, data_options, flags, message
-):
-    destroyed = _patch_dallinger_destroy_ssh(monkeypatch, data_options=data_options)
+def test_destroy_ssh_needs_a_data_choice_without_a_terminal(monkeypatch):
+    destroyed = _patch_dallinger_destroy_ssh(monkeypatch)
 
-    result = CliRunner().invoke(psynet, ["destroy", "ssh", "one", "-y", *flags])
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", "one", "-y"])
     assert result.exit_code == 2, result.output
-    assert message in result.output
+    assert (
+        "pass --remove-data or --keep-data in non-interactive sessions" in result.output
+    )
     assert destroyed == []
 
 
@@ -7221,7 +7267,7 @@ def test_destroy_ssh_warns_only_without_a_local_export(monkeypatch, tmp_path):
     record = tmp_path / "psynet-data/launch-data/dep-1/launch-info.json"
     record.parent.mkdir(parents=True)
     record.write_text(json.dumps({"app": "one", "server": "musix"}))
-    _patch_dallinger_destroy_ssh(monkeypatch, data_options=True)
+    _patch_dallinger_destroy_ssh(monkeypatch)
     args = ["destroy", "ssh", "one", "--remove-data"]
 
     with working_directory(tmp_path):
@@ -7250,9 +7296,7 @@ def test_destroy_ssh_export_reminder_only_before_a_data_question(
     """No reminder without a question about the data, or after declining the destroy."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr("psynet.command_line._stdin_is_interactive", lambda: True)
-    _patch_dallinger_destroy_ssh(
-        monkeypatch, check_pending_jobs=True, data_options=True
-    )
+    _patch_dallinger_destroy_ssh(monkeypatch, check_pending_jobs=True)
     monkeypatch.setattr(
         "psynet.command_line._fetch_ssh_pending_async_jobs",
         lambda app, server: pending,
@@ -7275,9 +7319,11 @@ def test_destroy_ssh_yes_skips_confirmation(monkeypatch, yes_flag, app_args, exp
         click, "confirm", lambda *args, **kwargs: pytest.fail("--yes prompted")
     )
 
-    result = CliRunner().invoke(psynet, ["destroy", "ssh", *app_args, yes_flag])
+    result = CliRunner().invoke(
+        psynet, ["destroy", "ssh", *app_args, yes_flag, "--keep-data"]
+    )
     assert result.exit_code == 0, result.output
-    assert destroyed == [(app, "musix") for app in expected]
+    assert [app for app, _, _ in destroyed] == expected
 
 
 def _recording_destroy():
@@ -7286,7 +7332,7 @@ def _recording_destroy():
     @click.command()
     @click.option("--app", required=True)
     @click.option("--server")
-    def fake_destroy(app, server):
+    def fake_destroy(app, server, **data_options):
         destroyed.append(app)
 
     return fake_destroy, destroyed
@@ -7419,8 +7465,8 @@ def _destroy_unchecked_ssh_apps(
         run_commands.append(cmd) or (compose_status, compose, "")
     )
     monkeypatch.setattr("psynet.command_line._ssh_executor", lambda server: executor)
-    result = CliRunner().invoke(psynet, ["destroy", "ssh", *args])
-    destroyed = [app for app, _ in destroyed]
+    result = CliRunner().invoke(psynet, ["destroy", "ssh", *args, "--keep-data"])
+    destroyed = [app for app, _, _ in destroyed]
     return result, destroyed, [c.command for c in channels], run_commands
 
 
@@ -7588,7 +7634,7 @@ def test_destroy_ssh_continues_when_an_app_is_already_gone(monkeypatch):
     @click.command()
     @click.option("--app", required=True)
     @click.option("--server")
-    def fake_destroy(app, server):
+    def fake_destroy(app, server, **data_options):
         destroyed.append(app)
         if app == "gone":
             raise click.Abort()
@@ -7608,7 +7654,7 @@ def test_destroy_ssh_single_app_reports_dallinger_errors(monkeypatch):
     @click.command()
     @click.option("--app", required=True)
     @click.option("--server")
-    def fake_destroy(app, server):
+    def fake_destroy(app, server, **data_options):
         raise click.ClickException("Retry with X.")
 
     result = _invoke_destroy_ssh(monkeypatch, fake_destroy, app="broken")
@@ -7623,7 +7669,7 @@ def test_destroy_ssh_app_option_aborts_when_missing(monkeypatch):
     @click.command()
     @click.option("--app", required=True)
     @click.option("--server")
-    def fake_destroy(app, server):
+    def fake_destroy(app, server, **data_options):
         destroyed.append(app)
         raise click.Abort()
 
@@ -7646,7 +7692,7 @@ def test_destroy_ssh_continues_when_one_app_raises(monkeypatch, error, message):
     @click.command()
     @click.option("--app", required=True)
     @click.option("--server")
-    def fake_destroy(app, server):
+    def fake_destroy(app, server, **data_options):
         destroyed.append(app)
         if app == "broken":
             raise error

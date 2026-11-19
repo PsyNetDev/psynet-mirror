@@ -47,12 +47,10 @@ def server_ingress(server_info: dict, ingress: Optional[str] = None) -> str:
 def server_dns_host(server_info: dict, dns_host: Optional[str] = None) -> Optional[str]:
     """Return the DNS name that a classic-ingress server serves Dozzle under.
 
-    Dallinger versions with ``servers upgrade`` serve Dozzle under the DNS
-    host saved with the server, else the server's hostname, and only for a
-    server registered by IP address under the deploy's ``--dns-host``. Older
-    versions rewrite the server's Caddyfile on each deploy, so Dozzle follows
-    the deploy's ``--dns-host``, else the server's host. ``nip.io`` means
-    ``<ip>.nip.io``. A bare IP address is no DNS name, so it gives ``None``.
+    Dallinger serves Dozzle under the DNS host saved with the server, else
+    the server's hostname, and only for a server registered by IP address
+    under the deploy's ``--dns-host``. ``nip.io`` means ``<ip>.nip.io``. A
+    bare IP address is no DNS name, so it gives ``None``.
 
     Parameters
     ----------
@@ -72,12 +70,7 @@ def server_dns_host(server_info: dict, dns_host: Optional[str] = None) -> Option
     if "host" not in server_info:
         return None
     host = docker_ssh.split_ssh_host_port(server_info["host"])[0]
-    # Only Dallinger/Dallinger#10143 adds ``servers upgrade`` and saved DNS
-    # hosts. Remove the ``else`` branch once PsyNet pins a Dallinger with it.
-    if "upgrade" in docker_ssh.servers.commands:
-        name = server_info.get("dns_host") or (dns_host if _is_ip(host) else None)
-    else:
-        name = dns_host or server_info.get("dns_host")
+    name = server_info.get("dns_host") or (dns_host if _is_ip(host) else None)
     name = name or host
     if name == "nip.io":
         try:

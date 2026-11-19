@@ -1,0 +1,1 @@
+A newcomer reaching a `SimpleGrouper` with `join_existing_groups=True` while another request is changing the open group, such as a barrier check, now waits up to a second to join it, instead of waiting at the grouper for the background barrier check.

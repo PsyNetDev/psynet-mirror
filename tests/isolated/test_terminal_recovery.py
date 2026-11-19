@@ -77,6 +77,7 @@ def test_fatal_response_prepares_recovery_in_the_same_request(db_session):
 
     event = MagicMock()
     event.is_timeline_hold = False
+    event._time_limit_seconds_to_wait.return_value = None
     event.process_response.side_effect = ValueError("boom")
     experiment = get_experiment()
 
@@ -85,11 +86,12 @@ def test_fatal_response_prepares_recovery_in_the_same_request(db_session):
             experiment,
             "_participant_request_query",
             return_value=SimpleNamespace(
+                session=SimpleNamespace(execute=lambda statement: None),
                 with_for_update=lambda **kwargs: SimpleNamespace(
                     populate_existing=lambda: SimpleNamespace(
                         get=lambda _id: participant
                     )
-                )
+                ),
             ),
         ),
         patch.object(experiment.timeline, "get_current_elt", return_value=event),
@@ -224,11 +226,12 @@ def test_skipped_recovery_rejects_a_later_timeline_response(db_session):
             experiment,
             "_participant_request_query",
             return_value=SimpleNamespace(
+                session=SimpleNamespace(execute=lambda statement: None),
                 with_for_update=lambda **kwargs: SimpleNamespace(
                     populate_existing=lambda: SimpleNamespace(
                         get=lambda _id: participant
                     )
-                )
+                ),
             ),
         ),
         patch.object(experiment.timeline, "get_current_elt", return_value=event),

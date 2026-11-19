@@ -1,0 +1,1 @@
+Participants failed because their sync group fell below its quorum now get the failure tag `sync group below quorum` instead of `sync group below minimum size`. Update analysis scripts that filter on the old tag.
