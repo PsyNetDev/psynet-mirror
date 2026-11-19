@@ -244,6 +244,27 @@ class Exp(psynet.experiment.Experiment):
     test_n_bots = 3
     test_mode = "parallel"
 
+    @classmethod
+    def get_basic_data(cls, context=None, **kwargs):
+        """Return one row per player per round."""
+        trials = ContributionTrial.query.order_by(ContributionTrial.id).all()
+        rows = []
+        for t in trials:
+            team = (t.group_round and t.group_round.live_game_outcome) or {}
+            rows.append(
+                {
+                    "team_id": t.sync_group_id,
+                    "participant_id": t.participant_id,
+                    "trial_id": t.id,
+                    "round": t.sync_group_round,
+                    "contributed": (t.answer or {}).get("contributed"),
+                    "pot": team.get("pot"),
+                    "share": team.get("share"),
+                    "earned": (t.answer or {}).get("earned"),
+                }
+            )
+        return {"player_round": rows}
+
     def test_check_bot(self, bot: Bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
         trials = ContributionTrial.query.filter_by(participant_id=bot.id).all()
@@ -267,3 +288,15 @@ class Exp(psynet.experiment.Experiment):
             assert trial.performance_reward == pytest.approx(reward)
         expected = sum(t.answer["earned"] * TOKEN_VALUE for t in trials)
         assert bot.performance_reward == pytest.approx(expected)
+        rows = [
+            row
+            for row in self.get_basic_data()["player_round"]
+            if row["participant_id"] == bot.id
+        ]
+        assert [
+            (row["round"], row["contributed"], row["pot"], row["earned"])
+            for row in rows
+        ] == [
+            (i, t.answer["contributed"], t.live_game.outcome["pot"], t.answer["earned"])
+            for i, t in enumerate(sorted(trials, key=lambda t: t.id))
+        ]
