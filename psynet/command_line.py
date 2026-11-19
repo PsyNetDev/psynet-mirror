@@ -2131,6 +2131,8 @@ def _read_running_deployment_info(server, app):
         raise_=False,
     )
     text = output or ""
+    if "{" not in text:
+        raise ValueError("its web container returned no deployment record")
     return deployment_info.loads(text[text.find("{") : text.rfind("}") + 1])
 
 
@@ -6251,6 +6253,8 @@ def _refuse_testing_a_live_ssh_app(server, app):
     """Refuse to run bots against an app that isn't known to be a debug deployment.
 
     Bot participants of a live app join its data and can take recruitment places.
+    Only the mode that ``psynet debug ssh`` records passes, so a missing or
+    unrecognized mode is refused too.
     """
     try:
         mode = _read_running_deployment_info(server, app)["mode"]
@@ -6261,9 +6265,14 @@ def _refuse_testing_a_live_ssh_app(server, app):
         ) from err
     if mode == "live":
         raise click.ClickException(
-            f"{app} was deployed with `psynet deploy ssh`, so its bots would join "
-            "the live data and could take recruitment places. Pass --allow-live "
+            f"{app} was deployed with `psynet deploy ssh`, so the bots would join "
+            "its live data and could take recruitment places. Pass --allow-live "
             "to run them anyway."
+        )
+    if mode != "sandbox":
+        raise click.ClickException(
+            f"Could not tell how {app} on {server} was deployed (its deployment "
+            f"mode is {mode!r}). Pass --allow-live to run the bots anyway."
         )
 
 

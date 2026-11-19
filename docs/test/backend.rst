@@ -297,6 +297,9 @@ mode, then call ``psynet test ssh`` (experimental):
 
 Like ``psynet performance-test ssh``, it uses the server's existing database;
 see :ref:`performance_testing_server` for what that means for repeated runs.
+Because the bots join that database, ``psynet test ssh`` refuses an app
+deployed with ``psynet deploy ssh``, and one whose deployment mode it can't
+read, unless you pass ``--allow-live``.
 
 Limitations
 -----------

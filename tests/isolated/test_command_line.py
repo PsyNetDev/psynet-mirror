@@ -2624,6 +2624,15 @@ def test_ssh_update_keeps_the_running_identity(tmp_path, monkeypatch):
     assert deployment_info.read("secret") == "old"
 
 
+def test_reading_a_running_deployment_reports_a_missing_record(monkeypatch):
+    from psynet import command_line
+
+    executor = Mock(run=Mock(return_value="no such service: web\n"))
+    monkeypatch.setattr(command_line, "_ssh_executor", lambda *a, **k: executor)
+    with pytest.raises(ValueError, match="no deployment record"):
+        command_line._read_running_deployment_info("musix", "consonance")
+
+
 @pytest.mark.parametrize(
     "running, confirmed, error, message",
     [
@@ -6131,6 +6140,7 @@ _SSH_ARGS = ["--app", "test-app", "--server", "lab.example.org"]
         ({"mode": "live"}, ["--allow-live"], True, None),
         (ValueError("no deployment info"), [], False, "Could not read how test-app"),
         ({}, [], False, "Could not read how test-app"),
+        ({"mode": None}, [], False, "Could not tell how test-app"),
     ],
 )
 def test_test_ssh_refuses_a_live_app_unless_allowed(
