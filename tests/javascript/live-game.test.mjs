@@ -371,13 +371,15 @@ describe("psynet.liveGame", () => {
     mock.timers.enable({ apis: ["setInterval"] });
     const left = [];
     liveGame.onTimeLeft((seconds) => left.push(seconds));
-    sockets[0].fire("onEnded", "finished", view(5, [], 45, 40));
     sockets[0].time = 60;
+    sockets[0].fire("onEnded", "finished", view(5, [], 45, 40));
+    // At once, without waiting for the next tick.
+    assert.deepEqual(left, [0]);
     assert.equal(liveGame.secondsLeft(), 0);
     assert.equal(liveGame.duration, 40);
     assert.equal(liveGame.started, false);
     mock.timers.tick(250);
-    assert.deepEqual(left, [0]);
+    assert.deepEqual(left, [0, 0]);
   });
 
   it("shows the latest rejection until the page sends again", () => {
@@ -390,23 +392,22 @@ describe("psynet.liveGame", () => {
     assert.equal(element.textContent, "");
   });
 
-  it("calls onTimeLeft a few times a second until the page goes", () => {
+  it("calls onTimeLeft with each view and a few times a second until the page goes", () => {
     mock.timers.enable({ apis: ["setInterval"] });
     const left = [];
     assert.equal(
       liveGame.onTimeLeft((seconds) => left.push(seconds)),
       liveGame
     );
+    sockets[0].time = 30;
     mock.timers.tick(250);
     // Nothing before the page knows the time left.
     assert.deepEqual(left, []);
     sockets[0].view(view(5, [], 45, 40));
-    sockets[0].time = 30;
-    mock.timers.tick(250);
+    assert.deepEqual(left, [15]);
     sockets[0].time = 30.5;
     mock.timers.tick(250);
     sockets[0].view(view(5, [], 45, 40), "finished");
-    mock.timers.tick(250);
     assert.deepEqual(left, [15, 14.5, 0]);
 
     leavePage();
@@ -576,7 +577,7 @@ describe("psynet.liveGame", () => {
     liveGame.showStatus(own, () => "Playing", { waiting: "Waiting for your partner" });
     sockets[2].view(view(null));
     assert.equal(own.textContent, "Waiting for your partner");
-    // A game that failed before the page had a view still ends.
+    // A failed game's ending keeps the page's last view.
     sockets[2].fire("onEnded", "failed", null);
     assert.equal(own.textContent, "Over");
 
@@ -599,6 +600,16 @@ describe("psynet.liveGame", () => {
     assert.equal(quiet.textContent, "");
     sockets[4].view(view(4), "finished");
     assert.equal(quiet.textContent, "Over");
+
+    // A game that failed before the page had a view still ends, with the
+    // session's ended text when the page's depends on a view.
+    for (const ended of ["Game over", () => "Unused"]) {
+      changePage();
+      const failed = { textContent: "" };
+      liveGame.showStatus(failed, () => "Playing", { ended: ended });
+      sockets[sockets.length - 1].fire("onEnded", "failed", null);
+      assert.equal(failed.textContent, typeof ended === "string" ? ended : "Over");
+    }
   });
 
   it("gives onChange the predicted view, and again after each send", () => {

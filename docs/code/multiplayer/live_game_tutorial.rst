@@ -712,7 +712,8 @@ crashed, and it ignores a key that's held down:
 removes when the participant moves on to the next page.
 
 The time left comes from ``live.onTimeLeft``, which calls the page back with
-the seconds until the end of the game's ``duration`` a few times a second.
+the seconds until the end of the game's ``duration`` with each view and a few
+times a second.
 A crashed snake's ``back_at`` is a time in seconds into the game, so the
 status line compares it with ``live.gameTime()``, which counts the same
 seconds as ``now`` on the server:

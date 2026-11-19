@@ -276,6 +276,10 @@
         callEach(state.changeCallbacks, shownView(state, view));
       }
       callEach(state.statusCallbacks);
+      // So a countdown shows the time left as soon as the page knows it.
+      if (!state.left && state.timeLeftCallbacks.length > 0) {
+        showTimeLeft(state);
+      }
       if (state.ended) {
         state.playingElements.forEach((element) => (element.disabled = true));
         state.away.update([]);
@@ -626,8 +630,8 @@
     }
 
     /**
-     * Call ``callback`` with ``secondsLeft()`` a few times a second, for a
-     * countdown, once the page knows the time left, which is 0 once the game
+     * Call ``callback`` with ``secondsLeft()`` with each view and a few times
+     * a second, for a countdown, once the page knows the time left, which is 0 once the game
      * has ended, until the participant leaves the page. A game without a
      * ``duration`` has no time left, so it never runs.
      *
@@ -644,16 +648,20 @@
       let state = pageState();
       state.timeLeftCallbacks.push(callback);
       if (state.timeLeftTimer === null) {
-        let tick = () => {
-          let left = secondsLeft();
-          if (left !== null) {
-            callEach(state.timeLeftCallbacks, left);
-          }
-        };
-        state.timeLeftTimer = setInterval(tick, TIME_LEFT_INTERVAL_MS);
-        tick();
+        state.timeLeftTimer = setInterval(
+          () => showTimeLeft(state),
+          TIME_LEFT_INTERVAL_MS
+        );
+        showTimeLeft(state);
       }
       return api;
+    }
+
+    function showTimeLeft(state) {
+      let left = secondsLeft();
+      if (left !== null) {
+        callEach(state.timeLeftCallbacks, left);
+      }
     }
 
     /**
@@ -995,7 +1003,8 @@
       },
       /**
        * The game's ``duration`` in seconds, once the page has had a view
-       * from after the game starts, or ``null``, as for a game without one.
+       * from after the game starts or once the game has ended, or ``null``,
+       * as for a game without one.
        * Use it with ``secondsLeft()`` for a time bar. Reading it doesn't join the
        * game.
        *

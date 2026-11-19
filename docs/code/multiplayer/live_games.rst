@@ -417,8 +417,8 @@ Sending moves:
 
 Showing time:
 
-- ``onTimeLeft(callback)`` calls ``callback`` with the seconds left, a few
-  times a second, for a countdown.
+- ``onTimeLeft(callback)`` calls ``callback`` with the seconds left, with
+  each view and a few times a second, for a countdown.
 - ``gameTime()`` returns the seconds since the game started, the clock of
   ``now`` in the game's methods.
 - ``duration`` and ``secondsLeft()`` give the game's ``duration`` and the
