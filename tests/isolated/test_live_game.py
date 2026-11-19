@@ -31,7 +31,6 @@ from psynet.live_game import (
     PLAYERS_LEFT,
     TIMEOUT,
     LiveGame,
-    LiveGameControl,
     LiveGamePage,
     LiveGameRecord,
     LiveMessage,
@@ -39,9 +38,10 @@ from psynet.live_game import (
     PlayLiveGame,
 )
 from psynet.live_game import registry as game_registry
+from psynet.live_game.control import LiveGameControl
 from psynet.live_game.messages import _session_participant_ids
 from psynet.live_game.testing import LocalGame, start_game
-from psynet.modular_page import ModularPage, NullControl
+from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -116,7 +116,7 @@ def _play(id_="trial_game", page=None, **kwargs):
     """A PlayLiveGame of the pick-numbers game, as a trial's show_trial
     builds one for each participant."""
     if page is None:
-        page = ModularPage(id_, "Play.", LiveGameControl(), time_estimate=5)
+        page = LiveGamePage(id_, "Play.", time_estimate=5)
     kwargs.setdefault("game_class", type(_pick_numbers()))
     if "late_after" not in kwargs:
         kwargs.setdefault("max_wait_time", 60)
@@ -125,11 +125,11 @@ def _play(id_="trial_game", page=None, **kwargs):
 
 def _page_of(game_barrier, page_kwargs=None, **control_kwargs):
     """A game page that plays the session ``game_barrier`` starts."""
-    page = ModularPage(
+    page = LiveGamePage(
         "game",
         "Play.",
-        LiveGameControl(**control_kwargs),
         time_estimate=5,
+        **control_kwargs,
         **(page_kwargs or {}),
     )
     _play(game_barrier.id, page)
@@ -444,7 +444,7 @@ def test_a_live_game_page_can_leave_moving_on_to_its_javascript(pair, monkeypatc
 )
 def test_a_live_game_page_refuses_a_show_result_for_it_can_t_honour(kwargs):
     with pytest.raises(ValueError, match="show_result_for"):
-        LiveGameControl(**kwargs)
+        LiveGamePage("game", "Play.", time_estimate=5, **kwargs)
 
 
 @pytest.mark.parametrize("message", ["Your partner has left.", None])
@@ -477,7 +477,7 @@ def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
     unnamed = PlayLiveGame(
         group_type="pair",
         game_class=type(_pick_numbers()),
-        page=ModularPage("game", "Play.", LiveGameControl(), time_estimate=5),
+        page=LiveGamePage("game", "Play.", time_estimate=5),
         max_wait_time=60,
     )
     assert unnamed.barrier.id == "pick_numbers"
@@ -485,17 +485,17 @@ def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
         PlayLiveGame(
             group_type="pair",
             game_class=type(_pick_numbers()),
-            page=ModularPage("game", "Play.", LiveGameControl(), time_estimate=5),
+            page=LiveGamePage("game", "Play.", time_estimate=5),
         )
 
-    page = ModularPage("game", "Play.", LiveGameControl(), time_estimate=5)
+    page = LiveGamePage("game", "Play.", time_estimate=5)
     # The page follows the barrier.
     assert _play("first", page).resolve()[-1] is page
     with pytest.raises(
         ValueError, match="already the page of the PlayLiveGame 'first'"
     ):
         _play("second", page)
-    with pytest.raises(TypeError, match="or a ModularPage with a LiveGameControl"):
+    with pytest.raises(TypeError, match="must be a LiveGamePage"):
         _play("third", InfoPage("Play.", time_estimate=5))
 
 
@@ -506,23 +506,33 @@ def test_a_live_game_page_marks_its_content_and_has_a_live_game_control():
     # PsyNet hides what's marked on a page without a game.
     assert "data-live-game" in str(page.prompt.text)
     assert _play("first", page).resolve()[-1] is page
-    with pytest.raises(TypeError, match="must be a LiveGameControl"):
-        LiveGamePage("game", "Play.", NullControl(), time_estimate=5)
+
+
+def test_a_live_game_page_passes_its_options_to_its_control():
+    page = LiveGamePage(
+        "game",
+        "Play.",
+        names="anonymous",
+        show_result_for=8,
+        waiting_status="Waiting for your partner",
+        player_left_message=None,
+        time_estimate=5,
+    )
+
+    assert page.control.names == "anonymous"
+    assert page.control.show_result_for == 8
+    assert page.control.waiting_status == "Waiting for your partner"
+    assert page.control.player_left_message is None
+    with pytest.raises(ValueError, match="names must be one of"):
+        LiveGamePage("game", "Play.", names="hidden", time_estimate=5)
 
 
 def test_a_live_game_page_has_to_belong_to_a_play_live_game(pair, monkeypatch):
     members, _ = pair
-    page = ModularPage("game", "Play.", LiveGameControl(), time_estimate=5)
+    page = LiveGamePage("game", "Play.", time_estimate=5)
 
     with pytest.raises(TypeError, match="has to be the page of a PlayLiveGame"):
         _rendered_js_vars(page, members[0], monkeypatch)
-
-
-def test_a_live_game_control_takes_any_control_parameter():
-    control = LiveGameControl(show_next_button=False, bot_response=3)
-
-    assert control.show_next_button is False
-    assert control._bot_response == 3
 
 
 def test_a_page_variable_can_t_share_the_control_s_name(pair, monkeypatch):
@@ -682,9 +692,7 @@ def test_an_anonymous_game_page_never_gets_the_players_pseudonyms(db_session):
 
     experiment = get_experiment()
     members, _ = _pair(db_session, [new_participant(experiment) for _ in range(2)])
-    page = ModularPage(
-        "anonymous", "Play.", LiveGameControl(names="anonymous"), time_estimate=5
-    )
+    page = LiveGamePage("anonymous", "Play.", names="anonymous", time_estimate=5)
     barrier = _play("anonymous", page=page).barrier
     assert barrier.names == "anonymous"
     for member in members:
@@ -696,7 +704,7 @@ def test_an_anonymous_game_page_never_gets_the_players_pseudonyms(db_session):
         assert (player["name"], player["css_color"], player["emoji"]) == (None,) * 3
         assert members[1].pseudonym.name not in str(player)
     with pytest.raises(ValueError, match="names must be one of"):
-        LiveGameControl(names="hidden")
+        LiveGamePage("anonymous", "Play.", names="hidden", time_estimate=5)
 
 
 def _play_to_the_end(session_id, messages):
@@ -2720,18 +2728,18 @@ def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_rewards(pair):
         Scored().queue_effect("psynet_performance_reward", {})
 
 
-class ValidatingPage(ModularPage):
+class ValidatingPage(LiveGamePage):
     def validate(self, response, **kwargs):
         return None
 
 
 @pytest.mark.parametrize(
     "page_type, kwargs",
-    [(ModularPage, {"validate": lambda response: None}), (ValidatingPage, {})],
+    [(LiveGamePage, {"validate": lambda response: None}), (ValidatingPage, {})],
 )
 def test_a_live_game_page_can_t_have_a_validate_of_its_own(page_type, kwargs):
-    with pytest.raises(TypeError, match="LiveGameControl and a validate function"):
-        page_type("game", "Play", LiveGameControl(), **kwargs)
+    with pytest.raises(TypeError, match="has a validate function of its own"):
+        page_type("game", "Play", time_estimate=5, **kwargs)
 
 
 class Shot(LiveMessage):
@@ -2909,7 +2917,7 @@ def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
     db_session.commit()
     with pytest.raises(TypeError, match="has no on_add method"):
         _play(join_running_game=True)
-    page = ModularPage("growing", "Play.", LiveGameControl(), time_estimate=5)
+    page = LiveGamePage("growing", "Play.", time_estimate=5)
     barrier = _play(
         "growing", page, game_class=_growing_picks(), join_running_game=True
     ).barrier

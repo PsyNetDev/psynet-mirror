@@ -25,7 +25,6 @@ from dominate import tags
 import psynet.experiment
 from psynet.live_game import (
     LiveGame,
-    LiveGameControl,
     LiveGamePage,
     LiveMessage,
     PlayLiveGame,
@@ -247,14 +246,12 @@ class RockPaperScissorsTrial(Trial):
                     tags.ol(id="rps-results"),
                     id="rps-game",
                 ),
-                LiveGameControl(
-                    player_left_message=(
-                        "Your partner has left the game. If they don't come back "
-                        f"within {RockPaperScissors.away_timeout} seconds, it will end."
-                    ),
-                    no_game_message=("This game can't be played without your partner."),
-                    waiting_status="Waiting for your partner to open the game",
+                player_left_message=(
+                    "Your partner has left the game. If they don't come back "
+                    f"within {RockPaperScissors.away_timeout} seconds, it will end."
                 ),
+                no_game_message=("This game can't be played without your partner."),
+                waiting_status="Waiting for your partner to open the game",
                 js_page_modules=["/static/rock-paper-scissors.js"],
                 css_links=["/static/rock-paper-scissors.css"],
                 time_estimate=60,

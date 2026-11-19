@@ -11,7 +11,7 @@ rest.
 
 from dallinger.realtime import Reject
 
-from .control import LiveGameControl, LiveGamePage
+from .control import LiveGamePage
 from .game import LiveGame
 from .history import LiveGameCheckpoint, LiveGameMoment
 from .messages import LiveMessage, SavedMessage
@@ -24,7 +24,6 @@ __all__ = [
     "LiveMessage",
     "LiveGame",
     "LiveGameCheckpoint",
-    "LiveGameControl",
     "LiveGameMoment",
     "LiveGamePage",
     "PlayLiveGame",

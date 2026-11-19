@@ -74,21 +74,21 @@
   }
 
   /**
-   * ``psynet.liveGame`` lets a page with a ``LiveGameControl`` play
+   * ``psynet.liveGame`` lets a ``LiveGamePage`` play
    * the live game its group started: send the game messages, and show
    * the views the game sends back.
    *
    * The page joins the game when it first uses ``psynet.liveGame``,
    * and leaves it when the participant moves on. Once it has checked the
    * server's time, it tells the game the player is ready, and the game
-   * starts when every player is. Unless the control's ``auto_advance`` is
+   * starts when every player is. Unless the page's ``auto_advance`` is
    * ``False``, the page hides its Next button and moves on by itself once
    * the game's result is saved, or if the server refuses its connection.
    * If the connection drops, it reconnects by itself and rejoins. The same
    * page open in another tab plays as the same player.
    *
    * ``PsyNetLiveGame.activatePage``, the page code of a
-   * ``LiveGameControl``, creates ``psynet.liveGame`` with this
+   * ``LiveGamePage``, creates ``psynet.liveGame`` with this
    * function. The connection is Dallinger's ``/experiment-socket``, joined
    * to the game. Its scope is
    * the participant's ``websocketScope``, which the experiment's
@@ -98,10 +98,10 @@
    * opened, since the game pages it shows one after another each open one.
    *
    * @param {function} liveGame - Returns the page's ``liveGame``
-   *   variable: the control's ``playId``, ``autoAdvance``,
+   *   variable: the page's ``playId``, ``autoAdvance``,
    *   ``showResultFor``, ``playerLeftMessage`` and ``noGameMessage``, and the game's
    *   ``liveGameId`` and ``gameChannel``, which are ``null`` without a
-   *   game, or nothing on a page without a ``LiveGameControl``
+   *   game, or nothing on a page that isn't a ``LiveGamePage``
    * @param {Object} page - ``websocketScope()`` returns the participant's
    *   websocket scope, ``ready()`` says whether the page
    *   is ready to submit, ``nextPage()`` submits it,
@@ -115,7 +115,7 @@
     let connections = 0;
 
     // Whether the page is a game page whose group started no game. A page
-    // without a LiveGameControl isn't, so using psynet.liveGame there
+    // that isn't a LiveGamePage isn't, so using psynet.liveGame there
     // raises session()'s error.
     function noGame() {
       let current = liveGame();
@@ -126,8 +126,7 @@
       let current = liveGame();
       if (!current) {
         throw new Error(
-          "This page has no live game to play: its control isn't a " +
-            "LiveGameControl.",
+          "This page has no live game to play: it isn't a LiveGamePage.",
         );
       }
       if (current.liveGameId == null) {
@@ -163,7 +162,7 @@
       return state.socket;
     }
 
-    // Run as each page with a LiveGameControl activates. Returns the
+    // Run as each LiveGamePage activates. Returns the
     // page's cleanup, which leaves the game.
     function activatePage() {
       let control = liveGame();
@@ -195,7 +194,7 @@
       let current = session();
       let state = {
         session: current,
-        // How the page shows each player, by player number, as the control
+        // How the page shows each player, by player number, as the page
         // gave it, and then as GET /live_game/players does once the views
         // show players the page doesn't know, such as newcomers.
         players: (current.players || []).slice(),
@@ -552,12 +551,12 @@
     }
 
     /**
-     * Keep ``element`` showing the game's status: the control's
+     * Keep ``element`` showing the game's status: the page's
      * ``waiting_status`` until the game starts, what ``playing(view)``
      * returns for each view while it's played, or nothing if ``playing``
-     * is ``null``, and the control's
+     * is ``null``, and the page's
      * ``ended_status`` once the player's game has ended. ``texts`` can
-     * replace the control's two texts, as ``{waiting, ended}``, and
+     * replace the page's two texts, as ``{waiting, ended}``, and
      * ``ended`` can be a function that gets the final view, for an ending
      * that depends on how the game went. With a
      * ``predict`` callback, ``playing`` gets the predicted view, so the
@@ -658,7 +657,7 @@
      * Call ``callback`` with the seconds left before the page moves on by
      * itself, a few times a second, from when this player's result is
      * saved until the page moves on, for a countdown on the result: the
-     * control's ``show_result_for`` seconds, counting down to 0. Without
+     * page's ``show_result_for`` seconds, counting down to 0. Without
      * ``show_result_for``, it never runs.
      *
      * @example
@@ -744,7 +743,7 @@
      * doesn't. A player who hasn't opened the game page yet hasn't left. A
      * callback added while players are away gets them at once.
      *
-     * PsyNet shows the control's ``player_left_message`` in a notice while
+     * PsyNet shows the page's ``player_left_message`` in a notice while
      * anyone is away, so use this for a display of your own, with
      * ``player_left_message=None``.
      *
@@ -940,7 +939,7 @@
       /**
        * Whether the participant's group started a game at the page's
        * PlayLiveGame. A participant removed from their group there has none.
-       * PsyNet then shows the control's ``no_game_message`` in a notice,
+       * PsyNet then shows the page's ``no_game_message`` in a notice,
        * hides the page's elements marked ``data-live-game``, and the
        * other methods do nothing: ``send`` returns ``undefined``, and the
        * page's callbacks never run. Reading it doesn't join the game.
@@ -1030,7 +1029,7 @@
       /**
        * Call ``callback`` once this player's result, their answer and
        * reward, has been saved, after their game ends. The page then moves
-       * on by itself, after the control's
+       * on by itself, after the page's
        * ``show_result_for`` seconds, unless its ``auto_advance`` is
        * ``False``.
        *
@@ -1043,7 +1042,7 @@
        * Call ``callback`` with the close code and reason if the server
        * refuses the page's connection, as it does long after the game
        * ended. The page then gets no ``onEnded`` or ``onResultSaved``. It
-       * moves on by itself unless the control's ``auto_advance`` is
+       * moves on by itself unless the page's ``auto_advance`` is
        * ``False``, in which case move on here too.
        *
        * @function onRefused
@@ -1091,7 +1090,7 @@
     return api;
   }
 
-  // The page code of a LiveGameControl. Creates ``psynet.liveGame``
+  // The page code of a LiveGamePage's control. Creates ``psynet.liveGame``
   // for the first such page the document shows, and returns the page's
   // cleanup. This script can load before psynet.js, so it can't create
   // ``psynet.liveGame`` as it loads.

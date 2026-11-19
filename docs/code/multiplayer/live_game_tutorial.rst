@@ -250,9 +250,9 @@ demo's trial, which `Playing it as trials`_ below shows in full:
    :dedent:
 
 Its content holds the page's elements, each with an ``id`` so that the
-JavaScript can find it. PsyNet hides it on a page without a game. To change
-the page's texts, give it a :class:`~psynet.live_game.LiveGameControl`,
-which connects the page to the game: its ``waiting_status`` is what the page says until both pages have opened,
+JavaScript can find it. PsyNet hides it on a page without a game. The other
+options change the page's texts: ``waiting_status`` is what the page says
+until both pages have opened,
 ``player_left_message`` the notice while the partner is away, and
 ``no_game_message`` the notice on a page without a game.
 ``js_page_modules`` lists the page's JavaScript.
@@ -291,7 +291,7 @@ changes: each time a new view arrives, including the final view once the
 game is over, and, because the page also has a ``predict`` callback, as soon
 as the player chooses, with their choice already in the view. `Showing a
 choice at once`_ below explains why. ``showStatus`` keeps the status line up to date:
-it says the control's ``waiting_status``, here "Waiting for your partner to
+it says the page's ``waiting_status``, here "Waiting for your partner to
 open the game", until the game starts, then what its callback returns for
 each view, and "The game is over." at the end. ``showRejections`` shows the
 reason for a rejected message in the element it's given, until the page

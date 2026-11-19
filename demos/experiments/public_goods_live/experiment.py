@@ -20,7 +20,6 @@ import psynet.experiment
 from psynet.bot import Bot
 from psynet.live_game import (
     LiveGame,
-    LiveGameControl,
     LiveGamePage,
     LiveMessage,
     PlayLiveGame,
@@ -136,7 +135,7 @@ def contribution_page(round_number):
             tags.p(id="pg-rejection", cls="pg-rejection"),
             id="pg-game",
         ),
-        LiveGameControl(player_left_message="A player has left the game."),
+        player_left_message="A player has left the game.",
         js_page_modules=["/static/public-goods.js"],
         js_vars={"public_goods_rules": RULES},
         css_links=["/static/public-goods.css"],

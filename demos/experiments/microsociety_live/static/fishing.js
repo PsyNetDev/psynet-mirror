@@ -206,7 +206,7 @@ export function activate({root, vars, psynet}) {
     next.className = "fish-results-next";
     results.replaceChildren(catches, next);
     results.hidden = false;
-    // PsyNet moves the page on once the control's show_result_for is up.
+    // PsyNet moves the page on once the page's show_result_for is up.
     live.onResultTimeLeft((left) => {
       next.textContent = `Continuing in ${Math.max(1, Math.ceil(left))} s`;
     });

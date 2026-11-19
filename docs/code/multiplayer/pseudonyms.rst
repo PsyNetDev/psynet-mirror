@@ -36,8 +36,8 @@ When partners must not recognise each other across groups, for example
 because a player could build a reputation in a game, show them anonymously
 instead: pass ``names="anonymous"`` to
 :class:`~psynet.group_prompt.GroupPrompt`, to
-:class:`~psynet.chatroom.ChatRoom` and to a live game's
-:class:`~psynet.live_game.LiveGameControl`. Each then draws every other member as the
+:class:`~psynet.chatroom.ChatRoom` and to a
+:class:`~psynet.live_game.LiveGamePage`. Each then draws every other member as the
 same grey figure, labelled "Your partner" in a pair and "Another player" in
 a larger group. On a page whose group is a pair they agree; the chat
 counts the members who have appeared in the room, so after someone leaves

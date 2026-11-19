@@ -4,7 +4,7 @@ each participant's record of the games they played.
 PlayLiveGame resolves into a group barrier, which starts the game when
 it releases the group, followed by the game page. The barrier stores the
 game's id in each member's ``live_game_data``, keyed by the step's id, and
-the page's LiveGameControl reads it from there, and saves the player's
+the game page reads it from there, and saves the player's
 answer beside it. Reaching the barrier sets the id to ``None`` first, so the
 page finds only the game from the participant's latest visit, and a step
 without a record is one the participant never reached. The record also keeps
@@ -35,7 +35,6 @@ from dallinger.realtime import (
 
 from ..barrier_spec import BarrierSpecError, barrier_spec_json
 from ..bot import Bot
-from ..modular_page import ModularPage
 from ..sync import BarrierBehaviorMismatch, GroupBarrier, _round_trial
 from ..timeline import CodeBlock, EltCollection, conditional, join
 from ..utils import get_logger
@@ -85,9 +84,7 @@ class PlayLiveGame(EltCollection):
         ``experiment.py``, not inside a function or another class.
 
     page
-        The game page: a :class:`LiveGamePage`, or another
-        :class:`~psynet.modular_page.ModularPage` with a
-        :class:`LiveGameControl`.
+        The game page, a :class:`LiveGamePage`.
 
     settings
         Settings for the games this step starts, such as the number of
@@ -148,7 +145,7 @@ class PlayLiveGame(EltCollection):
         id_: str = None,
         **kwargs,
     ):
-        from .control import LiveGameControl
+        from .control import LiveGamePage
 
         _check_game_class(game_class)
         if join_running_game and game_class.on_add is RealtimeGame.on_add:
@@ -170,12 +167,10 @@ class PlayLiveGame(EltCollection):
                 "after 20 seconds fails the experiment."
             )
 
-        if not (
-            isinstance(page, ModularPage) and isinstance(page.control, LiveGameControl)
-        ):
+        if not isinstance(page, LiveGamePage):
             raise TypeError(
                 f"The page of the PlayLiveGame {id_!r} must be a LiveGamePage, "
-                f"or a ModularPage with a LiveGameControl, not {page!r}."
+                f"not {page!r}."
             )
         if page.control.play_id not in (None, id_):
             raise ValueError(

@@ -9,11 +9,10 @@ from dominate import tags
 import psynet.experiment
 from psynet.live_game import (
     LiveGame,
-    LiveGameControl,
+    LiveGamePage,
     LiveMessage,
     PlayLiveGame,
 )
-from psynet.modular_page import ModularPage, Prompt
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
 from psynet.timeline import Response, Timeline
@@ -95,17 +94,14 @@ class Exp(psynet.experiment.Experiment):
         PlayLiveGame(
             group_type="pair",
             game_class=PickNumbers,
-            page=ModularPage(
+            page=LiveGamePage(
                 "pick_numbers",
-                Prompt(
-                    tags.div(
-                        tags.p("Joining...", id="game-status"),
-                        tags.input_(type="number", id="pick-number", value="7"),
-                        tags.button("Pick", type="button", id="pick"),
-                        tags.p(id="game-error"),
-                    )
+                tags.div(
+                    tags.p("Joining...", id="game-status"),
+                    tags.input_(type="number", id="pick-number", value="7"),
+                    tags.button("Pick", type="button", id="pick"),
+                    tags.p(id="game-error"),
                 ),
-                LiveGameControl(),
                 js_page_modules=["/static/pick-numbers.js"],
                 time_estimate=5,
             ),

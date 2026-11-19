@@ -31,7 +31,6 @@ import psynet.experiment
 from psynet.bot import BotDriver, advance_past_wait_pages, run_bots_to_completion
 from psynet.live_game import (
     LiveGame,
-    LiveGameControl,
     LiveGamePage,
     LiveMessage,
     PlayLiveGame,
@@ -318,11 +317,9 @@ def lake_page():
             id="fish-game",
         ),
         # The page shows the member's results on the lake before moving on.
-        LiveGameControl(
-            show_result_for=RESULTS_SECONDS,
-            player_left_message=None,
-            waiting_status="Waiting for the others to reach the lake…",
-        ),
+        show_result_for=RESULTS_SECONDS,
+        player_left_message=None,
+        waiting_status="Waiting for the others to reach the lake…",
         js_page_modules=["/static/fishing.js"],
         js_vars={"fishing_rules": RULES},
         css_links=["/static/fishing.css"],

@@ -138,7 +138,7 @@ payload, and the route answers without calling the experiment's
 the message in a status notice and resends the same submission after that
 many seconds, and the bot driver sleeps and resends. Neither limits its
 attempts, so the page has to stop refusing by itself.
-``LiveGameControl`` uses this to keep a game page open until its game's
+A :class:`~psynet.live_game.LiveGamePage`'s control uses this to keep a game page open until its game's
 result is saved, and raises an error for a game that is still running more
 than a minute after it should have ended, which can no longer end.
 
@@ -613,8 +613,9 @@ so the browser can swap in place.
 Live game sockets
 -----------------
 
-``psynet.liveGame`` joins a page with a ``LiveGameControl`` to its live
-game, over Dallinger's ``/experiment-socket`` route. The control
+``psynet.liveGame`` joins a :class:`~psynet.live_game.LiveGamePage` to its
+live game, over Dallinger's ``/experiment-socket`` route. The page's
+control, a ``LiveGameControl`` in ``psynet/live_game/control.py``,
 contributes everything the page needs through the component hooks:
 
 * ``get_js_dependencies`` loads ``live-game.js``, so only documents that
@@ -641,7 +642,7 @@ The same game page open in a second tab plays as the same player. Once one tab
 moves the participant on, the other's submission is refused, like any stale
 tab's.
 
-When the control's ``auto_advance`` is on, which is the default, the game
+When the page's ``auto_advance`` is on, which is the default, the game
 socket's ``onResultSaved`` and ``onRefused`` call ``psynet.nextPage()``. If
 the page isn't ready yet, as when a reload finds the session already ended,
 the call waits for ``timelinePageReady``, and is dropped if the participant

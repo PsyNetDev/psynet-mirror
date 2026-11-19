@@ -27,7 +27,6 @@ import psynet.experiment
 from psynet.bot import Bot
 from psynet.live_game import (
     LiveGame,
-    LiveGameControl,
     LiveGamePage,
     LiveMessage,
     PlayLiveGame,
@@ -207,10 +206,8 @@ def bargaining_page(stake):
             tags.p(id="bargain-rejection", cls="bargain-rejection"),
             id="bargain-game",
         ),
-        LiveGameControl(
-            player_left_message="Your partner has left.",
-            waiting_status="Waiting for your partner to open the game",
-        ),
+        player_left_message="Your partner has left.",
+        waiting_status="Waiting for your partner to open the game",
         js_page_modules=["/static/bargaining.js"],
         css_links=["/static/bargaining.css"],
         time_estimate=BARGAIN_SECONDS,

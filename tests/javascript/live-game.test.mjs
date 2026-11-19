@@ -502,7 +502,7 @@ describe("psynet.liveGame", () => {
 
   it("does nothing on a page without a game, and explains a page that isn't a game page", () => {
     session = undefined;
-    assert.throws(() => liveGame.send("pick"), /control isn't a LiveGameControl/);
+    assert.throws(() => liveGame.send("pick"), /isn't a LiveGamePage/);
     session = { playId: "pick_numbers", liveGameId: null, gameChannel: null };
     changePage();
     assert.equal(hiddenGames, 1);

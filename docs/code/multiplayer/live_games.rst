@@ -353,11 +353,8 @@ The game page
 
 The game page is the :class:`~psynet.live_game.LiveGamePage` given to the
 ``PlayLiveGame``, as in the example under `PlayLiveGame`_. It shows its
-content and plays the game through its ``control``, a
-:class:`~psynet.live_game.LiveGameControl`, ``LiveGameControl()`` by
-default; give it one of your own to change the texts below. Another
-:class:`~psynet.modular_page.ModularPage` with a ``LiveGameControl`` also
-works, for a page built some other way. The page's JavaScript goes in a
+content, and its options, such as the texts below, change how it plays the
+game. The page's JavaScript goes in a
 file in the experiment's ``static`` folder, listed in the page's ``js_page_modules``. It exports an ``activate``
 function, which PsyNet runs each time the page opens
 (:doc:`/code/pages/custom_front_ends` explains page modules).
@@ -478,7 +475,7 @@ whether it's this player:
 
     let name = psynet.liveGame.players[player].label;  // "You" or "Pink koala"
 
-With ``LiveGameControl(names="anonymous")``, every other player's ``label``
+With ``LiveGamePage(..., names="anonymous")``, every other player's ``label``
 is "Your partner" in a game for two and "Another player" otherwise, as on the
 group's other anonymous pages, ``sticker_html`` is the same neutral figure for all of
 them, and the page is never sent their pseudonyms (see :doc:`pseudonyms`). A
@@ -499,16 +496,16 @@ The status line
 
 ``showStatus(element, playing)`` keeps ``element`` saying what's happening:
 
-- before the game starts, the control's ``waiting_status``, "Waiting for
+- before the game starts, the page's ``waiting_status``, "Waiting for
   the other players to open the game" by default;
 - while it's played, what ``playing(view)`` returns for each view, or
   nothing if ``playing`` is ``null``, for a page that shows what's happening
   some other way;
-- once the player's game has ended, the control's ``ended_status``, "The
+- once the player's game has ended, the page's ``ended_status``, "The
   game is over." by default.
 
 The default texts are translated. A third argument, ``{waiting, ended}``,
-replaces the control's texts on one page, and ``ended`` can be a function of
+replaces the page's texts, and ``ended`` can be a function of
 the final view:
 
 .. code-block:: javascript
@@ -562,9 +559,8 @@ A participant can reach the page without one, for example when another
 member was late for the ``PlayLiveGame`` and their group broke up, or when
 their group ended before they reached it. PsyNet tells the participant with
 a notice at the top of the page, "Your group couldn't start the game.",
-which the control's ``no_game_message`` changes or turns off, and hides
-what the :class:`~psynet.live_game.LiveGamePage` shows. On a page of
-your own, it hides the elements marked ``data-live-game``. The page's
+which the page's ``no_game_message`` changes or turns off, and hides the
+page's content. The page's
 ``psynet.liveGame`` methods then do nothing: ``send`` returns ``undefined``,
 callbacks never run, and ``enableWhilePlaying`` leaves its elements
 disabled. So a page needs no check for this, unless it starts work of its
@@ -622,14 +618,14 @@ page also moves on if the server refuses its connection, as it does when
 the participant reloads the page long after the game ended.
 
 To show the result on the game page first, pass the seconds to show it
-for as the control's ``show_result_for``, such as
-``LiveGameControl(show_result_for=8)``, and draw the result in
+for as the page's ``show_result_for``, such as
+``LiveGamePage(..., show_result_for=8)``, and draw the result in
 ``onResultSaved``. The page moves on once the seconds are up, and
 ``psynet.liveGame.onResultTimeLeft`` counts them down for the page. A later :class:`~psynet.sync.GroupBarrier`'s ``late_after``
 counts from the end of these seconds, so it needn't cover them.
 
 To move on from the page's JavaScript instead, pass ``auto_advance=False``
-to the control, and call ``psynet.nextPage()`` in both ``onResultSaved``
+to the page, and call ``psynet.nextPage()`` in both ``onResultSaved``
 and ``onRefused``. The Next button then stays, and if the participant
 clicks it before the result is saved, the page says the game isn't over
 yet and sends the response again every second until it's accepted. If you
@@ -670,8 +666,8 @@ has left, only for ``psynet test``'s bots.
 
 While a player is away for more than a few seconds, the other players'
 pages show a notice at the top that says "Another player has left the
-game." Change it with the control's ``player_left_message``, such as
-``LiveGameControl(player_left_message="Your partner has left.")``. To
+game." Change it with the page's ``player_left_message``, such as
+``LiveGamePage(..., player_left_message="Your partner has left.")``. To
 show it your own way, set ``player_left_message=None`` and use
 ``onPlayersAway``, which gets the numbers of the players who are away,
 and an empty list once they're all back. The notice only says what
@@ -788,7 +784,7 @@ the group's previous barrier, which is usually the barrier of a
 ``PlayLiveGame``, so it would otherwise include the whole game. Instead, as
 for a page with a ``time_limit``, it counts from when the game page ends: at
 first the latest the game could end, plus a minute, and once the game's
-result is saved, when the game actually ended, plus the control's
+result is saved, when the game actually ended, plus the page's
 ``show_result_for``. So ``late_after`` needs to cover only the pages after the
 game.
 

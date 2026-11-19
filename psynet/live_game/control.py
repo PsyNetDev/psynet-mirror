@@ -39,69 +39,8 @@ _NAMES = ("shown", "anonymous")
 
 
 class LiveGameControl(NullControl):
-    """The part of a game page where the participant plays their group's
-    live game. A :class:`LiveGamePage` has one, ``LiveGameControl()``
-    unless you give it another, to set the options below.
-
-    PsyNet sets the page's answer to what the game's
-    :meth:`~LiveGame.answer` returns for the participant, once the
-    game's result is saved, which is also when it pays the game's
-    :meth:`~LiveGame.performance_reward`. If the game fails, the page raises
-    :class:`LiveGameFailed`, which PsyNet handles as any other error in the
-    experiment. The page can't have a ``validate`` of its own.
-    :doc:`/code/multiplayer/live_games` explains how to write the page's
-    JavaScript.
-
-    Parameters
-    ----------
-
-    auto_advance
-        Whether the page moves on by itself once the game's result is
-        saved, with its Next button hidden until then. A participant
-        without a game still sees the button, and so does one whose page
-        has been disconnected for ten seconds. Set it to ``False`` to
-        move on from the page's JavaScript instead.
-
-    show_result_for
-        Seconds the page stays once the game's result is saved, before
-        it moves on by itself, so that its JavaScript can show the result,
-        for example in ``onResultSaved``, with a countdown from
-        ``onResultTimeLeft``. A
-        :class:`~psynet.sync.GroupBarrier`'s ``late_after`` counts from the
-        end of these seconds, so it needn't cover them. Default: 0. Needs ``auto_advance``.
-
-    player_left_message
-        What a notice at the top of the page says while another player has
-        left the game page and not come back, such as "Your partner has
-        left." By default it says "Another player has left the game." Set it
-        to ``None`` for no notice, for a page that shows this its own way.
-
-    no_game_message
-        What a notice at the top of the page says to a participant whose
-        group didn't start a game, for example because they were removed
-        from a group that took too long to arrive. By default it says "Your
-        group couldn't start the game." Set it to ``None`` for no notice.
-
-    waiting_status
-        What ``psynet.liveGame.showStatus`` says before the game starts. By
-        default it says "Waiting for the other players to open the game".
-
-    ended_status
-        What ``psynet.liveGame.showStatus`` says once the player's game has
-        ended. By default it says "The game is over."
-
-    names
-        How the page shows the other players, through
-        ``psynet.liveGame.players``: ``"shown"``, the default, by their
-        pseudonym, such as "Pink koala", as the group's other pages show
-        them, or ``"anonymous"``, all as the same neutral figure, so players
-        can't recognise each other from one game to the next. A page that's
-        anonymous is never sent the others' pseudonyms.
-
-    **kwargs
-        Any other parameter of :class:`~psynet.modular_page.Control`, such as
-        ``show_next_button``.
-    """
+    """The control of a :class:`LiveGamePage`, which plays the group's live
+    game. The page makes it from its own options, which it describes."""
 
     def __init__(
         self,
@@ -117,7 +56,7 @@ class LiveGameControl(NullControl):
         super().__init__(**kwargs)
         if names not in _NAMES:
             raise ValueError(
-                f"LiveGameControl's names must be one of "
+                f"A live game page's names must be one of "
                 f"{', '.join(map(repr, _NAMES))}, not {names!r}."
             )
         if (
@@ -208,7 +147,7 @@ class LiveGameControl(NullControl):
     def _play_id(self):
         if self.play_id is None:
             raise TypeError(
-                "A page with a LiveGameControl has to be the page of a "
+                "A LiveGamePage has to be the page of a "
                 "PlayLiveGame, which starts the game the page plays."
             )
         return self.play_id
@@ -219,9 +158,9 @@ class LiveGameControl(NullControl):
             or type(page).validate is not ModularPage.validate
         ):
             raise TypeError(
-                f"The page {page.label!r} has a LiveGameControl and a "
-                "validate function of its own, which would replace the "
-                "control's. Remove the page's validate."
+                f"The LiveGamePage {page.label!r} has a validate function of "
+                "its own, which would replace the one that waits for the "
+                "game's result. Remove the page's validate."
             )
 
     def get_js_dependencies(self):
@@ -266,23 +205,29 @@ class LiveGameControl(NullControl):
 
 class LiveGamePage(ModularPage):
     """A game page: a :class:`~psynet.modular_page.ModularPage` that shows
-    ``content`` and plays the group's game through a
-    :class:`LiveGameControl`. Give it to a :class:`PlayLiveGame` as its
-    ``page``.
+    ``content`` and plays the group's game. Give it to a
+    :class:`PlayLiveGame` as its ``page``.
 
     ::
 
         LiveGamePage(
             "rock_paper_scissors",
             tags.div(tags.h4(id="status"), ...),
-            LiveGameControl(waiting_status="Waiting for your partner"),
+            waiting_status="Waiting for your partner",
             js_page_modules=["/static/rock-paper-scissors.js"],
             time_estimate=60,
         )
 
-    The page marks ``content`` with ``data-live-game``, so that PsyNet
-    hides it on a page without a game, where the control's
+    PsyNet sets the page's answer to what the game's
+    :meth:`~LiveGame.answer` returns for the participant, once the
+    game's result is saved, which is also when it pays the game's
+    :meth:`~LiveGame.performance_reward`. If the game fails, the page raises
+    :class:`LiveGameFailed`, which PsyNet handles as any other error in the
+    experiment. The page can't have a ``validate`` of its own.
+    PsyNet hides ``content`` on a page without a game, where
     ``no_game_message`` says why instead.
+    :doc:`/code/multiplayer/live_games` explains how to write the page's
+    JavaScript.
 
     Parameters
     ----------
@@ -295,8 +240,49 @@ class LiveGamePage(ModularPage):
         tags, with the ``id`` of each element that the page's JavaScript
         finds.
 
-    control
-        The page's :class:`LiveGameControl`. Default: ``LiveGameControl()``.
+    auto_advance
+        Whether the page moves on by itself once the game's result is
+        saved, with its Next button hidden until then. A participant
+        without a game still sees the button, and so does one whose page
+        has been disconnected for ten seconds. Set it to ``False`` to
+        move on from the page's JavaScript instead.
+
+    show_result_for
+        Seconds the page stays once the game's result is saved, before
+        it moves on by itself, so that its JavaScript can show the result,
+        for example in ``onResultSaved``, with a countdown from
+        ``onResultTimeLeft``. A
+        :class:`~psynet.sync.GroupBarrier`'s ``late_after`` counts from the
+        end of these seconds, so it needn't cover them. Default: 0. Needs
+        ``auto_advance``.
+
+    player_left_message
+        What a notice at the top of the page says while another player has
+        left the game page and not come back, such as "Your partner has
+        left." By default it says "Another player has left the game." Set it
+        to ``None`` for no notice, for a page that shows this its own way.
+
+    no_game_message
+        What a notice at the top of the page says to a participant whose
+        group didn't start a game, for example because they were removed
+        from a group that took too long to arrive. By default it says "Your
+        group couldn't start the game." Set it to ``None`` for no notice.
+
+    waiting_status
+        What ``psynet.liveGame.showStatus`` says before the game starts. By
+        default it says "Waiting for the other players to open the game".
+
+    ended_status
+        What ``psynet.liveGame.showStatus`` says once the player's game has
+        ended. By default it says "The game is over."
+
+    names
+        How the page shows the other players, through
+        ``psynet.liveGame.players``: ``"shown"``, the default, by their
+        pseudonym, such as "Pink koala", as the group's other pages show
+        them, or ``"anonymous"``, all as the same neutral figure, so players
+        can't recognise each other from one game to the next. A page that's
+        anonymous is never sent the others' pseudonyms.
 
     **kwargs
         Any other parameter of :class:`~psynet.modular_page.ModularPage`,
@@ -304,18 +290,32 @@ class LiveGamePage(ModularPage):
         ``time_estimate``.
     """
 
-    def __init__(self, label, content, control=None, **kwargs):
-        if control is None:
-            control = LiveGameControl()
-        if not isinstance(control, LiveGameControl):
-            raise TypeError(
-                f"The control of the LiveGamePage {label!r} must be a "
-                f"LiveGameControl, not {control!r}."
-            )
+    def __init__(
+        self,
+        label,
+        content,
+        *,
+        auto_advance=True,
+        show_result_for=0,
+        player_left_message=_DEFAULT,
+        no_game_message=_DEFAULT,
+        waiting_status=_DEFAULT,
+        ended_status=_DEFAULT,
+        names="shown",
+        **kwargs,
+    ):
         super().__init__(
             label,
             Prompt(tags.div(content, data_live_game=True)),
-            control,
+            LiveGameControl(
+                auto_advance=auto_advance,
+                show_result_for=show_result_for,
+                player_left_message=player_left_message,
+                no_game_message=no_game_message,
+                waiting_status=waiting_status,
+                ended_status=ended_status,
+                names=names,
+            ),
             **kwargs,
         )
 
