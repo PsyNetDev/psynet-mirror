@@ -2710,7 +2710,8 @@ def test_the_ending_copies_the_outcome_to_the_round_and_ends_the_game_page_deadl
 
 
 def test_a_game_page_without_a_game_moves_on_with_no_answer(pair):
-    members, _ = pair
+    members, game_barrier = pair
+    _reach(game_barrier, members[0])
 
     assert _submit_on_the_game_page(members[0])["submission"] == "approved"
     assert _accepted_answers(members[0]) == [None]
