@@ -1593,6 +1593,58 @@ def _isolated_session_export_line(env):
 
 
 @contextmanager
+def _record_isolated_session(env):
+    """Record how to reach this isolated debug session while the block runs.
+
+    See :func:`_refuse_shared_database_beside_isolated_session`.
+    """
+    from .testing.locks import isolated_session_path
+
+    path = isolated_session_path(os.getcwd())
+    session = {"pid": os.getpid(), "export": _isolated_session_export_line(env)}
+    # The URL holds the session's password, so only this user may read it.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(session, f)
+    try:
+        yield
+    finally:
+        with suppress(FileNotFoundError):
+            os.remove(path)
+
+
+def _refuse_shared_database_beside_isolated_session(command):
+    """Refuse to use the shared database while an isolated debug session serves this directory.
+
+    Without ``DATABASE_URL``, ``command`` would read or change another
+    experiment's data in the shared database, not the session's. A set
+    ``DATABASE_URL`` is respected.
+    """
+    from .testing.locks import isolated_session_path
+
+    if "DATABASE_URL" in os.environ:
+        return
+    path = isolated_session_path(os.getcwd())
+    try:
+        with open(path) as f:
+            session = json.load(f)
+        pid, export_line = session["pid"], session["export"]
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError, KeyError, TypeError) as err:
+        log(f"Warning: could not read the isolated debug session file {path}: {err!r}")
+        return
+    if not psutil.pid_exists(pid):
+        return
+    raise click.ClickException(
+        f"An isolated debug session (PID {pid}) is serving this experiment with "
+        f"its own database, but `{command}` would use the shared one. To use the "
+        f"session's, run this first:\n  {export_line}\n"
+        "To use the shared database anyway, set DATABASE_URL."
+    )
+
+
+@contextmanager
 def _stop_child_processes_on_signal():
     """Terminate descendant processes when this process is signalled.
 
@@ -2012,6 +2064,7 @@ def run_bot(ctx, time_factor=0.0, dashboard_user=None, dashboard_password=None):
     by running ``psynet debug local``. You can then call ``psynet run-bot``
     multiple times to simulate multiple bots being run through the experiment.
     """
+    _refuse_shared_database_beside_isolated_session("psynet run-bot")
     _run_bot(time_factor, dashboard_user, dashboard_password)
 
 
@@ -4225,6 +4278,7 @@ def export__local(ctx=None, **kwargs):
     """
     Export the experiment locally.
     """
+    _refuse_shared_database_beside_isolated_session("psynet export local")
     export_(
         ctx,
         get_exp_variables=lambda: _read_experiment_variables("local"),
@@ -5826,7 +5880,11 @@ def _in_isolated_test_environment(func):
         )
 
         _handle_sigint_even_if_ignored()
-        if not kwargs.get("existing"):
+        if kwargs.get("existing"):
+            ctx = click.get_current_context(silent=True)
+            command = ctx.command_path if ctx else "psynet"
+            _refuse_shared_database_beside_isolated_session(f"{command} --existing")
+        else:
             try:
                 isolate = should_isolate()
             except ValueError as e:
@@ -5969,7 +6027,7 @@ def _rerun_in_isolated_environment(mode="test"):
     env = {**environment.env, SERVICES_CHECKED_ENV_VAR: "1"}
     exit_code = 130
     interrupted = None
-    with _exit_on_termination_signal(), environment:
+    with _exit_on_termination_signal(), environment, ExitStack() as stack:
         log(environment.describe())
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.
@@ -5977,6 +6035,8 @@ def _rerun_in_isolated_environment(mode="test"):
         # short. A terminal's Ctrl+C reaches it in this process group. Otherwise
         # it gets a group of its own, which only the SIGINT passed on below reaches.
         own_group = not _ctrl_c_reaches_this_process_group()
+        if mode == "debug":
+            stack.enter_context(_record_isolated_session(env))
         process = subprocess.Popen(
             [sys.executable, *sys.orig_argv[1:]],
             env=env,

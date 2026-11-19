@@ -75,7 +75,11 @@ different experiments on one machine, add ``--isolated``:
     Press Ctrl+C to stop.
 
 Run the ``Other terminals`` line in another terminal to use the server's data
-there, for example with ``psynet export local`` or ``psynet run-bot``.
+there, for example with ``psynet export local`` or ``psynet run-bot``. Without
+it, these commands and ``psynet test local --existing`` refuse to run in the
+server's experiment directory, because they would use the shared database
+instead, and print the line to run. To use the shared database anyway, set
+``DATABASE_URL``.
 
 Like a test session, the server then gets a free port from 5100 upwards, a
 fresh database and its own Redis server (or, without ``redis-server`` on

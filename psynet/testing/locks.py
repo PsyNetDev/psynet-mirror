@@ -48,6 +48,17 @@ def _lock_path(directory):
     return isolated_environment.lock_path(f"psynet-experiment-{key}")
 
 
+def isolated_session_path(directory):
+    """Return the file in which an isolated debug session of ``directory`` says how to reach it.
+
+    ``psynet debug local --isolated`` writes it while it runs, so that other
+    commands in the directory can tell that the shared database isn't the
+    session's.
+    """
+    directory = os.path.realpath(directory)
+    return _lock_path(directory).removesuffix(".lock") + "-isolated-session.json"
+
+
 def _holder(lock_file):
     """Return the ``(pid, kind)`` recorded in ``lock_file``; empty strings if unknown."""
     lock_file.seek(0)

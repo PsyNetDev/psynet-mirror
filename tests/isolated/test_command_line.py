@@ -1261,6 +1261,34 @@ def test_debug_local_isolated_reruns_in_its_own_environment(
         rerun.assert_called_once_with("debug")
 
 
+def test_commands_beside_an_isolated_debug_session_need_its_database(
+    tmp_path, monkeypatch
+):
+    import click
+
+    from psynet import command_line
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    env = {
+        "DATABASE_URL": "postgresql://dallinger:dallinger@localhost/dallinger_5100",
+        "REDIS_URL": "redis://127.0.0.1:6479",
+        "base_port": "5100",
+    }
+    refuse = command_line._refuse_shared_database_beside_isolated_session
+
+    with command_line._record_isolated_session(env):
+        with pytest.raises(click.ClickException) as error:
+            refuse("psynet export local")
+        assert "`psynet export local` would use the shared one" in error.value.message
+        assert command_line._isolated_session_export_line(env) in error.value.message
+        monkeypatch.setenv("DATABASE_URL", env["DATABASE_URL"])
+        refuse("psynet export local")
+        monkeypatch.delenv("DATABASE_URL")
+
+    refuse("psynet export local")
+
+
 # @pytest.mark.parametrize("experiment_directory", [path_to_test_experiment("timeline")], indirect=True)
 # @pytest.mark.usefixtures("in_experiment_directory")
 # class TestDeploy:

@@ -1,0 +1,1 @@
+`psynet export local`, `psynet run-bot` and `psynet test local --existing` refuse to run in the directory of a running `psynet debug local --isolated` session unless `DATABASE_URL` is set, and print the session's `export` line. Before, they silently used the shared database, so `export local` could export another experiment's data.
