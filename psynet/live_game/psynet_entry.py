@@ -40,8 +40,10 @@ class PlayerReady(LiveMessage):
     which also lists the players added once the game has started,
     and reacts to the game starting in :meth:`~LiveGame.on_start`.
     A game record's :attr:`~LiveGameRecord.messages` include when each
-    player who was there when the game started became ready; players
-    added later never send it.
+    player who was there when the game started became ready. Players
+    added once the game has started already count as ready, so bots added
+    then, and newcomers who never open the game page, don't send it, but a
+    newcomer's game page still sends it when it connects.
     """
 
     type = "psynet_ready"
