@@ -288,6 +288,7 @@
     // reloads after the game ended, and nextPage alerts the participant
     // then.
     function moveOn(state) {
+      if (state.left) return;
       if (page.ready()) {
         page.nextPage();
       } else {
@@ -365,11 +366,7 @@
         socket.onResultSaved(() => {
           let seconds = state.session.showResultFor || 0;
           if (seconds > 0) {
-            state.moveOnTimer = setTimeout(() => {
-              if (!state.left) {
-                moveOn(state);
-              }
-            }, seconds * 1000);
+            state.moveOnTimer = setTimeout(() => moveOn(state), seconds * 1000);
           } else {
             moveOn(state);
           }

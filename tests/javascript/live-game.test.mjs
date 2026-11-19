@@ -318,6 +318,9 @@ describe("psynet.liveGame", () => {
     assert.equal(nextPages, 2);
 
     changePage();
+    // A connection closed with the page it belonged to moves nothing on.
+    sockets[0].fire("onRefused", 1008, "Gone");
+    assert.equal(nextPages, 2);
     session = { ...session, autoAdvance: false };
     liveGame.onChange(() => {});
     sockets[1].fire("onResultSaved");
