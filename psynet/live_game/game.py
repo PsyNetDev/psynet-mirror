@@ -332,7 +332,8 @@ class LiveGame(RealtimeGame):
 
         outcome
             What the game's ``outcome`` returned when the player's game
-            ended, which is when the game ends.
+            ended: when the game ended, or earlier if the game's
+            ``is_done`` ended it for that player.
 
         reason
             Why the player's game ended. It's the ``reason`` that the
@@ -364,7 +365,8 @@ class LiveGame(RealtimeGame):
 
         outcome
             What the game's ``outcome`` returned when the player's game
-            ended, which is when the game ends.
+            ended: when the game ended, or earlier if the game's
+            ``is_done`` ended it for that player.
 
         reason
             Why the player's game ended. It's the ``reason`` that the
@@ -436,7 +438,8 @@ class LiveGame(RealtimeGame):
     def handle_player_ending(self, session_row, player, ending):
         """Do work that needs a player's ending, when the game's
         ``is_done`` ended their game before the game ended, as in Dallinger's
-        ``handle_player_ending``, which gets the player's number. PsyNet pays
+        ``handle_player_ending``, except that ``player`` is the player's
+        number rather than their participant id. PsyNet pays
         the player's :meth:`performance_reward` from the outcome then, before
         this method runs.
         """
@@ -483,8 +486,9 @@ class LiveGame(RealtimeGame):
         """
         if name in (_REWARD_EFFECT, _STARTED_EFFECT, _MOMENT_EFFECT):
             raise ValueError(
-                f"The effect name {name!r} is reserved for PsyNet's "
-                "add_performance_reward. Give the effect another name."
+                f"The effect name {name!r} is reserved for PsyNet, which uses "
+                "it for add_performance_reward, record and the game's start. "
+                "Give the effect another name."
             )
         try:
             payload = to_jsonable_python(payload)

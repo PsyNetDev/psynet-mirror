@@ -2589,6 +2589,40 @@ def test_the_ending_pays_each_player_s_reward_if_there_is_an_outcome(
     assert [_reward(member) for member in members] == [0.25 if paid else 0] * 2
 
 
+def test_an_ending_handler_that_calls_super_pays_each_player_once(pair):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    row = db.session.get(RealtimeSession, session_id)
+    row.status, row.end_reason, row.outcome = "ended", "finished", [1, 1]
+    players_ended = []
+
+    class PaysOnce(game_registry._live_game_classes["pick_numbers"]):
+        name = "pays_once"
+
+        def performance_reward(self, outcome, reason, player):
+            return 0.25
+
+        def handle_ending(self, session_row):
+            return super().handle_ending(session_row)
+
+        def handle_player_ending(self, session_row, player, ending):
+            players_ended.append(player)
+            return super().handle_player_ending(session_row, player, ending)
+
+    first = min(members, key=lambda member: member.id)
+    PaysOnce().handle_player_ending(
+        row, str(first.id), {"outcome": [1, None], "reason": "done"}
+    )
+    assert players_ended == [[int(m) for m in row.members].index(first.id)]
+    assert _reward(first) == pytest.approx(0.25)
+
+    before = [_reward(member) for member in members]
+    PaysOnce().handle_ending(row)
+    assert [_reward(member) for member in members] == pytest.approx(
+        [reward + 0.25 for reward in before]
+    )
+
+
 def test_the_game_page_answer_can_be_the_player_s_part_of_the_outcome(
     pair, monkeypatch
 ):
@@ -2723,7 +2757,7 @@ def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_rewards(pair):
             "psynet_performance_reward", {"player": 2, "amount": 1}, row
         )
     with pytest.raises(
-        ValueError, match="'psynet_performance_reward' is reserved for PsyNet's"
+        ValueError, match="'psynet_performance_reward' is reserved for PsyNet,"
     ):
         Scored().queue_effect("psynet_performance_reward", {})
 
@@ -2932,6 +2966,11 @@ def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
 
     assert _game_id(members[2], "growing") == session_id
     assert group.running_live_games == {"growing": LiveGameRecord(session_id)}
+    # A player who reaches the step again, as after a retried request, goes
+    # back to the game rather than waiting at the barrier.
+    _reach(barrier, members[0])
+    db.session.commit()
+    assert _game_id(members[0], "growing") == session_id
     group_id = group.id
     first, second, newcomer = (str(member.id) for member in members)
     _play_to_the_end(

@@ -7,6 +7,7 @@ the game was played in, if any. All run in the job that writes the game's
 record, so each runs once, whether or not the players are still on the game
 page."""
 
+import contextvars
 import functools
 
 from dallinger import db
@@ -104,15 +105,31 @@ def _handles_reward(method):
     return handle_effect
 
 
+# Set while a game's handle_ending or handle_player_ending runs, so that a
+# super() call from a subclass's override passes straight through, rather
+# than paying the players again.
+_in_ending_handler = contextvars.ContextVar("_in_ending_handler", default=False)
+
+
+def _as_ending_handler(call, *args):
+    def run():
+        _in_ending_handler.set(True)
+        return call(*args)
+
+    return contextvars.copy_context().run(run)
+
+
 def _handles_ending(method):
     @functools.wraps(method)
     def handle_ending(self, session_row):
+        if _in_ending_handler.get():
+            return method(self, session_row)
         players = _locked_players(session_row)
         if _has_outcome(session_row.status, session_row.outcome):
             _pay_outcome_rewards(self, session_row, players)
             _record_outcome_on_round(session_row)
         _end_game_page_deadlines(session_row, players, session_row.end_time)
-        return method(self, session_row)
+        return _as_ending_handler(method, self, session_row)
 
     handle_ending._psynet_wrapper = True
     return handle_ending
@@ -121,13 +138,16 @@ def _handles_ending(method):
 def _handles_player_ending(method):
     @functools.wraps(method)
     def handle_player_ending(self, session_row, player_id, ending):
+        if _in_ending_handler.get():
+            # Already converted to the player's number by the outermost call.
+            return method(self, session_row, player_id, ending)
         (participant,) = _locked_players(session_row, [int(player_id)])
         player = _participant_ids(session_row).index(participant.id)
         amount = self.performance_reward(ending["outcome"], ending["reason"], player)
         what = f"{type(self).__name__}.performance_reward"
         _add_reward(participant, _check_reward(amount, what), session_row)
         _end_game_page_deadlines(session_row, [participant], timenow())
-        return method(self, session_row, player, ending)
+        return _as_ending_handler(method, self, session_row, player, ending)
 
     handle_player_ending._psynet_wrapper = True
     return handle_player_ending

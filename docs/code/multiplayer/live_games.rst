@@ -358,7 +358,9 @@ game. The page's JavaScript goes in a
 file in the experiment's ``static`` folder, listed in the page's ``js_page_modules``. It exports an ``activate``
 function, which PsyNet runs each time the page opens
 (:doc:`/code/pages/custom_front_ends` explains page modules).
-``static/rock-paper-scissors.js``:
+A sketch of one, ``static/my-game.js``, for the ``Choose`` message under
+`The game`_ (the rock, paper, scissors demo's own page differs, since its
+message also carries the throw's number):
 
 .. code-block:: javascript
 
@@ -473,7 +475,8 @@ whether it's this player:
 
 .. code-block:: javascript
 
-    let name = psynet.liveGame.players[player].label;  // "You" or "Pink koala"
+    // "You" or "Pink koala", or undefined for a moment after a player joins
+    let name = psynet.liveGame.players[player]?.label;
 
 With ``LiveGamePage(..., names="anonymous")``, every other player's ``label``
 is "Your partner" in a game for two and "Another player" otherwise, as on the

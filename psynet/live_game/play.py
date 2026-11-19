@@ -40,7 +40,7 @@ from ..timeline import CodeBlock, EltCollection, conditional, join
 from ..utils import get_logger
 from .game import LiveGame
 from .psynet_entry import _new_session_settings
-from .record import LiveGameRecord
+from .record import LiveGameRecord, _player_ending
 
 logger = get_logger()
 
@@ -65,6 +65,8 @@ class PlayLiveGame(EltCollection):
                 js_page_modules=["/static/rock_paper_scissors.js"],
                 time_estimate=30,
             ),
+            late_after=30,
+            late_action="leave_group",
         )
 
     In a trial played in groups, return it from ``show_trial``: it is the
@@ -308,7 +310,13 @@ class _LiveGameBarrier(GroupBarrier):
         # Locked, so players added at the same time are counted against
         # max_players one after the other.
         row = _running_game_query(members, self.id).with_for_update().first()
-        if row is None or participant.id in row.members:
+        if row is None:
+            return
+        if participant.id in row.members:
+            # Already a player, for example after a retried request: they go
+            # back to the game unless their part of it has ended.
+            if _player_ending(row.id, participant.id) is None:
+                _set_live_game_id(participant, self.id, row.id)
             return
         max_players = self.game_class.max_players
         # The row lists a newcomer only once their addition is written, a few

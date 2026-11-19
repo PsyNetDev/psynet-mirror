@@ -76,12 +76,10 @@ def _game_time_from(session_id):
     return game_time
 
 
-def _moments(session_id, name=None):
+def _moments(session_id):
     query = db.session.query(
         RealtimeEvent.payload, RealtimeEvent.session_time
     ).filter_by(session_id=session_id, event_type="effect", name=_MOMENT_EFFECT)
-    if name is not None:
-        query = query.filter(RealtimeEvent.payload["name"].astext == name)
     game_time = _game_time_from(session_id)
     return [
         LiveGameMoment(

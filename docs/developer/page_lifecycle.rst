@@ -644,7 +644,7 @@ tab's.
 
 When the page's ``auto_advance`` is on, which is the default, the game
 socket's ``onResultSaved`` and ``onRefused`` call ``psynet.nextPage()``. If
-the page isn't ready yet, as when a reload finds the session already ended,
+the page isn't ready yet, as when a reload finds the game already ended,
 the call waits for ``timelinePageReady``, and is dropped if the participant
 has left the page by then. The page hides its Next button while its game
 socket is connected, and shows it again once the socket has been closed for
