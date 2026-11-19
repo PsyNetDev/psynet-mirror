@@ -3,10 +3,8 @@
 Live games
 ==========
 
-In a **live game**, a group plays together on one page in real time: offers
-go back and forth in a negotiation, players steer around a shared board, or a
-society fishes on a lake while its members come and go. Each move
-reaches the others as soon as it's made, so players can react to each other
+In a **live game**, a group plays together on one page in real time. Each
+move reaches the others as soon as it's made, so players can react to each other
 while they act. That's the reason to choose a live game. In contrast, a design
 in which each player decides and then sees everyone's decisions is simpler
 played in :doc:`rounds <rounds>`. As in any :doc:`group experiment

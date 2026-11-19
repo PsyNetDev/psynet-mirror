@@ -5,8 +5,7 @@ Round-based experiments
 
 Many group experiments are played in **rounds**: each member decides on their
 own page, the group waits until everyone has, and then everyone sees the
-result, round after round. Economic games, rating the same stimuli together
-and taking turns all work this way. This page describes how rounds work, how
+result, round after round. This page describes how rounds work, how
 partners can change from round to round, and what to do about slow players.
 :doc:`groups` covers what every group experiment needs, such as forming
 groups and handling dropouts.
