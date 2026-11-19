@@ -341,10 +341,10 @@ def test_countdown_is_unknown_after_a_concurrent_release(
         populate(waiters)
 
     monkeypatch.setattr(sync, "_populate_active_barriers", release_by_another_request)
-    assert barrier.expected_release_time(participant) is None
     overlay = barrier.waiting_logic.overlay_html(participant)
     assert "data-release-in-ms" not in overlay
     assert unknown_countdown in overlay
+    assert barrier.expected_release_time(participant) is None
 
 
 def _pairs_with_failing_estimate(monkeypatch, error):
