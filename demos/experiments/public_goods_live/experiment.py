@@ -256,9 +256,12 @@ class Exp(psynet.experiment.Experiment):
                     "team_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
+                    # Counted from 0, as in the other demos' exports.
                     "round": t.sync_group_round,
                     "contributed": (t.answer or {}).get("contributed"),
+                    # What the team put in the pot, before it was multiplied.
                     "pot": team.get("pot"),
+                    # Each player's part of the multiplied pot.
                     "share": team.get("share"),
                     "earned": (t.answer or {}).get("earned"),
                 }
