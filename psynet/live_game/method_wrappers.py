@@ -15,11 +15,11 @@ from .psynet_entry import (
     PLAYERS_LEFT,
     TIMEOUT,
     PlayerReady,
-    _game_time,
     _player,
     _psynet_entry,
     _too_few_players_at,
 )
+from .record import _game_time
 
 # The game methods that can change the state, which is converted after each.
 _STATE_METHODS = ("apply", "tick", "on_join", "on_leave", "on_add", "on_start")
@@ -211,7 +211,7 @@ def _sends_message(method):
                 return {"type": PlayerReady.type, "message": {}}
             if entry["started_at"] is None:
                 return None
-            now = _game_time(entry, now)
+            now = _game_time(entry["started_at"], now)
         message = _as_game_code(method, self, view, player_id, now)
         # A bot calling super().bot() reaches its parent's wrapper, which
         # leaves the message for the outermost one.

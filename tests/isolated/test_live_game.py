@@ -39,7 +39,7 @@ from psynet.live_game import (
 )
 from psynet.live_game import registry as game_registry
 from psynet.live_game.control import LiveGameControl
-from psynet.live_game.messages import _session_participant_ids
+from psynet.live_game.record import _session_participant_ids
 from psynet.live_game.testing import LocalGame, start_game
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage

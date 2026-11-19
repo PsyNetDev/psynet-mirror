@@ -7,12 +7,12 @@ import json
 from typing import ClassVar, Literal
 
 from dallinger import db
-from dallinger.models import RealtimeEvent, RealtimeSession
+from dallinger.models import RealtimeEvent
 from dallinger.realtime import Reject
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ..utils import get_logger
-from .registry import _live_game_class
+from .record import _game_time_from, _session_participant_ids
 
 logger = get_logger()
 
@@ -192,55 +192,6 @@ class SavedMessage:
         return payload.get("type") if isinstance(payload, dict) else None
 
 
-def _game_channel(session_id):
-    # The game_type column isn't nullable, so None means there's no such row.
-    return db.session.query(RealtimeSession.game_type).filter_by(id=session_id).scalar()
-
-
-def _session_channel(session_id):
-    channel = _game_channel(session_id)
-    if channel is None:
-        raise KeyError(session_id)
-    return channel
-
-
-def _session_game_class(session_id):
-    channel = _session_channel(session_id)
-    game_class = _live_game_class(channel)
-    if game_class is None:
-        raise ValueError(
-            f"Game {session_id} is a game of {channel!r}, and no "
-            "LiveGame with that name is defined. Import the module "
-            "that defines the game first."
-        )
-    return game_class
-
-
-# The effect PsyNet queues when the game starts, which records the start's
-# Dallinger session time with the game's events.
-_STARTED_EFFECT = "psynet_game_started"
-
-
-def _session_participant_ids(session_id):
-    """Return the participant ids of a game's players, in player order."""
-    members = (
-        db.session.query(RealtimeSession.members).filter_by(id=session_id).scalar()
-    )
-    if members is None:
-        raise KeyError(session_id)
-    return [int(member) for member in members]
-
-
-def _game_started_at(session_id):
-    """Return the Dallinger session time at which a game started, or None if
-    it hasn't."""
-    return (
-        db.session.query(RealtimeEvent.session_time)
-        .filter_by(session_id=session_id, event_type="effect", name=_STARTED_EFFECT)
-        .scalar()
-    )
-
-
 # Labelled as SavedMessage's fields.
 _SAVED_MESSAGE_COLUMNS = [
     RealtimeEvent.payload,
@@ -259,14 +210,8 @@ def _saved_messages(session_id, message_types):
     query = db.session.query(*_SAVED_MESSAGE_COLUMNS).filter_by(
         session_id=session_id, event_type="message"
     )
-    started_at = _game_started_at(session_id)
+    game_time = _game_time_from(session_id)
     participant_ids = _session_participant_ids(session_id)
-
-    def game_time(session_time):
-        if started_at is None or session_time is None:
-            return None
-        return session_time - started_at
-
     saved = []
     errors = []
     for row in query.order_by(RealtimeEvent.sequence):

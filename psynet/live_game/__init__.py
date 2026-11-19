@@ -13,11 +13,15 @@ from dallinger.realtime import Reject
 
 from .control import LiveGamePage
 from .game import LiveGame
-from .history import LiveGameCheckpoint, LiveGameMoment
 from .messages import LiveMessage, SavedMessage
 from .play import PlayLiveGame
 from .psynet_entry import NOT_STARTED, PLAYERS_LEFT, TIMEOUT, PlayerReady
-from .record import LiveGameFailed, LiveGameRecord
+from .record import (
+    LiveGameCheckpoint,
+    LiveGameFailed,
+    LiveGameMoment,
+    LiveGameRecord,
+)
 from .registry import live_game_classes
 
 __all__ = [

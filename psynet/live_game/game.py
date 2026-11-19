@@ -15,12 +15,7 @@ from dallinger.realtime.utils import is_number
 from pydantic import PydanticInvalidForJsonSchema
 from pydantic_core import to_jsonable_python
 
-from .history import _MOMENT_EFFECT
-from .messages import (
-    _STARTED_EFFECT,
-    LiveMessage,
-    _parse_message,
-)
+from .messages import LiveMessage, _parse_message
 from .method_wrappers import (
     _GAME_CODE_METHODS,
     _STATE_METHODS,
@@ -36,9 +31,9 @@ from .method_wrappers import (
     _waits_for_start,
 )
 from .psynet_entry import PlayerReady, _psynet_entry
+from .record import _MOMENT_EFFECT, _PSYNET_EFFECTS, _REWARD_EFFECT, _STARTED_EFFECT
 from .registry import _register_live_game
 from .reward import (
-    _REWARD_EFFECT,
     _check_reward,
     _handles_ending,
     _handles_player_ending,
@@ -489,7 +484,7 @@ class LiveGame(RealtimeGame):
         payload converted to plain data in the same way as the state. A
         message's fields can go in the payload as they are.
         """
-        if name in (_REWARD_EFFECT, _STARTED_EFFECT, _MOMENT_EFFECT):
+        if name in _PSYNET_EFFECTS:
             raise ValueError(
                 f"The effect name {name!r} is reserved for PsyNet, which uses "
                 "it for add_performance_reward, record and the game's start. "

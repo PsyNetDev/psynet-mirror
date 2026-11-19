@@ -12,17 +12,23 @@ The game pays its rewards itself, when the game's result is saved.
 
 from datetime import timedelta
 
-from dallinger import db
-from dallinger.models import RealtimeSession, timenow
+from dallinger.models import timenow
 from dominate import tags
 
 from ..modular_page import ModularPage, NullControl, Prompt
 from ..sync import _removed_from_group_notice
 from ..timeline import ResponseNotReady
 from ..utils import get_translator
-from .messages import _game_channel, _session_game_class, _session_participant_ids
 from .play import _check_reached_game, _live_game_id, _set_live_game_answer
-from .record import LiveGameFailed, LiveGameRecord, _player_ending
+from .record import (
+    LiveGameFailed,
+    LiveGameRecord,
+    _player_ending,
+    _session_channel,
+    _session_columns,
+    _session_game_class,
+    _session_participant_ids,
+)
 
 # Seconds a page waits before resending a response refused because the
 # game's result isn't saved yet.
@@ -112,7 +118,7 @@ class LiveGameControl(NullControl):
         if session_id is None:
             return None
         ends = _game_page_deadline(session_id)
-        ended = _session_end_time(session_id)
+        ended = _session_columns(session_id, "end_time").end_time
         if ended is not None and (ends is None or ended < ends):
             ends = ended
         if ends is None:
@@ -202,7 +208,7 @@ class LiveGameControl(NullControl):
                 "playId": self.play_id,
                 "liveGameId": session_id,
                 "gameChannel": (
-                    None if session_id is None else _game_channel(session_id)
+                    None if session_id is None else _session_channel(session_id)
                 ),
                 "autoAdvance": self.auto_advance,
                 "showResultFor": self.show_result_for,
@@ -353,13 +359,7 @@ def _game_page_deadline(session_id):
 def _session_began_at(session_id):
     # Dallinger's start_time: when the wait at the PlayLiveGame ended, before
     # the ready step.
-    return (
-        db.session.query(RealtimeSession.start_time).filter_by(id=session_id).scalar()
-    )
-
-
-def _session_end_time(session_id):
-    return db.session.query(RealtimeSession.end_time).filter_by(id=session_id).scalar()
+    return _session_columns(session_id, "start_time").start_time
 
 
 def _check_session_can_still_end(session_id):

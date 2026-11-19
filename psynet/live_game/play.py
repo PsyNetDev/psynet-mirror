@@ -31,7 +31,7 @@ import json
 from typing import Optional
 
 from dallinger import db
-from dallinger.models import RealtimeEvent, RealtimeSession
+from dallinger.models import RealtimeSession
 from dallinger.realtime import (
     RealtimeGame,
     add_realtime_player,
@@ -50,7 +50,7 @@ from ..timeline import CodeBlock, EltCollection, conditional, join
 from ..utils import get_logger
 from .game import LiveGame
 from .psynet_entry import _new_session_settings
-from .record import LiveGameRecord, _player_ending
+from .record import LiveGameRecord, _player_ending, _session_end_time
 
 logger = get_logger()
 
@@ -679,12 +679,3 @@ def _absent_leave(participant, game_id):
         if any(game["id"] == game_id for game in data.get("history", [])):
             return data.get("absent_leave", [])
     return []
-
-
-def _session_end_time(game_id):
-    """Return when the game ended, on Dallinger's session clock, or None."""
-    return (
-        db.session.query(RealtimeEvent.session_time)
-        .filter_by(session_id=game_id, event_type="end")
-        .scalar()
-    )

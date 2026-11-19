@@ -1,10 +1,30 @@
 """A record of one live game, read from Dallinger's ``realtime_session`` row
-and the events it saved for the game."""
+and the events it saved for the game, and the queries the other modules use
+to read them: the session's columns, the game's clock, and the moments and
+checkpoints in its history.
 
+A moment is an effect with PsyNet's own name, so Dallinger saves it, in
+order and with its time, with the game's other events, and nothing else
+writes it. Checkpoints are Dallinger's own, which it saves at the game's
+``checkpoint_interval``, and the state at the end.
+"""
+
+import functools
+from dataclasses import dataclass
 from typing import Any, List, Optional
 
 from dallinger import db
 from dallinger.models import RealtimeEvent, RealtimeSession
+
+from .registry import _live_game_class
+
+# The effects PsyNet queues itself: when the game starts, which records the
+# start's Dallinger session time with the game's events, for
+# add_performance_reward, and for LiveGame.record.
+_STARTED_EFFECT = "psynet_game_started"
+_REWARD_EFFECT = "psynet_performance_reward"
+_MOMENT_EFFECT = "psynet_moment"
+_PSYNET_EFFECTS = (_STARTED_EFFECT, _REWARD_EFFECT, _MOMENT_EFFECT)
 
 
 class LiveGameRecord:
@@ -60,8 +80,6 @@ class LiveGameRecord:
     def game_class(self):
         """The :class:`~psynet.live_game.LiveGame` subclass that was played,
         or ``None`` if no game started."""
-        from .messages import _session_game_class
-
         return None if self._id is None else _session_game_class(self._id)
 
     @property
@@ -112,7 +130,7 @@ class LiveGameRecord:
     def participant_ids(self) -> List[int]:
         """The participant ids of the game's players, in player order."""
         row = self._row()
-        return [] if row is None else [int(member) for member in row.members]
+        return [] if row is None else _player_ids(row.members)
 
     @property
     def record_complete(self) -> bool:
@@ -170,8 +188,6 @@ class LiveGameRecord:
         :meth:`~psynet.live_game.LiveGame.record`, in order, as
         :class:`~psynet.live_game.LiveGameMoment` objects. Pick out one
         name with ``[m for m in game.moments if m.name == "catch"]``."""
-        from .history import _moments
-
         return [] if self._id is None else _moments(self._id)
 
     @property
@@ -184,8 +200,6 @@ class LiveGameRecord:
         PsyNet's ``psynet`` entry. Use it to look back at a game, for example
         to check its code, and :meth:`~psynet.live_game.LiveGame.record` for
         what an analysis needs."""
-        from .history import _checkpoints
-
         return [] if self._id is None else _checkpoints(self._id)
 
     def _participant_id(self):
@@ -207,22 +221,9 @@ class LiveGameRecord:
     def _row(self):
         if self._id is None:
             return None
-        # Querying columns reads the row from the database, not a copy the
-        # caller's database session already loaded.
-        row = (
-            db.session.query(
-                RealtimeSession.status,
-                RealtimeSession.end_reason,
-                RealtimeSession.outcome,
-                RealtimeSession.error,
-                RealtimeSession.members,
-            )
-            .filter_by(id=self._id)
-            .one_or_none()
+        return _session_columns(
+            self._id, "status", "end_reason", "outcome", "error", "members"
         )
-        if row is None:
-            raise KeyError(self._id)
-        return row
 
 
 def _stored_answer(participant_id, game_id):
@@ -230,7 +231,7 @@ def _stored_answer(participant_id, game_id):
     ``game_id``, or None."""
     from ..participant import Participant
 
-    # Read from the database, as _row does, not from a copy of the
+    # Read from the database, as _session_columns does, not from a copy of the
     # participant that the caller's database session already loaded.
     stored = (
         db.session.query(Participant.live_game_data)
@@ -251,8 +252,6 @@ class LiveGameFailed(RuntimeError):
     game's own, and fails the participant with an error-recovery exit."""
 
     def __init__(self, game):
-        from .messages import _session_channel
-
         self.game_id = game.id
         error = game.error or "Its record couldn't be saved."
         # The game's name, since a game can fail because its class is gone.
@@ -291,3 +290,156 @@ def _players_ended_early(session_id):
             RealtimeEvent.participant_id
         ).filter_by(session_id=session_id, event_type="player_end")
     }
+
+
+def _session_end_time(session_id):
+    """Return when the game ended, on Dallinger's session clock, or None."""
+    return (
+        db.session.query(RealtimeEvent.session_time)
+        .filter_by(session_id=session_id, event_type="end")
+        .scalar()
+    )
+
+
+def _session_columns(session_id, *columns):
+    """Return the named ``columns`` of a game's ``realtime_session`` row.
+
+    Raises ``KeyError`` if there's no such row.
+    """
+    # Querying columns reads the row from the database, not a copy the
+    # caller's database session already loaded.
+    row = (
+        db.session.query(*(getattr(RealtimeSession, column) for column in columns))
+        .filter_by(id=session_id)
+        .one_or_none()
+    )
+    if row is None:
+        raise KeyError(session_id)
+    return row
+
+
+def _player_ids(members):
+    """Return a session row's ``members`` as participant ids, in player
+    order."""
+    return [int(member) for member in members]
+
+
+def _session_participant_ids(session_id):
+    """Return the participant ids of a game's players, in player order."""
+    return _player_ids(_session_columns(session_id, "members").members)
+
+
+def _session_channel(session_id):
+    return _session_columns(session_id, "game_type").game_type
+
+
+def _session_game_class(session_id):
+    channel = _session_channel(session_id)
+    game_class = _live_game_class(channel)
+    if game_class is None:
+        raise ValueError(
+            f"Game {session_id} is a game of {channel!r}, and no "
+            "LiveGame with that name is defined. Import the module "
+            "that defines the game first."
+        )
+    return game_class
+
+
+def _game_started_at(session_id):
+    """Return the Dallinger session time at which a game started, or None if
+    it hasn't."""
+    return (
+        db.session.query(RealtimeEvent.session_time)
+        .filter_by(session_id=session_id, event_type="effect", name=_STARTED_EFFECT)
+        .scalar()
+    )
+
+
+def _game_time(started_at, session_time):
+    """Return a Dallinger session time as the game's time, the seconds since
+    the game started at ``started_at``, or None before it starts."""
+    if started_at is None or session_time is None:
+        return None
+    return session_time - started_at
+
+
+def _game_time_from(session_id):
+    """Return a function that gives a session time of the game
+    ``session_id`` as the game's time."""
+    return functools.partial(_game_time, _game_started_at(session_id))
+
+
+@dataclass(frozen=True)
+class LiveGameMoment:
+    """A moment that a game recorded with :meth:`LiveGame.record`, as a game
+    record's :attr:`~LiveGameRecord.moments` returns it.
+
+    Attributes
+    ----------
+
+    name
+        The moment's name.
+
+    data
+        What the game recorded about it.
+
+    time
+        When it happened, in seconds since the game started. It's negative
+        for a moment before the game started, such as a player added during
+        the ready step, and ``None`` if the game never started.
+    """
+
+    name: str
+    data: Any
+    time: Optional[float]
+
+
+@dataclass(frozen=True)
+class LiveGameCheckpoint:
+    """A copy of a game's state, as a game record's
+    :attr:`~LiveGameRecord.checkpoints` returns it.
+
+    Attributes
+    ----------
+
+    state
+        The state, without PsyNet's ``psynet`` entry.
+
+    time
+        When it was saved, in seconds since the game started. It's negative
+        for a state saved before the game started, and ``None`` if the game
+        never started.
+    """
+
+    state: Any
+    time: Optional[float]
+
+
+def _moments(session_id):
+    query = db.session.query(
+        RealtimeEvent.payload, RealtimeEvent.session_time
+    ).filter_by(session_id=session_id, event_type="effect", name=_MOMENT_EFFECT)
+    game_time = _game_time_from(session_id)
+    return [
+        LiveGameMoment(
+            row.payload["name"], row.payload["data"], game_time(row.session_time)
+        )
+        for row in query.order_by(RealtimeEvent.sequence)
+    ]
+
+
+def _checkpoints(session_id):
+    query = db.session.query(RealtimeEvent.state, RealtimeEvent.session_time).filter(
+        RealtimeEvent.session_id == session_id,
+        RealtimeEvent.event_type.in_(("checkpoint", "end")),
+        RealtimeEvent.state.isnot(None),
+    )
+    game_time = _game_time_from(session_id)
+    return [
+        LiveGameCheckpoint(
+            {key: value for key, value in row.state.items() if key != "psynet"},
+            game_time(row.session_time),
+        )
+        for row in query.order_by(RealtimeEvent.sequence)
+        if row.state is not None
+    ]

@@ -19,6 +19,7 @@ import contextvars
 from dallinger.realtime import Reject
 
 from .messages import LiveMessage, _parse_message
+from .record import _game_time
 
 # The settings of the game a PlayLiveGame is starting, set
 # while it calls create_realtime_session, which calls the game's
@@ -84,15 +85,6 @@ def _player(entry, player_id):
     return entry["participant_ids"].index(int(player_id))
 
 
-def _game_time(entry, session_time):
-    """Return a Dallinger session time as the game's time, the seconds since the game
-    started, or None before it starts."""
-    started_at = entry["started_at"]
-    if started_at is None or session_time is None:
-        return None
-    return session_time - started_at
-
-
 # Each of these takes ``outermost``: whether Dallinger called the method, so
 # that it has a participant id and a session time to convert, rather than the
 # game's own code, which already has the player's number and the game's time.
@@ -107,7 +99,7 @@ def _apply_once_started(self, method, outermost, state, player_id, message, now,
         return None
     if entry["started_at"] is None:
         raise Reject(NOT_STARTED)
-    game_now = _game_time(entry, now) if outermost else now
+    game_now = _game_time(entry["started_at"], now) if outermost else now
     end = _game_end(entry)
     if end is not None and game_now >= end:
         raise Reject(_TIME_UP)
@@ -140,7 +132,7 @@ def _tick_once_started(self, method, outermost, state, now):
         if too_few_at is not None and now >= too_few_at:
             entry["players_left"] = True
             return None
-    game_now = _game_time(entry, now) if outermost else now
+    game_now = _game_time(entry["started_at"], now) if outermost else now
     end = _game_end(entry)
     if end is None or game_now < end:
         return method(self, state, game_now)
@@ -160,7 +152,7 @@ def _record_leave(self, method, outermost, state, player_id, now):
     if player not in entry["away"]:
         entry["away"].append(player)
         entry["away_since"][player] = now
-    return method(self, state, player, _game_time(entry, now))
+    return method(self, state, player, _game_time(entry["started_at"], now))
 
 
 def _record_join(self, method, outermost, state, player_id, now):
@@ -172,7 +164,7 @@ def _record_join(self, method, outermost, state, player_id, now):
     if player in entry["away"]:
         entry["away"].remove(player)
         entry["away_since"][player] = None
-    return method(self, state, player, _game_time(entry, now))
+    return method(self, state, player, _game_time(entry["started_at"], now))
 
 
 def _record_add(self, method, outermost, state, player_id, now):
@@ -185,7 +177,7 @@ def _record_add(self, method, outermost, state, player_id, now):
     # never arrives. A bot joins at once.
     entry["away"].append(player)
     entry["away_since"].append(now)
-    return method(self, state, player, _game_time(entry, now))
+    return method(self, state, player, _game_time(entry["started_at"], now))
 
 
 def _player_done(self, method, outermost, state, player_id):

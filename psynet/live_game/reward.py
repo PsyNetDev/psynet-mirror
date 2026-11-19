@@ -16,12 +16,13 @@ from dallinger import db
 from dallinger.models import timenow
 from dallinger.realtime.utils import is_number
 
-from .history import _MOMENT_EFFECT
-from .messages import _STARTED_EFFECT
-from .record import _has_outcome, _players_ended_early
-
-# The name of the effect add_performance_reward queues.
-_REWARD_EFFECT = "psynet_performance_reward"
+from .record import (
+    _PSYNET_EFFECTS,
+    _REWARD_EFFECT,
+    _has_outcome,
+    _player_ids,
+    _players_ended_early,
+)
 
 
 def _check_reward(amount, what):
@@ -86,13 +87,13 @@ def _locked_players(session_row, participant_ids=None):
 def _handles_reward(method):
     @functools.wraps(method)
     def handle_effect(self, name, payload, session_row):
-        if name in (_STARTED_EFFECT, _MOMENT_EFFECT):
+        if name not in _PSYNET_EFFECTS:
+            return method(self, name, payload, session_row)
+        if name != _REWARD_EFFECT:
             # Only recorded, for a game record's messages and moments.
             return None
-        if name != _REWARD_EFFECT:
-            return method(self, name, payload, session_row)
         player = payload["player"]
-        participant_ids = _participant_ids(session_row)
+        participant_ids = _player_ids(session_row.members)
         if player >= len(participant_ids):
             raise ValueError(
                 f"{type(self).__name__}.add_performance_reward gave a reward to "
@@ -153,7 +154,7 @@ def _handles_player_ending(method):
             # Already converted to the player's number by the outermost call.
             return method(self, session_row, player_id, ending)
         (participant,) = _locked_players(session_row, [int(player_id)])
-        player = _participant_ids(session_row).index(participant.id)
+        player = _player_ids(session_row.members).index(participant.id)
         amount = self.performance_reward(ending["outcome"], ending["reason"], player)
         what = f"{type(self).__name__}.performance_reward"
         _add_reward(participant, _check_reward(amount, what), session_row)
@@ -164,14 +165,9 @@ def _handles_player_ending(method):
     return handle_player_ending
 
 
-def _participant_ids(session_row):
-    """Return the participant ids of a game's players, in player order."""
-    return [int(member) for member in session_row.members]
-
-
 def _pay_outcome_rewards(game, session_row, players):
     what = f"{type(game).__name__}.performance_reward"
-    participant_ids = _participant_ids(session_row)
+    participant_ids = _player_ids(session_row.members)
     for participant in players:
         amount = game.performance_reward(
             session_row.outcome,
