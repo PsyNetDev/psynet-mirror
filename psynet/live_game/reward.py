@@ -97,8 +97,7 @@ def _handles_reward(method):
                 f"player {player}, but game {session_row.id} has only "
                 f"{len(participant_ids)} players, numbered from 0."
             )
-        players = _locked_players(session_row)
-        (participant,) = [p for p in players if p.id == participant_ids[player]]
+        (participant,) = _locked_players(session_row, [participant_ids[player]])
         _add_reward(participant, payload["amount"], session_row)
 
     handle_effect._psynet_wrapper = True
