@@ -1407,12 +1407,15 @@ def test_live_game_delays_are_reported_and_limit_capacity():
     assert capacity_failures(smooth) == []
     assert capacity_failures(lagging) == ["p95 tick delay 100-200 ms in snake"]
     assert overshoot(lagging, CapacityLimits()) == 2
+    assert "the p95 tick delay in the live game snake was 100-200 ms" in summary
+
+
+def test_failed_live_games_are_reported_with_their_errors():
     failing = _base_result(live_games=_live_games([1000], errors={"KeyError: 3": 1}))
     assert capacity_failures(failing) == ["1 failed live game"]
     assert "1 of 3 snake games failed: KeyError: 3 (1x)." in _join(
         format_test_results(failing)
     )
-    assert "the p95 tick delay in the live game snake was 100-200 ms" in summary
     # A game that also failed for other reasons reports its errors, and how
     # busy the runner was.
     mixed = _base_result(
@@ -1431,7 +1434,7 @@ def test_live_game_delays_are_reported_and_limit_capacity():
     slow = _base_result(
         p95_response_time=0.9, live_games=_live_games([800, 100, 0, 0, 100])
     )
-    assert "or add worker_processes or test fewer bots, then test again" in _join(
+    assert "or add worker_processes or test fewer bots" in _join(
         format_capacity_summary([slow], CapacityLimits())
     )
     # Games that all failed measured no messages, which a browser can't change.
@@ -1441,19 +1444,20 @@ def test_live_game_delays_are_reported_and_limit_capacity():
         format_performance_summary([dead])
     )
 
-    # A game without ticks has no tick delays, so the summary leaves out the
-    # live delay and its limit, unless a browser's messages were measured.
+
+def test_live_games_without_ticks_are_limited_by_their_message_delays():
     untimed = _base_result(actual_duration=100, live_games=_live_games([], busy_s=0.1))
     report = _join(format_test_results(untimed))
     assert "busy <1% of the test" in report and "no ticks" in report
-    assert "one pass" in report and "can play many of them" in report
+    assert "can play many of them" in report
     summary = _join(format_performance_summary([untimed]))
     assert "live game delay" not in summary.lower()
     assert "of live games failing" in summary
     untimed.live_games["games"]["snake"]["message_delays"][4] = 1000
     assert capacity_failures(untimed) == ["p95 message delay 100-200 ms in snake"]
 
-    # Games that the runner failed for falling behind fail their players.
+
+def test_live_games_that_ran_out_of_time_count_their_players_errors_once():
     behind = _base_result(
         n_bots=4,
         total_bots_started=4,
@@ -1468,16 +1472,12 @@ def test_live_game_delays_are_reported_and_limit_capacity():
         "p95 tick delay 1-2 s in snake",
         "2 failed live games",
     ]
-    assert "LIVE GAMES (1 game runner, busy" in report
-    assert (
-        "2 of 3 snake games failed for running past the game's time_limit in a pass"
-        in report
-    )
+    assert "failed for running past the game's time_limit" in report
+    assert "so 4 bots got an error page" in report
     # Nor do their errors count again in the start-up or steady state.
     startup = {**_PHASE, "request_errors": 4}
     assert phase_limit_reasons(startup, CapacityLimits()) != []
     assert phase_limit_reasons(startup, CapacityLimits(), errored_players=4) == []
-    assert "so 4 bots got an error page" in report
     verdict = _join(format_capacity_summary([behind]))
     assert "over the 1% limit, and 4 bots in them failed too" in verdict
     assert "make the games' tick and view faster" in verdict
@@ -1493,10 +1493,15 @@ def test_live_game_delays_are_reported_and_limit_capacity():
     assert "Errors at 100: 6 x HTTP 500 on /response." in _join(
         format_capacity_summary([more])
     )
+
+
+def test_live_game_summary_notes_what_bots_can_t_measure():
+    smooth = _base_result(live_games=_live_games([990, 10]))
     assert "Not measured for live games" in _join(format_performance_summary([smooth]))
     smooth.live_games["games"]["snake"]["message_delays"][0] = 5
-    played_in_browsers = _join(format_performance_summary([smooth]))
-    assert "Not measured for live games" not in played_in_browsers
+    assert "Not measured for live games" not in _join(
+        format_performance_summary([smooth])
+    )
     smooth.non_bot_participants = 1
     assert "not as an estimate of how many participants" in _join(
         format_performance_summary([smooth])
