@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from dallinger import db
-from sqlalchemy import Column, ForeignKey, Integer
+from sqlalchemy import Column, ForeignKey, Integer, update
 from sqlalchemy.orm import relationship
 
 from psynet.asset import Asset, ExternalAsset
@@ -239,6 +239,35 @@ def test_a_trial_ending_in_the_request_that_cued_it_can_pay_its_participant(
         participant.current_trial.on_finalized()
 
     assert participant.performance_reward == 0.5
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_a_trial_s_reward_adds_to_one_a_live_game_stored_since_it_was_loaded(
+    db_session, participant_and_node, monkeypatch
+):
+    experiment, participant, node = participant_and_node
+    monkeypatch.setattr(
+        RewardTrial,
+        "get_default_parent_node",
+        classmethod(lambda cls, participant, experiment: node),
+    )
+    RewardTrial.cue(definition={})[0].consume(experiment, participant)
+    trial = participant.current_trial
+    db.session.flush()
+    # As a live game's record job does, in another transaction.
+    db.session.execute(
+        update(Trial)
+        .where(Trial.id == trial.id)
+        .values(performance_reward=0.25)
+        .execution_options(synchronize_session=False)
+    )
+
+    trial.on_finalized()
+
+    assert trial.performance_reward == 0.75
 
 
 @pytest.mark.parametrize(
