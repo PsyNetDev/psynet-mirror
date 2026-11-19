@@ -29,8 +29,10 @@ both cases the `PlayLiveGame`'s `absent_action="leave_group"` takes the
 absent player out of the cohort when the game's result is saved, so the
 next pairing doesn't wait for them either, and the last page tells them why
 the game is over for them if they come back. The export's `arrived`,
-`partner_arrived` and `n_no_shows` columns tell these rounds apart from
-pairs that bargained without a deal.
+`partner_arrived` and `n_no_shows` columns tell no-show rounds apart from
+pairs that bargained without a deal; a round that a player left mid-game
+looks like one without a deal. A player who didn't submit their game page
+has `None` in these columns.
 
 A round can take up to 30 seconds for the partner to arrive, a minute of
 bargaining and the result and feedback pages, so a pair that finishes early

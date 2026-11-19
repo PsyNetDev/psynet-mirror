@@ -120,7 +120,9 @@ class Bargain(LiveGame):
         state["no_shows"] = _no_shows(state)
 
     def view(self, state, player):
-        no_shows = state["no_shows"]
+        # Read again, as in outcome, for the final view of a game that
+        # nobody opened. The page shows it only once the game has ended.
+        no_shows = _no_shows(state)
         return {
             "stake": state["stake"],
             "mine": state["offers"][player],
@@ -420,8 +422,11 @@ class Exp(psynet.experiment.Experiment):
                     "trial_id": t.id,
                     "round": t.position,
                     # All three are None for a player whose partner didn't
-                    # reach the game, so who had no game. A game that a
-                    # player didn't open in time has no deal.
+                    # reach the game, so who had no game, or who didn't
+                    # submit the game page. A game that a player didn't open
+                    # in time has no deal, and arrived and partner_arrived
+                    # say who didn't; one that a player left mid-game looks
+                    # like one without a deal.
                     "deal": (t.answer or {}).get("deal"),
                     "arrived": (t.answer or {}).get("arrived"),
                     "partner_arrived": (t.answer or {}).get("partner_arrived"),

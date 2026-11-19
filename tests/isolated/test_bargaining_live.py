@@ -112,6 +112,7 @@ class TestBargainingLive:
             assert self._feedback(demo, game.answer(player, reason)) == (
                 "You didn't arrive in time, so there was no game this round."
             )
+            assert game.view(player)["no_show"] == "you"
         assert game.outcome(reason)["no_shows"] == [0, 1]
 
     def test_accepting_a_proposal_makes_the_deal_it_offered(self, demo, game):
