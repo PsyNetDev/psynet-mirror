@@ -373,7 +373,7 @@ def test_re_entering_a_barrier_in_its_released_pass_waits_again(
     exp.timeline = Timeline(
         SimpleGrouper("pair", initial_group_size=2, waiting_logic=_filler("g")),
         for_loop(
-            iterate_over=range(2),
+            iterate_over=["round_0", "round_1"],
             logic=GroupBarrier(
                 id_="turn", group_type="pair", waiting_logic=_filler("turn_filler")
             ),
@@ -387,8 +387,7 @@ def test_re_entering_a_barrier_in_its_released_pass_waits_again(
         db.session.expire_all()
         first = Participant.query.get(first_id)
         assert exp.timeline.get_current_elt(exp, first).label == "turn_filler"
-        (loop_state,) = first.for_loops.values()
-        assert loop_state["index"] == 1
+        assert {"lst": ["round_0", "round_1"], "index": 1} in first.for_loops.values()
     finally:
         exp.timeline = original
 

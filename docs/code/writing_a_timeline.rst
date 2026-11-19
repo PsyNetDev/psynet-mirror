@@ -144,10 +144,15 @@ preceding page:
 ``expected_repetitions`` iterations, however many they actually do.
 ``max_loop_time`` limits the time in the loop in seconds; participants who
 reach it while the condition still holds are sent to the unsuccessful end
-unless ``fail_on_timeout=False``. ``extend_while`` is checked at the start of
-each pass through the loop; whenever it returns ``True``, the
-``max_loop_time`` clock restarts from zero, for example while a
+unless ``fail_on_timeout=False``. These participants get the failure tag
+``while_loop:<label>``. Without ``label=...`` the label is the condition's
+function name, or for a lambda its file and line (for example
+``lambda@experiment.py:42``), which changes when lines above the loop are
+edited; pass ``label=`` if an analysis reads the tag. ``extend_while`` is
+checked at the start of each pass through the loop; whenever it returns
+``True``, the ``max_loop_time`` clock restarts from zero, for example while a
 participant's recording is still uploading.
+
 :func:`~psynet.timeline.conditional` takes a ``condition``,
 ``logic_if_true`` and ``logic_if_false``. This loop repeats until the random
 score is above 5, with feedback that depends on the score:

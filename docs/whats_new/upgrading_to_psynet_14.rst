@@ -459,8 +459,8 @@ debug, test or deploy command stops once and lists them.
 
 See :doc:`upgrading_deployment_file_selection`.
 
-15. Failing participants and changed arguments
-----------------------------------------------
+15. Failing participants, changed arguments and timeline labels
+---------------------------------------------------------------
 
 Search for ``def fail_participant``, ``data_check_failed``,
 ``attention_check_failed``, positional arguments to ``TrialMaker(`` or
@@ -479,19 +479,23 @@ Search for ``def fail_participant``, ``data_check_failed``,
   participant leaves or fails, their unfinished trials always fail and their
   submitted trials are kept.
 * Timeline constructs no longer need labels; the old forms still work but
-  warn. Delete the first argument of ``conditional``, ``switch`` and
-  ``while_loop``, so that ``conditional("is_adult", lambda participant: ...,
+  warn. Delete the label that ``conditional`` and ``switch`` took as their
+  first argument, so that ``conditional("is_adult", lambda participant: ...,
   logic)`` becomes ``conditional(lambda participant: ..., logic)``, and delete
-  ``label=`` from ``for_loop``, ``sequence`` and ``randomize``. A
-  ``while_loop`` may keep ``label=...`` to name its ``while_loop:<label>``
-  failure tag; keep it if an analysis reads that tag, because without it a
-  lambda condition gives a tag like ``while_loop:lambda@experiment.py:42``.
+  ``label=`` from ``for_loop``, ``sequence`` and ``randomize``.
+* ``while_loop`` still accepts a label, as ``label=...``, which names its
+  ``while_loop:<label>`` failure tag on timeout. If an analysis reads that
+  tag, change ``while_loop("rounds", ...)`` to ``while_loop(..., label="rounds")``;
+  otherwise delete the label. Without one, a lambda condition gives a tag such
+  as ``while_loop:lambda@experiment.py:42``, which changes when the file is
+  edited.
 * ``participant.branch_log`` is gone, and ``log_chosen_branch`` is ignored
-  with a warning; delete it. If an analysis needs to know which
-  branch a participant took, store it with ``participant.var`` in a
-  ``CodeBlock``.
+  with a warning; delete it, whether passed by keyword or by position. If an
+  analysis needs to know which branch a participant took, store it with
+  ``participant.var`` in a ``CodeBlock``.
 
-See :doc:`/code/trials/participant_and_trial_failure`.
+See :doc:`/code/trials/participant_and_trial_failure` and
+:doc:`/code/writing_a_timeline`.
 
 16. Response processing and rendering
 -------------------------------------
