@@ -476,6 +476,22 @@ def test_a_live_game_page_can_change_or_hide_its_no_game_notice(
     assert js_vars["liveGame"]["noGameMessage"] == message
 
 
+def test_a_live_game_page_shows_no_second_notice_when_the_group_has_left(
+    pair, monkeypatch
+):
+    members, game_barrier = pair
+    page = _page_of(game_barrier)
+
+    _reach(game_barrier, members[0])
+    members[0].group_removal_notice = {
+        "page_uuid": members[0].page_uuid,
+        "text": "Your partner is no longer in your group. Please continue.",
+    }
+    js_vars = _rendered_js_vars(page, members[0], monkeypatch)
+
+    assert js_vars["liveGame"]["noGameMessage"] is None
+
+
 def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
     unnamed = PlayLiveGame(
         group_type="pair",

@@ -17,6 +17,7 @@ from dallinger.models import RealtimeSession, timenow
 from dominate import tags
 
 from ..modular_page import ModularPage, NullControl, Prompt
+from ..sync import _removed_from_group_notice
 from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .messages import _game_channel, _session_game_class, _session_participant_ids
@@ -187,6 +188,9 @@ class LiveGameControl(NullControl):
         no_session = self.no_game_message
         if no_session is _DEFAULT:
             no_session = _p("live_game", "Your group couldn't start the game.")
+        if session_id is None and _removed_from_group_notice(participant):
+            # The page already shows why the participant's group left them.
+            no_session = None
         waiting = self.waiting_status
         if waiting is _DEFAULT:
             waiting = _p("live_game", "Waiting for the other players to open the game")
@@ -275,6 +279,8 @@ class LiveGamePage(ModularPage):
         group didn't start a game, for example because they were removed
         from a group that took too long to arrive. By default it says "Your
         group couldn't start the game." Set it to ``None`` for no notice.
+        It isn't shown when the page already has a notice saying that the
+        participant's group left them.
 
     waiting_status
         What ``psynet.liveGame.showStatus`` says before the game starts. By

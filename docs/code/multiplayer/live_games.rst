@@ -563,7 +563,9 @@ member was late for the ``PlayLiveGame`` and their group broke up, or when
 their group ended before they reached it. PsyNet tells the participant with
 a notice at the top of the page, "Your group couldn't start the game.",
 which the page's ``no_game_message`` changes or turns off, and hides the
-page's content. The page's
+page's content. When the page already has a notice saying that the
+participant's group left them, such as "Your partner is no longer in your
+group.", PsyNet doesn't add a second one. The page's
 ``psynet.liveGame`` methods then do nothing: ``send`` returns ``undefined``,
 callbacks never run, and ``enableWhilePlaying`` leaves its elements
 disabled. So a page needs no check for this, unless it starts work of its
