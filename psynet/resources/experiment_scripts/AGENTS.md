@@ -52,7 +52,9 @@ experiment alone, but they don't run at the same time as a local server or
 test session in the same directory. `psynet test local` and
 `psynet performance-test local` get their own database, Redis server and port,
 so they leave a running experiment alone, unless it serves the same directory,
-where they refuse to run.
+where they refuse to run. Several `psynet test local` runs can go at once,
+even from different agents: runs in the same directory wait for each other
+automatically, so don't add a lock of your own or wait for other tests.
 
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For

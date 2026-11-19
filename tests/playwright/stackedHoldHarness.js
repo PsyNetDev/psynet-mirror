@@ -38,7 +38,6 @@ const CLOCK_SKEW_MS = 3000;
 const SETTLE_HOLD_MS = 3500;
 const ACTION_PROMPT = "Choose your action";
 const RESULTS_PROMPT = "Everyone is ready";
-const PAIR_HOLD_TEXT = "Waiting for your partner";
 const GROUP_HOLD_TEXT = "Waiting for your group";
 const RELEASE_RESUME_REASONS = new Set(["server notification", "queued hold wake"]);
 const LATE_ARRIVAL_RESUME_REASONS = new Set([
@@ -1145,7 +1144,6 @@ async function assertNoSessionErrors(sessions) {
 module.exports = {
   ACTION_PROMPT,
   GROUP_HOLD_TEXT,
-  PAIR_HOLD_TEXT,
   RESULTS_PROMPT,
   SETTLE_HOLD_MS,
   STEP_TIMEOUT_MS,

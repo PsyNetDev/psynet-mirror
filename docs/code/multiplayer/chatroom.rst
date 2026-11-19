@@ -36,21 +36,47 @@ Participants whose ``room_id`` values match share the same messages and
 participant list. The ``room_id`` can be any string. To give each group a
 private room, build it from
 :attr:`Trial.sync_group <psynet.trial.main.Trial.sync_group>`, as the demo
-does. ``self.sync_group`` returns the group matching the trial maker's
-``sync_group_type``, so it works even when a participant is in several
-groups (see :doc:`synchronization`).
+does. ``self.sync_group`` returns the group of the trial maker's (or, for a
+cued trial, the trial class's) ``sync_group_type`` that the trial was played
+in, so it works even when a participant is in several groups, and still
+returns the group after the participant has left it (see
+:doc:`synchronization`).
 
 Options
 -------
 
-:class:`~psynet.chatroom.ChatRoom` has two optional flags:
+:class:`~psynet.chatroom.ChatRoom` has three options:
 
 ``show_participants`` (default ``False``)
-    Show a sidebar with the IDs of the participants currently in the room.
+    Show a sidebar with the participants currently in the room.
 
 ``show_history`` (default ``False``)
     Show the messages sent in the room before the participant opened the
-    page. The chatroom is enabled once the earlier messages have loaded.
+    page: every message sent with this ``room_id``, so a ``room_id`` reused
+    across rounds shows the earlier rounds too. The chatroom is enabled once
+    the earlier messages have loaded.
+
+``names`` (default ``"shown"``)
+    ``"shown"`` labels everyone else by pseudonym. ``"anonymous"`` draws
+    them all as the same grey figure, labelled as by a
+    :class:`~psynet.group_prompt.GroupPrompt` with ``names="anonymous"``:
+    "Your partner" while only one other member has appeared in the room,
+    and "Another player" once more have, even if some have left since. For
+    a pair, or a larger group once everyone has joined
+    the chat, this matches the GroupPrompt. The server then
+    doesn't send this participant the others' pseudonyms or participant
+    IDs, even for someone inspecting the page: the others appear under
+    aliases numbered by order of joining each room (``member-1``,
+    ``member-2``, ...), which say nothing about who they are. Use it on pages whose GroupPrompt is anonymous. A
+    chat writes a name next to every message, so
+    GroupPrompt's ``"on_hover"`` isn't available.
+
+Pseudonyms
+----------
+
+Participants see each other by pseudonym, such as "Blue fox", with a small
+picture of the animal in that colour; their own messages are labelled
+"You". See :doc:`pseudonyms` for how pseudonyms are chosen and customized.
 
 Stored data
 -----------
@@ -59,7 +85,8 @@ Every message is stored in the :class:`~psynet.chatroom.ChatMessage` table,
 with the sender's participant and node IDs, the room ID, the text and the
 time the server received it. Joining and leaving a room is stored in the
 :class:`~psynet.chatroom.ChatRoomMember` table, with timestamps and an
-``active`` flag and the ``page_uuid`` of the page they joined from. A
+``active`` flag, the ``page_uuid`` of the page they joined from and an
+``anonymous`` flag for rooms with ``names="anonymous"``. A
 membership counts only while the participant is still on that page. Both
 tables appear in exports as ``database/chat_message.csv`` and
 ``database/chat_room_member.csv`` (see :doc:`/data/what_an_export_contains`).

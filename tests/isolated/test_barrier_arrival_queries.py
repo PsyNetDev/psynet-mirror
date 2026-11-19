@@ -48,17 +48,17 @@ pytestmark = [
 ]
 
 # Precise snapshot of the current ORM path, profiled from a cold session.
-# Check = 20 (18 plus extra-connection lock_timeout, ORM lock_timeout).
+# Check = 17 (16 plus the ORM lock_timeout; the try-claim sets none).
 # Last-arrival no longer skip-after-commits partners.
-# Finalize = check + 3 overhead statements.
+# Finalize = check + 4 overhead statements.
 # Statement-by-statement analysis:
 # docs/developer/sqlalchemy_performance.rst ("Barrier last-arrival SQL budgets").
 # Lower counts are an improvement: update these constants and that section.
 # Per-row writes still scale with group size; SQLAlchemy flushes them as one
 # executemany statement per table, so UPDATE *statement* count stays 1.
-_CHECK_BASE_QUERIES = 20
+_CHECK_BASE_QUERIES = 17
 _SKIP_QUERIES_PER_WAITER = 0
-_FINALIZE_OVERHEAD_QUERIES = 3
+_FINALIZE_OVERHEAD_QUERIES = 4
 
 
 def _statement_count(profiler, pattern):
@@ -201,7 +201,7 @@ def _sync_group_of(exp, db_session, n, group_type):
         group_type=group_type,
         initial_group_size=n,
         max_group_size=n,
-        min_group_size=n,
+        quorum=n,
         n_active_participants=n,
         accepts_top_ups=False,
     )
@@ -276,7 +276,8 @@ def _stacked_partner_timeline(group_type, group_size):
         SimpleGrouper(
             group_type=group_type,
             initial_group_size=group_size,
-            content="Waiting for your partner",
+            quorum=group_size,
+            waiting_message="Waiting for your partner",
         ),
         GroupBarrier(id_=f"{group_type}_init", group_type=group_type),
         GroupBarrier(id_=f"{group_type}_prepare", group_type=group_type),
@@ -310,7 +311,7 @@ def _check_expected(n):
         "spec_select": 1,
         "savepoint": 1,
         "release_savepoint": 1,
-        "lock_timeout": 2,
+        "lock_timeout": 1,
         "waiter_join": 1,
         "update_link": 1,
         "update_hold_release": 1,
@@ -325,7 +326,7 @@ def _check_expected(n):
 
 
 def _finalize_expected(n):
-    """Return the finalize-window snapshot: check plus six overhead statements.
+    """Return the finalize-window snapshot: check plus four overhead statements.
 
     See docs/developer/sqlalchemy_performance.rst (Barrier last-arrival SQL
     budgets). Update both places if an improvement lowers these counts.
@@ -336,8 +337,9 @@ def _finalize_expected(n):
             "queries": expected["queries"] + _FINALIZE_OVERHEAD_QUERIES,
             "commits": expected["commits"] + 2,
             "finalize_commits": 2,
-            "for_update": expected["for_update"] + 1,
-            "relock_for_update": 1,
+            # The relock locks the row, then loads it with its trial.
+            "for_update": expected["for_update"] + 2,
+            "relock_for_update": 2,
             "lock_timeout": expected["lock_timeout"] + 2,
         }
     )
@@ -374,6 +376,10 @@ def test_stacked_finalize_commit_and_lock_budget_does_not_grow_with_group_size(
             return out
 
     observed = {}
+    # As after launch, when the deployment ID is read once per process.
+    monkeypatch.setattr(
+        exp.pseudonym_scheme, "_deployment_seed", "query-budget", raising=False
+    )
     with _restored_experiment(exp):
         try:
             for group_size in (2, 4):
@@ -515,7 +521,6 @@ def test_pending_arrival_notice_reconstructs_each_instance_once(db_session):
     barrier = GroupBarrier(
         id_=f"notice_{uuid.uuid4().hex[:8]}",
         group_type="notice",
-        notify_arrivals=True,
     )
     for waiter in waiters:
         _arrive_at_group_barrier(exp, barrier, waiter)
@@ -545,7 +550,9 @@ def test_pending_arrival_notice_reconstructs_each_instance_once(db_session):
 
 def _grouped_then_barrier_timeline(group_type, group_size):
     return Timeline(
-        SimpleGrouper(group_type=group_type, initial_group_size=group_size),
+        SimpleGrouper(
+            group_type=group_type, initial_group_size=group_size, quorum=group_size
+        ),
         GroupBarrier(id_=f"{group_type}_gate", group_type=group_type),
         ModularPage("action", "Action", time_estimate=1),
     )
