@@ -162,6 +162,13 @@ class LiveGameControl(NullControl):
                 "its own, which would replace the one that waits for the "
                 "game's result. Remove the page's validate."
             )
+        if page.time_limit is not None:
+            raise TypeError(
+                f"The LiveGamePage {page.label!r} can't have a time_limit: a "
+                "page that runs out of time skips the validate that saves the "
+                "player's answer. Limit the game instead, with its duration "
+                "or timeout."
+            )
 
     def get_js_dependencies(self):
         return ["/static/scripts/live-game.js"]

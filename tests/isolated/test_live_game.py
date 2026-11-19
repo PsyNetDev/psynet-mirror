@@ -2776,6 +2776,12 @@ def test_a_live_game_page_can_t_have_a_validate_of_its_own(page_type, kwargs):
         page_type("game", "Play", time_estimate=5, **kwargs)
 
 
+def test_a_live_game_page_can_t_have_a_time_limit():
+    # A page that runs out of time skips validate, which sets the answer.
+    with pytest.raises(TypeError, match="can't have a time_limit"):
+        LiveGamePage("game", "Play", time_estimate=5, time_limit=30)
+
+
 class Shot(LiveMessage):
     type = "shot"
     at: int

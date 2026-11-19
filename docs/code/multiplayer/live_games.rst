@@ -772,6 +772,9 @@ The game's own ``time_limit`` is not a page's ``time_limit``: it limits how
 long the game's code may run in one of the game runner's turns at it, the
 ticks and messages that have come due since its last turn. It stops game
 code that never finishes, and the game then fails (see `The end`_).
+The game page itself can't have a ``time_limit``, since a page that runs
+out of time would save no answer: limit the game with its ``duration`` or
+``timeout`` instead.
 Game code should take far less, since a runner plays its games in turn.
 It can also run out when the runner falls far behind, with many ticks due at
 once (see :ref:`performance_testing_live_games`).
