@@ -16,6 +16,11 @@ passes to the game as its `settings`. Accepting a proposal names the
 proposal the player saw, so a proposal that changed in the meantime is
 rejected rather than accepted by mistake.
 
+A player who hasn't reached the game 30 seconds after being paired has
+probably closed their page. They leave the cohort as well as the pair, so
+the next pairing doesn't wait for them, and their partner goes on to a game
+page without a game.
+
 ## Usage
 
 Run `psynet debug local` and open the participant link in four browser

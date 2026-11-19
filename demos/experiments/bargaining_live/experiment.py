@@ -42,6 +42,8 @@ N_ROUNDS = 2
 # The coins a pair bargains over, chosen at random for each pair.
 STAKES = [10, 20]
 BARGAIN_SECONDS = 60
+# Seconds a player can keep their new partner waiting for the game.
+LATE_AFTER = 30
 # How long the game page shows the deal before the feedback page.
 RESULT_SECONDS = 5
 # Longer than a round takes, with the game's start, its result and the
@@ -232,8 +234,13 @@ class BargainTrial(Trial):
             game_class=Bargain,
             page=bargaining_page(self.definition["stake"]),
             settings=self.definition,
-            max_wait_time=30,
-            max_wait_action="leave_group",
+            # A partner who hasn't arrived LATE_AFTER seconds after the pair
+            # formed has probably closed their page, so they leave the cohort
+            # too, and the next pairing doesn't wait for them. The player
+            # waiting goes on to the game page without a game.
+            late_after=LATE_AFTER,
+            late_action="leave_group",
+            also_leave=["cohort"],
         )
 
     def coins(self):
@@ -241,7 +248,9 @@ class BargainTrial(Trial):
         return (self.answer or {}).get("coins", 0)
 
     def show_feedback(self, experiment, participant):
-        if self.answer is None:
+        if self.sync_group_outcome == "late":
+            text = "You didn't arrive in time, so the game is over for you."
+        elif self.answer is None:
             text = "Your partner didn't arrive, so there was no game this round."
         elif not self.answer["deal"]:
             text = "You didn't reach a deal in time, so nobody was paid."
