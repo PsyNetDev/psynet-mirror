@@ -63,9 +63,15 @@ N_ROUNDS = 2
 MAX_SIT_OUTS = 2
 OPEN_FOR_ROUNDS = 1
 DECISION_SECONDS = 30
-# Longer than the decisions take, so a pair that finishes early is re-paired
-# with the rest of the cohort rather than without them.
-ROUND_DEADLINE_SECONDS = DECISION_SECONDS + 20
+# How long a player may take to reach the end of the round, counted from the
+# round's start or, once they have opened the timed decision page, from 10
+# seconds after its time limit, so that an answer sent at the deadline can
+# arrive.
+LATE_AFTER = 20
+# Longer than a round takes, even one in which a player who closed their page
+# is removed as late, so its pair is re-paired with the rest of the cohort
+# rather than without them.
+ROUND_DEADLINE_SECONDS = DECISION_SECONDS + 10 + LATE_AFTER + 10
 ENDOWMENT = 10
 
 
@@ -270,12 +276,13 @@ class OfferTrial(Trial):
                 group_type=PAIR,
                 waiting_message="Waiting for your partner…",
                 waiting_screen=waiting_for_partner,
-                # A player is taken out 30 s after the round starts (long
-                # enough for a background tab to notice), but not while their
-                # answer to the timed decision page may still be on its way.
-                # They have probably closed their page, so they leave the
-                # cohort too, and the next split doesn't wait for them.
-                late_after=30,
+                # A player is taken out LATE_AFTER seconds after the round
+                # starts (time for a background tab to notice), or after their
+                # decision page's time limit and the 10 seconds an answer sent
+                # at the deadline needs to arrive. They have probably closed
+                # their page, so they leave the cohort too, and the next split
+                # doesn't wait for them.
+                late_after=LATE_AFTER,
                 late_action="leave_group",
                 also_leave=[COHORT],
                 on_release=self.score_pair,

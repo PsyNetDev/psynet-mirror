@@ -52,7 +52,11 @@ GROUP_SIZE = 3
 N_ROUNDS = 2
 N_TURNS = N_ROUNDS * GROUP_SIZE
 WRITE_SECONDS = 20
-LATE_AFTER = 30
+# How long a member may take to finish a turn, counted from its start or, for
+# a writer who has opened the timed page, from 10 seconds after its time
+# limit, so that a sentence sent at the deadline can arrive. A writer who
+# closes their page is removed about 45 seconds into the turn.
+LATE_AFTER = 15
 GROUPER_WAIT = 30
 TURN_BARRIER = "turn_finished"
 

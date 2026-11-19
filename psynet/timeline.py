@@ -1959,10 +1959,10 @@ class Page(Elt):
         """
         Return the time by which this page will have ended at the latest, or
         ``None`` if it can last as long as the participant likes. A
-        :class:`~psynet.sync.GroupBarrier`'s ``late_after`` doesn't count a
-        member as late before then. A page with a ``time_limit`` ends by its
-        deadline anyway, so this is for pages that end by other means, such
-        as a live session's game page.
+        :class:`~psynet.sync.GroupBarrier`'s ``late_after`` counts from then,
+        plus 10 seconds, as it does from a timed page's deadline. A page with a
+        ``time_limit`` ends by its deadline anyway, so this is for pages that
+        end by other means, such as a live game's page.
         """
         return None
 

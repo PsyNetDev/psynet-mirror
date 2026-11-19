@@ -500,8 +500,12 @@ the trial paid, to ``show_result``:
    :pyobject: show_result
    :dedent:
 
-A game can end before any throw is played, when neither player opens the game
-page in time, so ``show_result`` checks for that first.
+A game can start and end without a throw being played, when a player is
+away from the game page for its ``away_timeout`` before the first throw, or
+the game reaches its ``timeout`` first, so ``show_result`` checks for that
+first. A trial
+whose game never started has no answer, and ``gives_feedback`` skips its
+feedback.
 
 Reference: :ref:`live-games-answer` and :ref:`live-games-rewards`.
 
@@ -516,8 +520,10 @@ The rest of the timeline deals with a partner who doesn't come back:
   ``max_wait_action="continue_without_group"``.
 - Before the second game, the partner may still be reading the first game's
   result, so the result page has a ``time_limit`` of ``RESULT_SECONDS``.
-  ``late_after`` counts only once it has run out, so ``LATE_AFTER`` only has
-  to cover the moments after it.
+  ``late_after`` counts from 10 seconds after it has run out, time for an
+  answer sent at the deadline to arrive, so ``LATE_AFTER`` only has to
+  cover the moments after that. A partner who closed their tab on the result
+  page is late 30 + 10 + 20 = 60 seconds after it opened.
 - A partner who is late leaves the pair, and
   ``below_quorum="continue_without_group"`` lets the player left behind carry
   on with the experiment.

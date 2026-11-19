@@ -26,7 +26,8 @@ player won, and the trial pays the reward for them, so each trial's
   won.
 - A partner who doesn't come back for the second game: the other player
   waits for them at the start of the game, for as long as the partner's
-  30-second result page and then `LATE_AFTER`, 20 seconds. The partner is
+  30-second result page, 10 seconds for a late answer to arrive and then
+  `LATE_AFTER`, 20 seconds. The partner is
   then late and leaves the pair, which breaks it up. The player who waited
   goes on to a game page with no game to play, and their trial has no
   answer and pays nothing. A page after the games tells them there are no

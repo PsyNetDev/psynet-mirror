@@ -68,6 +68,11 @@ DECISION_SECONDS = 20
 RESULTS_SECONDS = 10
 # Covers a newcomer reading the society's history before their first round.
 LATE_AFTER = 60
+# For the end of a round, counted from the round's start or, once a member has
+# opened the timed fishing page, from 10 seconds after its time limit, so that
+# a choice sent at the deadline can arrive. A member who closes their page is
+# removed about a minute into the round.
+FINISH_LATE_AFTER = 30
 GROUPING_WAIT = 120
 # How long a lone member waits at the start of a round for a newcomer, before
 # the society dissolves.
@@ -269,7 +274,7 @@ class FishingTrial(Trial):
                 id_="round_finished",
                 group_type=GROUP,
                 waiting_message="Waiting for the other members…",
-                late_after=LATE_AFTER,
+                late_after=FINISH_LATE_AFTER,
                 late_action="leave_group",
                 # Releasing the society closes the round and scores it.
                 on_release=self.score_round,

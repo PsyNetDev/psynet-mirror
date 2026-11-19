@@ -40,7 +40,7 @@ read their results.
 |---|---|---|
 | `retired` | A newcomer played a round with the member, who was the longest-serving. Takes precedence if that round was also their `MAX_ROUNDS`th. | Leaves a tip. |
 | `played_max_rounds` | The member played `MAX_ROUNDS` rounds. | Leaves a tip. |
-| `late` | The member was inactive for longer than `LATE_AFTER`, for example by closing the page, and missed the end of a round. | Earns nothing for that round; the others carry on. Sees the page if they come back. |
+| `late` | The member was inactive, for example by closing the page, and missed the start of a round (`LATE_AFTER`) or its end (`FINISH_LATE_AFTER`, counted from 10 seconds after the fishing page's time limit). | Earns nothing for that round; the others carry on. Sees the page if they come back. |
 | `left_experiment` | The member returned the study or was failed. | Sees no page; the others carry on. |
 | `group_dissolved` | One member was left: during a round, when the round's `round_finished` barrier is next checked, or at the start of a round, if no newcomer joined within `TOP_UP_WAIT`. | Keeps the catch of a round in progress, and is told the society ended. |
 | `removed_by_experimenter` | The experimenter removed the member on the dashboard. | Told they were removed. |

@@ -221,9 +221,9 @@ takes newcomers:
   member, and removes them from the group if they keep the others waiting
   that many seconds. The members who were on time then reach the game page
   without a game. Give the pages before the game a ``time_limit``, such as
-  instructions or the last game's result: ``late_after`` counts only once a
-  page's time limit has run out, so it only has to cover the untimed
-  moments. The group's grouper needs a ``below_quorum``, such as
+  instructions or the last game's result: ``late_after`` counts only from 10
+  seconds after a page's time limit has run out, so it only has to cover the
+  untimed moments. The group's grouper needs a ``below_quorum``, such as
   ``"continue_without_group"``, for the members left behind.
 - ``max_wait_time``, with ``max_wait_action="leave_group"``, is for a group
   that takes newcomers, as in the ``microsociety_live`` demo. There PsyNet
@@ -241,7 +241,7 @@ the one above:
         group_type="pair",
         game_class=RockPaperScissors,
         page=rock_paper_scissors_page(),
-        late_after=20,  # counts once the instructions' 90 seconds are up
+        late_after=20,  # counts from 10 s after the instructions' 90 s are up
         late_action="leave_group",
     ),
 

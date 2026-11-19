@@ -1224,9 +1224,11 @@ the maximum waiting time:
 
     A member who has started a page with a ``time_limit``, other than a
     waiting page, since the group last passed a barrier (or since being
-    admitted) is not late until that limit has run out plus 10 seconds, so
-    that an answer sent at the deadline can arrive. So the late limit need not be
-    longer than the pages' time limits. A page without a time limit can say
+    admitted) has their late limit counted from when that limit runs out plus
+    10 seconds, so that an answer sent at the deadline can arrive. So the late
+    limit needs to cover only the pages without a time limit: with a
+    30-second page and ``late_after=20``, a member who closes their tab on
+    the page is late 60 seconds after it started. A page without a time limit can say
     when it ends at the latest with :meth:`~psynet.timeline.Page.ends_by`,
     which counts in the same way; a live game's page does this (see
     :doc:`live_games`). See
