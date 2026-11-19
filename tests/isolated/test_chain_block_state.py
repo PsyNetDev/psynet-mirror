@@ -42,13 +42,18 @@ def make_state(block_order):
     state.set_block_position(0)
     state.planned_network_ids = [1, 2]
     state.plan_position = 1
+    state.module_id = "tm"
     return state
 
 
 def test_next_block_moves_the_sync_group_and_clears_plans():
     states = [make_state(["A", "B"]), make_state(["A", "B"])]
     participants = [SimpleNamespace(module_state=state) for state in states]
-    group = SimpleNamespace(participants=participants)
+    group = SimpleNamespace(
+        participants=participants,
+        active_participants=participants,
+        trial_maker_runs=None,
+    )
     for participant in participants:
         participant.id = 1
         participant.active_sync_groups = {"sync": group}

@@ -13,15 +13,17 @@ import time
 import zipfile
 from contextlib import ExitStack
 from smtplib import SMTPAuthenticationError
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Dict, Optional
 
 import dallinger.models
 import requests
 from dallinger import db
+from dallinger.models import timenow
 from dallinger.notifications import admin_notifier
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Integer,
@@ -29,6 +31,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     desc,
+    select,
 )
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
@@ -266,6 +269,12 @@ def _status_is_timeline_hold(status):
     return bool(page.get("is_timeline_hold"))
 
 
+def _status_is_waiting(status):
+    """Return whether cached driver status is a waiting page or a timeline hold."""
+    page = (status or {}).get("page") or {}
+    return bool(page.get("is_wait_page")) or _status_is_timeline_hold(status)
+
+
 def _retry_busy_http(send, sleep=time.sleep):
     """Call ``send`` and retry structured busy 503 and stale-timeline 409.
 
@@ -317,7 +326,7 @@ def _raise_for_status_with_server_details(response):
 
 
 if TYPE_CHECKING:
-    from .sync import SyncGroup
+    from .sync import ParticipantLinkSyncGroup, SyncGroup
     from .timeline import Module
 
 UniqueConstraint(dallinger.models.Participant.unique_id)
@@ -466,11 +475,39 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     progress_fixes = Column(PythonList)
 
     page_uuid = Column(String)
+    # Framework bookkeeping, not author API: page_deadline, waiting_barrier_id,
+    # timed_out_since_barrier, group_removal_notice and the pseudonym_* keys.
+    # When the latest timed page's ``time_limit`` runs out; see ``Page.time_limit``.
+    page_deadline = Column(DateTime)
+    # The barrier whose ``waiting_logic`` the participant is in, set on
+    # arrival and handed back to the enclosing barrier, if any, on leaving.
+    # Only the end of the waiting logic clears it, so a participant who jumps
+    # out (for example to a failure page) keeps it.
+    waiting_barrier_id = Column(String)
+    #: Internal: whether the latest timed page answered outside waiting logic
+    #: and outside a trial's feedback since the last barrier ended on its time
+    #: limit. The next barrier copies it onto the visit
+    #: (``ParticipantLinkBarrier.ran_out_of_time``) and clears it. To find
+    #: answers given when a time limit ran out, read :attr:`psynet.trial.main.Trial.time_limit_reached`
+    #: or :attr:`psynet.timeline.Response.time_limit_reached` instead.
+    timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)
     pending_redirect = Column(String)
+    # The progress-bar notice for a participant whom a GroupBarrier removed
+    # from their group, with the ``page_uuid`` of the page it belongs to, or
+    # ``next_page`` until Page.consume binds it to the participant's next page.
+    group_removal_notice = Column(PythonDict)
+    # Group types whose grouper let the participant carry on without a group
+    # (``max_wait_action="continue_without_group"``); cleared when they join one.
+    ungrouped_group_types = Column(PythonList)
+    # Keys into Experiment.pseudonym_scheme, set only when a pseudonym is chosen
+    # rather than derived from the participant ID; see ``Participant.pseudonym``.
+    # Use ``set_pseudonym`` rather than writing them.
+    pseudonym_color = Column(String)
+    pseudonym_animal = Column(String)
     answer = Column(PythonObject)
     answer_accumulation_depth = Column(Integer)
     sequences = Column(PythonList)
@@ -594,6 +631,43 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
             self.unique_id.encode(), b"psynet-websocket", hashlib.sha256
         ).hexdigest()
 
+    @property
+    def pseudonym(self):
+        """Return the name, colour and icon that other participants see, for example "Blue fox".
+
+        See :class:`~psynet.pseudonym.PseudonymScheme`.
+        """
+        from .experiment import get_experiment
+
+        return get_experiment().pseudonym_scheme._pseudonym(self)
+
+    def set_pseudonym(self, color: str, animal: str):
+        """Give this participant a particular pseudonym, by colour and animal key.
+
+        The keys must exist in the experiment's
+        :class:`~psynet.pseudonym.PseudonymScheme`. A pseudonym set here is
+        kept, even if another member of a group has it too; only derived
+        pseudonyms are made unique, in the participant's first
+        :class:`~psynet.sync.SyncGroup` (see :doc:`/code/multiplayer/pseudonyms`).
+        """
+        from .experiment import get_experiment
+
+        get_experiment().pseudonym_scheme._make(color, animal)
+        self.pseudonym_color = color
+        self.pseudonym_animal = animal
+
+    def to_dict(self):
+        """Return the participant's fields without the raw pseudonym keys.
+
+        The Database tab adds the pseudonym itself (see
+        :meth:`psynet.experiment.Experiment.table_data`), so participant JSON
+        responses don't depend on translations.
+        """
+        x = super().to_dict()
+        x.pop("pseudonym_color", None)
+        x.pop("pseudonym_animal", None)
+        return x
+
     # all_trials = relationship("psynet.trial.main.Trial")
 
     @property
@@ -672,6 +746,92 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     def active_sync_groups(self) -> Dict[str, "SyncGroup"]:
         return {group.group_type: group for group in self.sync_groups if group.active}
 
+    def latest_sync_group(self, group_type: str) -> Optional["SyncGroup"]:
+        """Return the participant's latest group of ``group_type``, or ``None`` if they had none.
+
+        Unlike ``active_sync_groups``, this includes a group they have left
+        or that has ended, so a page can still show that group's history,
+        for example with :meth:`~psynet.sync.SyncGroup.rounds`.
+        """
+        from .sync import _latest_sync_group_link
+
+        latest = _latest_sync_group_link(self, group_type)
+        return None if latest is None else latest.sync_group
+
+    def sync_group_link(self, group_type: str) -> Optional["ParticipantLinkSyncGroup"]:
+        """Return the participant's link to their latest group of ``group_type``, or ``None``.
+
+        The link records their membership, including ``admitted_at`` (when
+        the group admitted them, ``None`` while pending) and
+        ``admission_points_passed`` (how many of the group's admission points
+        released them once admitted), for example to work out how long a
+        member has been in a society. It stays readable after they leave.
+        """
+        from .sync import _latest_sync_group_link
+
+        return _latest_sync_group_link(self, group_type)
+
+    def sync_group_removal_reason(self, group_type: str) -> Optional[str]:
+        """Return why the participant is not in a group of ``group_type``.
+
+        Returns ``None`` if they are in such a group, or if they were never
+        in one and no grouper of that type let them continue without one.
+        Returns ``"no_group_formed"`` if the last grouper of that type that
+        they reached, with ``max_wait_action="continue_without_group"``,
+        found them no group in time, even if they were in a group of that
+        type before. Otherwise returns why they left their latest group of
+        that type: ``"late"`` (removed by a barrier's
+        ``late_after``, with any ``late_action``, from its group or a group
+        listed in its ``also_leave``), ``"waited_too_long"`` (waited at a
+        barrier for longer than its ``max_wait_time``, with any
+        ``max_wait_action``), ``"group_dissolved"`` (still in the group when it was
+        dissolved below its quorum, with any ``below_quorum``), ``"moved_on"`` (a
+        :class:`~psynet.sync.Regrouper` took them out of their previous group:
+        seen while they wait at the regrouper, and after they sit a round out,
+        even if they then fail there; once they are in the next group this
+        returns ``None``), ``"finished"`` (left after playing
+        their part), ``"not_admitted"`` (joined as a pending member but was
+        turned away before an admission point admitted them, for example after
+        its ``newcomer_max_wait`` or because top-ups stopped; never failed),
+        ``"left_experiment"`` (failed,
+        including returning the study, and for a member's other groups
+        when a barrier's ``late_action="fail"`` or ``max_wait_action="fail"``,
+        or a dissolving group's ``below_quorum="fail"``, fails them), or
+        ``"removed_by_experimenter"`` (removed from the dashboard, or by
+        :meth:`~psynet.sync.SyncGroup.remove_participant` with that reason).
+        A player sat out of their first round was never in a group, so this
+        returns ``None`` for them; check :meth:`~psynet.sync.Regrouper.sat_out`
+        or ``in_sync_group`` instead.
+
+        To explain an early end, map the reasons your game can meet to your
+        own text. A missing reason raises ``KeyError``, so include
+        ``"removed_by_experimenter"``, which a dashboard removal can give in any game::
+
+            ENDED_EARLY_TEXTS = {
+                "late": "You were away for too long, so the game ended early for you.",
+                "group_dissolved": "Too few players stayed, so the game ended early.",
+                "removed_by_experimenter": "You were removed from the game.",
+            }
+            text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
+        """
+        from .sync import _latest_sync_group_link
+
+        if self.in_sync_group(group_type):
+            return None
+        if group_type in (self.ungrouped_group_types or []):
+            return "no_group_formed"
+        latest = _latest_sync_group_link(self, group_type)
+        return None if latest is None else latest.removal_reason
+
+    def in_sync_group(self, group_type: str) -> bool:
+        """Return whether the participant is in an active group of ``group_type``.
+
+        This becomes ``False`` once they leave the group, for example after a
+        barrier removes them for being late (with any ``late_action``), or when
+        their group is dissolved.
+        """
+        return group_type in self.active_sync_groups
+
     @property
     def sync_group(self) -> "SyncGroup":
         candidates = self.active_sync_groups
@@ -686,10 +846,12 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
                 "Use participant.active_sync_groups[group_type] to access the SyncGroup you need."
             )
 
+    # Unreleased visits by barrier ID. A view, so dropping a visit from it
+    # never deletes the row; visits are saved through ``barrier_links``.
     active_barriers = relationship(
         "ParticipantLinkBarrier",
         collection_class=attribute_mapped_collection("barrier_id"),
-        cascade="all, delete-orphan",
+        viewonly=True,
         primaryjoin=(
             "and_(psynet.participant.Participant.id==remote(ParticipantLinkBarrier.participant_id), "
             "ParticipantLinkBarrier.released==False)"
@@ -760,7 +922,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     def start_module(self, module: "Module"):
         self.check_module_not_already_started(module)
+        run_index = len(self.module_states.get(module.id, [])) + 1
         state = module.state_class(module, self)
+        state.run_index = run_index
         state.start()
         self.module_state = state
 
@@ -1079,11 +1243,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         If they are still on the main timeline, they are redirected to
         ``unsuccessful_end``. They are also removed from active sync groups.
-        If that drops a ``SimpleSyncGroup`` below its minimum size, remaining
-        members are failed immediately when
-        ``fail_participants_below_min_size`` is True, except that a member
-        whose own request is in progress is failed by the barrier poller
-        within about a second. See
+        Whether that dissolves a group left below its ``quorum`` is described
+        in :ref:`groups_below_quorum`. See
         :doc:`/code/trials/participant_and_trial_failure`.
 
         Parameters
@@ -1145,7 +1306,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         )
 
         for group in list(self.active_sync_groups.values()):
-            group.remove_participant(self)
+            group.remove_participant(self, reason="left_experiment")
 
         if redirect_to_end:
             self._redirect_to_unsuccessful_end(exp)
@@ -1193,9 +1354,11 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 def get_participant(participant_id: int, for_update: bool = False) -> Participant:
     """
     Returns the participant with a given ID.
-    Warning: we recommend just using SQLAlchemy directly instead of using this function.
-    When doing so, use ``with_for_update().populate_existing()`` if you plan to update
-    this Participant object, that way the database row will be locked appropriately.
+    For loads that don't lock, we recommend just using SQLAlchemy directly
+    instead of this function. If you plan to update this Participant object,
+    use ``for_update=True`` here rather than a plain ``with_for_update()``
+    query: one that waits for the lock can join the participant's current
+    trial as it was before the wait.
 
     Parameters
     ----------
@@ -1214,14 +1377,100 @@ def get_participant(participant_id: int, for_update: bool = False) -> Participan
     :class:`psynet.participant.Participant`
         The requested participant.
     """
-    query = Participant.query.filter_by(id=participant_id)
+    criterion = Participant.id == participant_id
     if for_update:
-        query = query.with_for_update(of=Participant).populate_existing()
-    return query.one()
+        return _load_participant_for_update(Participant.query, criterion).one()
+    return Participant.query.filter(criterion).one()
+
+
+def _lock_and_load_participant(query, participant_id, *, nowait=False):
+    """Lock participant ``participant_id`` and load it fresh through ``query``.
+
+    The by-id form of :func:`_load_participant_for_update`; see there for why
+    the lock comes first.
+
+    Parameters
+    ----------
+    query :
+        Unfiltered participant query, such as ``Participant.query``.
+    participant_id :
+        ID of the participant to lock.
+    nowait :
+        As in :func:`_load_participant_for_update`.
+
+    Returns
+    -------
+    Participant or None
+        The locked participant, or ``None`` if ``query`` has no such row.
+    """
+    return _lock_for_load(query, Participant.id == participant_id, nowait).get(
+        participant_id
+    )
+
+
+def _load_participant_for_update(query, criterion, *, nowait=False):
+    """Return ``query`` filtered by ``criterion``, locked and reloaded fresh.
+
+    Use this, or :func:`_lock_and_load_participant` for loads by id, for every
+    locking participant load. ``Participant.query`` joins
+    ``_current_trial``, and under READ COMMITTED a statement that waited for
+    a row lock re-reads only the rows it locks; the trial it joins still
+    comes from before the wait. A barrier release writes the waiters' trials
+    while it holds their rows, so a load that queued behind it would see
+    those trials as they were before the release. Unless ``nowait`` is set,
+    this therefore first locks the bare row in a statement of its own, so
+    the load itself never waits.
+
+    Parameters
+    ----------
+    query :
+        Unfiltered participant query, such as ``Participant.query``.
+    criterion :
+        SQLAlchemy criterion selecting the participant row(s) to load.
+    nowait :
+        Fail at once with ``LockNotAvailable`` instead of waiting. A load
+        that cannot wait cannot read stale rows, so it skips the extra lock.
+
+    Returns
+    -------
+    sqlalchemy.orm.Query
+        ``query`` filtered by ``criterion``, with ``FOR UPDATE OF
+        participant`` and ``populate_existing``.
+    """
+    return _lock_for_load(query, criterion, nowait).filter(criterion)
+
+
+def _lock_for_load(query, criterion, nowait):
+    """Lock the rows matching ``criterion`` and set ``query`` to load them.
+
+    Leaves ``query`` unfiltered so :meth:`~sqlalchemy.orm.Query.get` still
+    works on it.
+    """
+    if not nowait:
+        query.session.execute(select(Participant.id).where(criterion).with_for_update())
+    return query.with_for_update(of=Participant, nowait=nowait).populate_existing()
 
 
 class DriverStopped(Exception):
     """Raised by a :class:`ParticipantDriver` whose ``stop_event`` has been set."""
+
+
+def _check_barriers_now():
+    """Check barriers now, as the periodic check would, after a bot left its group.
+
+    A member leaving doesn't trigger a barrier check, so without this the
+    partners waiting for them are released only by the next periodic check,
+    and a test that advances them at once can find them still waiting.
+    """
+    from .sync import check_barriers
+
+    check_barriers()
+
+
+#: Unique IDs of the participants that :meth:`ParticipantDriver.allow_failure`
+#: allowed to fail. Test-only state, kept in the test process rather than in
+#: the participant's variables; bots run in threads of that process.
+_unique_ids_allowed_to_fail = set()
 
 
 class ParticipantDriver:
@@ -1306,6 +1555,15 @@ class ParticipantDriver:
     def current_page_label(self):
         """Label of the current page, or ``None`` once the participant has left."""
         return self._current_page.get("label")
+
+    @property
+    def is_waiting(self):
+        """Whether the current page is a waiting page, such as one at a barrier.
+
+        Like the other ``current_page_*`` properties, this reads the status as
+        of the last :meth:`take_page` or :meth:`refresh_status`.
+        """
+        return _status_is_waiting(self.status)
 
     @property
     def current_page_text(self):
@@ -1720,9 +1978,142 @@ class ParticipantDriver:
             return participant.get_current_page()
 
     def fail(self, reason=None, *, redirect_to_end=True):
+        """Fail the participant, as after a failed check.
+
+        Barriers where their group waits are checked before this returns, so
+        members waiting there for them have been released.
+        """
         with transaction(commit=True):
             participant = Participant.query.get(self.id)
             participant.fail(reason, redirect_to_end=redirect_to_end)
+        _check_barriers_now()
+        self._fetch_status()
+
+    def drop_out(self):
+        """Leave the experiment as if returning the study on the recruitment platform.
+
+        The participant is failed with the ``premature_exit`` tag, and their
+        group reacts as it would to a real dropout. The default
+        :meth:`~psynet.experiment.Experiment.test_check_bot` accepts bots that
+        dropped out. To simulate a participant who closes the tab without
+        telling the platform, stop taking pages for that bot instead, and let
+        the barriers' timeouts deal with them.
+
+        Barriers where their group waits are checked before this returns, so
+        members waiting there for them have been released. On a server, the
+        periodic barrier check releases them a few seconds later.
+        """
+        with transaction(commit=True):
+            participant = Participant.query.get(self.id)
+            if participant.status == "working":
+                participant.end_time = timenow()
+                participant.status = "returned"
+                self.experiment.assignment_returned(participant)
+        _check_barriers_now()
+        self._fetch_status()
+
+    def allow_failure(self):
+        """Tell the default :meth:`~psynet.experiment.Experiment.test_check_bot` that this bot may fail.
+
+        Use it for bots that the test makes fail on purpose, such as the partner
+        of a bot that drops out.
+        """
+        _unique_ids_allowed_to_fail.add(self.participant_unique_id)
+
+    def with_participant(self, function):
+        """Return ``function(participant)``, called with the bot's database row.
+
+        Useful for questions that take a participant, for example::
+
+            reason = bot.with_participant(
+                lambda p: p.sync_group_removal_reason("pair")
+            )
+            pair_id = bot.with_participant(lambda p: p.active_sync_groups["pair"].id)
+
+        Return plain values rather than database objects, which expire when the
+        call ends.
+        """
+        with transaction(commit=False):
+            participant = (
+                Participant.query.filter_by(id=self.id).populate_existing().one()
+            )
+            return function(participant)
+
+    def run_out_of_time(self):
+        """Let the time limit of the bot's current page run out without answering.
+
+        Waits until the page's ``time_limit`` has passed, then submits as the
+        browser does at that moment, so the page saves its ``time_limit_answer``
+        and :attr:`~psynet.timeline.Response.time_limit_reached` is ``True``.
+        The bot is still on time for a barrier's ``late_after``.
+
+        Returns
+        -------
+        bool
+            ``True`` if the participant should continue, ``False`` if finished.
+        """
+        from .bot import BotResponse
+
+        deadline = self.with_participant(lambda participant: participant.page_deadline)
+        if deadline is None:
+            raise ValueError("The bot's current page has no time limit.")
+        self._sleep(max(0.0, (deadline - timenow()).total_seconds()))
+        page = {
+            **self.status["page"],
+            "bot_response": BotResponse(
+                raw_answer=None, metadata={"time_limit_reached": True}
+            ).__json__(),
+        }
+        self._submit_response({**self.status, "page": page}, {})
+        return self.is_working
+
+    def send_chat_message(self, content: str):
+        """Post ``content`` to the :class:`~psynet.chatroom.ChatRoom` on the bot's current page.
+
+        The message goes through the same handler as one typed on the page, so
+        the bot first joins the room.
+        """
+        from .chatroom import EnableChatrooms
+
+        with transaction(commit=True):
+            participant = Participant.query.get(self.id)
+            chatroom = getattr(participant.get_current_page(), "chatroom", None)
+            if chatroom is None:
+                raise RuntimeError(
+                    f"Bot {self.id}'s current page doesn't show a ChatRoom."
+                )
+            for message in (
+                {"type": "join_room"},
+                {"type": "message", "content": content},
+            ):
+                self.experiment.handle_websocket_message(
+                    json.dumps({**message, "room_id": chatroom.room_id}),
+                    channel_name=EnableChatrooms.channel,
+                    participant_id=self.id,
+                    scope=participant.websocket_scope,
+                    receive_time=timenow(),
+                )
+
+    @property
+    def failed(self) -> bool:
+        """Whether the participant has failed, read from the database."""
+        return self.from_db("failed")
+
+    @property
+    def current_notice(self) -> Optional[str]:
+        """The notice that the participant's progress bar shows now, if any.
+
+        For example "Your partner is no longer in your group. Please continue."
+        after their group dissolved, or a partner-ready notice.
+        """
+        from .sync import pending_arrival_notice_for
+
+        with transaction(commit=False):
+            participant = (
+                Participant.query.filter_by(id=self.id).populate_existing().one()
+            )
+            notice = pending_arrival_notice_for(participant)
+            return None if notice is None else str(notice)
 
     def from_db(self, attr: str):
         with transaction(commit=False):

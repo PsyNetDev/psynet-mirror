@@ -1,0 +1,1 @@
+Fixed `psynet test local` running an experiment's `experiment.py` a second time during the bot test, for example when a bot drops out, which made later queries of custom trial classes fail with SQLAlchemy `InvalidRequestError: ... is not a sub-mapper of ...`.

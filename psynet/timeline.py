@@ -5,6 +5,7 @@ if TYPE_CHECKING:
     from psynet.trial.main import TrialNode
 
 import copy
+import enum
 import inspect
 import json
 import random
@@ -13,7 +14,9 @@ import time
 import uuid
 import warnings
 from collections import Counter
-from datetime import datetime
+from contextlib import contextmanager
+from contextvars import ContextVar
+from datetime import datetime, timedelta
 from functools import cached_property
 from importlib import resources
 from statistics import median
@@ -22,6 +25,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Unio
 
 from bs4 import BeautifulSoup
 from dallinger import db
+from dallinger.models import timenow
 from dominate import tags
 from jsonpickle.util import importable_name
 from markupsafe import Markup
@@ -37,7 +41,7 @@ from .data import SQLBase, SQLMixin, register_table
 from .db import forbid_commits
 from .field import PythonObject
 from .serialize import is_lambda_function, prepare_function_for_serialization
-from .static_resources import version_static_urls
+from .static_resources import package_static_url, version_static_urls
 from .utils import (
     NoArgumentProvided,
     call_function,
@@ -46,6 +50,7 @@ from .utils import (
     get_args,
     get_locale,
     get_logger,
+    get_translator,
     log_time_taken,
     merge_dicts,
     pretty_format_seconds,
@@ -58,6 +63,19 @@ if TYPE_CHECKING:
     from .participant import Participant
 
 logger = get_logger()
+
+# Seconds after a page's ``time_limit`` that an answer still counts as given in time.
+TIME_LIMIT_GRACE_SECONDS = 5
+# Seconds before a page's ``time_limit`` that the browser may already report it reached.
+TIME_LIMIT_EARLY_SECONDS = 2
+
+
+class _TimeLimitAnswer(enum.Enum):
+    CURRENT_ANSWER = "current answer"
+
+
+CURRENT_ANSWER = _TimeLimitAnswer.CURRENT_ANSWER
+"""Pass as a page's ``time_limit_answer`` to record what the participant has entered when time runs out."""
 
 
 def _normalize_javascript_urls(urls, argument_name):
@@ -333,6 +351,8 @@ class Elt:
     expected_repetitions = None
     id = None
     created_within_page_maker = False
+    # Set on a trial's feedback page maker and everything it produces.
+    _trial_feedback = False
 
     def __init__(self):
         self.links = {}
@@ -522,7 +542,7 @@ class AsyncCodeBlock(EltCollection):
         then. The function keeps running in the background. ``on_timeout``
         must not commit the database session.
 
-    content:
+    waiting_message:
         Only relevant if ``wait=True``; overlay message while waiting.
         Markup is allowed. Omit to keep the stock wait copy.
 
@@ -538,7 +558,7 @@ class AsyncCodeBlock(EltCollection):
         wait: bool = True,
         expected_wait: Optional[float] = None,
         check_interval: float = 2.0,
-        content: Optional[str] = None,
+        waiting_message: Optional[str] = None,
         max_wait_time: float = 20.0,
         on_timeout: Optional[Callable] = None,
         priority: Optional[str] = None,
@@ -569,7 +589,7 @@ class AsyncCodeBlock(EltCollection):
         self.wait = wait
         self.expected_wait = expected_wait
         self.check_interval = check_interval
-        self.content = content
+        self.waiting_message = waiting_message
         self.max_wait_time = max_wait_time
         self.on_timeout = on_timeout
         self.priority = priority
@@ -654,7 +674,7 @@ class AsyncCodeBlock(EltCollection):
                 check_interval=self.check_interval,
                 max_wait_time=self.max_wait_time,
                 log_message="Waiting for async code block to finish.",
-                content=self.content,
+                waiting_message=self.waiting_message,
                 on_timeout=None
                 if self.on_timeout is None
                 else self._call_on_timeout_unless_finished,
@@ -809,6 +829,9 @@ class ReactiveGoTo(GoTo):
             experiment=experiment,
             participant=participant,
         )
+        # Keys 0 and 1 compare equal to False and True, so check the type too.
+        if all(type(key) is bool for key in self.targets):
+            val = bool(val)
         try:
             return self.targets[val]
         except KeyError:
@@ -1164,6 +1187,24 @@ def _loaded_active_sync_groups(participant):
     return {} if not groups else groups
 
 
+def _update_unfinished_trial_answer(participant):
+    """Copy ``participant.answer`` to the participant's current trial while it runs.
+
+    So a barrier inside :meth:`~psynet.trial.main.Trial.show_trial` can read the
+    answers given so far from ``trial.answer``. The copy stops once the trial is
+    complete or failed, so pages the participant reaches after leaving a failed
+    trial do not overwrite its answer. Finalisation still writes the formatted
+    answer, also on a trial that failed while it ran.
+    """
+    if participant.current_trial_id is None:
+        return
+    trial = participant.current_trial
+    if trial is None or trial.complete or trial.failed:
+        return
+    answer = participant.answer
+    trial.answer = dict(answer) if isinstance(answer, dict) else answer
+
+
 def _is_timeline_hold(page):
     """Return whether ``page`` is a timeline hold overlay."""
     return bool(getattr(page, "is_timeline_hold", False))
@@ -1182,7 +1223,8 @@ def _arrival_updates_for(page, participant):
     """Return partner-ready websocket config, or None when it cannot be used.
 
     Hold pages already subscribe to the same channel. Participants with no
-    sync group can never receive a ``GroupBarrier`` arrival notice. When
+    sync group only get a notice if they were removed from a group on this
+    page. When
     membership is not already loaded, a cheap existence check decides
     whether to open the websocket.
     """
@@ -1195,14 +1237,15 @@ def _arrival_updates_for(page, participant):
         from psynet.sync import _has_active_sync_group
 
         in_group = _has_active_sync_group(participant)
-    if not in_group:
+    from psynet.sync import _arrival_notice_fields, _removed_from_group_notice
+
+    if not in_group and _removed_from_group_notice(participant) is None:
         return None
-    from psynet.sync import pending_arrival_notice_for
     from psynet.timeline_hold import _timeline_hold_channel
 
     return {
         "channel": _timeline_hold_channel(participant.id),
-        "notice": pending_arrival_notice_for(participant),
+        **_arrival_notice_fields(participant),
     }
 
 
@@ -1415,6 +1458,36 @@ class Page(Elt):
         For example, a validation function testing that the answer contains exactly 3 characters might look like this:
         ``lambda answer: "Answer must contain exactly 3 characters!" if len(answer) != 3 else None``.
 
+    time_limit
+        Optional seconds the participant has on this page. When they run
+        out, the page submits itself and ``time_limit_answer`` is recorded.
+
+        - The server counts from when the participant reached the page, so
+          reloading the page does not restart the clock.
+        - An answer that reaches the server more than 5 seconds after the
+          limit counts as late and is treated the same way.
+        - Answers given because of the time limit skip validation, and their
+          :attr:`Response.time_limit_reached` is ``True``.
+        - The page shows "N s left" at the top. An element with the attribute
+          ``data-psynet-seconds-left`` in the page's content shows the
+          countdown instead.
+        - Just before the page submits itself, the browser dispatches a
+          ``psynet:timeLimitReached`` event on ``document``, so custom
+          JavaScript can stage its state in ``psynet.response.staged`` (kept
+          only with ``time_limit_answer=CURRENT_ANSWER``, on pages without a
+          built-in control).
+        - Cannot be combined with ``session_id``.
+
+    time_limit_answer
+        The answer recorded when ``time_limit`` runs out (default ``None``),
+        so passing it without ``time_limit`` raises an error.
+        Pass :data:`CURRENT_ANSWER` to record what the participant has
+        entered so far instead: the page's controls submit their current
+        answer, which is formatted as usual but not validated, so
+        ``format_answer`` should accept an incomplete answer. If the page has
+        no answer to submit, ``None`` is recorded. An answer that arrives
+        more than 5 seconds after the limit is kept the same way.
+
 
     Attributes
     ----------
@@ -1475,6 +1548,8 @@ class Page(Elt):
         expect_scrolling: Optional[bool] = None,
         delegated_render: bool = False,
         background_recording=None,
+        time_limit: Optional[float] = None,
+        time_limit_answer=None,
     ):
         super().__init__()
 
@@ -1623,6 +1698,19 @@ class Page(Elt):
         self.session_id = session_id
         self.save_answer = save_answer
         self.start_trial_automatically = start_trial_automatically
+        if time_limit is not None and time_limit < 0:
+            raise ValueError(f"time_limit must not be negative, got {time_limit}.")
+        if time_limit is not None and session_id is not None:
+            # Same-session updates keep the page's scripts, so the countdown
+            # would not restart and could submit the next page.
+            raise ValueError("A page cannot have both time_limit and session_id.")
+        if time_limit is None and time_limit_answer is not None:
+            raise ValueError(
+                "time_limit_answer is the answer recorded when the page's "
+                "time_limit runs out, so it needs a time_limit."
+            )
+        self.time_limit = time_limit
+        self.time_limit_answer = time_limit_answer
         if show_abort_button is not None:
             warnings.warn(
                 "Page(show_abort_button=...) is deprecated; "
@@ -1735,10 +1823,13 @@ class Page(Elt):
         """
         This function is used when a bot simulates a participant responding to a given page.
         In the simplest form, the function just returns the value of the
-        answer that the bot returns.
+        answer that the bot returns, which is saved without passing through ``format_answer``.
         For more sophisticated treatment, the function can return a
         ``BotResponse`` object which contains other parameters
         such as ``blobs`` and ``metadata``.
+        PsyNet's built-in answer controls return ``BotResponse(raw_answer=...)`` with
+        what the browser would submit, so that bot answers pass through the same
+        ``format_answer`` methods as browser answers.
         """
         raise NotImplementedError
 
@@ -1818,6 +1909,11 @@ class Page(Elt):
         arrival_updates = _arrival_updates_for(self, participant)
         if arrival_updates is not None:
             attributes["arrival_updates"] = arrival_updates
+        from psynet.sync import waiting_page_config
+
+        waiting = waiting_page_config(self, participant)
+        if waiting is not None:
+            attributes["waiting"] = waiting
         return attributes
 
     @property
@@ -1841,6 +1937,47 @@ class Page(Elt):
     def consume(self, experiment, participant):
         participant.page_uuid = new_page_uuid()
         participant.page_count += 1
+        notice = participant.group_removal_notice
+        if notice is not None and notice.get("next_page"):
+            # A notice for the next page, such as after timing out at a barrier.
+            participant.group_removal_notice = {
+                "page_uuid": participant.page_uuid,
+                "text": notice["text"],
+            }
+        if self.time_limit is not None:
+            participant.page_deadline = timenow() + timedelta(seconds=self.time_limit)
+            if participant.waiting_barrier_id is None:
+                for link in participant.sync_group_links:
+                    if link.active:
+                        link.page_deadline = participant.page_deadline
+
+    def _time_limit_seconds_left(self, participant) -> Optional[float]:
+        """Return the seconds left before this page's ``time_limit``, or ``None`` without one."""
+        if self.time_limit is None or participant.page_deadline is None:
+            return None
+        return max(0.0, (participant.page_deadline - timenow()).total_seconds())
+
+    def _time_limit_seconds_to_wait(self, metadata, participant) -> Optional[float]:
+        """Return the seconds left if the browser reports the time limit too early.
+
+        The browser's flag is trusted only around the deadline, so an edited
+        or early page cannot end the time limit early.
+        """
+        if metadata.get("time_limit_reached") is not True:
+            return None
+        seconds_left = self._time_limit_seconds_left(participant)
+        if seconds_left is None or seconds_left <= TIME_LIMIT_EARLY_SECONDS:
+            return None
+        return seconds_left
+
+    def _time_limit_reached(self, metadata, participant) -> bool:
+        """Return whether this answer is given because the time limit ran out."""
+        if self.time_limit is None or participant.page_deadline is None:
+            return False
+        if metadata.get("time_limit_reached") is True:
+            return self._time_limit_seconds_to_wait(metadata, participant) is None
+        grace = timedelta(seconds=TIME_LIMIT_GRACE_SECONDS)
+        return timenow() > participant.page_deadline + grace
 
     def on_complete(self, experiment, participant):
         pass
@@ -1856,8 +1993,6 @@ class Page(Elt):
         client_ip_address=None,
         answer=NoArgumentProvided,
     ):
-        from psynet.trial.main import Trial
-
         if raw_answer == NoArgumentProvided and answer == NoArgumentProvided:
             raise ValueError("At least one of raw_answer and answer must be provided.")
         if blobs is None:
@@ -1870,16 +2005,39 @@ class Page(Elt):
 
             _browser_config(self, experiment, participant)
 
+        from .sync import _removed_late_on_current_page
+
+        too_late_for_group = bool(
+            participant.sync_group_links
+        ) and _removed_late_on_current_page(participant)
+
         resp = Response(
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
+            trial=_trial_owning_page(participant),
         )
         db.session.add(resp)
 
-        trial = participant.current_trial
-        resp._background_parent = trial or participant
+        resp._background_parent = participant.current_trial or participant
 
+        timed_out = self._time_limit_reached(metadata, participant)
+        if timed_out:
+            metadata = {**metadata, "time_limit_reached": True}
+            if self.time_limit_answer is not CURRENT_ANSWER:
+                answer = self.time_limit_answer
+                # Only an answer the server supplies may skip the choices check.
+                resp._server_time_limit_answer = True
+            elif raw_answer is None:
+                answer = None
+        else:
+            # The flag skips validation, so only the server may set it.
+            metadata = {k: v for k, v in metadata.items() if k != "time_limit_reached"}
+        metadata = {k: v for k, v in metadata.items() if k != "too_late_for_group"}
+        if too_late_for_group:
+            metadata = {**metadata, "too_late_for_group": True}
+        if self._time_limit_counts(participant):
+            participant.timed_out_since_barrier = timed_out
         if answer == NoArgumentProvided:
             answer = self.format_answer(
                 raw_answer,
@@ -1904,13 +2062,6 @@ class Page(Elt):
         resp.answer = answer
         resp.metadata = combined_metadata
 
-        if isinstance(trial, Trial):
-            trial.response = resp
-            if trial.time_taken is None:
-                trial.time_taken = resp.metadata["time_taken"]
-            else:
-                trial.time_taken += resp.metadata["time_taken"]
-
         participant.browser_platform = metadata.get(
             "platform", "Browser platform info could not be retrieved."
         )
@@ -1933,8 +2084,38 @@ class Page(Elt):
             return list(self.background_recording.sources)
         return []
 
+    def _time_limit_counts(self, participant):
+        """Whether this page's time limit updates the participant's and trial's timeout flags.
+
+        Untimed pages, pages shown while waiting at a barrier, and a trial's
+        feedback pages, such as a notice whose time limit only moves it on,
+        keep the flags from the last timed page.
+        """
+        return (
+            self.time_limit is not None
+            and participant.waiting_barrier_id is None
+            and not self._trial_feedback
+        )
+
+    def _reject_impossible_answer(self, answer):
+        """Return a :class:`FailedValidation` for an answer the page cannot produce.
+
+        The experiment runs this check on every submitted response before
+        :meth:`validate`, so overriding :meth:`validate` does not skip it.
+        """
+        return None
+
     def _accept_response(self, resp, experiment, participant):
         """Save an answer that passed validation and run ``on_complete``."""
+        trial = resp.trial
+        if trial is not None:
+            trial.response = resp
+            if self._time_limit_counts(participant):
+                trial.time_limit_reached = resp.time_limit_reached
+            page_time = resp.metadata.get("time_taken")
+            if page_time is not None:
+                trial.time_taken = (trial.time_taken or 0) + page_time
+
         if self.save_answer:
             if participant.answer_accumulation_depth:
                 answers = participant.answer
@@ -1942,6 +2123,7 @@ class Page(Elt):
                 flag_modified(participant, "answer")
             else:
                 participant.answer = resp.answer
+            _update_unfinished_trial_answer(participant)
             participant.answer_is_fresh = True
             if isinstance(self.save_answer, str):
                 participant.var.set(self.save_answer, resp.answer)
@@ -2144,6 +2326,14 @@ class Page(Elt):
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
             "recordingCaptureSources": self._recording_capture_sources(),
         }
+        seconds_left = self._time_limit_seconds_left(participant)
+        if seconds_left is not None:
+            _p = get_translator(context=True)
+            internal_js_vars["timeLimit"] = {
+                "secondsLeft": seconds_left,
+                "text": _p("time_limit", "{SECONDS} s left"),
+                "currentAnswer": self.time_limit_answer is CURRENT_ANSWER,
+            }
         control = getattr(self, "control", None)
         if isinstance(control, RecordControl):
             internal_js_vars["asynchronousUploadSources"] = (
@@ -2169,7 +2359,13 @@ class Page(Elt):
         css_links = version_static_urls(self.css_links + experiment.css_links)
         legacy_js_links = version_static_urls(self.legacy_js_links)
         js_dependencies = version_static_urls(self.js_dependencies)
-        js_page_modules = version_static_urls(self.js_page_modules)
+        js_page_modules = self.js_page_modules
+        if seconds_left is not None:
+            js_page_modules = [
+                *js_page_modules,
+                package_static_url("psynet", "scripts/time-limit.js"),
+            ]
+        js_page_modules = version_static_urls(js_page_modules)
 
         all_template_args = {
             **self.template_arg,
@@ -2709,6 +2905,8 @@ class PageMaker(Elt):
             elt.id = position + [i]
             elt.created_within_page_maker = True
             elt.links = {**self.links, **elt.links}
+            if self._trial_feedback:
+                elt._trial_feedback = True
         return res
 
     def impute_time_estimates(self, elts):
@@ -2834,6 +3032,23 @@ class Timeline:
         self.check_for_time_estimate()
         self.check_modules()
         self.check_barrier_ids()
+        self.check_group_policies()
+
+    def check_group_policies(self):
+        """Check that groupers say what happens when late members shrink their groups, and how newcomers are admitted."""
+        from .sync import check_admission_points, check_group_dropout_policies
+
+        check_group_dropout_policies(self._barriers())
+        check_admission_points(self._barriers())
+
+    def _barriers(self):
+        """Yield the barrier behind each timeline element that has one."""
+        from .sync import Barrier
+
+        for elt in self.all_elts:
+            barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
+            if isinstance(barrier, Barrier):
+                yield barrier
 
     def check_barrier_ids(self):
         """Reject one barrier ID used with different release behavior.
@@ -2843,14 +3058,10 @@ class Timeline:
         definitions in the same timeline must use distinct IDs.
         """
         from .barrier_spec import behavior_hash
-        from .sync import Barrier
 
         seen = {}
         hashes = {}
-        for elt in self.all_elts:
-            barrier = elt if isinstance(elt, Barrier) else elt.links.get("barrier")
-            if not isinstance(barrier, Barrier):
-                continue
+        for barrier in self._barriers():
             digest = hashes.get(id(barrier))
             if digest is None:
                 digest = behavior_hash(barrier)
@@ -3113,6 +3324,20 @@ def estimate_duration(logic):
     return CreditEstimate(elts).get_max("time")
 
 
+def _trial_owning_page(participant):
+    """Return the trial whose pages the participant is on, or ``None``."""
+    from psynet.trial.main import Trial
+
+    trial = participant.current_trial
+    # Pages after _finalize_trial (feedback, or pages before the next
+    # trial is prepared) leave current_trial set but don't belong to it.
+    # A failed participant's trial never completes, and their remaining
+    # pages (such as the unsuccessful-end page) don't belong to it either.
+    if isinstance(trial, Trial) and not trial.complete and not participant.failed:
+        return trial
+    return None
+
+
 class FailedValidation:
     def __init__(self, message="Invalid response, please try again."):
         self.message = message
@@ -3151,6 +3376,19 @@ class Response(_Response):
     successful_validation: bool
         Whether the response validation was successful,
         allowing the participant to advance to the next page.
+
+    trial_id: int
+        ID of :attr:`trial`.
+
+    trial
+        The :class:`~psynet.trial.main.Trial` whose pages
+        (:meth:`~psynet.trial.main.Trial.show_trial`) the participant
+        submitted this response on, including submissions rejected by
+        validation. ``None`` for pages outside a trial, including feedback
+        pages and pages submitted after the participant failed.
+        Recordings follow a different rule: a recording made on a feedback
+        page (:meth:`~psynet.trial.main.Trial.show_feedback`) is stored with
+        the trial that just finished.
     """
 
     participant_id = Column(Integer, ForeignKey("participant.id"), index=True)
@@ -3159,6 +3397,8 @@ class Response(_Response):
         back_populates="all_responses",
         foreign_keys=[participant_id],
     )
+    trial_id = Column(Integer, ForeignKey("trial.id"), index=True)
+    trial = relationship("psynet.trial.main.Trial", foreign_keys=[trial_id])
 
     question = Column(String)
     answer = Column(PythonObject)
@@ -3183,6 +3423,26 @@ class Response(_Response):
     def metadata(self, metadata):
         self.metadata_ = metadata
 
+    @property
+    def time_limit_reached(self) -> bool:
+        """Whether the page's ``time_limit`` ran out before this answer was given.
+
+        See :class:`~psynet.timeline.Page`.
+        """
+        return bool((self.metadata or {}).get("time_limit_reached"))
+
+    @property
+    def too_late_for_group(self) -> bool:
+        """Whether this answer arrived after the participant's group went on without them.
+
+        It is ``True`` when a barrier removed the participant from their group
+        for being late (``late_after``, with any ``late_action``) while they were on this
+        page, whether the group carried on or was dissolved. The group didn't
+        use the answer, so a move in a game, for example, usually shouldn't
+        count.
+        """
+        return bool((self.metadata or {}).get("too_late_for_group"))
+
     async_jobs = relationship("AsyncJob")
     async_processes = _deprecated_async_processes
     # assets = relationship(
@@ -3198,11 +3458,12 @@ class Response(_Response):
         page_type,
         answer=None,
         metadata=None,
+        trial=None,
     ):
         self.participant_id = participant.id
+        self.trial = trial
         self.question = label
         self.page_type = page_type
-        self.metadata = metadata
         self.answer = answer
         self.metadata = metadata
 
@@ -3216,8 +3477,50 @@ def is_list_of(x, what):
     return True
 
 
-def join(*args):
+def join(*args, stop_if: Optional[Callable] = None):
+    """Join timeline elements, lists of elements and collections into one list.
+
+    Parameters
+    ----------
+    args
+        Elements, lists or tuples of them, collections such as barriers or
+        trial makers, and functions (which become :class:`CodeBlock` s).
+        ``None`` is skipped.
+    stop_if
+        Optional function taking ``participant`` and/or ``experiment``.
+        If given, it is checked before each argument, and once it returns
+        ``True`` the participant skips the remaining arguments. Each
+        argument runs whole once started, so pass ``join(...)`` as one
+        argument for steps that must not be separated. A list or tuple is
+        one argument too: unpack it, as in ``join(*steps, stop_if=...)``,
+        to check between its elements. For example,
+        ``join(rules_page, game_starts_barrier, stop_if=left_group)``
+        skips the barrier for a participant who left their group while
+        reading the rules. Rounds of a group game are cued trials, which
+        run whole anyway.
+        Use :func:`for_loop` with ``stop_if`` to stop a loop, and a
+        :func:`conditional` after the ``join`` to show something to those
+        who stopped.
+    """
     from .asset import AssetSpecification
+
+    if stop_if is not None:
+        return join(
+            *(
+                conditional(
+                    "stop_if",
+                    lambda participant, experiment: (
+                        not call_function_with_context(
+                            stop_if, participant=participant, experiment=experiment
+                        )
+                    ),
+                    arg,
+                    log_chosen_branch=False,
+                )
+                for arg in args
+                if arg is not None
+            )
+        )
 
     list_classes = (list, tuple)
 
@@ -3291,6 +3594,35 @@ def _while_loop_timed_out(participant, label, max_loop_time, now=None):
     )
 
 
+_released_pass_barrier_id = ContextVar("psynet_released_pass_barrier_id", default=None)
+
+
+@contextmanager
+def _ending_released_pass(barrier_id):
+    """End each ``while_loop`` reached in the released waiting pass of this barrier."""
+    token = _released_pass_barrier_id.set(barrier_id)
+    try:
+        yield
+    finally:
+        _released_pass_barrier_id.reset(token)
+
+
+def _in_released_pass(participant):
+    """Return whether this request is skipping the participant's released waiting pass.
+
+    Re-entering the same barrier in this request starts a new, unreleased
+    visit, whose waiting logic runs as usual.
+    """
+    from .sync import _has_left_barrier
+
+    barrier_id = _released_pass_barrier_id.get()
+    return (
+        barrier_id is not None
+        and participant.waiting_barrier_id == barrier_id
+        and _has_left_barrier(participant, barrier_id)
+    )
+
+
 def while_loop(
     label: str,
     condition: Callable,
@@ -3301,10 +3633,15 @@ def while_loop(
     fail_on_timeout=True,
     on_timeout: Optional[Callable] = None,
     extend_while: Optional[Callable] = None,
+    _ends_in_released_pass=True,
 ):
     """
     Loops a series of elts while a given criterion is satisfied.
     The criterion function is evaluated once at the beginning of each loop.
+    Inside a barrier's ``waiting_logic``, the loop ends at its next check
+    once the barrier releases the participant. This also ends PsyNet's own
+    waits in that pass, such as waiting for a trial or for asynchronous
+    processing.
 
     Parameters
     ----------
@@ -3319,6 +3656,8 @@ def while_loop(
 
     logic:
         An elt (or list of elts) to display while ``condition`` returns ``True``.
+        The loop uses copies of these elts, so a ``GoTo`` outside the loop
+        can't target one of them.
 
     expected_repetitions:
         The number of times the loop is expected to be seen by a given participant.
@@ -3349,8 +3688,9 @@ def while_loop(
 
     extend_while:
         Optional callable accepting ``participant`` and/or ``experiment``,
-        checked on each iteration. While it returns ``True`` the loop cannot
-        time out, and ``max_loop_time`` restarts once it returns ``False``.
+        checked at the start of each pass through the loop. Whenever it
+        returns ``True``, the loop does not time out on that pass and the
+        ``max_loop_time`` clock restarts from zero.
 
     Returns
     -------
@@ -3361,10 +3701,11 @@ def while_loop(
     start_while = StartWhile(label)
     end_while = EndWhile(label)
 
-    logic = join(logic)
-    logic = multiply_expected_repetitions(logic, expected_repetitions)
+    logic = multiply_expected_repetitions(_copy_elts(join(logic)), expected_repetitions)
 
     def condition_wrapped(participant, experiment):
+        if _ends_in_released_pass and _in_released_pass(participant):
+            return False
         result = call_function_with_context(
             condition, participant=participant, experiment=experiment
         )
@@ -3631,8 +3972,9 @@ def conditional(
 
     condition:
         A function with up to two arguments named ``participant`` and ``experiment``,
-        that is executed once the participant reaches the corresponding part of the timeline,
-        returning a Boolean.
+        that is executed once the participant reaches the corresponding part of the timeline.
+        Its result is converted with ``bool()``, so a truthy value such as a number or a
+        non-empty list chooses ``logic_if_true``.
 
     logic_if_true:
         An elt (or list of elts) to display if ``condition`` returns ``True``.
@@ -3736,6 +4078,33 @@ def with_fixed_time_credit(elts, time_credit):
     return join(start_fix, elts, end_fix)
 
 
+def _copy_elts(elts: List[Elt]) -> List[Elt]:
+    """Return shallow copies of ``elts`` that refer to each other instead of the originals.
+
+    Lets a loop scale its elements' estimates without changing elements that
+    are used elsewhere too, or that are resolved again later. An element that
+    appears twice gets a copy for each place; references go to the first.
+    """
+    copies = [copy.copy(elt) for elt in elts]
+    first_copy = {}
+    for original, elt_copy in zip(elts, copies):
+        first_copy.setdefault(id(original), elt_copy)
+
+    def remap(value):
+        if isinstance(value, Elt):
+            return first_copy.get(id(value), value)
+        if isinstance(value, dict) and any(isinstance(v, Elt) for v in value.values()):
+            return {key: remap(item) for key, item in value.items()}
+        if isinstance(value, list) and any(isinstance(v, Elt) for v in value):
+            return [remap(item) for item in value]
+        return value
+
+    for elt in copies:
+        elt.__dict__.update({name: remap(value) for name, value in vars(elt).items()})
+        elt.links = dict(getattr(elt, "links", {}))
+    return copies
+
+
 def multiply_expected_repetitions(logic, factor: float):
     assert isinstance(logic, Elt) or is_list_of(logic, Elt)
     if isinstance(logic, Elt):
@@ -3775,6 +4144,9 @@ class ModuleState(SQLBase, SQLMixin):
     started = Column(Boolean, default=False)
     finished = Column(Boolean, default=False)
     early_exited = Column(Boolean, default=False)
+    #: Counts the participant's visits to the module, from 1, as when a loop
+    #: repeats it.
+    run_index = Column(Integer)
 
     asset_links = relationship(
         "AssetModuleState",
@@ -4275,7 +4647,33 @@ def for_loop(
     logic: Union["TimelineLogic", Callable[..., "TimelineLogic"]],
     time_estimate_per_iteration: Optional[float] = None,
     expected_repetitions=None,
+    stop_if: Optional[Callable] = None,
 ):
+    """Run ``logic`` once for each item of ``iterate_over``.
+
+    Parameters
+    ----------
+    label
+        Label of the loop, unique among loops nested in each other.
+    iterate_over
+        The items, or a function taking ``participant`` and/or ``experiment``
+        that returns them when the participant reaches the loop.
+    logic
+        Timeline logic for one iteration, or a function taking the item
+        (and optionally ``participant`` and ``experiment``) that returns it.
+    time_estimate_per_iteration
+        Seconds one iteration is expected to take. Required if ``logic`` is
+        a function.
+    expected_repetitions
+        Expected number of iterations, used for time estimates. Inferred from
+        ``iterate_over`` when it is a sequence or a function without arguments.
+    stop_if
+        Optional function taking ``participant`` and/or ``experiment``,
+        checked before each iteration. Once it returns ``True`` the loop
+        ends, after the iteration in progress has finished. For example,
+        ``stop_if=left_team`` ends a game's rounds once the participant has
+        left their team.
+    """
     if time_estimate_per_iteration is None:
         if callable(logic):
             raise ValueError(
@@ -4340,11 +4738,15 @@ def for_loop(
             participant=participant,
         )
 
-    def should_stay_in_loop(participant):
+    def should_stay_in_loop(participant, experiment):
         nonlocal label
         # state = participant.for_loops[-1]
         state = participant.for_loops[label]
-        return state["index"] < len(state["lst"])
+        if state["index"] >= len(state["lst"]):
+            return False
+        return stop_if is None or not call_function_with_context(
+            stop_if, participant=participant, experiment=experiment
+        )
 
     def increment_counter(participant):
         # state = participant.for_loops[-1]
@@ -4368,6 +4770,7 @@ def for_loop(
                 else estimate_num_repetitions(iterate_over)
             ),
             fix_time_credit=False,
+            _ends_in_released_pass=False,
         ),
         CodeBlock(wrapup),
     )
@@ -4454,6 +4857,7 @@ def sequence(
             ),
             expected_repetitions=sequence_length,
             fix_time_credit=False,
+            _ends_in_released_pass=False,
         ),
         CodeBlock(tear_down_sequence),
     )

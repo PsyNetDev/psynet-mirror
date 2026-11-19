@@ -10,19 +10,24 @@ link as a protocol witness. See
 import sys
 import threading
 import uuid
+from importlib import resources
 from pathlib import Path
 
 import pytest
 from dallinger import db
+from jinja2 import ChoiceLoader, FileSystemLoader
 
 from psynet.experiment import Experiment, get_experiment
+from psynet.modular_page import ModularPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.sync import (
+    SimpleGrouper,
     _hold_instance_id_for_page,
     _run_pending_barrier_checks,
     check_barriers,
 )
+from psynet.timeline import Timeline
 from psynet.timeline_hold import TimelineHoldRecord
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -36,6 +41,7 @@ from timeline_hold_helpers import (  # noqa: E402
     _lock_participant_row,
     _participant_row_is_locked,
     _process_response,
+    _route_approved_response,
     _route_timeline_via_route_in_thread,
     _using_stacked_timeline,
     _working_participants,
@@ -46,6 +52,15 @@ CONSENTS = pytest.mark.parametrize(
     [path_to_test_experiment("consents")],
     indirect=True,
 )
+
+
+@pytest.fixture(autouse=True)
+def _deployed(in_experiment_directory, deployment_info):
+    """Let wake publication import Dallinger's experiment server.
+
+    Without deployment info that import fails after registering the
+    experiment blueprint, and every later import of the server then fails.
+    """
 
 
 def _track_barrier_check_claims(monkeypatch):
@@ -115,6 +130,70 @@ def test_both_nowait_misses_first_paint_live_hold_not_503(
             assert _barrier_link_released(last_id, barrier_id) is False
         check_barriers()
         _assert_on_action_page(exp, [first_id, last_id])
+
+
+_WAITING_SCREEN_CALLS = []
+
+
+def _count_waiting_screen(participant):
+    _WAITING_SCREEN_CALLS.append(participant.id)
+    return "You offered 5 coins."
+
+
+@CONSENTS
+def test_response_into_a_hold_with_a_waiting_screen_returns_its_fragment(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """The waiting screen arrives in place, carrying the hold's attributes.
+
+    It shows the hold chip both in place and on a reload.
+    """
+    from dallinger.experiment_server.experiment_server import app
+
+    # Deployments copy PsyNet's templates next to Dallinger's; tests don't.
+    loader = ChoiceLoader(
+        [
+            FileSystemLoader(str(resources.files("psynet") / "templates")),
+            app.jinja_loader,
+            FileSystemLoader(
+                str(resources.files("dallinger") / "frontend" / "templates")
+            ),
+        ]
+    )
+    monkeypatch.setattr(app, "jinja_loader", loader)
+    monkeypatch.setattr(app.jinja_env, "loader", loader)
+    exp = get_experiment()
+    original = exp.timeline
+    exp.timeline = Timeline(
+        ModularPage("intro", "Welcome", time_estimate=1),
+        SimpleGrouper(
+            group_type="pair",
+            initial_group_size=2,
+            waiting_screen=_count_waiting_screen,
+        ),
+    )
+    try:
+        (participant,) = _working_participants(exp, 1)
+        participant_id = participant.id
+        assert _json_timeline(exp, participant).status_code == 200
+        participant = Participant.query.get(participant_id)
+        _WAITING_SCREEN_CALLS.clear()
+        reply = _route_approved_response(participant, app=app).get_json()
+        assert len(_WAITING_SCREEN_CALLS) == 1
+        participant = Participant.query.get(participant_id)
+        with app.test_request_context(
+            f"/timeline?unique_id={participant.unique_id}",
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        ):
+            reload_html = Experiment._route_timeline(exp, participant, mode=None)
+    finally:
+        exp.timeline = original
+    hold = reply["page"]["attributes"]["timeline_hold"]
+    assert hold["replaces_page"] is True
+    assert hold["page_uuid"] == reply["timeline_fragment"]["page_uuid"]
+    for html in [reply["timeline_fragment"]["html"], reload_html]:
+        assert "You offered 5 coins." in html
+        assert 'id="psynet-timeline-hold-indicator"' in html
 
 
 @CONSENTS

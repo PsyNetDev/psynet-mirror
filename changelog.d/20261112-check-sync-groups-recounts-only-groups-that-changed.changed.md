@@ -1,0 +1,1 @@
+The periodic sync-group check (`check_sync_groups`, every 2.5 s) now counts all active groups' members in one query and locks and recounts only the groups whose stored member counts are out of date or that may close, instead of locking and recounting every active group. With 100 idle groups a tick takes one statement instead of about 600.
