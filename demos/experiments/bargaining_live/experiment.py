@@ -117,7 +117,7 @@ class Bargain(LiveGame):
         }
 
     def on_start(self, state):
-        state["no_shows"] = _no_shows(state)
+        state["no_shows"] = self._absent(state, "no_show")
 
     def view(self, state, player):
         # Read again, as in outcome, for the final view of a game that
@@ -128,23 +128,18 @@ class Bargain(LiveGame):
             "theirs": state["offers"][1 - player],
             "deal": None if state["deal"] is None else state["deal"][player],
             # Who didn't arrive, if anyone: "you" or "partner".
-            "no_show": _you_or_partner(player, _no_shows(state)),
-            # Who left the game for good, which ended it, if anyone.
-            "left": _you_or_partner(player, self._left(state)),
+            "no_show": _you_or_partner(player, self._absent(state, "no_show")),
+            # Who left the game for good, which ended it, if anyone. A player
+            # whose page was only briefly away, as for a reload, hasn't.
+            "left": _you_or_partner(player, self._absent(state, "left_game")),
         }
 
-    def _left(self, state):
-        """Return the players who had been away for the away_timeout when
-        the game ended because too few players were left. A player whose
-        page was only briefly away then, as for a reload, hasn't left."""
-        entry = state["psynet"]
-        if not entry["players_left"]:
-            return []
+    def _absent(self, state, reason):
+        """Return the players who didn't play the game for ``reason``."""
         return [
             player
-            for player in entry["away"]
-            if max(entry["away_since"][player], entry["started_at"]) + self.away_timeout
-            <= entry["last_tick"]
+            for player, absence in enumerate(self.absences(state))
+            if absence == reason
         ]
 
     def is_over(self, state):
@@ -157,7 +152,7 @@ class Bargain(LiveGame):
             "n_proposals": state["n_proposals"],
             # Read again here, since a game that nobody opened ends without
             # starting.
-            "no_shows": _no_shows(state),
+            "no_shows": self._absent(state, "no_show"),
         }
 
     def answer(self, outcome, reason, player):
@@ -182,12 +177,6 @@ class Bargain(LiveGame):
         if view["mine"] is None and player == 0:
             return Propose(keep=view["stake"] - BOT_GIVES)
         return None
-
-
-def _no_shows(state):
-    """Return the players who didn't open the game page in time to play."""
-    ready = state["psynet"]["ready"]
-    return [player for player in (0, 1) if player not in ready]
 
 
 def _you_or_partner(player, players):

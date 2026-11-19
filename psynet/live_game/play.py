@@ -52,7 +52,7 @@ from ..timeline import CodeBlock, EltCollection, conditional, join
 from ..utils import get_logger
 from .game import LiveGame
 from .psynet_entry import _new_session_settings
-from .record import LiveGameRecord, _player_ending, _session_end_time
+from .record import LiveGameRecord, _player_ending
 
 logger = get_logger()
 
@@ -647,8 +647,8 @@ def _running_live_games(group):
 
 def _remove_absent_players(game, session_row, players):
     """Remove the ``players`` who didn't play the game from the groups their
-    PlayLiveGame's ``absent_action`` names, as ``"no_show"`` or
-    ``"left_game"``.
+    PlayLiveGame's ``absent_action`` names, with the reasons that
+    LiveGame.absences gives for the final state.
 
     Called as the game's ending is saved, with the players' rows locked. They
     all leave before any group is dissolved below its quorum, so a pair of
@@ -656,30 +656,15 @@ def _remove_absent_players(game, session_row, players):
     order, and its members reloaded first, so that sibling games sharing a
     group (``also_leave``) and ending at once each count the other's leavers.
     """
-    entry = (session_row.final_state or {}).get("psynet")
-    if entry is None:
+    state = session_row.final_state
+    if (state or {}).get("psynet") is None:
         return
+    absences = game.absences(state)
     leaving = []
-    end = None
     for participant in players:
         leaves = _absent_leave(participant, session_row.id)
-        if not leaves:
-            continue
-        player = entry["participant_ids"].index(participant.id)
-        if player not in entry["ready"]:
-            reason = "no_show"
-        elif (
-            game.away_timeout is not None
-            and entry["started_at"] is not None
-            and player in entry["away"]
-        ):
-            if end is None:
-                end = _session_end_time(session_row.id)
-            away_since = max(entry["away_since"][player], entry["started_at"])
-            if end is None or end < away_since + game.away_timeout:
-                continue
-            reason = "left_game"
-        else:
+        reason = absences[state["psynet"]["participant_ids"].index(participant.id)]
+        if not leaves or reason is None:
             continue
         groups = participant.active_sync_groups
         for group_type in leaves:

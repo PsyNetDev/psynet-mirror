@@ -664,6 +664,7 @@ def _psynet(**fields):
         "ends_at": None,
         "time_up": False,
         "last_tick": None,
+        "last_event": None,
         **fields,
     }
     entry.setdefault("away_since", [None] * len(entry["participant_ids"]))
@@ -680,7 +681,7 @@ def _started_view(**view):
     """The view of player 0, participant 1, in a game they play alone, which
     has started, as Dallinger gives it to a bot."""
     entry = _psynet(ready=[0], started_at=0)
-    del entry["participant_ids"], entry["last_tick"]
+    del entry["participant_ids"], entry["last_tick"], entry["last_event"]
     return {**view, "psynet": {**entry, "you": 0}}
 
 
@@ -1779,7 +1780,11 @@ def test_messages_are_rejected_until_every_player_is_ready(relay):
         "ticks": [],
         "deadline": 5,
         "psynet": _psynet(
-            participant_ids=[1, 2], ready=[0, 1], started_at=4, ends_at=604
+            participant_ids=[1, 2],
+            ready=[0, 1],
+            started_at=4,
+            ends_at=604,
+            last_event=5,
         ),
     }
 
@@ -1813,7 +1818,12 @@ def test_the_game_starts_at_the_ready_timeout_without_everyone(relay):
 
     relay.tick(state, 10)
     assert state["psynet"] == _psynet(
-        participant_ids=[1, 2], ready=[0], started_at=10, ends_at=610, last_tick=10
+        participant_ids=[1, 2],
+        ready=[0],
+        started_at=10,
+        ends_at=610,
+        last_tick=10,
+        last_event=10,
     )
     # The game's clock starts at 0 when the game starts, and a game without
     # ticks doesn't tick before its first deadline.
@@ -1891,7 +1901,7 @@ def test_each_view_shows_who_is_ready_and_which_player_it_is_for(relay):
 
     # Without the participant ids, so a page can't tell who it plays with.
     entry = _psynet(participant_ids=[1, 2], ready=[1])
-    del entry["participant_ids"], entry["last_tick"]
+    del entry["participant_ids"], entry["last_tick"], entry["last_event"]
     assert relay.view(state, "1") == {"taps": 0, "psynet": {**entry, "you": 0}}
     assert relay.view(state, "2")["psynet"]["you"] == 1
 
@@ -2097,6 +2107,7 @@ def test_a_player_who_leaves_before_the_start_is_not_ready(relay):
         away_since=[2, None],
         started_at=4,
         ends_at=604,
+        last_event=5,
     )
 
 
@@ -2807,9 +2818,9 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
 
 
 def _save_ending(session_id, ready=(), away=(), ended_at=0, entry=None, status="ended"):
-    """Save the game's ending, as Dallinger does once it has started at 0,
-    with the players of ``ready`` ready and those of ``away``, ``(player,
-    since)``, away, or with the psynet ``entry`` of a game played
+    """Save the game's ending at ``ended_at``, as Dallinger does once it has
+    started at 0, with the players of ``ready`` ready and those of ``away``,
+    ``(player, since)``, away, or with the psynet ``entry`` of a game played
     elsewhere, then run its ending handler."""
     row = db.session.get(RealtimeSession, session_id)
     ids = [int(member) for member in row.members]
@@ -2825,15 +2836,9 @@ def _save_ending(session_id, ready=(), away=(), ended_at=0, entry=None, status="
             away_since=away_since,
             started_at=0,
         )
-    row.final_state = {"psynet": {**entry, "participant_ids": ids}}
-    db.session.add(
-        RealtimeEvent(
-            session_id=session_id,
-            sequence=99,
-            event_type="end",
-            session_time=ended_at,
-        )
-    )
+    row.final_state = {
+        "psynet": {**entry, "participant_ids": ids, "last_event": ended_at}
+    }
     game = _played_pick_numbers()()
     _without_commits("handle_ending", lambda: game.handle_ending(row))
     db.session.commit()
@@ -2988,6 +2993,23 @@ def test_a_player_added_to_the_running_game_leaves_only_once_away_for_long(
 
     added = db.session.get(Participant, ids[1])
     assert added.sync_group_removal_reason("pair") == reason
+
+
+def test_absences_say_which_players_didn_t_play_and_why(monkeypatch):
+    monkeypatch.setattr(_growing_picks(), "away_timeout", 30)
+    game = LocalGame(_growing_picks(), players=3, start=False)
+    # Player 2 never opens the game page.
+    game.send(0, READY)
+    game.send(1, READY)
+    game.tick(game.game.ready_timeout)
+    game.leave(1, now=0)
+    newcomer = game.add(now=5)
+    game.leave(newcomer, now=5)
+    # Player 0's page reloads just before the end.
+    game.leave(0, now=34)
+    game.tick(35)
+
+    assert game.game.absences(game.state) == [None, "left_game", "no_show", "left_game"]
 
 
 def test_the_players_of_a_failed_game_stay_in_their_groups(pair):

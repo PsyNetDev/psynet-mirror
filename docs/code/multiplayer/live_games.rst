@@ -417,10 +417,28 @@ and its last page tells a returning player why the game ended for them:
         text = END_OF_GAME_TEXTS.get(reason, "That's the end of the game.")
         return InfoPage(text, time_estimate=5)
 
+The game itself can tell who didn't play, and why, with or without
+``absent_action``: :meth:`~psynet.live_game.LiveGame.absences` returns each
+player's reason, ``"no_show"``, ``"left_game"`` or ``None``, in player
+order, by the same rules. Read it in ``outcome``, or in ``view`` for the
+page's last view, once the game has ended. The ``bargaining_live`` game's
+view tells each player whether they or their partner left:
+
+.. code-block:: python
+
+    class Bargain(LiveGame):
+        def view(self, state, player):
+            left = [
+                number
+                for number, absence in enumerate(self.absences(state))
+                if absence == "left_game"
+            ]
+            return {..., "left": "you" if player in left else "partner" if left else None}
+
 A game in which a no-show leaves the others without a game, such as one for
 two, can end at the start, as the ``bargaining_live`` game does: its
-``on_start`` notes who isn't ready, and its ``is_over`` then returns
-``True``.
+``on_start`` notes the no-shows from ``absences``, and its ``is_over`` then
+returns ``True``.
 
 .. _live-games-page:
 

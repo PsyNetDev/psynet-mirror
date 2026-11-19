@@ -292,15 +292,6 @@ def _players_ended_early(session_id):
     }
 
 
-def _session_end_time(session_id):
-    """Return when the game ended, on Dallinger's session clock, or None."""
-    return (
-        db.session.query(RealtimeEvent.session_time)
-        .filter_by(session_id=session_id, event_type="end")
-        .scalar()
-    )
-
-
 def _session_columns(session_id, *columns):
     """Return the named ``columns`` of a game's ``realtime_session`` row.
 

@@ -30,7 +30,7 @@ from .method_wrappers import (
     _stores_json,
     _waits_for_start,
 )
-from .psynet_entry import PlayerReady, _psynet_entry
+from .psynet_entry import PlayerReady, _absences, _psynet_entry
 from .record import _MOMENT_EFFECT, _PSYNET_EFFECTS, _REWARD_EFFECT, _STARTED_EFFECT
 from .registry import _register_live_game
 from .reward import (
@@ -219,6 +219,28 @@ class LiveGame(RealtimeGame):
         says which players were ready. A game can end here, through its
         ``is_over``.
         """
+
+    def absences(self, state):
+        """Return which players didn't play the game, and why, in player
+        order. Call it with the state, such as in ``outcome`` or ``view``.
+        Once the game has ended, it's as of the end; before, as of the
+        latest message, tick or page opening or closing. Each player's entry
+        is:
+
+        - ``"no_show"`` for a player who isn't ready, because they never
+          opened the game page, or closed it before the game started and
+          didn't come back.
+        - ``"left_game"``, with an :attr:`away_timeout`, for a player away
+          from the game page for at least that long, counted from the start
+          for one who left before it.
+        - ``None`` for the others, including players whose game ended
+          early, by ``is_done``.
+
+        A :class:`PlayLiveGame` with ``absent_action`` removes the same
+        players from their groups, with these reasons
+        (see :ref:`live-games-absent`).
+        """
+        return _absences(self, state)
 
     def _players_done(self, state):
         """Return the numbers of the players whose game has ended, by the

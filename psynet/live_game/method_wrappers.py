@@ -198,11 +198,11 @@ def _shows_psynet_entry(self, game_code, state, player_id):
         )
     # Pages get player numbers only, so no player learns another's
     # participant id, and with it who they've played before. last_tick
-    # would change the view at every tick.
+    # and last_event would change the view at every tick.
     public = {
         key: value
         for key, value in entry.items()
-        if key not in ("participant_ids", "last_tick")
+        if key not in ("participant_ids", "last_tick", "last_event")
     }
     return {**shown, "psynet": {**public, "you": player}}
 
