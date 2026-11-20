@@ -123,7 +123,6 @@ write it yourself:
                "The task will take about 15 minutes."
            ),
            "contact_email_on_error": "you@example.org",
-           "organization_name": "Your institution",
            "show_reward": False,
            "force_incognito_mode": True,
        }

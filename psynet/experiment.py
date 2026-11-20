@@ -931,10 +931,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     debug_ssh_app : ``bool``
         Marks an SSH app as one that ``psynet debug ssh`` (or ``psynet
-        performance-test ssh``) deployed, which sets it. ``psynet destroy
-        ssh`` destroys such an app with a warning when it can't check the
-        app for pending async jobs, instead of refusing. Don't set it
-        yourself.
+        performance-test ssh``) deployed, which sets it. When ``psynet
+        destroy ssh`` cannot check such an app for pending async jobs, it
+        destroys the app instead of refusing. When the check runs, it asks
+        as usual. Don't set it yourself.
         Default: ``False``.
 
     performance_test_app : ``bool``

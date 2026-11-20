@@ -35,7 +35,6 @@ needed, but not the payment.
            "publish_experiment": True,
            "title": "Put your experiment title here (Chrome browser, ~XX mins)",
            "contact_email_on_error": "you@example.org",
-           "organization_name": "Your institution",
        }
 
 ``recruiter_settings`` comes from

@@ -984,7 +984,8 @@ Web server
     Number of jobs each worker process runs at once. Jobs only overlap
     while they wait on I/O; CPU-bound jobs run one at a time per process,
     so set this to ``1`` for CPU-heavy async jobs and raise
-    ``worker_processes`` instead. Default: ``20``.
+    ``worker_processes`` (or ``num_dynos_worker`` on Heroku) instead.
+    Default: ``20``.
 
 Dallinger still accepts ``worker_multiplier`` and ``docker_worker_cpu_shares``
 but deprecates them: set ``web_processes`` to a number instead of
@@ -1009,11 +1010,11 @@ These apply to ``psynet debug heroku`` and ``psynet deploy heroku``.
 
 ``database_size`` *str* |dlgr-icon|
     The Heroku Postgres plan, for example ``essential-0`` or
-    ``standard-0``.
+    ``standard-0``. No default; a Heroku deployment requires it.
 
 ``dyno_type`` *str* |dlgr-icon|
     The Heroku dyno type for the app's processes, for example ``basic`` or
-    ``standard-2x``.
+    ``standard-2x``. No default; a Heroku deployment requires it.
 
 ``dyno_type_web`` and ``dyno_type_worker`` *str* |dlgr-icon|
     Dyno types for the web and worker processes, overriding ``dyno_type``.
@@ -1021,7 +1022,10 @@ These apply to ``psynet debug heroku`` and ``psynet deploy heroku``.
     without ``--docker``.
 
 ``heroku_python_version`` *str* |dlgr-icon|
-    The Python version Heroku runs, written to the app's ``runtime.txt``.
+    The Python version Heroku's Python buildpack runs, written to the
+    app's ``runtime.txt``. ``psynet deploy heroku --docker`` and
+    ``psynet debug heroku --docker`` use the image's Python and ignore
+    this value.
 
 ``heroku_region`` *str* |dlgr-icon|
     The Heroku region to create the app in, for example ``eu``.
@@ -1206,8 +1210,10 @@ Config variables not to be set manually
 
 ``debug_ssh_app`` *bool* |psynet-icon|
     Set on apps deployed by ``psynet debug ssh`` and
-    ``psynet performance-test ssh``, whose data is treated as disposable:
-    ``psynet destroy ssh`` destroys them even while async jobs are pending.
+    ``psynet performance-test ssh``. When ``psynet destroy ssh`` cannot
+    check such an app for pending async jobs, for example because the web
+    container is down, it destroys the app instead of refusing. When the
+    check runs, it asks as usual.
 
 ``performance_test_local_packages`` *str* |psynet-icon|
     Records which local PsyNet or Dallinger checkouts a performance-test
@@ -1219,11 +1225,14 @@ Config variables not to be set manually
     the study.
 
 ``heroku_app_id_root`` *str* |dlgr-icon|
-    The Heroku app that deployments record so they can change its
-    configuration later, for example to turn off ``auto_recruit``.
+    The experiment id Dallinger stores when a local debug session or a
+    remote deployment starts. Dallinger's MTurk recruiter, which PsyNet
+    does not support, uses it when turning off ``auto_recruit``.
 
 ``heroku_auth_token`` *str* |dlgr-icon| |sensitive-icon|
-    The token those configuration changes use.
+    The Heroku CLI token Dallinger stores on a Heroku deployment. SSH
+    deployments omit it. Dallinger's MTurk recruiter, which PsyNet does
+    not support, uses it when turning off ``auto_recruit``.
 
 ``psynet_version``, ``dallinger_version``, ``python_version``,
 ``soft_max_experiment_payment_email_sent`` and
