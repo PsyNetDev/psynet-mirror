@@ -1072,6 +1072,22 @@ game has their answer (see `A game's record`_):
 
     answer = participant.live_games["snake"].answer  # None without one
 
+A player's answer is saved only when their own game page saves it, so a
+player who closed the page before the game ended has none, although their
+moves count in the outcome and they are paid from it (see `Rewards`_). For
+data that must cover every player, such as an export, read each player's
+part of the outcome by their player number, and decide there what a player
+who left contributed:
+
+.. code-block:: python
+
+    game = trial.live_game
+    if game.outcome is not None and game.player is not None:
+        contributed = game.outcome["contributions"][game.player]
+
+The ``public_goods_live`` and ``microsociety_live`` demos export their rows
+this way.
+
 .. _live-games-rewards:
 
 Rewards

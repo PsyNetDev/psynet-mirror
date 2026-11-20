@@ -175,21 +175,15 @@ class ContributionTrial(Trial):
 
 
 def round_result(trial):
-    """Return what the player put in and earned in the trial's round, or
-    ``(None, None)`` if the game ended before it could add them.
-
-    Once the round has ended, both come from the game's outcome rather than
-    the trial's answer, which is missing if the player closed their page
-    while they played. Until then they come from the answer."""
+    """Return what the player put in and earned in the trial's round, from the
+    game's outcome, or ``(None, None)`` until it has ended, or if the game
+    ended before it could add them. The outcome counts a player who closed
+    their page, whose trial has no answer."""
     game = trial.live_game
-    player = None if game is None else game.player
-    if player is None:
+    if game is None or game.outcome is None or game.player is None:
         return None, None
     outcome = game.outcome
-    if outcome is None:
-        answer = trial.answer or {}
-        return answer.get("contributed"), answer.get("earned")
-    return outcome["contributions"][player], outcome["payoffs"][player]
+    return outcome["contributions"][game.player], outcome["payoffs"][game.player]
 
 
 def left_team(participant):
