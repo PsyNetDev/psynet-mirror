@@ -610,8 +610,11 @@ debug, test or deploy command stops once and lists them.
 * Review the list with ``dallinger deployment-files list``.
 * Commit your changes before a remote deployment; PsyNet records the commit
   instead of packaging the source code.
-* On SSH deployments, experiment code can't write into ``static/`` while it
-  runs. Write such files to a temporary directory (Python's ``tempfile``) or
+* On SSH deployments, the experiment runs as the SSH account instead of
+  root, and the files deployed with it stay owned by root. Experiment code
+  can still create new files, but it can't edit deployed files in place, for
+  example to overwrite a file in ``static/``. Write files that change while
+  the experiment runs to a temporary directory (Python's ``tempfile``) or
   store them as assets.
 * Responses send ``X-Frame-Options: SAMEORIGIN``, so other sites can't show
   the experiment in a frame. An experiment that must be framed can remove
