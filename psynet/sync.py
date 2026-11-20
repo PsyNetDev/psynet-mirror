@@ -909,7 +909,10 @@ _EMPTY_WAITING_PASS_SECONDS = 2.0
 # Participant.__dict__ key: page_count when each barrier's current pass of
 # waiting_logic began. A pass that shows no page starts and ends within one
 # Timeline.advance_page call, which stops at the first page, so the value
-# never needs to outlive the request.
+# never needs to outlive the request. A participant object reused across
+# requests (expire_all keeps unmapped keys) may still hold the count from a
+# pass that showed a page; Page.consume raised page_count since, so the
+# comparison rejects it, and the next pass overwrites it.
 _WAITING_PASS_PAGE_COUNTS = "_psynet_waiting_pass_page_counts"
 
 
@@ -1104,7 +1107,9 @@ class Barrier(EltCollection):
         shows no feedback, and doesn't count towards the trial maker's
         targets of completed trials (it still counts towards
         ``max_trials_per_block`` and ``n_created_trials``).
-        ``None`` lets each waiting page run to its end. Default: 3 seconds.
+        ``None`` lets each page supplied in ``waiting_logic`` run to its
+        end; the short page PsyNet shows after a pass with nothing to show
+        still ends as soon as the participant is released. Default: 3 seconds.
         Only used with ``waiting_logic``; passing it without raises an error.
     """
 
@@ -1296,7 +1301,9 @@ class Barrier(EltCollection):
         Without a page, the waiting loop would repeat on the server until
         ``max_wait_time``; a short wait page lets the next poll try again.
         A pass that began in an earlier request showed a page, so it has no
-        entry on this request's participant object.
+        entry on a freshly loaded participant object, and on a reused object
+        its entry predates that page, so its count is lower than
+        ``page_count``.
         """
         counts = participant.__dict__.get(_WAITING_PASS_PAGE_COUNTS, {})
         if counts.pop(self.id, None) != participant.page_count:

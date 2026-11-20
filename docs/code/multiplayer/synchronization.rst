@@ -1816,8 +1816,10 @@ waiting for a trial to become available or for asynchronous processing.
 run all their iterations, so a very long one makes the release raise an
 error after 1000 skipped pages. Pass
 ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
-:class:`~psynet.sync.GroupBarrier` or a grouper to let every waiting page
-run to its end.
+:class:`~psynet.sync.GroupBarrier` or a grouper to let every page of
+``waiting_logic`` run to its end. The short waiting page that PsyNet shows
+after a pass with nothing to show still ends as soon as the participant is
+released.
 
 A release ends trial pages too, such as the animal trials in
 ``sync_quorum``. A trial whose page ends before it is answered is failed

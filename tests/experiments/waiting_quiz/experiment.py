@@ -129,7 +129,7 @@ class Exp(psynet.experiment.Experiment):
                 first.take_page()
                 assert "Correct!" in first.current_page_text
             first.take_page()
-        assert first.current_page_label == "wait"
+        assert "Waiting for other participants" in first.current_page_text
 
         second.take_page()
         second.take_page()
