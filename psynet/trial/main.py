@@ -720,6 +720,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         assets=None,
         definition=NoArgumentProvided,  # If provided, overrides make definition
         position=None,
+        module_state=NoArgumentProvided,
     ):
         self.node = node
         self.network = node.network
@@ -739,7 +740,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         self.response_id = None
         self.time_taken = None
         self.trial_maker_id = node.trial_maker_id
-        self.module_state = participant.module_state
+        self.module_state = (
+            participant.module_state
+            if module_state is NoArgumentProvided
+            else module_state
+        )
         self.position = (
             position
             if position is not None
@@ -786,10 +791,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         if (
             not is_repeat_trial
-            and participant.module_state is not None
-            and hasattr(participant.module_state, "n_created_trials")
+            and self.module_state is not None
+            and hasattr(self.module_state, "n_created_trials")
         ):
-            participant.module_state.n_created_trials += 1
+            self.module_state.n_created_trials += 1
 
     def _next_position(self, participant, is_repeat_trial, repeat_trial_index):
         """Return the next zero-based position in this participant's trial maker."""
@@ -1787,24 +1792,26 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 trial.complete = True
                 return
 
-            answer = participant.answer
-
-            trial.answer = trial.format_answer(answer)
-            trial.complete = True
-
-            if trial_maker:
-                with forbid_commits(f"{type(trial_maker).__name__}.finalize_trial"):
-                    trial_maker.finalize_trial(
-                        answer=trial.answer,
-                        trial=trial,
-                        experiment=experiment,
-                        participant=participant,
-                    )
-
-            trial.check_if_can_run_async_post_trial()
-            trial.check_if_can_mark_as_finalized()
+            trial._complete_with_answer(participant.answer, experiment, trial_maker)
 
         return CodeBlock(f)
+
+    def _complete_with_answer(self, answer, experiment, trial_maker=None):
+        """Complete this trial in the caller's transaction."""
+        self.answer = self.format_answer(answer)
+        self.complete = True
+
+        if trial_maker:
+            with forbid_commits(f"{type(trial_maker).__name__}.finalize_trial"):
+                trial_maker.finalize_trial(
+                    answer=self.answer,
+                    trial=self,
+                    experiment=experiment,
+                    participant=self.participant,
+                )
+
+        self.check_if_can_run_async_post_trial()
+        self.check_if_can_mark_as_finalized()
 
     @classmethod
     def _construct_feedback_logic(cls, trial_maker):
@@ -1890,6 +1897,23 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
             .exists()
         )
+
+
+class LiveGameItemTrial(Trial):
+    """One accepted response in a cued live game. Slot is zero-based per player."""
+
+    live_session_id = Column(Integer, ForeignKey("realtime_session.id"))
+    live_slot = Column(Integer)
+
+
+Index(
+    "uq_trial_live_game_slot",
+    LiveGameItemTrial.live_session_id,
+    Trial.participant_id,
+    LiveGameItemTrial.live_slot,
+    unique=True,
+    postgresql_where=text("live_session_id IS NOT NULL"),
+)
 
 
 # Keeps the finalize backstop poller cheap: a compact list of row IDs still

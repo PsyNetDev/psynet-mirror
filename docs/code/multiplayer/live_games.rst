@@ -1134,6 +1134,26 @@ they're in the exported ``realtime_event`` table, as effects with the name
 ``psynet_moment``. The ``microsociety_live`` demo shows newcomers the
 recent catches from its moments, and exports a row for each catch.
 
+A game played inside a trial created by ``Trial.cue`` can also save individual
+responses as native trials. Call ``record_trial`` in the game after it accepts
+the player's action. Supply the definition from the server's assignment and a
+zero-based slot within this player's game:
+
+.. code-block:: python
+
+    game.record_trial(
+        player=player, slot=index, definition=deck[index], answer=message.like,
+        time_taken=message.seconds_visible,
+    )
+
+The event writer saves a ``LiveGameItemTrial`` in its transaction. The row
+shares the enclosing trial's node and module. Its definition identifies the
+stimulus, and ``live_session_id``, participant and ``live_slot`` identify the
+response. An exact replay keeps the saved row.
+A conflicting replay raises an error in the writer. Omit ``time_taken`` if
+the client did not measure presentation duration. The game page submits its
+usual outcome at the end. Item trials have no separate page response.
+
 Dallinger also saves copies of the game's state, at most every five seconds
 by default (the game's ``checkpoint_interval``), and when the game ends.
 A record's ``checkpoints`` holds them, each a

@@ -50,7 +50,7 @@ from psynet.sync import (
     _take_pending_barrier_checks,
 )
 from psynet.timeline import Response, Timeline
-from psynet.trial.main import Trial
+from psynet.trial.main import GenericTrialNode, LiveGameItemTrial, Trial
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -2950,3 +2950,49 @@ def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
         "picks": [3, 5, 4],
         "pick_reward": 0,
     }
+
+
+def test_record_trial_saves_distinct_players_and_ignores_matching_replay(pair):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    row = db.session.get(RealtimeSession, session_id)
+    group_round = SyncGroupRound(
+        sync_group_id=members[0].sync_group_links[0].sync_group_id,
+        module_id="game",
+        number=0,
+        live_game_id=session_id,
+    )
+    experiment = get_experiment()
+    node = GenericTrialNode("game", experiment)
+    for member in members:
+        enclosing = Trial(experiment, node, member, False, False, definition={})
+        enclosing.group_round = group_round
+    db.session.flush()
+    game = _pick_numbers()
+    effects = []
+    token = queued_effects.set(effects)
+    try:
+        for player in range(2):
+            game.record_trial(
+                player=player,
+                slot=0,
+                definition={"item": "A"},
+                answer=bool(player),
+                time_taken=1.25,
+            )
+    finally:
+        queued_effects.reset(token)
+
+    for name, payload in effects:
+        game.handle_effect(name, payload, row)
+        game.handle_effect(name, payload, row)
+    trials = LiveGameItemTrial.query.filter_by(live_session_id=session_id).all()
+    assert {t.participant_id: t.answer for t in trials} == {
+        int(member): bool(i) for i, member in enumerate(row.members)
+    }
+    assert all(
+        t.live_slot == 0 and t.time_taken == 1.25 and t.finalized for t in trials
+    )
+    name, payload = effects[0]
+    with pytest.raises(ValueError, match="Conflicting responses"):
+        game.handle_effect(name, {**payload, "answer": True}, row)

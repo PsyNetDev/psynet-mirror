@@ -1,6 +1,6 @@
 """What PsyNet does with a live game's record as Dallinger writes it: the
 rewards from add_performance_reward, paid by effects queued during the game,
-the reward from the outcome of a player whose game ends before the game
+item trials from accepted moves, the reward from a player who ends before the game
 does, and, once the result is saved, the other players' rewards from the
 outcome and the copy of the outcome on the game's round. A reward is also recorded on the trial
 the game was played in, if any. All run in the job that writes the game's
@@ -80,12 +80,66 @@ def _locked_players(session_row, participant_ids=None):
     )
 
 
+_TRIAL_EFFECT = "psynet_item_trial"
+
+
+def _record_item_trial(payload, session_row):
+    from ..experiment import get_experiment
+    from ..trial.main import LiveGameItemTrial, Trial
+
+    participant_id = _participant_ids(session_row)[payload["player"]]
+    # The writer processes several effects in one transaction. Use the same
+    # player lock order as the reward and ending handlers.
+    participants = _locked_players(session_row)
+    participant = next(p for p in participants if p.id == participant_id)
+    identity = dict(
+        live_session_id=session_row.id,
+        participant_id=participant.id,
+        live_slot=payload["slot"],
+    )
+    existing = LiveGameItemTrial.query.filter_by(**identity).one_or_none()
+    if existing is not None:
+        if (existing.definition, existing.answer, existing.time_taken) != (
+            payload["definition"],
+            payload["answer"],
+            payload["time_taken"],
+        ):
+            raise ValueError("Conflicting responses for the same live game slot.")
+        return
+
+    enclosing = _lock_trial_played_in(participant, session_row)
+    if enclosing is None or enclosing.trial_maker_id is not None:
+        raise ValueError("record_trial requires a game played inside a cued trial.")
+
+    experiment = get_experiment()
+    item = LiveGameItemTrial(
+        experiment=experiment,
+        node=enclosing.node,
+        participant=participant,
+        module_state=enclosing.module_state,
+        propagate_failure=False,
+        is_repeat_trial=False,
+        definition=payload["definition"],
+        position=Trial.query.filter_by(
+            participant_id=participant.id, module_state_id=enclosing.module_state_id
+        ).count(),
+    )
+    item.live_session_id = session_row.id
+    item.live_slot = payload["slot"]
+    item.time_taken = payload["time_taken"]
+    item.var.enclosing_trial_id = enclosing.id
+    db.session.flush()
+    item._complete_with_answer(payload["answer"], experiment)
+
+
 def _handles_reward(method):
     @functools.wraps(method)
     def handle_effect(self, name, payload, session_row):
         if name in (_STARTED_EFFECT, _MOMENT_EFFECT):
             # Only recorded, for a game record's messages and moments.
             return None
+        if name == _TRIAL_EFFECT:
+            return _record_item_trial(payload, session_row)
         if name != _REWARD_EFFECT:
             return method(self, name, payload, session_row)
         player = payload["player"]
