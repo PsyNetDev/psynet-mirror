@@ -611,15 +611,15 @@ def test_a_busy_player_does_not_hold_up_other_cohorts(
     assert _waiting(pairs, cohort_b) == []
 
 
-def _cohort_and_pairs(exp, n, **kwargs):
+def _cohort_and_pairs(exp, n, regrouper=Regrouper, left_over="sit_out", **kwargs):
     cohort_grouper = SimpleGrouper(
         "cohort", initial_group_size=n, quorum=2, below_quorum="fail"
     )
-    pairs = Regrouper(
+    pairs = regrouper(
         "pair",
         within="cohort",
         roles=["proposer", "responder"],
-        left_over="sit_out",
+        left_over=left_over,
         deadline=30,
         **kwargs,
     )
@@ -816,6 +816,99 @@ def test_regrouper_gives_a_newcomer_the_scarcer_kept_role(
 
 
 @in_consents_experiment
+def test_keep_roles_without_within_counts_working_participants(
+    in_experiment_directory, db_session
+):
+    """Waiting roles are balanced, but more proposers are still working, so the newcomer responds."""
+    exp = get_experiment()
+    pairs = Regrouper(
+        "pair",
+        roles=["proposer", "responder"],
+        keep_roles=True,
+        deadline=30,
+        left_over="sit_out",
+    )
+    players = _working_participants(exp, 4)
+    _arrive(exp, pairs, players)
+    _backdate_arrivals(pairs, players, 31)
+    pairs.choose_who_to_release(players)
+    (p1, p2), (r1, r2) = [
+        [p for p in players if pairs.role(p) == role]
+        for role in ("proposer", "responder")
+    ]
+    r2.status = "returned"
+    (newcomer,) = _working_participants(exp, 1)
+    present = [p1, r1, newcomer]
+    _arrive(exp, pairs, present)
+    _backdate_splits(pairs, None, 31)
+    _backdate_arrivals(pairs, present, 31)
+    pairs.choose_who_to_release(present)
+    assert pairs.role(newcomer) == "responder"
+    assert _partner(newcomer) is p1
+    assert pairs.sat_out(r1)
+
+
+@pytest.mark.parametrize("left_over", ["sit_out", "wait"])
+@in_consents_experiment
+def test_keep_roles_with_a_role_nobody_holds(
+    in_experiment_directory, db_session, left_over
+):
+    """With every responder gone, the proposers sit out, or wait with ``"wait"``."""
+    exp = get_experiment()
+    cohort, pairs = _cohort_and_pairs(exp, 4, keep_roles=True, left_over=left_over)
+    _arrive(exp, pairs, cohort)
+    proposers = [p for p in cohort if pairs.role(p) == "proposer"]
+    cohort_group = cohort[0].active_sync_groups["cohort"]
+    for responder in [p for p in cohort if p not in proposers]:
+        cohort_group.remove_participant(responder, reason="removed_by_experimenter")
+    _arrive(exp, pairs, proposers)
+    waiting = _waiting(pairs, proposers)
+    if left_over == "sit_out":
+        assert waiting == [] and all(pairs.sat_out(p) for p in proposers)
+    else:
+        assert waiting == proposers
+
+
+class _ProposersTogether(Regrouper):
+    def form_groups(self, members, within_group=None):
+        proposers = [m for m in members if self.role(m) == "proposer"]
+        return [proposers] if proposers else super().form_groups(members)
+
+
+@in_consents_experiment
+def test_keep_roles_refuses_a_group_of_two_proposers(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, pairs = _cohort_and_pairs(
+        exp, 4, regrouper=_ProposersTogether, keep_roles=True
+    )
+    _arrive(exp, pairs, cohort)
+    with pytest.raises(ValueError, match="keep the same role"):
+        _arrive(exp, pairs, cohort)
+
+
+@in_consents_experiment
+def test_avoid_repeats_regroups_sixteen_into_new_fours(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort_grouper = SimpleGrouper(
+        "cohort", initial_group_size=16, quorum=2, below_quorum="fail"
+    )
+    rooms = Regrouper("room", within="cohort", group_size=4, avoid_repeats=True)
+    cohort = _working_participants(exp, 16)
+    _arrive(exp, cohort_grouper, cohort)
+    for _ in range(3):
+        _arrive(exp, rooms, cohort)
+        mates = {p.id: set(p.active_sync_groups["room"].participants) for p in cohort}
+        _arrive(exp, rooms, cohort)
+        for p in cohort:
+            new_mates = set(p.active_sync_groups["room"].participants)
+            assert new_mates & mates[p.id] == {p}
+
+
+@in_consents_experiment
 def test_regrouper_avoids_repeats_without_roles(in_experiment_directory, db_session):
     exp = get_experiment()
     cohort_grouper = SimpleGrouper(
@@ -868,6 +961,30 @@ def test_avoid_repeats_counts_a_partner_who_has_played_since(
     _arrive(exp, pairs, [a, b, c, d])
     _arrive(exp, pairs, [b, c])
     assert (_partner(a), _partner(b)) == (c, d)
+
+
+@in_consents_experiment
+def test_avoid_repeats_still_sits_out_who_has_played_most(
+    in_experiment_directory, db_session
+):
+    """Pairing the veteran would avoid a repeat, but they have played more, so they sit out."""
+    exp = get_experiment()
+    cohort_grouper = SimpleGrouper(
+        "cohort", initial_group_size=4, quorum=2, below_quorum="fail"
+    )
+    pairs = _ScriptedPairs("pair", within="cohort", group_size=2, avoid_repeats=True)
+    veteran, gone, c, d = _working_participants(exp, 4)
+    _arrive(exp, cohort_grouper, [veteran, gone, c, d])
+    # Rounds: c-d and veteran-gone, then veteran-gone again while c and d wait.
+    _ScriptedPairs.script = [[(2, 3), (0, 1)], [(0, 1)]]
+    _arrive(exp, pairs, [veteran, gone, c, d])
+    _arrive(exp, pairs, [veteran, gone, c, d])
+    veteran.active_sync_groups["cohort"].remove_participant(
+        gone, reason="removed_by_experimenter"
+    )
+    _arrive(exp, pairs, [veteran])
+    assert _partner(c) is d
+    assert "pair" not in veteran.active_sync_groups
 
 
 @in_consents_experiment

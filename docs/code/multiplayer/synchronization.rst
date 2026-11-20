@@ -237,12 +237,20 @@ rounds sit out when not everyone fits, and roles are shuffled across each
 group's members. Two options change this:
 
 - ``avoid_repeats=True`` keeps players apart from their last group's
-  members when another grouping is possible, without changing who sits out
-  or breaking the roles.
+  members where it can. A player who has played more rounds still sits out
+  before one who has played fewer; among players with equal rounds, who sits
+  out may be chosen to avoid a repeat. It is a search heuristic: in
+  simulations of pairs and of groups of up to 6 it found a grouping without
+  repeats whenever one existed, but that isn't guaranteed.
 - ``keep_roles=True`` lets each player keep the role of their first group,
   for example a proposer who stays a proposer. A newcomer gets the role
   fewest of the waiting players have, then the one fewest current members
-  have, and players of a role with too few partners sit out.
+  have (without ``within``, the working participants the regrouper has
+  grouped, including those who have played their last round). Players of a
+  role with too few partners are left over, those who have played most
+  first. Use ``left_over="sit_out"`` if a role can run out: with
+  ``"wait"``, players whose role has no partner wait until one comes, up to
+  ``max_wait_time``.
 
 :meth:`~psynet.sync.Regrouper.role` returns a player's role from their
 latest group, which with ``keep_roles`` is the role they keep:
