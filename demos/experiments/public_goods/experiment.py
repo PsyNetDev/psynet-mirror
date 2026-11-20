@@ -136,9 +136,7 @@ class ContributionTrial(Trial):
         """Share the multiplied pot between the members who played the round."""
         # A player who ran out of time has an answer of None and puts in
         # nothing.
-        group_round.var.contributions = {
-            str(t.participant_id): t.answer for t in trials
-        }
+        group_round.var.contributions = {t.participant_id: t.answer for t in trials}
         pot = sum(t.answer or 0 for t in trials)
         multiplied_pot = MULTIPLIER * pot
         share = multiplied_pot / len(trials)
@@ -347,8 +345,8 @@ class Exp(psynet.experiment.Experiment):
             (6, None, 0),
         ], teams
         assert teams[2]["contributions"] == {
-            str(bots[0].id): 6,
-            str(bots[1].id): None,
+            bots[0].id: 6,
+            bots[1].id: None,
         }, teams
         rows = data["player_round"]
         outcomes = [(r["participant_id"], r["round"], r["outcome"]) for r in rows]

@@ -188,7 +188,7 @@ class EstimateTrial(Trial):
             # The answer so far; running out of time saves None.
             estimate = t.answer.get("estimate")
             if estimate is not None:
-                estimates[str(t.participant_id)] = estimate
+                estimates[t.participant_id] = estimate
         group_round.var.estimates = estimates
         has_median = len(estimates) >= QUORUM
         group_round.var.median = (
@@ -196,7 +196,7 @@ class EstimateTrial(Trial):
         )
         # From all the round's trials, so a member removed for being late is kept.
         for t in group_round.trials:
-            t.var.in_median = str(t.participant_id) in estimates if has_median else None
+            t.var.in_median = t.participant_id in estimates if has_median else None
 
     def revise_page(self, participant):
         reason = self._no_revision_reason()
