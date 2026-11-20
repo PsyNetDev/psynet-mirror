@@ -1072,15 +1072,16 @@ game has their answer (see `A game's record`_):
 
     answer = participant.live_games["snake"].answer  # None without one
 
-PsyNet works out each player's answer once their game has ended, from the
-same outcome and reason as their ``performance_reward`` (see `Rewards`_).
-A player who closed the page before the game ended has an answer in the
-record too, although their page saved none, so an export can read
-``trial.live_game.answer`` for every player. A player who finished before
-the others (see `Finishing before the others`_) has theirs as soon as their
-own game ends. So a game's ``answer`` must work for any player in the
-outcome, and read only its arguments, as PsyNet may call it later, for
-example during an export.
+PsyNet works out each player's answer once the game has ended, from its
+outcome and reason. A player who finished before the others (see
+`Finishing before the others`_) has theirs as soon as their own game ends,
+from their own ending. A player who closed the page before the game ended
+has an answer in the record too, although their page saved none, so an
+export can read ``trial.live_game.answer`` for every player. So a game's
+``answer`` must work for any player in the outcome, and read only its
+arguments, as PsyNet may call it later, for example during an export. If
+the game fails, its players' answers are ``None``, except for a player
+whose own game had already ended.
 
 .. _live-games-rewards:
 

@@ -2713,20 +2713,54 @@ def test_a_failed_game_fails_its_players_as_any_error_does(
     assert _accepted_answers(participant) == []
 
 
-def test_a_player_whose_own_game_ended_moves_on_though_the_game_failed(
-    pair, monkeypatch
-):
+def test_a_player_whose_own_game_ended_moves_on_though_the_game_failed(pair):
     members, _ = pair
     session_id = _pair_session(pair)
-    db.session.query(RealtimeSession).filter_by(id=session_id).update(
-        {"status": "failed", "end_reason": "failed", "error": "..."}
+    early, other = members
+    db.session.add(
+        RealtimeEvent(
+            session_id=session_id,
+            sequence=1,
+            event_type="player_end",
+            participant_id=early.id,
+            reason="done",
+            outcome=[3, None],
+        )
     )
-    ending = lambda game_id, participant_id: ("done", [3, None])  # noqa: E731
-    monkeypatch.setattr("psynet.live_game.control._player_ending", ending)
-    monkeypatch.setattr("psynet.live_game.record._player_ending", ending)
+    # A game that failed although its outcome could still be worked out.
+    db.session.query(RealtimeSession).filter_by(id=session_id).update(
+        {"status": "failed", "end_reason": "failed", "outcome": [3, 5], "error": "..."}
+    )
+    game = LiveGameRecord(session_id)
 
-    assert _submit_on_the_game_page(members[0])["submission"] == "approved"
-    assert members[0].live_games["pick_numbers"].answer == [3, None]
+    # The other player's game ended only with the failure, so they have none.
+    assert game.answers == [
+        [3, None] if pid == early.id else None for pid in game.participant_ids
+    ]
+    assert LiveGameRecord(session_id, other).answer is None
+    assert _submit_on_the_game_page(early)["submission"] == "approved"
+    assert _accepted_answers(early) == [[3, None]]
+    assert early.live_games["pick_numbers"].answer == [3, None]
+
+
+def test_a_participant_without_a_seat_has_no_answer(pair):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    outsider, player = members
+    # A game that ended before it could add the outsider.
+    db.session.query(RealtimeSession).filter_by(id=session_id).update(
+        {
+            "status": "ended",
+            "end_reason": "finished",
+            "outcome": [5],
+            "members": [str(player.id)],
+        }
+    )
+
+    assert LiveGameRecord(session_id, outsider).answer is None
+    assert _submit_on_the_game_page(outsider)["submission"] == "approved"
+    assert _accepted_answers(outsider) == [None]
+    assert LiveGameRecord(session_id).answers == [[5]]
 
 
 @pytest.mark.parametrize(

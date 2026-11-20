@@ -184,13 +184,20 @@ class LiveGameRecord:
         game started, if they aren't among its players, or if the game
         failed before their game ended."""
         participant_id = self._own_participant_id("answer")
-        return None if self._id is None else _answer(participant_id, self._id)
+        if self._id is None:
+            return None
+        return _answer(participant_id, self._id, self._loaded_row)
 
     @property
     def answers(self) -> List[Any]:
         """Each player's answer, in player order, as :attr:`answer` gives
         it."""
-        return [_answer(pid, self._id) for pid in self.participant_ids]
+        if self._id is None:
+            return []
+        row = self._loaded_row
+        if row is None:
+            row = _answer_columns(self._id)
+        return [_answer(pid, self._id, row) for pid in _player_ids(row.members)]
 
     @property
     def messages(self):
@@ -267,31 +274,42 @@ def _record_from_row(row):
     return record
 
 
-def _answer(participant_id, game_id):
+def _answer(participant_id, game_id, row=None):
     """Return the answer the participant's game page saved for the game
     ``game_id``, or else the one their game's end gives them."""
     stored = _stored_answer(participant_id, game_id)
-    return stored if stored is not None else _computed_answer(game_id, participant_id)
+    if stored is not None:
+        return stored
+    return _computed_answer(game_id, participant_id, row)
 
 
-def _computed_answer(session_id, participant_id):
+def _answer_columns(session_id):
+    """Return the columns of a game's ``realtime_session`` row that its
+    players' answers come from."""
+    return _session_columns(
+        session_id, "members", "status", "end_reason", "outcome", "game_type"
+    )
+
+
+def _computed_answer(session_id, participant_id, row=None):
     """Return the game's ``answer`` for a player once their game has ended:
     from their own ending if the game's ``is_done`` ended it early, and
     otherwise from the game's outcome once the game has ended. Return None
     before then, if they aren't among the game's players, or if the game
-    failed without ending theirs first."""
-    participant_ids = _session_participant_ids(session_id)
+    failed without ending theirs first. ``row`` is the game's
+    ``realtime_session`` row, if the caller has read it already."""
+    game = _answer_columns(session_id) if row is None else row
+    participant_ids = _player_ids(game.members)
     if participant_id not in participant_ids:
         return None
     ending = _player_ending(session_id, participant_id)
     if ending is not None:
         reason, outcome = ending
-    else:
-        game = _session_columns(session_id, "status", "end_reason", "outcome")
-        if game.status != "ended":
-            return None
+    elif game.status == "ended":
         outcome, reason = game.outcome, game.end_reason
-    return _session_game_class(session_id)().answer(
+    else:
+        return None
+    return _game_class_named(game.game_type, session_id)().answer(
         outcome, reason, participant_ids.index(participant_id)
     )
 
