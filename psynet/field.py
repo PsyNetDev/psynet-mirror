@@ -427,8 +427,13 @@ def json_clean(x, details=False, contents=False):
 
 
 def json_unpack_field(x: dict, field: str, replace: bool = False):
+    """Copy the items of the dictionary ``x[field]`` into ``x``.
+
+    The keys become column names, so non-string keys are converted to strings.
+    """
     if field in x and isinstance(x[field], dict):
         for key, value in x[field].items():
+            key = key if isinstance(key, str) else str(key)
             if replace or (key not in x):
                 x[key] = value
     return x

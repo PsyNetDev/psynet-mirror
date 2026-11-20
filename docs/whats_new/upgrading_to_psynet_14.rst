@@ -577,6 +577,31 @@ templates that changes the database.
           def get_bot_response(self, experiment, bot, page, prompt):
               response = super().get_bot_response(experiment, bot, page, prompt)
               return BotResponse(raw_answer=str(int(response.raw_answer) + 1))
+* Dictionaries stored in the database, such as ``participant.var``,
+  ``trial.var``, ``node.var``, answers and definitions, now keep the type of
+  their keys: ``{12: "rock"}`` reads back as ``{12: "rock"}``, not
+  ``{"12": "rock"}``.
+
+  * Look up keys with the type you stored them with. If your code stores
+    integer keys, such as ``{participant.id: choice}``, but reads them with
+    string-converted keys, such as ``choices[str(participant.id)]``, use the
+    original key: ``choices[participant.id]``.
+  * If it stores string keys, such as ``{str(participant.id): choice}``, keep
+    reading ``str(participant.id)``, or change the write and the read
+    together. ``int(key)`` while iterating works for both.
+  * A dictionary with both string and non-string keys keeps its key types
+    but not its key order: string keys come first.
+  * JSON turns integer, float, boolean and ``None`` keys into strings, so
+    pages, routes and bot responses receive ``{"12": "rock"}``. Flask's JSON
+    responses and Jinja's ``tojson`` no longer sort keys, so mixed key types
+    work there. Tuple keys make any conversion to JSON raise ``TypeError``,
+    and so do keys that cannot be compared, such as an integer and a string
+    or an integer and ``None``, when your own code sorts keys, for example
+    with ``json.dumps(value, sort_keys=True)``. Convert the keys first:
+
+    .. code:: python
+
+        choices = {str(k): v for k, v in participant.var.choice_by_player.items()}
 * ``LanguageVocabularyTrial`` answers are now screen positions (``"1"`` to
   ``"4"``) rather than ``"correct"``. A custom subclass that compares an
   answer with ``"correct"`` should compare it with
@@ -795,6 +820,13 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
   asset class names.
 * ``extra_var`` is removed; read variables from the ``vars`` column with
   ``psynet.export.unpack_json_column``.
+* JSON columns write non-string dictionary keys with a ``json://`` tag, for
+  example ``{"json://12": "rock"}`` for ``{12: "rock"}``.
+  ``unpack_json_column`` removes the tag, so this becomes a column named
+  ``12``, unless the same dictionary also has the string key ``"12"``; then
+  the integer key keeps the column ``json://12``. Scripts that parse these
+  columns themselves, for example with ``json.loads``, must remove the tag
+  too.
 * Search experiment code for ``copy_expert``, ``copy_from``, ``copy_to`` and
   ``COPY``. In a web request or background job, PostgreSQL ``COPY`` must run
   inside :func:`psynet.db.blocking_psycopg`, or psycopg2 raises

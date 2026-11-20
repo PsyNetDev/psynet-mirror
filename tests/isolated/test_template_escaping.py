@@ -72,6 +72,18 @@ def test_strings_are_escaped_but_markup_and_dominate_are_not(app):
     )
 
 
+def test_json_output_accepts_mixed_key_types(app):
+    from flask import jsonify, render_template_string
+
+    value = {12: "rock", "round": 1}
+    expected = '{"12": "rock", "round": 1}'
+
+    assert render(app, "{{ value|tojson }}", value=value) == expected
+    with app.test_request_context("/"):
+        assert render_template_string("{{ value|tojson }}", value=value) == expected
+        assert jsonify(value).get_json() == {"12": "rock", "round": 1}
+
+
 def test_push_button_labels_escape_strings_and_keep_markup(app):
     from psynet.modular_page import PushButtonControl
 
