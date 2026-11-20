@@ -197,13 +197,14 @@ from psynet.db import (
 )
 from psynet.error import ErrorRecord
 from psynet.field import PythonClass, PythonDict, PythonObject
-from psynet.page import UnsuccessfulEndPage
+from psynet.page import UnsuccessfulEndPage, WaitPage
 from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
 from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
+    PageMaker,
     _is_timeline_hold,
     _trial_owning_page,
     conditional,
@@ -900,6 +901,20 @@ class _ReadOnlyParticipantList(list):
     __delitem__ = __iadd__ = __imul__ = __setitem__ = _raise_mutation_error
 
 
+# How long the wait page shown for a pass of waiting_logic without a page
+# lasts before the waiting logic runs again.
+_EMPTY_WAITING_PASS_SECONDS = 2.0
+
+
+def _empty_waiting_pass_page():
+    """Return the wait page shown when a pass of ``waiting_logic`` shows no page."""
+    _p = get_translator(context=True)
+    return WaitPage(
+        wait_time=_EMPTY_WAITING_PASS_SECONDS,
+        content=_p("timeline_hold", "Waiting for other participants…"),
+    )
+
+
 def _expected_repetitions(waiting_logic, expected_wait, default):
     """Return how often ``waiting_logic`` is expected to run to fill ``expected_wait``.
 
@@ -987,7 +1002,9 @@ class Barrier(EltCollection):
         one short trial or page per pass (the loop repeats it), such as
         ``PageMaker(trial_maker.cue_trial, ...)`` in the ``sync_quorum``
         demo: a release then fails at most the trial on screen and creates
-        no unseen trials (see ``release_grace``). A barrier with
+        no unseen trials (see ``release_grace``). A pass that shows no
+        page, for example because the trial maker has no trial left for
+        the participant, shows a short waiting page instead. A barrier with
         ``waiting_logic`` can't be inside a trial's own pages, such as in
         ``Trial.show_trial``; use ``waiting_screen`` there.
 
@@ -1212,7 +1229,20 @@ class Barrier(EltCollection):
                 condition=lambda participant: (
                     not self.can_participant_exit(participant)
                 ),
-                logic=self.waiting_logic,
+                logic=join(
+                    CodeBlock(self._start_waiting_pass),
+                    self.waiting_logic,
+                    conditional(
+                        "waiting_pass_showed_no_page",
+                        self._waiting_pass_showed_no_page,
+                        logic_if_true=PageMaker(
+                            _empty_waiting_pass_page,
+                            time_estimate=_EMPTY_WAITING_PASS_SECONDS,
+                        ),
+                        time_estimate=0,
+                        log_chosen_branch=False,
+                    ),
+                ),
                 expected_repetitions=self._waiting_logic_repetitions,
                 max_loop_time=self._arrival_max_wait_time,
                 fix_time_credit=self.fix_time_credit,
@@ -1240,6 +1270,33 @@ class Barrier(EltCollection):
             if elt is not leave:
                 elt.links.setdefault("barrier", self)
         return elts
+
+    def _start_waiting_pass(self, participant):
+        """Remember how many pages the participant had seen when this pass of ``waiting_logic`` began."""
+        link = participant.active_barriers.get(self.id)
+        if link is not None:
+            link.waiting_pass_page_count = participant.page_count
+
+    def _waiting_pass_showed_no_page(self, participant):
+        """Return whether this pass of ``waiting_logic`` showed no page and the participant still waits.
+
+        Without a page, the waiting loop would repeat on the server until
+        ``max_wait_time``; a short wait page lets the next poll try again.
+        """
+        link = participant.active_barriers.get(self.id)
+        if (
+            link is None
+            or link.released
+            or link.waiting_pass_page_count != participant.page_count
+        ):
+            return False
+        logger.debug(
+            "Barrier '%s': waiting_logic showed participant %s no page; "
+            "showing a wait page.",
+            self.id,
+            participant.id,
+        )
+        return True
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Release the participant's active barrier link after a max-wait timeout."""
@@ -6412,6 +6469,9 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     # With explicit waiting_logic there is no hold record, so the link keeps
     # the max_wait_time deadline for the poller.
     deadline_at = Column(DateTime)
+    # Participant.page_count when the current pass of waiting_logic began, so
+    # a pass that shows no page can show a wait page instead of looping.
+    waiting_pass_page_count = Column(Integer)
     timeline_hold_id = Column(Integer, ForeignKey("timeline_hold.id"), index=True)
     timeline_hold = relationship("TimelineHoldRecord", backref="barrier_links")
 

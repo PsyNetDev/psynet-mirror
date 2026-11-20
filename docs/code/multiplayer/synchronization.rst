@@ -1788,6 +1788,12 @@ page per pass, letting the loop repeat it, rather than several trials per
 pass. A release then fails at most the trial on screen and creates no
 unseen trials (see below).
 
+If a pass of ``waiting_logic`` has nothing to show, for example because a
+trial maker has no trial left for the participant or a
+:func:`~psynet.timeline.conditional` in it is false, PsyNet shows a
+waiting page ("Waiting for other participants…") for about 2 seconds
+and then runs the waiting logic again.
+
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
 :class:`~psynet.sync.Barrier`) after the browser notices the release, which
@@ -1887,10 +1893,8 @@ How the pieces fit:
 - **No repeated questions.** A static trial maker gives each participant
   each node at most once, unless you pass ``allow_repeated_nodes=True``.
 - **Running out of questions.** Once a participant has answered every
-  question, ``cue_trial`` finds no trial and shows nothing. A pass of
-  ``waiting_logic`` that shows no page keeps a server worker busy repeating
-  it until ``max_wait_time`` runs out, so give such a pass a page of its
-  own, such as the :class:`~psynet.page.WaitPage` above.
+  question, ``cue_trial`` finds no trial and shows nothing, so PsyNet shows
+  its waiting page instead until the group forms (see above).
 - **When the group forms.** The participant whose arrival completes the
   group skips the quiz. Anyone else who is on a question has
   ``release_grace`` seconds (default 3) to answer it: their answer is then

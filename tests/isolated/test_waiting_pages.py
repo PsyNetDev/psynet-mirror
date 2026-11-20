@@ -19,6 +19,7 @@ from psynet.timeline import (
     PageMaker,
     Response,
     Timeline,
+    conditional,
     for_loop,
     join,
     while_loop,
@@ -468,6 +469,38 @@ def test_waiting_pages_after_an_inner_barrier_belong_to_the_outer_one(
         _json_timeline(exp, last)
         db.session.expire_all()
         last = Participant.query.get(last.id)
+        assert exp.timeline.get_current_elt(exp, last).label == "after"
+    finally:
+        exp.timeline = original
+
+
+@pytest.mark.parametrize("empty", ["list", "false_conditional"])
+@in_consents_experiment
+def test_waiting_logic_without_a_page_shows_a_wait_page(
+    in_experiment_directory, db_session, empty
+):
+    """A pass that shows no page shows a wait page, then runs the waiting logic again."""
+    exp = get_experiment()
+    original = exp.timeline
+    ready = {"filler": False}
+    filler = conditional("ready", lambda: ready["filler"], _filler("filler"))
+    _use_timeline(exp, [] if empty == "list" else filler, max_wait_time=5)
+    try:
+        first, last = _working_participants(exp, 2)
+        first_id, last_id = first.id, last.id
+        _json_timeline(exp, first)
+        assert isinstance(exp.timeline.get_current_elt(exp, first), WaitPage)
+
+        ready["filler"] = True
+        _post_response(first)
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        expected = "wait" if empty == "list" else "filler"
+        assert exp.timeline.get_current_elt(exp, first).label == expected
+
+        _json_timeline(exp, Participant.query.get(last_id))
+        db.session.expire_all()
+        last = Participant.query.get(last_id)
         assert exp.timeline.get_current_elt(exp, last).label == "after"
     finally:
         exp.timeline = original

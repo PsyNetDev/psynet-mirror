@@ -3,9 +3,9 @@
 The grouper's ``waiting_logic`` cues one trial of the ``waiting_quiz`` trial
 maker per pass, so each waiting participant answers a question, sees whether
 they were right and how many points they have, and earns a performance reward
-for each correct answer. Once they have answered every question, they see a
-waiting page until the group forms. The documentation's recipe for quiz
-questions while waiting includes this file.
+for each correct answer. Once they have answered every question, PsyNet shows
+them its waiting page until the group forms. The documentation's recipe for
+quiz questions while waiting includes this file.
 """
 
 from typing import List
@@ -13,10 +13,10 @@ from typing import List
 import psynet.experiment
 from psynet.bot import BotDriver
 from psynet.modular_page import ModularPage, PushButtonControl
-from psynet.page import InfoPage, WaitPage
+from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.sync import SimpleGrouper
-from psynet.timeline import PageMaker, Timeline, conditional
+from psynet.timeline import PageMaker, Timeline
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
 QUESTIONS = [
@@ -84,15 +84,6 @@ quiz = StaticTrialMaker(
     expected_trials_per_participant=len(QUESTIONS),
 )
 
-waiting_quiz = conditional(
-    "questions_left",
-    lambda participant: answered_trials(participant).count() < len(QUESTIONS),
-    logic_if_true=PageMaker(quiz.cue_trial, time_estimate=QuizTrial.time_estimate),
-    logic_if_false=WaitPage(
-        wait_time=3, content="You have answered every question. Please wait…"
-    ),
-)
-
 
 class Exp(psynet.experiment.Experiment):
     label = "Quiz questions while waiting"
@@ -104,7 +95,9 @@ class Exp(psynet.experiment.Experiment):
                 "trio",
                 initial_group_size=3,
                 quorum=3,
-                waiting_logic=waiting_quiz,
+                waiting_logic=PageMaker(
+                    quiz.cue_trial, time_estimate=QuizTrial.time_estimate
+                ),
                 expected_wait=len(QUESTIONS) * QuizTrial.time_estimate,
                 max_wait_time=300,
             ),
@@ -123,7 +116,7 @@ class Exp(psynet.experiment.Experiment):
             first.take_page()
             assert "Correct!" in first.current_page_text
             first.take_page()
-        assert "answered every question" in first.current_page_text
+        assert first.current_page_label == "wait"
 
         second.take_page()
         assert second.current_page_label == "waiting_quiz"
