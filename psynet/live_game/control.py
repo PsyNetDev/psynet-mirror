@@ -20,10 +20,12 @@ from ..sync import _removed_from_group_notice
 from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .play import _check_reached_game, _live_game_id, _set_live_game_answer
+from .psynet_entry import TOO_LATE
 from .record import (
     LiveGameFailed,
     LiveGameRecord,
     _computed_answer,
+    _done_reason,
     _player_ending,
     _session_channel,
     _session_columns,
@@ -398,6 +400,9 @@ def _players(participant, play_id):
     data = _live_game_data(participant).get(play_id) or {}
     game_id = data.get("id")
     if game_id is None:
+        return []
+    if _done_reason(game_id, participant.id) == TOO_LATE:
+        # The game never saw them, so their page shows no game.
         return []
     anonymous = data.get("names") == "anonymous"
     participant_ids = _session_participant_ids(game_id)

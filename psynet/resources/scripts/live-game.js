@@ -15,6 +15,8 @@
   // The reason PsyNet ends the game of a player it adds after the game
   // stopped accepting players (TOO_LATE in psynet/live_game).
   const TOO_LATE = "too_late";
+  // Dallinger's reason for a game that failed (FAILED in dallinger.realtime).
+  const FAILED = "failed";
 
   // Calls report with the players who have been away for AWAY_DELAY_MS,
   // each time that list changes.
@@ -392,7 +394,10 @@
       // The ending carries the final view, which can arrive before the view
       // itself, and is all a page that joins after the end gets.
       socket.onEnded((reason, view) => {
-        if (reason === TOO_LATE) {
+        // A game that ended before Dallinger could add the player has no
+        // view for them, nor had the page, unless the game failed.
+        let neverAdded = view === null && reason !== FAILED && state.lastView === null;
+        if (reason === TOO_LATE || neverAdded) {
           turnAway(state);
         } else if (!state.ended) {
           state.ended = true;
@@ -608,8 +613,8 @@
      * Call ``callback`` once, when this player's game has ended, with
      * Dallinger's reason (see ``Socket.onEnded``) and the final view, which
      * for a failed game is the last view the page had. It never runs for a
-     * player who joined after the game stopped taking players, whose page
-     * shows the page's ``too_late_message`` instead.
+     * player who joined after the game stopped taking players, or ended,
+     * whose page shows the page's ``too_late_message`` instead.
      *
      * @param {function} callback - Called with the reason and the view
      * @returns {Object} ``psynet.liveGame``
@@ -617,7 +622,7 @@
     function onEnded(callback) {
       let state = pageState();
       pageSocket().onEnded((reason, view) => {
-        if (reason !== TOO_LATE) {
+        if (!state.tooLate) {
           callback(reason, view === null ? state.lastView : view);
         }
       });

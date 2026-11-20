@@ -1021,7 +1021,8 @@ stopped taking new players." by default, with the Next button, so that
 the participant reads it and moves on. The page's JavaScript gets no
 views and no ``onEnded``. Their answer is ``None``, they get no
 ``performance_reward``, and their record's ``left_early`` is true, with
-the ``done_reason`` ``"too_late"``.
+the ``done_reason`` ``"too_late"``. The same goes for a newcomer who
+reaches the game just as it ends, before Dallinger could add them.
 
 By default, once a game from a ``PlayLiveGame`` ends, PsyNet stops the
 top-ups of the group that played it as well, so no newcomer joins a group
@@ -1254,8 +1255,8 @@ A record has:
   game did, through ``is_done`` (see `Finishing before the others`_), and
   ``done_reason``, why: the game's ``done_reason`` for them, or ``None``
   for a player whose game ended with the game's ``end_reason``. A player
-  who joined after the game stopped taking players left early with the
-  ``done_reason`` ``"too_late"`` (see :ref:`live-games-joining`);
+  who joined after the game stopped taking players, or as it ended, left
+  early with the ``done_reason`` ``"too_late"`` (see :ref:`live-games-joining`);
 - ``answers``, each player's answer, in player order, worked out in the
   same way, and
   ``participant_ids``, each player's participant id;

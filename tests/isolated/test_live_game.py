@@ -42,7 +42,7 @@ from psynet.live_game import (
     live_game_classes,
 )
 from psynet.live_game import registry as game_registry
-from psynet.live_game.control import LiveGameControl
+from psynet.live_game.control import LiveGameControl, _players
 from psynet.live_game.method_wrappers import _NOT_IN_VIEWS
 from psynet.live_game.record import _session_participant_ids
 from psynet.live_game.testing import LocalGame, start_game
@@ -824,9 +824,10 @@ def test_a_game_page_shows_each_player_s_info(db_session, names):
         _play("bad", page=bad).resolve()[0].consume(experiment, members[0])
 
 
-def _play_to_the_end(session_id, messages):
+def _play_to_the_end(session_id, messages, write_record=True):
     """Play the session, sending each ``(player_id, number, payload)`` as a
-    page would, a little apart, until it ends, and write its record."""
+    page would, a little apart, until it ends, and write its record unless
+    ``write_record`` is false (see :func:`_write_records`)."""
     runner = Runner(store.experiment_games(), name="test-runner")
     playing = threading.Thread(target=runner.run)
     playing.start()
@@ -857,6 +858,12 @@ def _play_to_the_end(session_id, messages):
         playing.join(5)
     assert not playing.is_alive()
     assert store.running_sessions() == []
+    if write_record:
+        _write_records()
+
+
+def _write_records():
+    """Run the queued jobs, which write the sessions' records."""
     queues = [Queue(name, connection=redis_conn) for name in ("high", "default")]
     SimpleWorker(queues, connection=redis_conn).work(burst=True)
 
@@ -3739,6 +3746,41 @@ def test_a_game_that_stops_taking_players_closes_its_group_to_newcomers(db_sessi
     assert (late.left_early, late.done_reason, late.answer) == (True, TOO_LATE, None)
     assert members[2].live_games["takes_three"].answer == [5, 5, 5]
     assert _reward(members[3]) == 0
+
+
+def test_a_newcomer_to_a_game_that_ended_before_adding_them_came_too_late(
+    db_session,
+):
+    group, members = _open_group(db_session, 3)
+    page = LiveGamePage("growing", "Play.", time_estimate=5)
+    barrier = _play(
+        "growing", page, game_class=_growing_picks(), join_running_game=True
+    ).barrier
+    for member in members[:2]:
+        _arrive(barrier, member)
+    session_id = _game_id(members[0], "growing")
+    ids = [str(member.id) for member in members]
+    _play_to_the_end(
+        session_id,
+        [(pid, 1, READY) for pid in ids[:2]]
+        + [(pid, 2, {"type": "pick", "message": {"number": 5}}) for pid in ids[:2]],
+        write_record=False,
+    )
+    # The game's row still says it's running, so the newcomer is pointed at
+    # it, but Dallinger drops their addition.
+    members[2].status = "working"
+    group.add_participant(members[2])
+    _reach(barrier, members[2])
+    db.session.commit()
+    assert _game_id(members[2], "growing") == session_id
+    _write_records()
+
+    newcomer = db.session.get(Participant, int(ids[2]))
+    late = newcomer.live_games["growing"]
+    assert (late.left_early, late.done_reason, late.answer) == (True, TOO_LATE, None)
+    assert _players(newcomer, "growing") == []
+    assert page.control.check_ready_for_response(get_experiment(), newcomer) is None
+    assert _reward(newcomer) == 0
 
 
 @pytest.mark.parametrize("stop_top_ups_at_end", [True, False])

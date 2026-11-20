@@ -30,7 +30,9 @@ Live games
 
     The reason the game of a player added after the game's
     :meth:`~psynet.live_game.LiveGame.accepts_players` returned ``False``
-    ends with, at once.
+    ends with, at once. A participant who joined as the game ended, before
+    Dallinger could add them, has it as their record's
+    :attr:`~psynet.live_game.LiveGameRecord.done_reason` too.
 
 The reason a player's game ends with when the game's ``is_done`` returns
 ``True`` is what its :meth:`~psynet.live_game.LiveGame.done_reason` gives,

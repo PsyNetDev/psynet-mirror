@@ -568,6 +568,26 @@ describe("psynet.liveGame", () => {
     assert.equal(nextPages, 0);
   });
 
+  it("turns away a newcomer whom the game ended before adding, but not a player of a failed game", () => {
+    session = { ...session, tooLateMessage: "Too late." };
+    changePage();
+    const seen = [];
+    liveGame.onEnded((reason) => seen.push(reason));
+    // Dallinger has no final view for a player it never added.
+    sockets[0].fire("onEnded", "finished", null);
+    sockets[0].fire("onResultSaved");
+    assert.deepEqual(seen, []);
+    assert.equal(hiddenGames, 1);
+    assert.deepEqual(notices.at(-1), ["psynet-no-game-notice", "Too late."]);
+    assert.equal(nextPages, 0);
+
+    changePage();
+    liveGame.onEnded((reason) => seen.push(reason));
+    sockets[1].fire("onEnded", "failed", null);
+    assert.deepEqual(seen, ["failed"]);
+    assert.equal(hiddenGames, 1);
+  });
+
   it("does nothing on a page without a game, and explains a page that isn't a game page", () => {
     session = undefined;
     assert.throws(() => liveGame.send("pick"), /isn't a LiveGamePage/);

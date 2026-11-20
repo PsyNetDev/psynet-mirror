@@ -84,7 +84,8 @@ TIMEOUT = "timeout"
 PLAYERS_LEFT = "players_left"
 
 #: The reason the game of a player added after the game's
-#: :meth:`~LiveGame.accepts_players` returned ``False`` ends with, at once.
+#: :meth:`~LiveGame.accepts_players` returned ``False`` ends with, at once,
+#: and the ``done_reason`` of a participant who joined as the game ended.
 TOO_LATE = "too_late"
 
 
