@@ -777,6 +777,8 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
         (False, 0.1, 1.0, None),
         # 40 ms of CPU stalls other jobs too briefly to matter.
         (False, 0.04, 0.06, None),
+        # Too short to tell whether a CPU-heavy job waited.
+        (True, 0.01, 0.1, None),
     ],
 )
 def test_cpu_time_summary_flags_jobs_that_contradict_their_declaration(

@@ -51,8 +51,8 @@ high-priority job still waits for one of them to finish, and its
 ``timeout`` does not count while it waits (see :ref:`async_job_timeout`).
 Priority has no effect on a :class:`~psynet.async_job.LocalAsyncJob`, which runs in a thread
 of the web process. The CPU table printed after ``psynet test local`` (see
-:doc:`/test/scalability`) has one row per job label, priority and place the
-job runs in.
+:doc:`/test/scalability`) has one row per job label, priority, place the
+job runs in and ``cpu_heavy`` declaration.
 
 .. _async_job_cpu_heavy:
 

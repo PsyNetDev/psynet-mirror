@@ -21,7 +21,7 @@ psynet test local
 ```
 
 When the bots finish, the log shows one row per place the job runs, async
-job label and priority, for jobs that finished:
+job label, priority and `cpu_heavy` declaration, for jobs that finished:
 
 ```text
 Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
@@ -59,21 +59,30 @@ more worker processes. Set the number of worker processes with
 a separate worker container, with its CPU workers. If the log warns that a job
 declared `cpu_heavy=False` looks CPU-heavy, check what the job does and fix the
 declaration. Before a performance
-test, make a first estimate of `worker_processes`, aiming for workers 70%
-busy. The performance test summary uses the same formula when the workers
-were busy the whole time:
+test, make a first estimate of `worker_processes`, aiming for the CPU workers
+70% busy. The performance test summary uses the same formula when the CPU
+workers were busy the whole time:
 
 ```text
-worker seconds per participant = sum of (Count × Mean wall) over worker rows / number of bots
-worker_processes               = participants at once × worker seconds per participant / (session seconds × 0.7)
+CPU-worker seconds per participant = sum of (Count × Mean wall) over CPU-heavy worker rows / number of bots
+worker_processes                   = participants at once × CPU-worker seconds per participant / (session seconds × 0.7 × cpu_processes_per_worker)
 ```
 
-For example, 2 bots that ran 6 `analyse_audio` worker jobs averaging 1.5
-seconds need 4.5 worker seconds per participant. With 100 participants at
-once in a 10-minute session, 100 × 4.5 / (600 × 0.7) = 1.1, so start with
-`worker_processes = 2`, on a server with a core for each worker plus two for
-the web server and database. Use Mean wall rather than Mean CPU: a worker
-running one job at a time is busy for the job's whole run time.
+Count only the rows of the jobs your code declares CPU-heavy (the table's
+`CPU-heavy` column is measured, not declared): CPU workers run one of them
+at a time, so each is busy for the job's whole run time, which is why the
+formula uses Mean wall rather than Mean CPU. The other worker jobs mostly wait
+and share a worker process's greenlets; the performance test sizes them
+separately and recommends whichever needs more processes, which is rarely
+them. With `cpu_processes_per_worker = 0`, CPU-heavy jobs share the worker
+processes instead, so sum over all worker rows and drop that factor.
+
+For example, 2 bots that ran 6 `analyse_audio` jobs declared CPU-heavy,
+averaging 1.5 seconds, need 4.5 CPU-worker seconds per participant. With 100
+participants at once in a 10-minute session and one CPU worker per process,
+100 × 4.5 / (600 × 0.7) = 1.1, so start with `worker_processes = 2`, on a
+server with a core for each worker process and each CPU worker, plus two for
+the web server and database.
 
 Do not count `web` rows toward `worker_processes`: more workers do not help
 them. A CPU-heavy `web` row competes with page requests in the web process,

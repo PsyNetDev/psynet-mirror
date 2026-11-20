@@ -691,7 +691,8 @@ def _launch_unless_cancelled(spec):
 
 _CPU_HEAVY_RATIO = 0.5
 # Shorter stalls of a worker's other jobs are harmless, so CPU-heavy jobs
-# declared otherwise are only flagged if one run used this much CPU.
+# declared otherwise are only flagged if one run used this much CPU, and
+# jobs declared CPU-heavy only if they ran this long on average.
 _STALL_WARNING_S = 0.5
 
 
@@ -784,7 +785,9 @@ def _format_cpu_time_summary(rows):
                 "jobs in its worker process. Declare it CPU-heavy unless its "
                 "measured CPU time includes other jobs running beside it."
             )
-        elif declared is True and not cpu_heavy:
+        elif (
+            declared is True and not cpu_heavy and row["mean_wall"] >= _STALL_WARNING_S
+        ):
             notes.append(
                 f"Note: worker job {row['label']!r} is declared cpu_heavy=True "
                 "but mostly waits; with cpu_heavy=False it could run beside "

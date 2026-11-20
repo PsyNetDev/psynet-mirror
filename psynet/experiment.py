@@ -2122,7 +2122,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     def _report_async_job_cpu_time(self):
         """Log the CPU and wall time of the async jobs that ran.
 
-        Rows are grouped by where the jobs ran, label and priority.
+        Rows are grouped by where the jobs ran, label, priority and ``cpu_heavy``
+        declaration.
         """
         from .async_job import _format_cpu_time_summary
 
