@@ -240,8 +240,9 @@ group's members. Two options change this:
   members where it can. A player who has played more rounds still sits out
   before one who has played fewer; among players with equal rounds, who sits
   out may be chosen to avoid a repeat. It is a search heuristic: in
-  simulations of pairs and of groups of up to 6 it found a grouping without
-  repeats whenever one existed, but that isn't guaranteed.
+  simulations of pairs, trios and groups with roles, including pools where
+  some players sit out, it found a grouping without repeats whenever one
+  existed, but that isn't guaranteed.
 - ``keep_roles=True`` lets each player keep the role of their first group,
   for example a proposer who stays a proposer. A newcomer gets the role
   fewest of the waiting players have, then the one fewest current members

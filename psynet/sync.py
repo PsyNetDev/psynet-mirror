@@ -3876,6 +3876,9 @@ def _latest_tick(now: float, period: float) -> float:
 # Random starting groupings a Regrouper with avoid_repeats improves by
 # swapping members, keeping the one with the fewest repeats.
 _REPEAT_AVOIDING_ATTEMPTS = 10
+# Most candidate swaps weighed in one split, so that a large pool whose
+# repeats can't all be avoided doesn't hold the regrouper's lock for long.
+_REPEAT_SWAP_BUDGET = 200_000
 
 
 def _first_roles(links) -> Dict[int, str]:
@@ -3904,61 +3907,90 @@ def _last_groupmates(links) -> Dict[int, set]:
     }
 
 
-def _is_repeat(a, b, groupmates) -> bool:
-    """Return whether either member was in the other's latest group.
+def _repeat_partners(groupmates) -> Dict[int, set]:
+    """Return the IDs each participant would repeat a group with, keyed by ID.
 
     Both directions count: after sitting out, a member's latest groupmate
     may have played someone else since.
     """
-    return b.id in groupmates.get(a.id, ()) or a.id in groupmates.get(b.id, ())
+    partners = {}
+    for participant_id, mates in groupmates.items():
+        partners.setdefault(participant_id, set()).update(mates)
+        for mate in mates:
+            partners.setdefault(mate, set()).add(participant_id)
+    return partners
 
 
-def _n_repeats(groups, groupmates) -> int:
+def _n_repeats(groups, partners) -> int:
     """Return how many pairs of members in ``groups`` were last grouped together."""
-    return sum(
-        _is_repeat(a, b, groupmates)
-        for group in groups
-        for i, a in enumerate(group)
-        for b in group[i + 1 :]
-    )
+    total = 0
+    for group in groups:
+        ids = {m.id for m in group}
+        total += sum(len(partners.get(m.id, _NO_IDS) & ids) for m in group)
+    return total // 2
 
 
-def _swap_away_repeats(groups, groupmates, can_swap) -> None:
-    """Swap members between ``groups``, in place, while a swap removes repeats.
+_NO_IDS = frozenset()
 
-    Only members for whom ``can_swap(a, b)`` holds are swapped, so group
-    sizes, and with kept roles each group's roles, stay the same.
+
+def _swap_away_repeats(groups, bench, partners, can_swap, rounds, budget) -> int:
+    """Swap members, in place, while a swap removes repeats; return the swaps weighed.
+
+    Members swap between ``groups``, or with a member of ``bench``, the
+    members left over, who have no repeats there. A placed member swaps with
+    a left-over one only if both have played the same number of rounds, so
+    whoever has played more still sits out. Only members for whom
+    ``can_swap(a, b)`` holds swap, so group sizes, and with kept roles each
+    group's roles, stay the same. Each swap removes at least one repeat.
+    Sweeps until a pass makes no swap, or ``budget`` candidate swaps have
+    been weighed.
     """
-
-    def clashes(member, group, without=None):
-        return sum(
-            _is_repeat(member, other, groupmates)
-            for other in group
-            if other is not member and other is not without
-        )
-
-    def swap_once():
-        for group in groups:
+    pools = groups + [bench]
+    ids = [{m.id for m in pool} for pool in groups] + [set()]
+    on_bench = len(groups)
+    weighed = 0
+    swapped = True
+    while swapped and weighed < budget:
+        swapped = False
+        for g, group in enumerate(groups):
             for i, a in enumerate(group):
-                if not clashes(a, group):
+                if weighed >= budget:
+                    return weighed
+                a_partners = partners.get(a.id, _NO_IDS)
+                own = len(a_partners & ids[g])
+                if not own:
                     continue
-                for other in groups:
-                    if other is group:
+                swap = None
+                for h, other in enumerate(pools):
+                    if h == g:
                         continue
+                    a_there = len(a_partners & ids[h])
                     for j, b in enumerate(other):
-                        if not can_swap(a, b):
+                        weighed += 1
+                        if not can_swap(a, b) or (
+                            h == on_bench and rounds[a.id] != rounds[b.id]
+                        ):
                             continue
-                        before = clashes(a, group) + clashes(b, other)
-                        after = clashes(b, group, without=a) + clashes(
-                            a, other, without=b
-                        )
+                        b_partners = partners.get(b.id, _NO_IDS)
+                        mutual = b.id in a_partners
+                        before = own + len(b_partners & ids[h])
+                        after = len(b_partners & ids[g]) - mutual
+                        after += max(a_there - mutual, 0)
                         if after < before:
-                            group[i], other[j] = b, a
-                            return True
-        return False
-
-    while swap_once():
-        pass
+                            swap = h, j, b
+                            break
+                    if swap is not None:
+                        break
+                if swap is not None:
+                    h, j, b = swap
+                    group[i], pools[h][j] = b, a
+                    ids[g].remove(a.id)
+                    ids[g].add(b.id)
+                    if h != on_bench:
+                        ids[h].remove(b.id)
+                        ids[h].add(a.id)
+                    swapped = True
+    return weighed
 
 
 def _balanced_groups(members, max_size, min_size):
@@ -4092,13 +4124,18 @@ class Regrouper(Grouper):
         roles: a member who has played more rounds still sits out before one
         who has played fewer, but among members with equal rounds, who sits
         out may be chosen to avoid a repeat. It starts from a random grouping
-        and swaps members between groups while that removes repeats,
-        restarting from new random groupings up to 10 times, and keeps the
-        first grouping without repeats, or else the one with the fewest. In
-        simulations of pairs (with and without roles) and of groups of 3 to
-        6 from up to 64 players, it found a grouping without repeats in
-        every case that had one, but as a heuristic it isn't guaranteed to.
-        It can't be combined with ``form_groups``.
+        and swaps members while that removes repeats, between groups or with
+        a left-over member of the same rounds (and role), restarting from new
+        random groupings up to 10 times. It keeps the first grouping without
+        repeats, or else the one with the fewest, and stops early after
+        weighing 200,000 candidate swaps, so a large pool doesn't hold the
+        lock for long. In simulations of small pools with left-over members
+        (pairs and trios without roles, and groups with 2 to 4 roles, from 3
+        to 9 players), checked against every possible grouping, it found a
+        grouping without repeats whenever one existed, and it found one in
+        each of 200 regroupings of larger pools (up to 64 players in groups
+        of up to 6). As a heuristic it isn't guaranteed to. It can't be combined with
+        ``form_groups``.
 
     form_groups
         Optional callable ``form_groups(members, within_group, barrier)``
@@ -4372,15 +4409,20 @@ class Regrouper(Grouper):
 
         if not self.avoid_repeats:
             return make_groups()
-        groupmates = _last_groupmates(links)
+        partners = _repeat_partners(_last_groupmates(links))
         best, fewest = [], None
+        budget = _REPEAT_SWAP_BUDGET
         for _ in range(_REPEAT_AVOIDING_ATTEMPTS):
             groups = make_groups()
-            _swap_away_repeats(groups, groupmates, can_swap)
-            repeats = _n_repeats(groups, groupmates)
+            placed = {m.id for group in groups for m in group}
+            bench = [m for m in members if m.id not in placed]
+            budget -= _swap_away_repeats(
+                groups, bench, partners, can_swap, rounds, budget
+            )
+            repeats = _n_repeats(groups, partners)
             if fewest is None or repeats < fewest:
                 best, fewest = groups, repeats
-            if repeats == 0:
+            if repeats == 0 or budget <= 0:
                 break
         return best
 
@@ -4473,8 +4515,17 @@ class Regrouper(Grouper):
         their previous group's role. With ``keep_roles``, it is the role they
         keep.
         """
-        links = self._links([participant.id])
-        return links[-1].role if links else None
+        link = ParticipantLinkSyncGroup
+        return (
+            db.session.query(link.role)
+            .join(SyncGroup, SyncGroup.id == link.sync_group_id)
+            .filter(
+                SyncGroup.grouper_id == self.id, link.participant_id == participant.id
+            )
+            .order_by(link.id.desc())
+            .limit(1)
+            .scalar()
+        )
 
     def rounds_played(self, participant) -> int:
         """Return how many groups this regrouper has put ``participant`` in.
