@@ -3933,24 +3933,53 @@ def _n_repeats(groups, partners) -> int:
 _NO_IDS = frozenset()
 
 
-def _swap_away_repeats(groups, bench, partners, can_swap, rounds, budget) -> int:
+def _fewest_repeats(make_groups, members, partners, rounds, roles):
+    """Return the grouping from ``make_groups()`` with the fewest repeats after swapping.
+
+    Tries up to ``_REPEAT_AVOIDING_ATTEMPTS`` groupings, stopping at the first
+    without repeats or when the swap budget runs out.
+    """
+    best, fewest = [], None
+    budget = _REPEAT_SWAP_BUDGET
+    for _ in range(_REPEAT_AVOIDING_ATTEMPTS):
+        groups = make_groups()
+        placed = {m.id for group in groups for m in group}
+        bench = [m for m in members if m.id not in placed]
+        budget -= _swap_away_repeats(groups, bench, partners, roles, rounds, budget)
+        repeats = _n_repeats(groups, partners)
+        if fewest is None or repeats < fewest:
+            best, fewest = groups, repeats
+        if repeats == 0 or budget <= 0:
+            break
+    return best
+
+
+def _swap_candidates(pools, g):
+    """Yield ``(h, j, b)`` for each member ``b = pools[h][j]`` outside ``pools[g]``."""
+    for h, other in enumerate(pools):
+        if h != g:
+            for j, b in enumerate(other):
+                yield h, j, b
+
+
+def _swap_away_repeats(groups, bench, partners, roles, rounds, budget) -> int:
     """Swap members, in place, while a swap removes repeats; return the swaps weighed.
 
     Members swap between ``groups``, or with a member of ``bench``, the
     members left over, who have no repeats there. A placed member swaps with
     a left-over one only if both have played the same number of rounds, so
-    whoever has played more still sits out. Only members for whom
-    ``can_swap(a, b)`` holds swap, so group sizes, and with kept roles each
-    group's roles, stay the same. Each swap removes at least one repeat.
-    Sweeps until a pass makes no swap, or ``budget`` candidate swaps have
-    been weighed.
+    whoever has played more still sits out. Only members with the same entry
+    in ``roles`` (an empty dict without kept roles) swap, so group sizes, and
+    with kept roles each group's roles, stay the same. Each swap removes at
+    least one repeat. Sweeps until a pass makes no swap, or ``budget``
+    candidate swaps have been weighed.
     """
     pools = groups + [bench]
-    ids = [{m.id for m in pool} for pool in groups] + [set()]
+    ids = [{m.id for m in group} for group in groups] + [set()]
     on_bench = len(groups)
     weighed = 0
     swapped = True
-    while swapped and weighed < budget:
+    while swapped:
         swapped = False
         for g, group in enumerate(groups):
             for i, a in enumerate(group):
@@ -3960,49 +3989,29 @@ def _swap_away_repeats(groups, bench, partners, can_swap, rounds, budget) -> int
                 own = len(a_partners & ids[g])
                 if not own:
                     continue
-                swap = None
-                for h, other in enumerate(pools):
-                    if h == g:
+                rest = ids[g] - {a.id}
+                a_there = [len(a_partners & pool_ids) for pool_ids in ids]
+                for h, j, b in _swap_candidates(pools, g):
+                    weighed += 1
+                    if roles.get(a.id) != roles.get(b.id) or (
+                        h == on_bench and rounds[a.id] != rounds[b.id]
+                    ):
                         continue
-                    a_there = len(a_partners & ids[h])
-                    for j, b in enumerate(other):
-                        weighed += 1
-                        if not can_swap(a, b) or (
-                            h == on_bench and rounds[a.id] != rounds[b.id]
-                        ):
-                            continue
-                        b_partners = partners.get(b.id, _NO_IDS)
-                        mutual = b.id in a_partners
-                        before = own + len(b_partners & ids[h])
-                        after = len(b_partners & ids[g]) - mutual
-                        after += max(a_there - mutual, 0)
-                        if after < before:
-                            swap = h, j, b
-                            break
-                    if swap is not None:
+                    b_partners = partners.get(b.id, _NO_IDS)
+                    before = own + len(b_partners & ids[h])
+                    # Not counting b, who leaves pool h.
+                    a_after = a_there[h] - (b.id in ids[h] and b.id in a_partners)
+                    after = len(b_partners & rest) + a_after
+                    if after < before:
+                        group[i], pools[h][j] = b, a
+                        ids[g].remove(a.id)
+                        ids[g].add(b.id)
+                        if h != on_bench:
+                            ids[h].remove(b.id)
+                            ids[h].add(a.id)
+                        swapped = True
                         break
-                if swap is not None:
-                    h, j, b = swap
-                    group[i], pools[h][j] = b, a
-                    ids[g].remove(a.id)
-                    ids[g].add(b.id)
-                    if h != on_bench:
-                        ids[h].remove(b.id)
-                        ids[h].add(a.id)
-                    swapped = True
     return weighed
-
-
-def _balanced_groups(members, max_size, min_size):
-    """Shuffle members into balanced groups of at most ``max_size``.
-
-    Members who do not fit a group of at least ``min_size`` are left out,
-    for example the odd one out when pairing.
-    """
-    members = random.sample(list(members), len(members))
-    members = members[: _n_placed(len(members), max_size, min_size)]
-    n_groups = -(-len(members) // max_size)
-    return [members[i::n_groups] for i in range(n_groups)]
 
 
 def _n_placed(n, max_size, min_size) -> int:
@@ -4401,50 +4410,29 @@ class Regrouper(Grouper):
             rounds[link.participant_id] += 1
         if self.keep_roles:
             roles = self._roles_with_newcomers(members, links, within_group)
-
-            def make_groups():
-                return self._groups_by_kept_role(members, rounds, roles)
-
-            def can_swap(a, b):
-                return roles[a.id] == roles[b.id]
-
+            make_groups = partial(self._groups_by_kept_role, members, rounds, roles)
         else:
-
-            def make_groups():
-                return self._random_groups(members, rounds)
-
-            def can_swap(a, b):
-                return True
-
+            roles = {}
+            make_groups = partial(self._random_groups, members, rounds)
         if not self.avoid_repeats:
             return make_groups()
         partners = _repeat_partners(_last_groupmates(links))
-        best, fewest = [], None
-        budget = _REPEAT_SWAP_BUDGET
-        for _ in range(_REPEAT_AVOIDING_ATTEMPTS):
-            groups = make_groups()
-            placed = {m.id for group in groups for m in group}
-            bench = [m for m in members if m.id not in placed]
-            budget -= _swap_away_repeats(
-                groups, bench, partners, can_swap, rounds, budget
-            )
-            repeats = _n_repeats(groups, partners)
-            if fewest is None or repeats < fewest:
-                best, fewest = groups, repeats
-            if repeats == 0 or budget <= 0:
-                break
-        return best
+        return _fewest_repeats(make_groups, members, partners, rounds, roles)
 
     def _random_groups(self, members, rounds):
-        """Return random balanced groups, sitting out those who have played the most rounds."""
+        """Return random balanced groups, sitting out those who have played the most rounds.
+
+        Members who don't fit a group of at least ``smallest_group`` sit out,
+        for example the odd one out when pairing.
+        """
         # Shuffled first, so that ties are broken at random.
         members = sorted(
             random.sample(members, len(members)), key=lambda m: rounds[m.id]
         )
         n_placed = _n_placed(len(members), self.group_size, self.smallest_group)
-        return _balanced_groups(
-            members[:n_placed], self.group_size, self.smallest_group
-        )
+        members = random.sample(members[:n_placed], n_placed)
+        n_groups = -(-len(members) // self.group_size)
+        return [members[i::n_groups] for i in range(n_groups)]
 
     def _groups_by_kept_role(self, members, rounds, roles):
         """Return random groups of one member per role, sitting out the surplus who have played most."""
