@@ -28,6 +28,7 @@ to ``~/.dallingerconfig``:
 
 .. code-block:: ini
 
+   [Lab Recruiter]
    lab_recruiter_external_submission_url = https://recruiter.your-lab.edu/tasks
    lab_recruiter_auth_token = xxxxxxx
 

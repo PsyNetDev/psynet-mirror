@@ -37,8 +37,9 @@ in a directory that `psynet debug` is serving, and `psynet debug local`
 refuses a directory that tests are using, because both create and remove
 generated files there; test from a copy (such as a git worktree) instead.
 `psynet debug local` sessions, however, share port 5000, the PostgreSQL database, Redis and
-Dallinger's development folder, and starting one stops the other's worker
-processes. Before `psynet debug local`, check that nothing is listening on
+Dallinger's development folder, so only one can run at a time; a second
+refuses to start while another uses the same port or database. Before
+`psynet debug local`, check that nothing is listening on
 port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If
 another experiment is running, don't stop it yourself: either ask the user to
 stop it, or run yours alongside it with `psynet debug local --isolated`,

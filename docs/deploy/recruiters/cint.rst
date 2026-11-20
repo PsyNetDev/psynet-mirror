@@ -316,9 +316,16 @@ dashboard's errors regularly.
 Ending the study
 ----------------
 
-When you reach the target number of participants, set the survey to
-**Complete**, export the data again, and wait until no participants are
-still working before destroying the app (see
+PsyNet ends the survey for you. Once the participants who have finished plus
+those still working cover the target, it pauses entry by lowering the
+survey's quota, and it sets the survey to **Complete** once nobody is still
+working; if some of them fail and more participants are needed, it reopens
+entry. Don't set the survey to **Complete** yourself while participants are
+still working: Lucid records anyone who returns after that as "Survey Closed"
+rather than as a complete. To stop early, wait until no participants are
+working, then set it to **Complete**.
+
+Then export the data again before destroying the app (see
 :doc:`/deploy/running_a_study`).
 
 .. image:: /_static/images/running_studies/recruiters/cint/termination.png

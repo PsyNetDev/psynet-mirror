@@ -138,10 +138,10 @@ check_already_tested:
         - demos/**/*
         - docs/scripts/**/*
         # Docs pages whose content is checked by isolated tests.
-        - docs/dependencies/docker.rst
+        - docs/demos/index.rst
         - docs/deploy/index.rst
         - docs/developer/timeline_hold_traces.rst
-        - docs/experiment_development/experiment_directory.rst
+        - docs/skills/index.rst
         - install-ci-dependencies.sh
         - package-lock.json
         - package.json

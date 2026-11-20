@@ -26,10 +26,10 @@ Also see: :doc:`/whats_new/psynet_14`,
    only as a short-term experiment-wide opt-out, then keep migrating so you
    can remove it.
 4. Work page by page.
-5. Even with no custom frontend, continue through steps 10–20
-   (recruiters, Leave and error pages, changed defaults, setup, deployment
-   files, participant failure, responses, groups, assets, exports, and
-   validation).
+5. Even with no custom frontend, continue through steps 9–21
+   (trial selection, recruiters, Leave and error pages, changed defaults,
+   setup, deployment files, participant failure, responses, groups, assets,
+   async jobs, exports, and validation).
 
 To find pages that can't load in place, run ``psynet debug local`` /
 ``psynet test local`` and read the traceback. Incompatible pages raise one
@@ -91,7 +91,10 @@ replays across in-place transitions (see :doc:`/developer/page_lifecycle`).
 Author-owned external templates should contain only markup. Embedded
 ``<script type="module">`` tags are not supported.
 
-PsyNet now serves jQuery 4.0.0 and jQuery UI 1.14.1. Search your JavaScript
+PsyNet now serves jQuery 4.0.0 and no longer bundles jQuery UI: a template
+that loaded ``/static/scripts/jquery-ui.min.js`` or
+``/static/css/jquery-ui.css`` must ship its own copy in the experiment's
+``static/`` directory. Search your JavaScript
 for jQuery utilities that jQuery 4 removed, such as ``$.trim``,
 ``$.isArray``, ``$.isFunction``, ``$.parseJSON``, ``$.type``,
 ``$.isNumeric`` and ``$.now``. Replace them with native JavaScript, for

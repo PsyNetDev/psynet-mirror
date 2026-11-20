@@ -135,8 +135,8 @@ General
     The port to be used to access the web application. Normally there should not be the need to change this from the default. Default ``5000``.
 
 ``check_dallinger_version`` *bool* |psynet-icon|
-    Set this to ``False`` if you want to bypass the check for the version of Dallinger that is recommended for the current PsyNet release. This allows for flexibility, e.g. when deploying `Dallinger` development branches.
-    Default: ``True``.
+    Set this to ``True`` to check, when you launch an experiment, that the installed Dallinger is the version recommended for the current PsyNet release.
+    Default: ``False``.
 
 ``check_participant_opened_devtools`` *bool* |psynet-icon|
     If ``True``, whenever a participant opens the developer tools in the web browser,
@@ -214,7 +214,8 @@ General
     A number between 0 and 4 that controls the verbosity of logs and maps to
     one of ``debug`` (0), ``info`` (1), ``warning`` (2), ``error`` (3), or
     ``critical`` (4). Note that ``psynet debug`` ignores this setting and
-    always runs at 0 (``debug``). Default: ``0``.
+    always runs at 0 (``debug``). Default: ``1`` (PsyNet overrides
+    Dallinger's default of ``0``).
 
 ``loglevel_worker`` *int* |dlgr-icon|
     A number between 0 and 4 that controls the verbosity of worker logs and maps to
