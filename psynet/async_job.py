@@ -788,7 +788,9 @@ def _format_cpu_time_summary(rows):
             notes.append(
                 f"Note: worker job {row['label']!r} is declared cpu_heavy=True "
                 "but mostly waits; with cpu_heavy=False it could run beside "
-                "other jobs instead of queueing for a CPU worker."
+                "other jobs instead of queueing for a CPU worker, unless it "
+                "waits without letting them run, as in a C extension's "
+                "network call."
             )
         table.append(
             [

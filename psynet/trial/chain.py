@@ -1669,13 +1669,8 @@ class ChainTrialMaker(NetworkTrialMaker):
             "balance_across_chains", balance_across_chains, "chain_order"
         )
 
-        node_classes = {node_class} | {
-            type(node)
-            for node in (start_nodes if isinstance(start_nodes, list) else [])
-        }
-        for cls in node_classes:
-            if isinstance(cls, type) and issubclass(cls, TrialNode):
-                cls._check_async_on_deploy_cpu_heavy()
+        if node_class is not None:
+            node_class._check_async_on_deploy_cpu_heavy()
         self.node_class = node_class
         assert isinstance(expected_trials_per_participant, (int, float, str))
         if isinstance(expected_trials_per_participant, str):
@@ -1869,6 +1864,7 @@ class ChainTrialMaker(NetworkTrialMaker):
                     f"{self.node_class.__name__} (or subclasses). "
                     f"Got {type(node).__name__} at index {index}."
                 )
+            type(node)._check_async_on_deploy_cpu_heavy()
 
     def _selection_hook_overrides(self):
         return [

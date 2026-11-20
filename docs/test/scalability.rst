@@ -278,9 +278,11 @@ slow down participants' pages.
 The summary estimates ``worker_processes`` from the steady state of one
 test, aiming to keep the workers about 70% busy at the recommended number
 of participants. With CPU workers, it sizes them the same way and
-recommends enough worker processes for whichever needs more. It suggests
-``worker_greenlets_per_process = 1`` when the other jobs are CPU-heavy too;
-declare those jobs CPU-heavy instead if you can. For example, a tapping study
+recommends enough worker processes for whichever needs more. Without CPU
+workers (``cpu_processes_per_worker = 0``), it suggests
+``worker_greenlets_per_process = 1`` when the other jobs are CPU-heavy; with
+them, the CPU table after ``psynet test local`` warns about such jobs instead,
+so declare them CPU-heavy. For example, a tapping study
 with 43 s of audio analysis per 13-minute session gets::
 
     In the 130-bot test, jobs that participants wait for waited too long for one of the 10 worker processes, up to 200 jobs at once, and 10 CPU workers.

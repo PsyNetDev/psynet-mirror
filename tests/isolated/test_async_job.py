@@ -828,6 +828,8 @@ def test_async_jobs_must_say_whether_they_are_cpu_heavy():
         AsyncCodeBlock(do_nothing, wait=False)
     with pytest.raises(TypeError, match="_UndeclaredAnalysisTrial, which defines"):
         _static_maker(trial_class=_UndeclaredAnalysisTrial)
+    with pytest.raises(TypeError, match="_UndeclaredAnalysisTrial, which defines"):
+        _UndeclaredAnalysisTrial.cue({})
     _static_maker(trial_class=_SkippedAnalysisTrial)
     with pytest.raises(TypeError, match="async_on_deploy_cpu_heavy"):
         _static_maker(node_class=_UndeclaredSynthesisNode)

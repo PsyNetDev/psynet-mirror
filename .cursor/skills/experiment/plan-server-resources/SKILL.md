@@ -84,11 +84,13 @@ An **I/O-bound** job, such as an API call or an upload, mostly waits, so more
 cores do not help it.
 
 **Priority** says whether a participant waits for a worker job (`high`) or
-not (`low`); workers start `high` jobs first. A long CPU-heavy `low` job, such
-as analysing every main tapping trial, still occupies a worker until it
-finishes, so size the workers so that `high` jobs, such as calibration or
-feedback analyses, find a free one at peak. If a label has the wrong
-priority, override it as described in `reference/api/async_job`.
+not (`low`); worker processes start `high` jobs first. CPU workers ignore
+priority and take CPU-heavy jobs in the order they were enqueued, so a burst of
+`low` analyses, such as analysing every main tapping trial, delays the `high`
+ones queued behind it, such as calibration or feedback analyses. Size the CPU
+workers (through `worker_processes`) so that the CPU queue stays short at
+peak. If a label has the wrong priority, override it as described in
+`reference/api/async_job`.
 
 While a job waits on I/O, its process runs other work, and `cpu_time` counts
 that too: other jobs in a worker, and page requests in the web process. With a
