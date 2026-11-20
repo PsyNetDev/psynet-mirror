@@ -285,7 +285,6 @@ class FishingTrial(Trial):
             trial.var.catch = (
                 None if trial.answer is None else _draw_catch(trial.answer)
             )
-        # String keys, because var stores JSON.
         group_round.var.spots = {str(t.participant_id): t.answer for t in trials}
         group_round.var.catches = {str(t.participant_id): t.var.catch for t in trials}
         retiring = None

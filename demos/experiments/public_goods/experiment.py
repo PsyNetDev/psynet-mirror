@@ -134,8 +134,8 @@ class ContributionTrial(Trial):
         left: list,
     ):
         """Share the multiplied pot between the members who played the round."""
-        # String keys, because var stores JSON. A player who ran out of
-        # time has an answer of None and puts in nothing.
+        # A player who ran out of time has an answer of None and puts in
+        # nothing.
         group_round.var.contributions = {
             str(t.participant_id): t.answer for t in trials
         }
