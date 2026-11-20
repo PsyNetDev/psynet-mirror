@@ -2023,7 +2023,7 @@ def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
     game.tick(79)
     assert not game.is_over()
     game.tick(80)
-    assert game.is_over() == PLAYERS_LEFT
+    assert game.is_over() and game.end_reason() == PLAYERS_LEFT
 
 
 def test_by_default_a_game_for_two_ends_a_minute_after_one_player_leaves():
@@ -2045,9 +2045,34 @@ def test_by_default_a_game_for_two_ends_a_minute_after_one_player_leaves():
     game.tick(64)
     assert not game.is_over()
     game.tick(65)
-    assert game.is_over() == PLAYERS_LEFT
+    assert game.is_over() and game.end_reason() == PLAYERS_LEFT
     # And the outcome is the final state, without PsyNet's entry.
     assert game.outcome() == {"left_alone": False}
+
+
+def test_a_local_game_gives_the_game_s_reasons_and_refuses_an_empty_one():
+    class Over(_Game):
+        name = "over_with_reasons"
+
+        def is_over(self, state):
+            return True
+
+        def end_reason(self, state):
+            return state.get("reason", "")
+
+        def is_done(self, state, player):
+            return True
+
+        def done_reason(self, state, player):
+            return f"player {player}" if state.get("reason") else None
+
+    game = LocalGame(Over, players=2)
+    with pytest.raises(TypeError, match="Over.end_reason returned '', not a"):
+        game.end_reason()
+    with pytest.raises(TypeError, match="Over.done_reason returned None"):
+        game.done_reason(1)
+    game.state["reason"] = "own"
+    assert (game.end_reason(), game.done_reason(1)) == ("own", "player 1")
 
 
 def test_a_game_s_join_timeout_is_its_ready_timeout(registry):
@@ -2077,11 +2102,13 @@ def test_live_game_handles_every_hook_of_dallingers_game():
         "next_deadline",
         "view",
         "is_over",
+        "end_reason",
         "outcome",
         "on_join",
         "on_leave",
         "on_add",
         "is_done",
+        "done_reason",
         "save_message",
         "bot",
         "queue_effect",
@@ -2225,7 +2252,9 @@ def test_a_bot_plays_once_the_testing_helper_has_started_its_game():
     }
 
 
-def test_an_on_start_that_ends_the_game_skips_its_tick(relay):
+def test_an_on_start_that_ends_the_game_skips_its_tick_and_gives_its_end_reason(
+    relay,
+):
     class Everyone(type(relay)):
         name = "everyone"
 
@@ -2236,6 +2265,9 @@ def test_an_on_start_that_ends_the_game_skips_its_tick(relay):
         def is_over(self, state):
             return state.get("everyone") is False
 
+        def end_reason(self, state):
+            return "not_everyone"
+
     game = Everyone()
     entries = [
         _session_entry("join", 0, "1"),
@@ -2245,7 +2277,7 @@ def test_an_on_start_that_ends_the_game_skips_its_tick(relay):
     waiting = run_pass(game, new_session(game, ["1", "2"]), entries, 2, CLOCK)
     ended = run_pass(game, waiting.saved, [], 10, CLOCK)
 
-    assert ended.ended["reason"] == "finished"
+    assert ended.ended["reason"] == "not_everyone"
     assert json.loads(ended.saved)["state"]["ticks"] == []
 
 
@@ -2314,7 +2346,9 @@ def test_a_handled_deadline_doesn_t_hide_the_game_s_duration(relay):
     assert ended.ended["reason"] == "finished"
 
 
-def test_a_game_that_has_ticked_ends_when_a_finished_player_leaves_too_few(relay):
+def test_a_game_that_has_ticked_ends_with_psynet_s_reason_when_a_finished_player_leaves_too_few(
+    relay,
+):
     class Pair(type(relay)):
         name = "pair_with_ends"
         min_players = 2
@@ -2326,6 +2360,12 @@ def test_a_game_that_has_ticked_ends_when_a_finished_player_leaves_too_few(relay
 
         def is_done(self, state, player):
             return any(tapper == player for tapper, _ in state["taps"])
+
+        def done_reason(self, state, player):
+            return f"tapped {player}"
+
+        def end_reason(self, state):
+            return "not_psynet_s"
 
     game = Pair()
     entries = [
@@ -2340,6 +2380,7 @@ def test_a_game_that_has_ticked_ends_when_a_finished_player_leaves_too_few(relay
     ended = run_pass(game, started.saved, tapped, 16, CLOCK)
 
     assert json.loads(started.saved)["state"]["psynet"]["started_at"] == 10
+    assert ended.players_done[0]["reason"] == "tapped 0"
     assert ended.ended["reason"] == PLAYERS_LEFT
 
 
@@ -2716,7 +2757,7 @@ def test_an_ending_handler_that_calls_super_pays_each_player_once(pair):
     session_id = _pair_session(pair)
     row = db.session.get(RealtimeSession, session_id)
     row.status, row.end_reason, row.outcome = "ended", "finished", [1, 1]
-    players_ended = []
+    players_ended, games_ended = [], []
 
     class PaysOnce(_played_pick_numbers()):
         name = "pays_once"
@@ -2724,12 +2765,13 @@ def test_an_ending_handler_that_calls_super_pays_each_player_once(pair):
         def performance_reward(self, outcome, reason, player):
             return 0.25
 
-        def handle_ending(self, session_row):
-            return super().handle_ending(session_row)
+        def handle_ending(self, game):
+            games_ended.append(game)
+            return super().handle_ending(game)
 
-        def handle_player_ending(self, session_row, player, ending):
+        def handle_player_ending(self, game, player, ending):
             players_ended.append(player)
-            return super().handle_player_ending(session_row, player, ending)
+            return super().handle_player_ending(game, player, ending)
 
     first = min(members, key=lambda member: member.id)
     PaysOnce().handle_player_ending(
@@ -2743,6 +2785,9 @@ def test_an_ending_handler_that_calls_super_pays_each_player_once(pair):
     assert [_reward(member) for member in members] == pytest.approx(
         [reward + 0.25 for reward in before]
     )
+    # The game's record, with the ending the job is writing.
+    (game,) = games_ended
+    assert (game.id, game.end_reason, game.outcome) == (session_id, "finished", [1, 1])
 
 
 def test_the_game_page_answer_can_be_the_player_s_part_of_the_outcome(
@@ -3122,8 +3167,8 @@ def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_rewards(pair):
         def view(self, state, player_id):
             return {}
 
-        def handle_effect(self, name, payload, session_row):
-            handled.append(name)
+        def handle_effect(self, name, payload, game):
+            handled.append((name, game.participant_ids))
 
     effects = []
     token = queued_effects.set(effects)
@@ -3148,7 +3193,7 @@ def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_rewards(pair):
         Scored().handle_effect(name, payload, row)
 
     first = min(members, key=lambda member: member.id)
-    assert handled == ["scored"]
+    assert handled == [("scored", sorted(member.id for member in members))]
     assert _reward(first) == pytest.approx(1.5)
     with pytest.raises(ValueError, match="player 2, but game .* has only 2"):
         Scored().handle_effect(

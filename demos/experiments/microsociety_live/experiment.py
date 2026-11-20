@@ -15,7 +15,8 @@ and the game's ``on_add`` gives them a boat. Each member fishes for
 ``STAY_SECONDS``, and when a newcomer makes the lake more crowded than
 ``SOCIETY_SIZE``, the longest-serving member retires. The game's ``is_done``
 ends each member's game then, so they move on and leave a tip while the
-others carry on. The lake closes once nobody is left on it.
+others carry on, and its ``done_reason`` says whether they retired or stayed
+their time. The lake closes once nobody is left on it.
 
 The game records each catch with ``record``, so the newcomer's page and the
 export read the society's history from the lake's ``moments``.
@@ -155,8 +156,10 @@ class Fishing(LiveGame):
         self.record("left", {"player": player, "why": why})
 
     def is_done(self, state, player):
-        # RETIRED or STAYED once the member has left, which becomes the reason
-        # their game ended, and None while they fish.
+        return state["boats"][player]["left"] is not None
+
+    def done_reason(self, state, player):
+        # RETIRED or STAYED, which becomes the reason the member's game ended.
         return state["boats"][player]["left"]
 
     def is_over(self, state):

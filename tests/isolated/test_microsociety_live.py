@@ -38,7 +38,7 @@ class TestMicrosocietyLive:
         newcomer = game.add(now=10)
 
         assert newcomer == demo.SOCIETY_SIZE
-        assert game.is_done(0) == demo.RETIRED
+        assert game.is_done(0) and game.done_reason(0) == demo.RETIRED
         assert [game.is_done(p) for p in range(1, newcomer + 1)] == [False] * 3
         # The others no longer see the retired member's boat, and the
         # newcomer's boat has a colour of its own.
@@ -55,7 +55,7 @@ class TestMicrosocietyLive:
 
         # A member leaves at the first catch once their time is up.
         game.tick(demo.STAY_SECONDS + demo.CATCH_SECONDS)
-        assert game.is_done(0) == demo.STAYED
+        assert game.is_done(0) and game.done_reason(0) == demo.STAYED
         assert game.is_over()
 
     def test_a_boat_catches_only_at_a_spot_it_has_reached(self, demo, lake):

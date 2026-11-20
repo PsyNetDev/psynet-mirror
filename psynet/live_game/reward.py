@@ -22,6 +22,7 @@ from .record import (
     _has_outcome,
     _player_ids,
     _players_ended_early,
+    _record_from_row,
 )
 
 
@@ -87,8 +88,13 @@ def _locked_players(session_row, participant_ids=None):
 def _handles_reward(method):
     @functools.wraps(method)
     def handle_effect(self, name, payload, session_row):
-        if name not in _PSYNET_EFFECTS:
+        # A super() call from a subclass's override already has the record.
+        if _in_game_code.get():
             return method(self, name, payload, session_row)
+        if name not in _PSYNET_EFFECTS:
+            return _as_game_code(
+                method, self, name, payload, _record_from_row(session_row)
+            )
         if name != _REWARD_EFFECT:
             # Only recorded, for a game record's messages and moments.
             return None
@@ -133,7 +139,7 @@ def _handles_ending(method):
         _end_game_page_deadlines(session_row, players, session_row.end_time)
         if session_row.status != "failed":
             _remove_absent_players(self, session_row, players)
-        return _as_game_code(method, self, session_row)
+        return _as_game_code(method, self, _record_from_row(session_row))
 
     handle_ending._psynet_wrapper = True
     return handle_ending
@@ -151,7 +157,9 @@ def _handles_player_ending(method):
         what = f"{type(self).__name__}.performance_reward"
         _add_reward(participant, _check_reward(amount, what), session_row)
         _end_game_page_deadlines(session_row, [participant], timenow())
-        return _as_game_code(method, self, session_row, player, ending)
+        return _as_game_code(
+            method, self, _record_from_row(session_row), player, ending
+        )
 
     handle_player_ending._psynet_wrapper = True
     return handle_player_ending

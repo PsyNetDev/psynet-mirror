@@ -124,8 +124,8 @@ def _stores_json(method, name=None):
 
 
 def _reads_state(method, name):
-    """Wrap a method that only reads the state, such as ``is_done``, so
-    that its outermost call goes through its entry in
+    """Wrap a method that only reads the state, such as ``is_done`` or
+    ``done_reason``, so that its outermost call goes through its entry in
     ``_SESSION_BOOKKEEPING``."""
     return _converts_outermost_call(
         method, name, lambda self, result, args, kwargs: result
@@ -165,19 +165,41 @@ def _waits_for_start(self, game_code, state):
     return min((d for d in deadlines if d is not None), default=None)
 
 
+def _psynet_end_reason(self, state):
+    """Return why PsyNet ends the game, once its time is up or too few
+    players are left, or None."""
+    entry = _psynet_entry(state)
+    if entry["time_up"]:
+        return "finished" if self.duration is not None else TIMEOUT
+    if entry["players_left"]:
+        return PLAYERS_LEFT
+    return None
+
+
 def _ends_when_time_is_up(method):
     @functools.wraps(method)
     def is_over(self, state):
-        entry = _psynet_entry(state)
-        # A string is Dallinger's reason for the end.
-        if entry["time_up"]:
-            return "finished" if self.duration is not None else TIMEOUT
-        if entry["players_left"]:
-            return PLAYERS_LEFT
+        if _psynet_end_reason(self, state) is not None:
+            return True
         return _as_game_code(method, self, state)
 
     is_over._psynet_wrapper = True
     return is_over
+
+
+def _gives_psynet_end_reason(method):
+    """Wrap ``end_reason`` so that PsyNet's reason for the end, if it has
+    one, comes before the game's."""
+
+    @functools.wraps(method)
+    def end_reason(self, state):
+        reason = _psynet_end_reason(self, state)
+        if reason is not None:
+            return reason
+        return _as_game_code(method, self, state)
+
+    end_reason._psynet_wrapper = True
+    return end_reason
 
 
 @_outermost

@@ -53,6 +53,10 @@ class LiveGameRecord:
     ``onResultSaved`` runs.
     """
 
+    # The realtime_session row the job writing the game's record holds, set
+    # by _record_from_row, so the columns come from it without a query.
+    _loaded_row = None
+
     def __init__(self, game_id: Optional[int], participant=None):
         self._id = game_id
         self._participant = participant
@@ -96,7 +100,7 @@ class LiveGameRecord:
         ``is_over`` that returned ``True``, or at the end of its
         ``duration``. It's ``False`` for a game that ended early, such as
         because players left or it reached its ``timeout``, and for one
-        whose ``is_over`` returned a reason of its own, such as ``"deal"``."""
+        whose ``end_reason`` gave a reason of its own, such as ``"deal"``."""
         row = self._row()
         return (
             row is not None and row.status == "ended" and row.end_reason == "finished"
@@ -221,9 +225,20 @@ class LiveGameRecord:
     def _row(self):
         if self._id is None:
             return None
+        if self._loaded_row is not None:
+            return self._loaded_row
         return _session_columns(
             self._id, "status", "end_reason", "outcome", "error", "members"
         )
+
+
+def _record_from_row(row):
+    """Return the record of the game whose ``realtime_session`` row the job
+    writing its record holds, which reads the columns from the row, with
+    the job's changes, rather than from the database."""
+    record = LiveGameRecord(row.id)
+    record._loaded_row = row
+    return record
 
 
 def _stored_answer(participant_id, game_id):

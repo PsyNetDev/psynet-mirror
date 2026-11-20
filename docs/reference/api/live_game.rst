@@ -26,7 +26,8 @@ Live games
     players are left.
 
 The reason a player's game ends with when the game's ``is_done`` returns
-``True`` is Dallinger's :data:`~dallinger.realtime.game.DONE`, ``"done"``,
+``True`` is what its :meth:`~psynet.live_game.LiveGame.done_reason` gives,
+by default Dallinger's :data:`~dallinger.realtime.game.DONE`, ``"done"``,
 and the game then rejects their messages with
 :data:`~dallinger.realtime.game.PLAYER_DONE_REASON`.
 

@@ -125,7 +125,8 @@ class TestRockPaperScissorsLive:
         # Player 1 closes the page for good, and the game ends without them.
         game.leave(1, now=1)
         game.tick(now=1 + demo.RockPaperScissors.away_timeout)
-        reason = game.is_over()
+        assert game.is_over()
+        reason = game.end_reason()
         assert reason == "players_left"
         reward = game.game.performance_reward
         assert reward(game.outcome(reason), reason, 0) == 0

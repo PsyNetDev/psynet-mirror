@@ -221,6 +221,12 @@ def _player_done(self, method, outermost, state, player_id):
     return method(self, state, _player(entry, player_id))
 
 
+def _player_done_reason(self, method, outermost, state, player_id):
+    if not outermost:
+        return method(self, state, player_id)
+    return method(self, state, _player(_psynet_entry(state), player_id))
+
+
 def _gone_at(self, entry, player):
     """Return when, on Dallinger's clock, an away player is gone: once away
     for the game's away_timeout, counted from the start for one who left
@@ -326,5 +332,6 @@ _SESSION_BOOKKEEPING = {
     "on_join": _record_join,
     "on_add": _record_add,
     "is_done": _player_done,
+    "done_reason": _player_done_reason,
     "initial_state": _add_psynet_entry,
 }

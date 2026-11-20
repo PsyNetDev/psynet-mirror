@@ -125,11 +125,17 @@ class LocalGame:
 
     def is_done(self, player):
         """Return whether ``player``'s game has ended, by the game's
-        ``is_done``, or the reason it gives."""
+        ``is_done``."""
         if type(self.game).is_done is RealtimeGame.is_done:
             return False
-        done = self.game.is_done(self.state, self._participant(player))
-        return done if isinstance(done, str) else bool(done)
+        return bool(self.game.is_done(self.state, self._participant(player)))
+
+    def done_reason(self, player):
+        """Return why ``player``'s game ended, as the game's ``done_reason``
+        gives it. Call it once :meth:`is_done` returns ``True``."""
+        return _check_reason(
+            self.game, "done_reason", self.state, self._participant(player)
+        )
 
     def view(self, player):
         """Return what ``player``'s page shows, as the game's ``view`` returns
@@ -144,10 +150,14 @@ class LocalGame:
         )
 
     def is_over(self):
-        """Return whether the game's ``is_over`` says the game is over, or
-        the reason it gives, such as ``"players_left"``."""
-        over = self.game.is_over(self.state)
-        return over if isinstance(over, str) else bool(over)
+        """Return whether the game's ``is_over`` says the game is over."""
+        return bool(self.game.is_over(self.state))
+
+    def end_reason(self):
+        """Return why the game ended, as the game's ``end_reason`` gives it,
+        such as ``"players_left"``. Call it once :meth:`is_over` returns
+        ``True``."""
+        return _check_reason(self.game, "end_reason", self.state)
 
     def outcome(self, reason="finished"):
         """Return the game's ``outcome``, as if it ended now for ``reason``."""
@@ -243,6 +253,17 @@ class LocalGame:
         # Dallinger's clock, which the game's methods get converted from.
         started_at = _psynet_entry(self.state)["started_at"]
         return now + (started_at or 0)
+
+
+def _check_reason(game, name, *args):
+    """Return what the game's method ``name`` returns, which, as in a live
+    game, must be a non-empty string."""
+    reason = getattr(game, name)(*args)
+    if not isinstance(reason, str) or not reason:
+        raise TypeError(
+            f"{type(game).__name__}.{name} returned {reason!r}, not a non-empty string."
+        )
+    return reason
 
 
 def start_game(game, state):

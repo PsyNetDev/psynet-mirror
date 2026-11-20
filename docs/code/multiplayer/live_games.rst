@@ -72,7 +72,7 @@ A game's parts, each explained below or in the tutorial:
         def bot(self, view, player, now): ...  # a bot's next message, or None
 
         # And, if the game needs them: tick and next_deadline for a clock,
-        # on_start, on_join and on_leave.
+        # on_start, on_join and on_leave, and end_reason for why it ended.
 
 A game's ``outcome`` is its final state, without PsyNet's entry, unless it
 defines ``outcome`` to return less, such as only what the analysis needs from
@@ -976,12 +976,12 @@ Finishing before the others
 
 To let a player's game end while the others play on, define
 ``is_done(self, state, player)``. It returns whether the player is done,
-such as once they've had their turns or their time, or a string that says
-why, which is then the reason their game ended. ``True`` gives the reason
-``"done"``. PsyNet asks it about each player still playing after every
-change to the state, once the game has started. It only reads the state,
-so a game that ends a player's game after some time marks that in its
-``tick``, as the demo does:
+such as once they've had their turns or their time. PsyNet asks it about
+each player still playing after every change to the state, once the game
+has started. Their game then ends with the reason that
+:meth:`~psynet.live_game.LiveGame.done_reason` gives, ``"done"`` by
+default. Both only read the state, so a game that ends a player's game
+after some time marks that in its ``tick``, as the demo does:
 
 .. code-block:: python
 
@@ -992,7 +992,10 @@ so a game that ends a player's game after some time marks that in its
                     boat["left"] = "stayed"
 
         def is_done(self, state, player):
-            return state["boats"][player]["left"]  # a reason, or None
+            return state["boats"][player]["left"] is not None
+
+        def done_reason(self, state, player):
+            return state["boats"][player]["left"]  # "retired" or "stayed"
 
 A player whose game has ended gets their final view, with ``ended`` set, and
 their page gets no more views. The game rejects their messages with the
@@ -1012,8 +1015,9 @@ game ends with the reason ``"players_left"``, however many of them are on
 the page.
 
 :class:`~psynet.live_game.testing.LocalGame` plays both:
-``game.add(now=10)`` adds a player and returns their number, and
-``game.is_done(player)`` asks the game's ``is_done``.
+``game.add(now=10)`` adds a player and returns their number,
+``game.is_done(player)`` asks the game's ``is_done``, and
+``game.done_reason(player)`` its ``done_reason``.
 
 .. _live-games-answer:
 
@@ -1088,9 +1092,11 @@ outcome then. This game pays 0.10 for a win:
             return 0.10 if mine is not None and BEATS[mine] == theirs else 0
 
 ``reason`` is ``"finished"`` when ``is_over`` returned ``True`` or the
-game's ``duration`` ran out, and ``"timeout"`` when its ``timeout`` did. An
-``is_over`` that returns a string instead, such as ``"deal"``, ends the
-game with that string as its reason, which then isn't ``"finished"``.
+game's ``duration`` ran out, and ``"timeout"`` when its ``timeout`` did. A
+game whose ``is_over`` ended it can give a reason of its own, such as
+``"deal"``, with :meth:`~psynet.live_game.LiveGame.end_reason`, which
+PsyNet calls once ``is_over`` returns ``True``; the reason then isn't
+``"finished"``.
 Dallinger's `outcome <dallinger-outcome_>`_ lists the other reasons, such as
 ``"not_joined"``. If the game's code raised an error, ``reason`` is
 ``"failed"``, and ``outcome`` is the outcome of the state just before the
@@ -1344,8 +1350,9 @@ scissors game:
     assert game.is_over()
 
 ``send`` raises ``Reject`` for a message the game rejects. ``leave`` and
-``join`` close and open a player's game page, and ``is_over`` returns the
-reason the game ended when it has one, such as ``"players_left"``.
+``join`` close and open a player's game page, ``is_over`` returns whether
+the game has ended, and ``end_reason`` then says why, such as
+``"players_left"``.
 
 Each of the experiment's worker processes runs a game runner, which plays
 its games one after another, so slow game code in one game delays the

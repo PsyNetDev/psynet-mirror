@@ -125,7 +125,7 @@ class TestBargainingLive:
             game.leave(0, now=10 + demo.Bargain.away_timeout - 1)
         game.tick(10 + demo.Bargain.away_timeout)
 
-        assert game.is_over() == PLAYERS_LEFT
+        assert game.is_over() and game.end_reason() == PLAYERS_LEFT
         assert [game.view(player)["left"] for player in (0, 1)] == ["partner", "you"]
 
     def test_accepting_a_proposal_makes_the_deal_it_offered(self, demo, game):

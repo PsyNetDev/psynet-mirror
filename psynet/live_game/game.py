@@ -21,6 +21,7 @@ from .method_wrappers import (
     _STATE_METHODS,
     _as_game_code,
     _ends_when_time_is_up,
+    _gives_psynet_end_reason,
     _reads_state,
     _returns_json,
     _runs_game_code,
@@ -70,8 +71,8 @@ class LiveGame(RealtimeGame):
     player, such as by appending to each list in the state. A game in which
     each player can finish before the others defines
     ``is_done(self, state, player)``, which returns whether the player's game
-    has ended, or a string that says why. :ref:`live-games-join-and-finish`
-    explains both.
+    has ended, and can define :meth:`done_reason` to say why.
+    :ref:`live-games-join-and-finish` explains both.
     """
 
     #: The game's name, which must differ from every other game's, such as
@@ -146,6 +147,7 @@ class LiveGame(RealtimeGame):
             *((name, _runs_game_code) for name in _GAME_CODE_METHODS),
             ("next_deadline", _waits_for_start),
             ("is_over", _ends_when_time_is_up),
+            ("end_reason", _gives_psynet_end_reason),
             ("view", _shows_psynet_entry),
             ("bot", _sends_message),
             ("save_message", _saves_ready_messages),
@@ -153,6 +155,7 @@ class LiveGame(RealtimeGame):
             ("handle_ending", _handles_ending),
             ("handle_player_ending", _handles_player_ending),
             ("is_done", functools.partial(_reads_state, name="is_done")),
+            ("done_reason", functools.partial(_reads_state, name="done_reason")),
         ]:
             method = getattr(cls, name)
             if method is not getattr(RealtimeGame, name, None) and not getattr(
@@ -207,10 +210,48 @@ class LiveGame(RealtimeGame):
 
     @_ends_when_time_is_up
     def is_over(self, state):
-        """Return whether the game is over, as in Dallinger's ``is_over``.
-        A game with a :attr:`duration` is also over once its time is up.
+        """Return whether the game is over, as a bool, as in Dallinger's
+        ``is_over``. Once it is, :meth:`end_reason` says why. The game is
+        also over once its :attr:`duration` or :attr:`timeout` is up, or
+        too few players are left.
         """
         return super().is_over(state)
+
+    @_gives_psynet_end_reason
+    def end_reason(self, state):
+        """Return why the game ended, a non-empty string such as
+        ``"deal"``, once ``is_over`` has returned ``True``. It becomes the
+        ``reason`` that :meth:`outcome`, :meth:`answer` and
+        :meth:`performance_reward` receive, and the game record's
+        :attr:`~LiveGameRecord.end_reason`. By default, it's
+        ``"finished"``. When PsyNet ended the game, the reason is PsyNet's
+        instead: ``"finished"`` at the end of the :attr:`duration`,
+        ``"timeout"`` at the :attr:`timeout`, or ``"players_left"``. Any
+        other value than a non-empty string fails the game. It should only
+        read ``state``, not change it.
+        """
+        return super().end_reason(state)
+
+    @functools.partial(_reads_state, name="done_reason")
+    def done_reason(self, state, player):
+        """Return why a player's game ended, a non-empty string such as
+        ``"retired"``, once the game's ``is_done`` has returned ``True`` for
+        them. It becomes the ``reason`` that :meth:`answer` and
+        :meth:`performance_reward` receive for that player. By default, it's
+        ``"done"``. Any other value than a non-empty string fails the game.
+        It should only read ``state``, not change it.
+
+        Parameters
+        ----------
+
+        state
+            The game's state.
+
+        player
+            The player's number: 0 for the first player, 1 for the next,
+            and so on.
+        """
+        return super().done_reason(state, player)
 
     @_stores_json
     def on_start(self, state):
@@ -394,15 +435,27 @@ class LiveGame(RealtimeGame):
     # Wrapped here, so a game that queues no effects of its own doesn't need
     # to define it.
     @_handles_reward
-    def handle_effect(self, name, payload, session_row):
+    def handle_effect(self, name, payload, game):
         """Do the work of an effect the game queued with :meth:`queue_effect`,
         as in Dallinger's ``handle_effect``. PsyNet handles the rewards from
         :meth:`add_performance_reward` itself, so they never reach this method.
+
+        Parameters
+        ----------
+
+        name, payload
+            The effect's name and payload.
+
+        game
+            The game's :class:`LiveGameRecord`, whose
+            :attr:`~LiveGameRecord.id` and
+            :attr:`~LiveGameRecord.participant_ids` say which game and
+            players it's for.
         """
-        return super().handle_effect(name, payload, session_row)
+        return super().handle_effect(name, payload, game)
 
     @_handles_ending
-    def handle_ending(self, session_row):
+    def handle_ending(self, game):
         """Do work that needs the game's ending, as in Dallinger's
         ``handle_ending``. PsyNet pays each player's
         :meth:`performance_reward`, and copies the outcome to the round the
@@ -411,19 +464,42 @@ class LiveGame(RealtimeGame):
         :class:`PlayLiveGame` with ``absent_action``, removes the players who
         didn't play from their groups (unless the game failed), before this
         method runs.
+
+        Parameters
+        ----------
+
+        game
+            The game's :class:`LiveGameRecord`, which already has the
+            ending: its :attr:`~LiveGameRecord.status`,
+            :attr:`~LiveGameRecord.end_reason` and
+            :attr:`~LiveGameRecord.outcome`.
         """
-        return super().handle_ending(session_row)
+        return super().handle_ending(game)
 
     @_handles_player_ending
-    def handle_player_ending(self, session_row, player, ending):
+    def handle_player_ending(self, game, player, ending):
         """Do work that needs a player's ending, when the game's
         ``is_done`` ended their game before the game ended, as in Dallinger's
-        ``handle_player_ending``, except that ``player`` is the player's
-        number rather than their participant id. PsyNet pays
-        the player's :meth:`performance_reward` from the outcome then, before
-        this method runs.
+        ``handle_player_ending``. PsyNet pays the player's
+        :meth:`performance_reward` from the outcome then, before this method
+        runs.
+
+        Parameters
+        ----------
+
+        game
+            The game's :class:`LiveGameRecord`.
+
+        player
+            The player's number: 0 for the first player, 1 for the next,
+            and so on.
+
+        ending
+            A dict with the ending's ``reason``, from :meth:`done_reason`,
+            the ``outcome`` then, and its ``time`` on Dallinger's session
+            clock.
         """
-        return super().handle_player_ending(session_row, player, ending)
+        return super().handle_player_ending(game, player, ending)
 
     def record(self, name, data=None):
         """Record a moment in the game, such as a round's result or a player
