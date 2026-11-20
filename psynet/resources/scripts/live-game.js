@@ -977,7 +977,8 @@
       /**
        * Call ``callback`` with the close code and reason if the server
        * refuses the page's connection, as it does long after the game
-       * ended. A page with ``auto_advance=False`` moves on here too.
+       * ended. The page then moves on by itself, unless it has
+       * ``auto_advance=False``: the callback then calls ``psynet.nextPage()``.
        *
        * @function onRefused
        * @param {function} callback - Called with the code and the reason

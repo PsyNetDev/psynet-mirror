@@ -526,7 +526,8 @@ At the end, and when players leave:
   `The end`_).
 - ``onResultSaved(callback)`` calls ``callback`` once the player's result is
   saved, and ``onRefused(callback)`` if the server refuses the page's
-  connection. Either way, the page then moves on by itself.
+  connection. Either way, the page then moves on by itself, unless it has
+  ``auto_advance=False``: its callback then calls ``psynet.nextPage()``.
 - ``onResultTimeLeft(callback)`` calls ``callback`` with the seconds left
   before the page moves on, a few times a second, for a countdown while the
   page shows the result (see `The end`_).
