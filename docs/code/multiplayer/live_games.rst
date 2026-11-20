@@ -1085,8 +1085,11 @@ who left contributed:
     if game.outcome is not None and game.player is not None:
         contributed = game.outcome["contributions"][game.player]
 
-The ``public_goods_live`` and ``microsociety_live`` demos export their rows
-this way.
+The ``public_goods_live`` demo exports its rows this way. In
+``microsociety_live``, whose members can finish before the lake closes (see
+`Finishing before the others`_), a member who finished has their own answer
+while the lake is still running, so its export uses that until the lake's
+outcome exists.
 
 .. _live-games-rewards:
 
