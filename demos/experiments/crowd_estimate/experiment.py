@@ -275,7 +275,9 @@ class Exp(psynet.experiment.Experiment):
                     # a group; None if the player left before answering it.
                     "estimate_timed_out": t.var.get("estimate_timed_out"),
                     # Whether the estimate counted towards the group's median;
-                    # None for an answer given alone or a group without one.
+                    # None for a group without one, and for trials that its
+                    # scoring didn't see: ungrouped ones, and one that a member
+                    # removed as late started after the group was scored.
                     "in_median": t.var.get("in_median"),
                     "revised": t.answer.get("revised"),
                 }

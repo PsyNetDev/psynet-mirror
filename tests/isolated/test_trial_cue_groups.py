@@ -686,19 +686,21 @@ def test_a_member_removed_before_their_cue_still_gets_a_trial_in_the_round(
     pair = stayer.active_sync_groups["pair"]
     role = _pair_role(leaver)
     VoteTrial.cue({})[0].consume(exp, stayer)
+    stayed = stayer.current_trial
     pair.remove_participant(leaver, reason="late")
     _arrive(exp, GroupBarrier("voted", group_type="pair"), [stayer])
+    # The pair's next round started after they left.
+    VoteTrial.cue({})[0].consume(exp, stayer)
+    assert stayer.current_trial.group_round.number == 1
 
     VoteTrial.cue({})[0].consume(exp, leaver)
     trial = leaver.current_trial
     assert (trial.sync_group_id, trial.sync_group_role) == (pair.id, role)
     assert trial.sync_group_outcome == "late"
-    assert trial.group_round.trials == [stayer.current_trial, trial]
+    assert trial.group_round.trials == [stayed, trial]
     # They have left, so their pages need no barrier.
     trial._show_trial(exp, leaver)
 
-    # The pair's next round started after they left.
-    VoteTrial.cue({})[0].consume(exp, stayer)
     with pytest.raises(RuntimeError, match="sync_group_optional"):
         VoteTrial.cue({})[0].consume(exp, leaver)
 
@@ -724,6 +726,22 @@ def test_a_member_removed_before_their_cue_joins_the_named_round(
         _cue_round(exp, leaver, 5)
     monkeypatch.setattr(PairTrial, "sync_group_optional", True)
     assert _cue_round(exp, leaver, 5).group_round is None
+
+
+@in_consents_experiment
+def test_a_member_removed_before_their_cue_skips_a_round_finished_without_them(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    cohort, newcomer, pair = _newcomer_in_round_0(exp, round_closed=True)
+    pair.remove_participant(newcomer, reason="late")
+    with pytest.raises(RuntimeError, match="sync_group_optional"):
+        _cue_round(exp, newcomer, 0)
+    monkeypatch.setattr(PairTrial, "sync_group_optional", True)
+    assert _cue_round(exp, newcomer, 0).group_round is None
+    assert cohort[0].current_trial.group_round.trials == [
+        p.current_trial for p in cohort
+    ]
 
 
 _voted = GroupBarrier("voted", group_type="pair", on_release=PairTrial.record_release)

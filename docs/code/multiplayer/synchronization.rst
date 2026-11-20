@@ -988,7 +988,8 @@ requests. Their cue still puts the trial in that round, the one it would
 have joined, with their role and their removal reason as
 ``sync_group_outcome``, so ``group_round.trials`` and the export include
 them, whether the removal came just before or just after their trial
-started. Rounds that start after they left are not theirs. Such a trial's
+started. Rounds that started after they left, or had already closed by
+then, are not theirs. Such a trial's
 ``show_trial`` needs no ``GroupBarrier``; branch on
 ``participant.in_sync_group(...)`` rather than ``self.sync_group is None``
 to give a member who left the solo version.

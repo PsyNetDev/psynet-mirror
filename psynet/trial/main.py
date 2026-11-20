@@ -4636,7 +4636,11 @@ def _record_sync_group(trial, participant, group, group_round=None):
     """Save ``group``, the participant's role in it and, if given, the group's round on ``trial``.
 
     For a participant who has left ``group``, this is their role when they
-    left, and ``sync_group_outcome`` records why they left.
+    left, and ``sync_group_outcome`` records why they left. The link is
+    reread, so that a removal committed since this session loaded it is
+    seen. Code removing another participant should still hold their row
+    lock, as late removal does, so that the removal can't commit during
+    their cue.
     """
     trial.sync_group_id = group.id
     if group_round is not None:
@@ -4647,6 +4651,7 @@ def _record_sync_group(trial, participant, group, group_round=None):
             participant_id=participant.id, sync_group_id=group.id
         )
         .order_by(ParticipantLinkSyncGroup.id.desc())
+        .populate_existing()
         .first()
     )
     trial.sync_group_role = None if link is None else link.role
@@ -4790,14 +4795,16 @@ def _cued_round(group, round_number, participant, make_definition, trial_class):
 def _round_left_before_cue(participant, trial_class, round_number):
     """Return the round that ``participant`` left their group in before cueing ``trial_class`` there, or ``None``.
 
-    That is the round that their cue would have joined as a member, the
-    newest cued round in the module (or the one numbered ``round_number``)
-    of their latest group of the class's ``sync_group_type``, if it started
-    before they left the group and they have no trial of ``trial_class`` in
-    it. A barrier's ``late_after`` can remove a member whose request hasn't
-    reached the cue yet, while the others play the round. Gives ``None``
-    for a participant still in the group, never admitted to it, or whom a
-    grouper let continue without one since.
+    That is the cued round in the module of their latest group of the
+    class's ``sync_group_type`` that was under way when they left: the
+    newest one that started before then (or the one numbered
+    ``round_number``, if it started before then), unless it had already
+    closed by then or they have a trial of ``trial_class`` in it. As for a
+    member, a named round that closed before they left is still joined if
+    they have another trial in it. A barrier's ``late_after`` can remove a
+    member whose request hasn't reached the cue yet, while the others play
+    the round. Gives ``None`` for a participant still in the group, never
+    admitted to it, or whom a grouper let continue without one since.
     """
     group_type = trial_class.sync_group_type
     if group_type in (participant.ungrouped_group_types or []):
@@ -4810,7 +4817,9 @@ def _round_left_before_cue(participant, trial_class, round_number):
         sync_group_id=link.sync_group_id,
         trial_maker_id=None,
     )
-    if round_number is not None:
+    if round_number is None:
+        rounds = rounds.filter(SyncGroupRound.creation_time <= link.removal_time)
+    else:
         rounds = rounds.filter_by(number=round_number)
     group_round = rounds.order_by(SyncGroupRound.number.desc()).first()
     if (
@@ -4819,6 +4828,10 @@ def _round_left_before_cue(participant, trial_class, round_number):
         or _has_trial_in(group_round, participant, trial_class)
     ):
         return None
+    closed_at = group_round.closed_at
+    if closed_at is not None and closed_at < link.removal_time:
+        if round_number is None or not _has_trial_in(group_round, participant):
+            return None
     return group_round
 
 
