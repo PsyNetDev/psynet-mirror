@@ -1,0 +1,1 @@
+Added `stop_at` to the bot-test helper `regroup_now`, as for `advance_past_wait_pages`, so that a test of a game whose turns follow each other can start a round and leave the players whose turn it isn't waiting at the turn's barrier, for example `regroup_now(bots, pairing, stop_at="offer_made")`.

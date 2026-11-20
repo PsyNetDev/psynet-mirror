@@ -244,7 +244,11 @@ Other helpers ask about a bot's group or act in it:
   :class:`~psynet.sync.Regrouper` split the bots' pools as its ``deadline``
   or next ``every`` tick would, then advances them, so the test doesn't
   wait for it, for example ``regroup_now(bots[:3], pairing)`` to start a
-  round without a fourth player who is still reading their results.
+  round without a fourth player who is still reading their results. Pass
+  ``stop_at`` as for :func:`~psynet.bot.advance_past_wait_pages` when some
+  bots wait inside the round for another player's turn, for example
+  ``regroup_now(bots, pairing, stop_at="offer_made")`` leaves responders
+  waiting for the proposers' offers.
 - :func:`~psynet.bot.make_late_now` makes the members who haven't reached a
   :class:`~psynet.sync.GroupBarrier` late, as its ``late_after`` would,
   then advances the bots waiting there, so a test of a player who goes

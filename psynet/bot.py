@@ -296,7 +296,12 @@ def advance_past_wait_pages(
             time.sleep(0.5)
 
 
-def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 10.0):
+def regroup_now(
+    bots: List["BotDriver"],
+    regrouper,
+    timeout: Optional[float] = 10.0,
+    stop_at: Union[str, Sequence[str]] = (),
+):
     """Split the bots' pools at a :class:`~psynet.sync.Regrouper` now, then advance them past it.
 
     A bot test would otherwise wait out the regrouper's ``deadline`` or its
@@ -321,6 +326,10 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
         The regrouper from the timeline.
     timeout : float, optional
         Passed to :func:`advance_past_wait_pages`.
+    stop_at : str or sequence of str
+        Passed to :func:`advance_past_wait_pages`: IDs of barriers inside the
+        round to leave bots waiting at, such as responders waiting for the
+        proposer's offer in a game where turns follow each other.
 
     Raises
     ------
@@ -335,6 +344,9 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
         for bot in bots[:3]:
             bot.take_page()  # The fourth player is still reading.
         regroup_now(bots[:3], pairing)
+
+        # Responders wait at "offer_made" while the test plays the proposers.
+        regroup_now(bots, pairing, stop_at="offer_made")
     """
     period = regrouper.deadline or regrouper.every
     if period is None:
@@ -354,7 +366,7 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
             pools[group and group.id] = group
         for within_group in pools.values():
             _backdate_splits(regrouper, within_group, period)
-    advance_past_wait_pages(bots, timeout=timeout)
+    advance_past_wait_pages(bots, timeout=timeout, stop_at=stop_at)
 
 
 def _backdate_splits(regrouper, within_group, seconds):
