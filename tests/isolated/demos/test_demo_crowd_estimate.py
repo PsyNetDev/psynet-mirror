@@ -72,7 +72,7 @@ def test_revise_page_explains_each_outcome(
     trial.var.in_median = in_median
     trial.group_round.var.median = median
     trial.group_round.var.estimates = {
-        str(t.participant_id): e for t, e in zip(trials, [4, 5, 6])
+        t.participant_id: e for t, e in zip(trials, [4, 5, 6])
     }
     page = trial.revise_page(trial.participant)
     assert isinstance(page, InfoPage) != expected.startswith("The median")
@@ -85,7 +85,7 @@ def test_score_round_needs_a_quorum_of_estimates_given_in_time(
     demo, trials = _crowd(5)
     for trial, estimate in zip(trials, [10, 20, 31, None, 99]):
         trial.answer = {"estimate": estimate}
-    ids = [str(t.participant_id) for t in trials]
+    ids = [t.participant_id for t in trials]
     # The last member was removed as late before the release, so isn't released.
     released, group_round = trials[:4], trials[0].group_round
     demo.EstimateTrial.score_round(released, group_round)

@@ -26,10 +26,11 @@ Read these pages before acting. The "Documentation" section of the experiment's 
    Filter trials on `complete` as well as `failed`, or export `complete`
    as a column: an unfinished trial, abandoned or still running, can have
    an `answer`, the answer given so far.
-5. Run `psynet debug local`, take a few participants through the experiment,
-   and export with `psynet export local`. Check the basic data files: row
-   counts match the expected numbers of participants and trials, and no
-   column is unexpectedly empty.
+5. Run `psynet debug local --no-browsers`, take a few participants through
+   the experiment with bots or headless Playwright, and export with
+   `psynet export local`. Check the basic data files: row counts match the
+   expected numbers of participants and trials, and no column is unexpectedly
+   empty.
 6. If participants interact in groups, also follow
    `basic-data-group-experiment/SKILL.md`. Group results usually live on
    the round record that a group's trials share (`trial.group_round`), so plan

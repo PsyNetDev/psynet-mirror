@@ -215,9 +215,7 @@ def history_page(participant: Participant):
 
 def _catches_text(spots: dict, catches: dict) -> str:
     """Describe where each member fished and what they caught."""
-    return ", ".join(
-        _catch_label(spots[pid], catches[pid]) for pid in sorted(spots, key=int)
-    )
+    return ", ".join(_catch_label(spots[pid], catches[pid]) for pid in sorted(spots))
 
 
 def _catch_label(spot, catch) -> str:
@@ -285,9 +283,8 @@ class FishingTrial(Trial):
             trial.var.catch = (
                 None if trial.answer is None else _draw_catch(trial.answer)
             )
-        # String keys, because var stores JSON.
-        group_round.var.spots = {str(t.participant_id): t.answer for t in trials}
-        group_round.var.catches = {str(t.participant_id): t.var.catch for t in trials}
+        group_round.var.spots = {t.participant_id: t.answer for t in trials}
+        group_round.var.catches = {t.participant_id: t.var.catch for t in trials}
         retiring = None
         too_many = len(trials) > SOCIETY_SIZE
         if too_many:

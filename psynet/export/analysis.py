@@ -8,6 +8,7 @@ import zipfile
 from typing import Optional, Union
 
 import pandas as pd
+from jsonpickle.tags import JSON_KEY
 
 from .paths import (
     find_table_member_in_zip,
@@ -70,6 +71,39 @@ def load_export_table(
     return _read_table_csv(path)
 
 
+def _untag_key(key):
+    """Return a column-friendly name for a dictionary key tagged with ``json://``.
+
+    PsyNet writes non-string keys such as ``12`` as ``"json://12"``; this
+    returns ``"12"``. A tagged string key, ``json://"json://x"``, returns ``"json://x"``.
+    """
+    if not isinstance(key, str) or not key.startswith(JSON_KEY):
+        return key
+    text = key[len(JSON_KEY) :]
+    try:
+        decoded = json.loads(text)
+    except ValueError:
+        return text
+    return decoded if isinstance(decoded, str) else text
+
+
+def _untag_keys(value):
+    """Untag the dictionary keys in ``value``, recursively.
+
+    A tagged key keeps its tag when its untagged name is already a key of the
+    same dictionary, so ``{"12": ..., "json://12": ...}`` keeps both keys.
+    """
+    if isinstance(value, dict):
+        untagged = {}
+        for key, item in value.items():
+            name = _untag_key(key)
+            untagged[key if name in value else name] = _untag_keys(item)
+        return untagged
+    if isinstance(value, list):
+        return [_untag_keys(v) for v in value]
+    return value
+
+
 def unpack_json_column(
     data_frame: pd.DataFrame,
     column: str,
@@ -80,7 +114,14 @@ def unpack_json_column(
     """Unpack a JSON text column into ordinary columns.
 
     Nested objects are left as Python objects after ``json.loads``. Existing
-    columns are never overwritten unless ``overwrite`` is true.
+    columns are never overwritten unless ``overwrite`` is true. Dictionary
+    keys that PsyNet stored with a ``json://`` tag lose the tag, so the
+    integer key ``12`` becomes the column ``12`` rather than ``json://12``.
+    If the same dictionary also has the string key ``"12"``, that key gets
+    the column ``12`` and the integer key keeps the column ``json://12``.
+    This is decided row by row, not across the column. Column names can
+    also clash: the float key ``1.5`` and the nested keys ``{1: {5: ...}}``
+    both become the column ``1.5``.
     """
     if column not in data_frame.columns:
         raise KeyError(column)
@@ -103,7 +144,7 @@ def unpack_json_column(
         else:
             parsed.append({"value": loaded})
 
-    unpacked = pd.json_normalize(parsed)
+    unpacked = pd.json_normalize([_untag_keys(row) for row in parsed])
     if prefix:
         unpacked = unpacked.add_prefix(prefix)
 

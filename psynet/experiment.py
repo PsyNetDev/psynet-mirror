@@ -722,6 +722,21 @@ def _is_replacement_gunicorn_worker(worker):
     return worker.age > worker.cfg.workers
 
 
+def _keep_json_key_order(state):
+    """Stop Flask's JSON responses and Jinja's ``tojson`` from sorting keys.
+
+    Sorting raises ``TypeError`` for a dictionary whose keys cannot be
+    compared, such as ``{12: "rock", "round": 1}``, which stored dictionaries
+    can now hold.
+    """
+    state.app.json.sort_keys = False
+    state.app.jinja_env.policies["json.dumps_kwargs"] = {"sort_keys": False}
+
+
+# Dallinger's server registers this blueprint on its Flask app for PsyNet's routes.
+dallinger.experiment.Experiment.experiment_routes.record_once(_keep_json_key_order)
+
+
 _PLACEHOLDER_TIMELINE = Timeline(InfoPage("Placeholder timeline", time_estimate=5))
 
 
