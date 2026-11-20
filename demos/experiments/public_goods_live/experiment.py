@@ -118,7 +118,8 @@ def contribution_page(round_number):
             tags.p(
                 f"Drag the slider to choose how many of your {ENDOWMENT} "
                 "tokens to put in the group pot. You can change your mind "
-                "until the time is up."
+                "until the time is up.",
+                id="pg-instructions",
             ),
             tags.div(id="pg-rows", cls="pg-rows"),
             tags.input_(

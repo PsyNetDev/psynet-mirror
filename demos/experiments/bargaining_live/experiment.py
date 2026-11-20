@@ -390,11 +390,14 @@ END_OF_GAME_TEXTS = {
 
 
 def end_of_game(participant):
-    """Return the last page, which tells a player who left the cohort
-    without playing why the game ended for them."""
+    """Return the last page, with the player's bonus, which also tells a
+    player who left the cohort without playing why the game ended for them."""
     reason = participant.sync_group_removal_reason("cohort")
     text = END_OF_GAME_TEXTS.get(reason, "That's the end of the game.")
-    return InfoPage(text, time_estimate=5)
+    return InfoPage(
+        f"{text} Your bonus is ${participant.performance_reward:.2f}.",
+        time_estimate=5,
+    )
 
 
 def get_timeline():

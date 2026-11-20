@@ -76,7 +76,7 @@ class TestBargainingLive:
         if reason is not None:
             assert demo.round_status(player) == "no_cohort"
         leave_group("cohort").consume(experiment, player)
-        assert str(demo.end_of_game(player).content) == text
+        assert str(demo.end_of_game(player).content) == f"{text} Your bonus is $0.00."
 
     @pytest.mark.parametrize(
         "answer",

@@ -27,6 +27,7 @@ export function activate({root, vars, psynet}) {
   let rows = root.querySelector("#pg-rows");
   let pot = root.querySelector("#pg-pot");
   let earn = root.querySelector("#pg-earn");
+  let instructions = root.querySelector("#pg-instructions");
   let rejection = root.querySelector("#pg-rejection");
 
   live.enableWhilePlaying(slider);
@@ -58,6 +59,7 @@ export function activate({root, vars, psynet}) {
     pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
     let shareText = +share.toFixed(2);
     let earned = +(rules.endowment - mine + share).toFixed(2);
+    instructions.hidden = live.ended;
     earn.textContent = live.ended
       ? `Each player gets ${shareText} tokens from the pot, and you earn ${earned} tokens.`
       : `If the round ended now, each player would get ${shareText} tokens ` +
