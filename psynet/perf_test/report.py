@@ -1009,7 +1009,7 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
         )
     else:
         implied = f"would be about {advice.implied_utilization:.0%} busy"
-    cores_left = (result.server_cores or 0) - CORES_FOR_OTHERS
+    cores_left = max(0, (result.server_cores or 0) - CORES_FOR_OTHERS)
     server = (
         f"{result.server_cores}-core server has only {cores_left} cores left "
         f"after {CORES_FOR_OTHERS} for the web server and database"

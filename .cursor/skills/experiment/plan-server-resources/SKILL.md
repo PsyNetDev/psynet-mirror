@@ -81,8 +81,8 @@ For example, 2 bots that ran 6 `analyse_audio` jobs declared CPU-heavy,
 averaging 1.5 seconds, need 4.5 CPU-worker seconds per participant. With 100
 participants at once in a 10-minute session and one CPU worker per process,
 100 × 4.5 / (600 × 0.7) = 1.1, so start with `worker_processes = 2`, on a
-server with a core for each worker process and each CPU worker, plus two for
-the web server and database.
+server with a core for each CPU worker, plus two for the web server and
+database; the worker processes mostly wait.
 
 Do not count `web` rows toward `worker_processes`: more workers do not help
 them. A CPU-heavy `web` row competes with page requests in the web process,

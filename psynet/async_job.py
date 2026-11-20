@@ -759,7 +759,7 @@ def _format_cpu_time_summary(rows):
     worker jobs whose measurements contradict their ``cpu_heavy``
     declaration: CPU-heavy ones declared ``False`` that ran for at least
     ``_STALL_WARNING_S`` of CPU once, and ones declared ``True`` that are
-    not CPU-heavy.
+    not CPU-heavy and ran for at least ``_STALL_WARNING_S`` on average.
     """
     if not rows:
         return "No async jobs finished."

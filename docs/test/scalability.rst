@@ -15,8 +15,8 @@ Measuring async job CPU
 -----------------------
 
 At the end of ``psynet test local``, PsyNet logs how much CPU each kind of
-async job used, grouped by where the job runs, label and
-:ref:`priority <async_job_priority>`:
+async job used, grouped by where the job runs, label,
+:ref:`priority <async_job_priority>` and ``cpu_heavy`` declaration:
 
 .. code-block:: text
 

@@ -96,8 +96,8 @@ also work out worker throughput: one worker process keeps up with about
 (session length) ÷ (job CPU time × jobs per participant) participants, with
 `cpu_avg` from `async_job_stats`. If the queue fails the next count, check
 that the CPU-heavy jobs are marked `cpu_heavy` (so they run in CPU workers)
-and raise `worker_processes`, about one per spare CPU core for each CPU
-worker it brings. Report how you reached the recommended number of participants.
+and raise `worker_processes` until there is about one CPU worker per spare
+CPU core (spare cores ÷ `cpu_processes_per_worker`). Report how you reached the recommended number of participants.
 
 Each search test lasts one session but at most 5 minutes, so in a longer
 experiment the search only loads its first few minutes, such as consent and
