@@ -57,6 +57,7 @@ audioMeterControl.init = function(json) {
     this.messageTimer = null;
 
     var audioMeterControl = this;
+    psynet.media.requireAudio();
     psynet.trial.onEvent("trialConstruct",function() {
         audioMeterControl.track = document.getElementById("audio-meter");
         audioMeterControl.fill = audioMeterControl.track

@@ -52,6 +52,19 @@ Reading the tables
         "participant_identifiers.csv",
     )
 
+In JSON columns, PsyNet tags dictionary keys that are not strings with
+``json://``, so ``{12: "rock"}`` is stored as ``{"json://12": "rock"}``.
+``unpack_json_column`` removes the tag and names the column ``12``. If the
+same dictionary also has the string key ``"12"``, the integer key keeps its
+tag, so the two become the columns ``12`` and ``json://12``. Other
+non-string keys get their JSON form as the column name: the tuple key
+``(1, 2)`` becomes ``{"py/tuple": [1, 2]}``, and the keys ``None`` and
+``True`` become ``null`` and ``true``. Which key keeps its tag is decided
+row by row, so if only some rows have both ``12`` and ``"12"``, the column
+``12`` holds the integer key's value in the other rows. Column names can
+also clash: the float key ``1.5`` and the nested keys ``{1: {5: ...}}`` both
+become the column ``1.5``.
+
 An unfinished trial, abandoned or still running when the export was made,
 can have an ``answer``: the answer given so far, before ``format_answer``
 has run. So filter trials on ``complete`` as well as ``failed`` before
