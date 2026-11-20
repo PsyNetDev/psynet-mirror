@@ -3951,7 +3951,7 @@ def _fewest_repeats(make_groups, members, partners, rounds, roles):
         groups = make_groups()
         placed = {m.id for group in groups for m in group}
         bench = [m for m in members if m.id not in placed]
-        budget -= _swap_away_repeats(groups, bench, partners, roles, rounds, budget)
+        budget -= _swap_away_repeats(groups, bench, partners, rounds, roles, budget)
         repeats = _n_repeats(groups, partners)
         if fewest is None or repeats < fewest:
             best, fewest = groups, repeats
@@ -3968,7 +3968,7 @@ def _swap_candidates(pools, g):
                 yield h, j, b
 
 
-def _swap_away_repeats(groups, bench, partners, roles, rounds, budget) -> int:
+def _swap_away_repeats(groups, bench, partners, rounds, roles, budget) -> int:
     """Swap members, in place, while a swap removes repeats; return the swaps weighed.
 
     Members swap between ``groups``, or with a member of ``bench``, the
@@ -4121,8 +4121,8 @@ class Regrouper(Grouper):
         members have, so that as many as possible can play, then the one
         fewest current members have (the active members of the ``within``
         group, or without ``within``, the working participants this regrouper
-        has grouped), ties broken at random; if they are left over, they get
-        a role again at the next split. Members of a role with too few
+        has grouped), ties broken at random; if they are left over, they stay
+        without a role and get one again at the next split. Members of a role with too few
         partners are left over, those who have played the most rounds first,
         and follow ``left_over``; so a member of a scarce role still plays
         even if members of another role who have played fewer rounds sit
