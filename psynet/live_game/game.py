@@ -29,6 +29,7 @@ from .method_wrappers import (
     _saves_ready_messages,
     _sends_message,
     _shows_psynet_entry,
+    _skips_too_late_outcome,
     _stores_json,
     _waits_for_start,
 )
@@ -163,6 +164,7 @@ class LiveGame(RealtimeGame):
             ("handle_ending", _handles_ending),
             ("handle_player_ending", _handles_player_ending),
             ("is_done", _player_done),
+            ("outcome", _skips_too_late_outcome),
             ("done_reason", _player_done_reason),
         ]:
             method = getattr(cls, name)
@@ -634,7 +636,8 @@ class LiveGame(RealtimeGame):
         if name in _PSYNET_EFFECTS:
             raise ValueError(
                 f"The effect name {name!r} is reserved for PsyNet, which uses "
-                "it for add_performance_reward, record and the game's start. "
+                "it for add_performance_reward, record, the game's start and "
+                "accepts_players. "
                 "Give the effect another name."
             )
         try:

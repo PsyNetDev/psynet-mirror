@@ -1011,22 +1011,26 @@ PsyNet asks it after each change to the state, and once it returns
 :meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups`), so the group takes no
 more newcomers either. A newcomer the group admitted before then still
 reaches the game, but doesn't play it: the game never sees them, so its
-``on_add``, ``view``, ``is_done``, ``answer`` and rewards aren't called
-for them, and they don't count as away. They take the next numbers after
-every player the game has had, so the game's lists of players need no
-gaps. Their own game ends at once with the reason
+``on_add``, ``view``, ``is_done``, ``outcome``, ``answer`` and rewards
+aren't called for them, and they don't count as away. They take the next
+numbers after every player the game has had, so the game's lists of
+players need no gaps, and the other players' pages leave them out of
+``psynet.liveGame.players``. Their own game ends at once with the reason
 :data:`~psynet.live_game.TOO_LATE`, ``"too_late"``. Their page hides the
 game and shows the page's ``too_late_message``, "The game had already
 stopped taking new players." by default, with the Next button, so that
 the participant reads it and moves on. The page's JavaScript gets no
-views and no ``onEnded``. Their answer is ``None``, they get no
+views, and no ``onEnded`` or ``onResultSaved``: once PsyNet knows, as
+when the page is reloaded, ``psynet.liveGame.hasGame`` is ``false``, as
+on a page with no game. Their answer is ``None``, they get no
 ``performance_reward``, and their record's ``left_early`` is true, with
 the ``done_reason`` ``"too_late"``. The same goes for a newcomer who
 reaches the game just as it ends, before Dallinger could add them.
 
 By default, once a game from a ``PlayLiveGame`` ends, PsyNet stops the
-top-ups of the group that played it as well, so no newcomer joins a group
-whose game is over. Give the ``PlayLiveGame`` ``stop_top_ups_at_end=False``
+top-ups of the group that played it as well, a few seconds later, as it
+saves the game's ending, so no newcomer joins a group whose game is over.
+One who joins in those seconds comes too late, as above. Give the ``PlayLiveGame`` ``stop_top_ups_at_end=False``
 for a group that takes newcomers into its next game.
 
 A game played in a trial can't take newcomers, since its round is already

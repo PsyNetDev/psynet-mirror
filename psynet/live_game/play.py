@@ -237,12 +237,13 @@ class PlayLiveGame(EltCollection):
         self.page = page
 
     def resolve(self):
-        if self.page.control.player_info is None:
-            return join(self.barrier, self.page)
         return join(CodeBlock(self._save_player_info), self.barrier, self.page)
 
     def _save_player_info(self, participant):
-        info = self.page.control.player_info(participant)
+        # Saved on each visit, so a later page without player_info doesn't
+        # show what an earlier one gave.
+        player_info = self.page.control.player_info
+        info = None if player_info is None else player_info(participant)
         try:
             info = json.loads(json.dumps(info, allow_nan=False))
         except (TypeError, ValueError) as error:

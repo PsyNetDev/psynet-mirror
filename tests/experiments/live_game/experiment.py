@@ -85,6 +85,12 @@ class TakesThree(PickNumbers):
     def on_add(self, state, player, now):
         state["picks"].append(None)
 
+    def outcome(self, state, reason):
+        # PsyNet doesn't ask the game for the outcome of a player who came
+        # too late.
+        assert reason != "too_late"
+        return super().outcome(state, reason)
+
     def accepts_players(self, state):
         return len(state["picks"]) < 3
 

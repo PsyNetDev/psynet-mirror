@@ -35,7 +35,7 @@ _NOT_IN_VIEWS = (
 )
 
 # The game methods that get neither a participant id nor a session time.
-_GAME_CODE_METHODS = ("outcome", "answer", "performance_reward")
+_GAME_CODE_METHODS = ("answer", "performance_reward")
 
 
 # Set while the game's own code runs. A call it makes to another of the
@@ -193,6 +193,15 @@ def _player_done_reason(self, game_code, state, player_id):
             "reason."
         )
     return reason
+
+
+@_outermost
+def _skips_too_late_outcome(self, game_code, state, reason):
+    """Return the game's outcome, except as Dallinger ends the game of a
+    player who came too late, which the game never sees."""
+    if reason == TOO_LATE:
+        return None
+    return game_code(state, reason)
 
 
 def _psynet_end_reason(self, state):

@@ -822,6 +822,13 @@ def test_a_game_page_shows_each_player_s_info(db_session, names):
     bad = LiveGamePage("bad", "Play.", player_info=lambda p: {1, 2}, time_estimate=5)
     with pytest.raises(TypeError, match="can't be saved as JSON"):
         _play("bad", page=bad).resolve()[0].consume(experiment, members[0])
+    with pytest.raises(TypeError, match="must be a function"):
+        LiveGamePage("bad", "Play.", player_info={"avatar": 1}, time_estimate=5)
+    # A later visit with a page without player_info shows none.
+    plain = LiveGamePage("avatars", "Play.", time_estimate=5)
+    _play("avatars", page=plain).resolve()[0].consume(experiment, members[0])
+    (you,) = [player for player in _players(members[0], "avatars") if player["you"]]
+    assert you["info"] is None
 
 
 def _play_to_the_end(session_id, messages, write_record=True):
@@ -3746,10 +3753,11 @@ def test_a_game_that_stops_taking_players_closes_its_group_to_newcomers(db_sessi
     assert (late.left_early, late.done_reason, late.answer) == (True, TOO_LATE, None)
     assert members[2].live_games["takes_three"].answer == [5, 5, 5]
     assert _reward(members[3]) == 0
+    assert [p["you"] for p in _players(members[0], "takes_three")] == [1, 0, 0]
 
 
 def test_a_newcomer_to_a_game_that_ended_before_adding_them_came_too_late(
-    db_session,
+    db_session, monkeypatch
 ):
     group, members = _open_group(db_session, 3)
     page = LiveGamePage("growing", "Play.", time_estimate=5)
@@ -3773,14 +3781,36 @@ def test_a_newcomer_to_a_game_that_ended_before_adding_them_came_too_late(
     _reach(barrier, members[2])
     db.session.commit()
     assert _game_id(members[2], "growing") == session_id
-    _write_records()
 
-    newcomer = db.session.get(Participant, int(ids[2]))
-    late = newcomer.live_games["growing"]
-    assert (late.left_early, late.done_reason, late.answer) == (True, TOO_LATE, None)
-    assert _players(newcomer, "growing") == []
-    assert page.control.check_ready_for_response(get_experiment(), newcomer) is None
+    # Before and after the game's row says it ended, the page shows no game,
+    # but the too-late notice.
+    for write in (lambda: None, _write_records):
+        write()
+        newcomer = db.session.get(Participant, int(ids[2]))
+        js_vars = _rendered_js_vars(page, newcomer, monkeypatch)["liveGame"]
+        assert (js_vars["liveGameId"], js_vars["players"]) == (None, [])
+        assert js_vars["noGameMessage"] == js_vars["tooLateMessage"]
+        late = newcomer.live_games["growing"]
+        assert (late.left_early, late.done_reason) == (True, TOO_LATE)
+        assert page.control.check_ready_for_response(get_experiment(), newcomer) is None
+    assert late.answer is None
     assert _reward(newcomer) == 0
+
+
+@pytest.mark.parametrize("status, too_late", [("ended", True), ("failed", False)])
+def test_only_a_game_that_ended_says_whom_it_never_added_came_too_late(
+    pair, status, too_late
+):
+    # A failed game may not have written every player it added.
+    members, game_barrier = pair
+    for member in members:
+        _arrive(game_barrier, member)
+    session_id = _game_id(members[0], game_barrier.id)
+    outsider = new_participant(get_experiment())
+    db.session.commit()
+    _save_ending(session_id, status=status)
+
+    assert LiveGameRecord(session_id, outsider).left_early is too_late
 
 
 @pytest.mark.parametrize("stop_top_ups_at_end", [True, False])

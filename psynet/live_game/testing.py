@@ -280,8 +280,14 @@ def start_game(game, state):
         A state that the game's ``initial_state`` returned.
     """
     entry = _psynet_entry(state)
-    entry["ready"] = list(range(len(entry["participant_ids"])))
+    entry["ready"] = [
+        player
+        for player in range(len(entry["participant_ids"]))
+        if player not in entry["too_late"]
+    ]
     game._end_ready_step(state, 0)
+    # As after the apply or tick that starts a live game.
+    game._close_unless_accepting(state)
 
 
 # A game runner is sized to be this busy, as async workers are, leaving room

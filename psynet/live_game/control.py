@@ -26,11 +26,11 @@ from .record import (
     LiveGameRecord,
     _computed_answer,
     _done_reason,
-    _player_ending,
     _session_channel,
     _session_columns,
     _session_game_class,
     _session_participant_ids,
+    _too_late_players,
 )
 
 # Seconds a page waits before resending a response refused because the
@@ -107,8 +107,9 @@ class LiveGameControl(NullControl):
         session_id = _live_game_id(participant, self._play_id())
         if session_id is None:
             return None
-        # A player whose own game ended before the game did has their result.
-        if _player_ending(session_id, participant.id) is not None:
+        # A player whose own game ended before the game did, or who came too
+        # late, has their result.
+        if _done_reason(session_id, participant.id) is not None:
             return None
         game = LiveGameRecord(session_id)
         if game.status == "failed":
@@ -127,7 +128,7 @@ class LiveGameControl(NullControl):
 
     def ends_by(self, experiment, participant):
         session_id = _live_game_id(participant, self._play_id())
-        if session_id is None:
+        if session_id is None or _done_reason(session_id, participant.id) == TOO_LATE:
             return None
         ends = _game_page_deadline(session_id)
         ended = _session_columns(session_id, "end_time").end_time
@@ -201,6 +202,12 @@ class LiveGameControl(NullControl):
             too_late = _p(
                 "live_game", "The game had already stopped taking new players."
             )
+        if (
+            session_id is not None
+            and _done_reason(session_id, participant.id) == TOO_LATE
+        ):
+            # Known to have come too late, so the page shows no game.
+            session_id, no_session = None, too_late
         waiting = self.waiting_status
         if waiting is _DEFAULT:
             waiting = _p("live_game", "Waiting for the other players to open the game")
@@ -283,8 +290,8 @@ class LiveGamePage(ModularPage):
     too_late_message
         What a notice at the top of the page says to a participant who
         joined a running game after its :meth:`~LiveGame.accepts_players`
-        returned ``False``, in place of the game, with the Next button (see
-        :ref:`live-games-joining`). By default it says "The game had already
+        returned ``False``, or as it ended, in place of the game, with the
+        Next button (see :ref:`live-games-joining`). By default it says "The game had already
         stopped taking new players." Set it to ``None`` for no notice.
 
     waiting_status
@@ -405,7 +412,14 @@ def _players(participant, play_id):
         # The game never saw them, so their page shows no game.
         return []
     anonymous = data.get("names") == "anonymous"
-    participant_ids = _session_participant_ids(game_id)
+    # Those who came too late are numbered last, so leaving them out keeps
+    # the others' numbers.
+    too_late = _too_late_players(game_id)
+    participant_ids = [
+        participant_id
+        for participant_id in _session_participant_ids(game_id)
+        if participant_id not in too_late
+    ]
     if participant.id not in participant_ids:
         # Added to a running game, so not in its row until the addition is
         # written; the page asks again once its views show more players.

@@ -388,10 +388,16 @@ def _done_reason(session_id, participant_id, row=None):
 
     That's the reason saved with their own ending, or
     :data:`~psynet.live_game.TOO_LATE` for a participant whom PsyNet pointed
-    at the game but whom Dallinger never added, because the game had already
-    ended when it got to them: Dallinger writes a game's records in order,
-    so a game whose ending is saved lists every player it added. ``row``
-    has the game's ``status`` and ``members``, if the caller has read them."""
+    at the game but whom Dallinger never added, because the game had
+    already ended when it got to them. Dallinger adds a player once the
+    request that adds them commits, so by the time their page loads they're
+    among the members in redis, or never will be. And it writes a game's
+    records in order, so a game whose ending is saved lists every player it
+    added. A failed game may not have written them, so it says nothing
+    about them. ``row`` has the game's ``status`` and ``members``, if the
+    caller has read them."""
+    from dallinger.realtime import store
+
     from .psynet_entry import TOO_LATE
 
     ending = _player_ending(session_id, participant_id)
@@ -399,9 +405,25 @@ def _done_reason(session_id, participant_id, row=None):
         return ending.reason
     if row is None:
         row = _session_columns(session_id, "status", "members")
-    if row.status != "running" and participant_id not in _player_ids(row.members):
+    if participant_id in _player_ids(row.members):
+        return None
+    if row.status == "ended" or (
+        row.status == "running"
+        and str(participant_id) not in store.session_members(session_id)
+    ):
         return TOO_LATE
     return None
+
+
+def _too_late_players(session_id):
+    """Return the participant ids of the players whom the game ended at once,
+    as they joined after it had stopped taking players."""
+    from .psynet_entry import TOO_LATE
+
+    endings = db.session.query(
+        RealtimeEvent.participant_id, RealtimeEvent.reason
+    ).filter_by(session_id=session_id, event_type="player_end")
+    return {participant_id for participant_id, reason in endings if reason == TOO_LATE}
 
 
 def _player_ending(session_id, participant_id):

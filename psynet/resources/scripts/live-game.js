@@ -504,7 +504,9 @@
         state.fetchingPlayers ||
         !page.fetchPlayers ||
         view === null ||
-        (view.psynet.away_since || []).length <= state.players.length
+        // Players who came too late are numbered last, and not shown.
+        (view.psynet.away_since || []).length - (view.psynet.too_late || []).length <=
+          state.players.length
       ) {
         return;
       }
@@ -666,13 +668,25 @@
      * @param {function} callback - Called with the seconds left
      * @returns {Object} ``psynet.liveGame``
      */
+    // Passed on, except for a player who came too late, whose page shows
+    // the too-late notice until they move on.
+    function onResultSaved(callback) {
+      let state = pageState();
+      pageSocket().onResultSaved((...args) => {
+        if (!state.tooLate) {
+          callback(...args);
+        }
+      });
+      return api;
+    }
+
     function onResultTimeLeft(callback) {
       let socket = pageSocket();
       let state = pageState();
       let seconds = state.session.showResultFor || 0;
       if (seconds > 0) {
         socket.onResultSaved(() => {
-          if (state.left) {
+          if (state.left || state.tooLate) {
             return;
           }
           let until = Date.now() + seconds * 1000;
@@ -952,13 +966,14 @@
       onEnded: onEnded,
       /**
        * Call ``callback`` once this player's result, their answer and
-       * reward, has been saved, after their game ends.
+       * reward, has been saved, after their game ends. It never runs for a
+       * player who came too late, as for ``onEnded``.
        *
        * @function onResultSaved
        * @param {function} callback - Called once the result is saved
        * @returns {Object} ``psynet.liveGame``
        */
-      onResultSaved: passOn("onResultSaved"),
+      onResultSaved: onResultSaved,
       /**
        * Call ``callback`` with the close code and reason if the server
        * refuses the page's connection, as it does long after the game
