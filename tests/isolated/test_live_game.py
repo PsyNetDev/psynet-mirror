@@ -2721,12 +2721,12 @@ def test_a_player_whose_own_game_ended_moves_on_though_the_game_failed(
     db.session.query(RealtimeSession).filter_by(id=session_id).update(
         {"status": "failed", "end_reason": "failed", "error": "..."}
     )
-    monkeypatch.setattr(
-        "psynet.live_game.control._player_ending",
-        lambda game_id, participant_id: ("done", [3, None]),
-    )
+    ending = lambda game_id, participant_id: ("done", [3, None])  # noqa: E731
+    monkeypatch.setattr("psynet.live_game.control._player_ending", ending)
+    monkeypatch.setattr("psynet.live_game.record._player_ending", ending)
 
     assert _submit_on_the_game_page(members[0])["submission"] == "approved"
+    assert members[0].live_games["pick_numbers"].answer == [3, None]
 
 
 @pytest.mark.parametrize(
