@@ -7,7 +7,10 @@ time limit, and rejects messages from then on. The entry also keeps track of
 which players are away, and since when, so that a game with an
 away_timeout can end once too few players are left. A player added while
 the game runs gets the next number, and players whose game has ended, by
-the game's is_done, don't count towards min_players. ``last_event``, the
+the game's is_done, don't count towards min_players. Once the game's
+accepts_players returns False, ``accepts_players`` stays False, and a player
+added after that is in ``too_late``: the game's own methods never get
+them, and their game ends at once. ``last_event``, the
 time of the latest event the game handled once it started, other than
 rejected messages and ready messages, which can't end a started game, is
 when a started game ended,
@@ -27,10 +30,11 @@ from dallinger.realtime import Reject
 from .messages import LiveMessage, _parse_message
 from .record import _game_time
 
-# The settings of the game a PlayLiveGame is starting, set
-# while it calls create_realtime_session, which calls the game's
-# initial_state before it returns.
-_new_session_settings = contextvars.ContextVar("_new_session_settings", default=None)
+# What the PlayLiveGame that is starting a game gives it, set while it calls
+# create_realtime_session, which calls the game's initial_state before it
+# returns: the game's settings, its group's id and whether to stop the
+# group's top-ups when the game ends.
+_new_session = contextvars.ContextVar("_new_session", default=None)
 
 
 class PlayerReady(LiveMessage):
@@ -60,7 +64,8 @@ class PlayerReady(LiveMessage):
         entry = _psynet_entry(state)
         if player not in entry["ready"]:
             entry["ready"].append(player)
-        if len(entry["ready"]) == len(entry["participant_ids"]):
+        playing = len(entry["participant_ids"]) - len(entry["too_late"])
+        if len(entry["ready"]) == playing:
             game._end_ready_step(state, now)
 
 
@@ -77,6 +82,10 @@ TIMEOUT = "timeout"
 #: The reason a game with an :attr:`~LiveGame.away_timeout` ends with when
 #: too few players are left.
 PLAYERS_LEFT = "players_left"
+
+#: The reason the game of a player added after the game's
+#: :meth:`~LiveGame.accepts_players` returned ``False`` ends with, at once.
+TOO_LATE = "too_late"
 
 
 def _psynet_entry(state, what="state"):
@@ -164,6 +173,8 @@ def _record_leave(self, method, outermost, state, player_id, now):
     if not outermost:
         return method(self, state, player_id, now)
     player = _player(entry, player_id)
+    if player in entry["too_late"]:
+        return _UNCHANGED
     _record_event(entry, now)
     if entry["started_at"] is None and player in entry["ready"]:
         entry["ready"].remove(player)
@@ -179,6 +190,9 @@ def _record_join(self, method, outermost, state, player_id, now):
     if entry is None or not outermost:
         return method(self, state, player_id, now)
     player = _player(entry, player_id)
+    if player in entry["too_late"]:
+        # A bot joins as it's added, before its game ends.
+        return _UNCHANGED
     _record_event(entry, now)
     if player in entry["away"]:
         entry["away"].remove(player)
@@ -190,9 +204,17 @@ def _record_add(self, method, outermost, state, player_id, now):
     entry = _psynet_entry(state)
     if not outermost:
         return method(self, state, player_id, now)
+    self._close_unless_accepting(state)
     entry["participant_ids"].append(int(player_id))
     _record_event(entry, now)
     player = len(entry["participant_ids"]) - 1
+    if not entry["accepts_players"]:
+        # The game never sees them, and their game ends at once. Since the
+        # game takes nobody after them, the players it sees are numbered
+        # before them.
+        entry["too_late"].append(player)
+        entry["away_since"].append(None)
+        return None
     # Away until their page opens, so an away_timeout covers a player who
     # never arrives. A bot joins at once.
     entry["away"].append(player)
@@ -241,7 +263,8 @@ def _too_few_players_at(self, state):
 def _absences(self, state):
     """Return LiveGame.absences: each player's ``"no_show"``,
     ``"left_game"`` or None, as of the latest event the game handled, which
-    for a game that has ended is its end."""
+    for a game that has ended is its end, leaving out the players who came
+    too late, whom the game never sees."""
     entry = _psynet_entry(state)
     done = self._players_done(state)
     now = entry["last_event"]
@@ -260,7 +283,11 @@ def _absences(self, state):
             return "left_game"
         return None
 
-    return [absence(player) for player in range(len(entry["participant_ids"]))]
+    return [
+        absence(player)
+        for player in range(len(entry["participant_ids"]))
+        if player not in entry["too_late"]
+    ]
 
 
 def _game_end(entry):
@@ -272,9 +299,10 @@ def _game_end(entry):
 
 def _add_psynet_entry(self, method, outermost, players, *settings):
     # Dallinger calls initial_state with the players alone, so a
-    # PlayLiveGame's settings come from _new_session_settings.
-    if not settings and _new_session_settings.get() is not None:
-        settings = (_new_session_settings.get(),)
+    # PlayLiveGame's settings come from _new_session.
+    new_session = _new_session.get() or {}
+    if not settings and new_session.get("settings") is not None:
+        settings = (new_session["settings"],)
     participant_ids = [int(player_id) for player_id in players]
     state = method(self, list(range(len(participant_ids))), *settings)
     name = type(self).__name__
@@ -299,6 +327,10 @@ def _add_psynet_entry(self, method, outermost, players, *settings):
         "time_up": False,
         "last_tick": None,
         "last_event": None,
+        "accepts_players": True,
+        "too_late": [],
+        "group_id": new_session.get("group_id"),
+        "stop_top_ups_at_end": new_session.get("stop_top_ups_at_end", False),
     }
     return state
 

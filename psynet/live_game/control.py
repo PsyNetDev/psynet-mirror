@@ -56,6 +56,7 @@ class LiveGameControl(NullControl):
         show_result_for=0,
         player_left_message=_DEFAULT,
         no_game_message=_DEFAULT,
+        too_late_message=_DEFAULT,
         waiting_status=_DEFAULT,
         ended_status=_DEFAULT,
         names="shown",
@@ -93,6 +94,7 @@ class LiveGameControl(NullControl):
         self.show_result_for = show_result_for
         self.player_left_message = player_left_message
         self.no_game_message = no_game_message
+        self.too_late_message = too_late_message
         self.waiting_status = waiting_status
         self.ended_status = ended_status
         self.names = names
@@ -192,6 +194,11 @@ class LiveGameControl(NullControl):
         if session_id is None and _removed_from_group_notice(participant):
             # The page already shows why the participant's group left them.
             no_session = None
+        too_late = self.too_late_message
+        if too_late is _DEFAULT:
+            too_late = _p(
+                "live_game", "The game had already stopped taking new players."
+            )
         waiting = self.waiting_status
         if waiting is _DEFAULT:
             waiting = _p("live_game", "Waiting for the other players to open the game")
@@ -209,6 +216,7 @@ class LiveGameControl(NullControl):
                 "showResultFor": self.show_result_for,
                 "playerLeftMessage": player_left,
                 "noGameMessage": no_session,
+                "tooLateMessage": too_late,
                 "waitingStatus": waiting,
                 "endedStatus": ended,
                 "players": _players(participant, self._play_id()),
@@ -270,6 +278,13 @@ class LiveGamePage(ModularPage):
         start the game." Set it to ``None`` for no notice. It isn't shown
         when the page already says that the participant's group left them.
 
+    too_late_message
+        What a notice at the top of the page says to a participant who
+        joined a running game after its :meth:`~LiveGame.accepts_players`
+        returned ``False``, in place of the game, with the Next button (see
+        :ref:`live-games-joining`). By default it says "The game had already
+        stopped taking new players." Set it to ``None`` for no notice.
+
     waiting_status
         What ``psynet.liveGame.showStatus`` says before the game starts. By
         default it says "Waiting for the other players to open the game".
@@ -308,6 +323,7 @@ class LiveGamePage(ModularPage):
         show_result_for=0,
         player_left_message=_DEFAULT,
         no_game_message=_DEFAULT,
+        too_late_message=_DEFAULT,
         waiting_status=_DEFAULT,
         ended_status=_DEFAULT,
         names="shown",
@@ -322,6 +338,7 @@ class LiveGamePage(ModularPage):
                 show_result_for=show_result_for,
                 player_left_message=player_left_message,
                 no_game_message=no_game_message,
+                too_late_message=too_late_message,
                 waiting_status=waiting_status,
                 ended_status=ended_status,
                 names=names,

@@ -546,6 +546,28 @@ describe("psynet.liveGame", () => {
     assert.equal(sockets.length, 0);
   });
 
+  it("turns away a newcomer to a game that had stopped taking players, with the Next button", () => {
+    session = { ...session, tooLateMessage: "The game had already stopped taking new players." };
+    changePage();
+    const seen = [];
+    liveGame.onChange(() => seen.push("change"));
+    liveGame.onEnded(() => seen.push("ended"));
+    sockets[0].raw.dispatchEvent(new Event("open"));
+    sockets[0].view(view(4), "too_late");
+    sockets[0].fire("onEnded", "too_late", view(4));
+    sockets[0].fire("onResultSaved");
+    sockets[0].raw.dispatchEvent(new Event("open"));
+    assert.deepEqual(seen, []);
+    assert.equal(liveGame.ended, true);
+    assert.equal(hiddenGames, 1);
+    assert.deepEqual(notices.at(-1), [
+      "psynet-no-game-notice",
+      "The game had already stopped taking new players.",
+    ]);
+    assert.equal(nextButtonHidden.at(-1), false);
+    assert.equal(nextPages, 0);
+  });
+
   it("does nothing on a page without a game, and explains a page that isn't a game page", () => {
     session = undefined;
     assert.throws(() => liveGame.send("pick"), /isn't a LiveGamePage/);

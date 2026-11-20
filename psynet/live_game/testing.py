@@ -5,7 +5,7 @@ import math
 import time
 from dataclasses import dataclass
 
-from dallinger.realtime import RealtimeGame, Reject, Sent
+from dallinger.realtime import Reject, Sent
 from dallinger.realtime.game import PLAYER_DONE_REASON, queued_effects
 
 from .messages import LiveMessage
@@ -126,8 +126,6 @@ class LocalGame:
     def is_done(self, player):
         """Return whether ``player``'s game has ended, by the game's
         ``is_done``."""
-        if type(self.game).is_done is RealtimeGame.is_done:
-            return False
         return bool(self.game.is_done(self.state, self._participant(player)))
 
     def done_reason(self, player):

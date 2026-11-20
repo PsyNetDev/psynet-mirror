@@ -51,7 +51,7 @@ from ..sync import (
 from ..timeline import CodeBlock, EltCollection, conditional, join
 from ..utils import get_logger
 from .game import LiveGame
-from .psynet_entry import _new_session_settings
+from .psynet_entry import _new_session
 from .record import LiveGameRecord, _player_ending
 
 logger = get_logger()
@@ -121,8 +121,10 @@ class PlayLiveGame(EltCollection):
         a game from it joins that game, rather than waiting for the group's
         next game. The game must define ``on_add``, and the group's
         :class:`~psynet.sync.Grouper` needs ``join_existing_groups=True``. A
-        game played in a trial can't take newcomers
-        (see :ref:`live-games-join-and-finish`). Default: ``False``.
+        game can stop taking players through its
+        :meth:`~LiveGame.accepts_players`. A game played in a trial can't
+        take newcomers (see :ref:`live-games-join-and-finish`). Default:
+        ``False``.
 
     absent_action
         ``"leave_group"`` to remove a player who didn't play the game, a
@@ -134,6 +136,14 @@ class PlayLiveGame(EltCollection):
         need ``below_quorum="continue_without_group"``
         (see :ref:`live-games-absent`). Default: ``None``, which leaves them
         in their groups.
+
+    stop_top_ups_at_end
+        Whether the group stops taking newcomers, as
+        :meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups` does, once each
+        game it plays here has ended, so nobody joins a group whose game is
+        over. It only affects a group whose grouper has
+        ``join_existing_groups=True``. Set it to ``False`` for a group that
+        takes newcomers for the next game it plays. Default: ``True``.
 
     id_
         A name for this step, the game's ``name`` unless given, which
@@ -160,6 +170,7 @@ class PlayLiveGame(EltCollection):
         on_release=None,
         join_running_game: bool = False,
         absent_action: Optional[str] = None,
+        stop_top_ups_at_end: bool = True,
         id_: str = None,
         **kwargs,
     ):
@@ -216,6 +227,7 @@ class PlayLiveGame(EltCollection):
             settings,
             on_release,
             join_running_game=join_running_game,
+            stop_top_ups_at_end=stop_top_ups_at_end,
             names=page.control.names,
             absent_leave=(
                 [group_type, *also_leave] if absent_action == "leave_group" else []
@@ -255,6 +267,7 @@ class _LiveGameBarrier(GroupBarrier):
         settings=None,
         on_release=None,
         join_running_game=False,
+        stop_top_ups_at_end=True,
         names="shown",
         absent_leave=(),
         **kwargs,
@@ -270,6 +283,7 @@ class _LiveGameBarrier(GroupBarrier):
         self.settings = settings
         self.on_game_release = on_release
         self.join_running_game = join_running_game
+        self.stop_top_ups_at_end = bool(stop_top_ups_at_end)
         # The game page's names, kept with each member's game, so that the
         # players route sends pseudonyms only to pages that show them.
         self.names = names
@@ -428,7 +442,13 @@ class _LiveGameBarrier(GroupBarrier):
         # pages do.
         seats = group.seats
         participants = sorted(participants, key=lambda member: seats[member.id])
-        token = _new_session_settings.set(self.settings)
+        token = _new_session.set(
+            {
+                "settings": self.settings,
+                "group_id": group.id,
+                "stop_top_ups_at_end": self.stop_top_ups_at_end,
+            }
+        )
         try:
             session_id = create_realtime_session(
                 game_class,
@@ -436,7 +456,7 @@ class _LiveGameBarrier(GroupBarrier):
                 bots=[member.id for member in participants if isinstance(member, Bot)],
             )
         finally:
-            _new_session_settings.reset(token)
+            _new_session.reset(token)
         for member in participants:
             _set_live_game_id(member, self.id, session_id)
         if group_round is not None:
@@ -690,7 +710,9 @@ def _remove_absent_players(game, session_row, players):
     absences = game.absences(state)
     leaving = []
     for participant, leaves in leaves_by_player:
-        reason = absences[state["psynet"]["participant_ids"].index(participant.id)]
+        player = state["psynet"]["participant_ids"].index(participant.id)
+        # Players who came too late are numbered last, and have no absence.
+        reason = absences[player] if player < len(absences) else None
         if not leaves or reason is None:
             continue
         groups = participant.active_sync_groups
@@ -709,6 +731,17 @@ def _remove_absent_players(game, session_row, players):
             left[group_id] = group
     for group in left.values():
         group.dissolve_if_below_quorum()
+
+
+def _stop_top_ups(group_id):
+    """Stop the group of id ``group_id``, a game's, taking newcomers, as
+    SimpleSyncGroup.stop_top_ups does, if it still does. ``group_id`` is
+    None for a game that a PlayLiveGame didn't start."""
+    if group_id is None:
+        return
+    group = _lock_sync_group_and_links(group_id)
+    if group is not None and group.active and group.accepts_top_ups:
+        group.stop_top_ups()
 
 
 def _lock_sync_group_and_links(group_id):

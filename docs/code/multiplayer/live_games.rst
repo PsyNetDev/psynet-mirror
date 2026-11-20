@@ -938,6 +938,8 @@ society fishing on a shared lake, can take new players while it runs, and
 let each player finish before the others. The ``microsociety_live`` demo
 does both.
 
+.. _live-games-joining:
+
 Joining a running game
 ~~~~~~~~~~~~~~~~~~~~~~
 
@@ -990,6 +992,41 @@ opens, so an ``away_timeout`` covers one who never arrives. A game's
 it waits at the barrier for the group's next game. Write the page so that
 it allows for views with more players than before, and give each new
 player what they need, such as a colour no other player on the board has.
+
+A game that takes newcomers only for a while, such as until its first
+round starts, defines ``accepts_players(self, state)``, which returns
+whether it still takes new players:
+
+.. code-block:: python
+
+    class Ultimatum(LiveGame):
+        ...
+
+        def accepts_players(self, state):
+            return state["round"] == 0
+
+PsyNet asks it after each change to the state, and once it returns
+``False`` the game takes no more players, even if it would later return
+``True``. A few seconds later, PsyNet stops the group's top-ups (see
+:meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups`), so the group takes no
+more newcomers either. A newcomer the group admitted before then still
+reaches the game, but doesn't play it: the game never sees them, so its
+``on_add``, ``view``, ``is_done``, ``answer`` and rewards aren't called
+for them, and they don't count as away. They take the next numbers after
+every player the game has had, so the game's lists of players need no
+gaps. Their own game ends at once with the reason
+:data:`~psynet.live_game.TOO_LATE`, ``"too_late"``. Their page hides the
+game and shows the page's ``too_late_message``, "The game had already
+stopped taking new players." by default, with the Next button, so that
+the participant reads it and moves on. The page's JavaScript gets no
+views and no ``onEnded``. Their answer is ``None``, they get no
+``performance_reward``, and their record's ``left_early`` is true, with
+the ``done_reason`` ``"too_late"``.
+
+By default, once a game from a ``PlayLiveGame`` ends, PsyNet stops the
+top-ups of the group that played it as well, so no newcomer joins a group
+whose game is over. Give the ``PlayLiveGame`` ``stop_top_ups_at_end=False``
+for a group that takes newcomers into its next game.
 
 A game played in a trial can't take newcomers, since its round is already
 under way, so a ``PlayLiveGame`` with ``join_running_game`` in a trial's
@@ -1216,7 +1253,9 @@ A record has:
 - ``left_early``, whether the participant's own game ended before the
   game did, through ``is_done`` (see `Finishing before the others`_), and
   ``done_reason``, why: the game's ``done_reason`` for them, or ``None``
-  for a player whose game ended with the game's ``end_reason``;
+  for a player whose game ended with the game's ``end_reason``. A player
+  who joined after the game stopped taking players left early with the
+  ``done_reason`` ``"too_late"`` (see :ref:`live-games-joining`);
 - ``answers``, each player's answer, in player order, worked out in the
   same way, and
   ``participant_ids``, each player's participant id;
@@ -1432,6 +1471,9 @@ in the state or a view. The parts a game can use are:
 - ``away``, the numbers of the players who have left the game page and not
   come back. One of the game's first players who hasn't opened it yet isn't
   in it, but a player added while the game runs is, until their page opens.
+- ``accepts_players``, ``False`` once the game's ``accepts_players`` has
+  returned ``False``, and ``too_late``, the numbers of the players added
+  after that, who don't play (see :ref:`live-games-joining`)
 - in a view, ``you``, the number of the player it's for, which the page
   reads as ``psynet.liveGame.player``
 

@@ -20,11 +20,13 @@ from .registry import _live_game_class
 
 # The effects PsyNet queues itself: when the game starts, which records the
 # start's Dallinger session time with the game's events, for
-# add_performance_reward, and for LiveGame.record.
+# add_performance_reward, for LiveGame.record, and when the game stops
+# taking players, by its accepts_players.
 _STARTED_EFFECT = "psynet_game_started"
 _REWARD_EFFECT = "psynet_performance_reward"
 _MOMENT_EFFECT = "psynet_moment"
-_PSYNET_EFFECTS = (_STARTED_EFFECT, _REWARD_EFFECT, _MOMENT_EFFECT)
+_CLOSED_EFFECT = "psynet_closed"
+_PSYNET_EFFECTS = (_STARTED_EFFECT, _REWARD_EFFECT, _MOMENT_EFFECT, _CLOSED_EFFECT)
 
 
 class LiveGameRecord:
@@ -170,8 +172,9 @@ class LiveGameRecord:
     @property
     def left_early(self) -> bool:
         """Whether the participant's own game ended before the game did,
-        because the game's ``is_done`` ended it, such as when they retired.
-        :attr:`done_reason` says why. The game may still be running, so
+        because the game's ``is_done`` ended it, such as when they retired,
+        or because they joined after the game's ``accepts_players`` returned
+        ``False``. :attr:`done_reason` says why. The game may still be running, so
         :attr:`finished` and :attr:`end_reason`, which are the whole game's,
         don't say anything about such a player."""
         return self._player_ending("left_early") is not None
@@ -179,7 +182,10 @@ class LiveGameRecord:
     @property
     def done_reason(self) -> Optional[str]:
         """Why the participant left the game early, such as ``"retired"``:
-        the game's ``done_reason`` for them. It's ``None`` for a participant who didn't leave early
+        the game's ``done_reason`` for them, or
+        :data:`~psynet.live_game.TOO_LATE` for a participant who joined after
+        the game stopped taking players. It's ``None`` for a participant who
+        didn't leave early
         (see :attr:`left_early`), whose game ended with the game, for the
         game's :attr:`end_reason`. A player whose ``is_done`` becomes true
         on the step the game ends didn't leave early, so read per-player
@@ -311,9 +317,11 @@ def _computed_answer(session_id, participant_id, row=None):
     """Return the game's ``answer`` for a player once their game has ended:
     from their own ending if the game's ``is_done`` ended it early, and
     otherwise from the game's outcome once the game has ended. Return None
-    before then, if they aren't among the game's players, or if the game
-    failed without ending theirs first. ``row`` is the game's
+    before then, if they aren't among the game's players, if they came too
+    late, or if the game failed without ending theirs first. ``row`` is the game's
     ``realtime_session`` row, if the caller has read it already."""
+    from .psynet_entry import TOO_LATE
+
     game = _answer_columns(session_id) if row is None else row
     participant_ids = _player_ids(game.members)
     if participant_id not in participant_ids:
@@ -321,6 +329,9 @@ def _computed_answer(session_id, participant_id, row=None):
     ending = _player_ending(session_id, participant_id)
     if ending is not None:
         reason, outcome = ending
+        if reason == TOO_LATE:
+            # The game never saw them.
+            return None
     elif game.status == "ended":
         outcome, reason = game.outcome, game.end_reason
     else:

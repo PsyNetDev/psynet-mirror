@@ -4,7 +4,10 @@ the reward from the outcome of a player whose game ends before the game
 does, and, once the result is saved, the other players' rewards from the
 outcome, the copy of the outcome on the game's round, and the removal of
 players who didn't play from their groups, for a PlayLiveGame with
-``absent_action``. A reward is also recorded on the trial
+``absent_action``. The group's top-ups stop when the game stops taking
+players and, unless the PlayLiveGame says otherwise, when it ends. A
+player who came too late gets nothing from the game, which never saw
+them. A reward is also recorded on the trial
 the game was played in, if any. All run in the job that writes the game's
 record, so each runs once, whether or not the players are still on the game
 page."""
@@ -14,7 +17,9 @@ from dallinger.models import timenow
 from dallinger.realtime.utils import is_number
 
 from .method_wrappers import _outermost
+from .psynet_entry import TOO_LATE
 from .record import (
+    _CLOSED_EFFECT,
     _PSYNET_EFFECTS,
     _REWARD_EFFECT,
     _game_started_at,
@@ -89,6 +94,11 @@ def _locked_players(session_row, participant_ids=None):
 def _handles_reward(self, game_code, name, payload, session_row):
     if name not in _PSYNET_EFFECTS:
         return game_code(name, payload, _record_from_row(session_row))
+    if name == _CLOSED_EFFECT:
+        from .play import _stop_top_ups
+
+        _stop_top_ups(payload["group_id"])
+        return None
     if name != _REWARD_EFFECT:
         # Only recorded, for a game record's messages and moments.
         return None
@@ -117,12 +127,15 @@ def _handles_ending(self, game_code, session_row):
         if participant_id not in ended_early
     ]
     players = _locked_players(session_row, remaining) if remaining else []
-    from .play import _remove_absent_players
+    from .play import _remove_absent_players, _stop_top_ups
 
     if _has_outcome(session_row.status, session_row.outcome):
         _pay_outcome_rewards(self, session_row, players)
         _record_outcome_on_round(session_row)
     _end_game_page_deadlines(session_row, players, session_row.end_time)
+    entry = (session_row.final_state or {}).get("psynet")
+    if entry is not None and entry["stop_top_ups_at_end"]:
+        _stop_top_ups(entry["group_id"])
     if session_row.status != "failed":
         _remove_absent_players(self, session_row, players)
     return game_code(_record_from_row(session_row))
@@ -131,6 +144,10 @@ def _handles_ending(self, game_code, session_row):
 @_outermost
 def _handles_player_ending(self, game_code, session_row, player_id, ending):
     (participant,) = _locked_players(session_row, [int(player_id)])
+    if ending["reason"] == TOO_LATE:
+        # The game never saw them, so it has nothing to pay or handle.
+        _end_game_page_deadlines(session_row, [participant], timenow())
+        return None
     player = _player_ids(session_row.members).index(participant.id)
     amount = self.performance_reward(ending["outcome"], ending["reason"], player)
     what = f"{type(self).__name__}.performance_reward"
