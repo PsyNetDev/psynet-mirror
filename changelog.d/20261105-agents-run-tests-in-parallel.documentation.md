@@ -1,0 +1,1 @@
+Documented in the PsyNet `AGENTS.md` that `pytest` sessions from the source checkout are isolated too, that test sessions and debug servers refuse to share an experiment directory, how to test another branch from a git worktree, and which local commands share the database, Redis and port so agents should use `psynet debug local --isolated` instead.
