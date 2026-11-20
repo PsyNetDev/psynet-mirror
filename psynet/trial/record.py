@@ -224,6 +224,7 @@ class MediaImitationChainNode(ImitationChainNode):
     """
 
     media_extension = None
+    async_on_deploy_cpu_heavy = True
 
     def synthesize_target(self, output_file):
         """

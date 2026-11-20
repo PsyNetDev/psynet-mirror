@@ -20,7 +20,7 @@ from psynet.command_line import psynet
 from psynet.db import forbid_commits
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import AsyncCodeBlock
-from psynet.trial.main import Trial
+from psynet.trial.main import Trial, TrialNetwork, TrialNode
 from psynet.utils import get_authenticated_session
 
 
@@ -796,6 +796,16 @@ class _UndeclaredAnalysisTrial(Trial):
         pass
 
 
+class _UndeclaredSynthesisNode(TrialNode):
+    def async_on_deploy(self):
+        pass
+
+
+class _UndeclaredGrowthNetwork(TrialNetwork):
+    def async_post_grow_network(self):
+        pass
+
+
 def test_async_jobs_must_say_whether_they_are_cpu_heavy():
     with pytest.raises(TypeError, match="WorkerAsyncJob needs cpu_heavy"):
         WorkerAsyncJob(do_nothing)
@@ -804,3 +814,7 @@ def test_async_jobs_must_say_whether_they_are_cpu_heavy():
     with pytest.raises(TypeError, match="_UndeclaredAnalysisTrial, which defines"):
         _UndeclaredAnalysisTrial._check_async_post_trial_cpu_heavy()
     Trial._check_async_post_trial_cpu_heavy()
+    with pytest.raises(TypeError, match="async_on_deploy_cpu_heavy"):
+        _UndeclaredSynthesisNode._check_async_on_deploy_cpu_heavy()
+    with pytest.raises(TypeError, match="async_post_grow_network_cpu_heavy"):
+        _UndeclaredGrowthNetwork._check_async_post_grow_network_cpu_heavy()

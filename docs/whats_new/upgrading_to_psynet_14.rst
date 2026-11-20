@@ -798,7 +798,12 @@ Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
     ``WorkerAsyncJob`` and ``AsyncCodeBlock``;
   * set ``async_post_trial_cpu_heavy = True`` or ``False`` on each trial
     class that defines ``async_post_trial``, unless it inherits it from a
-    recording trial such as ``AudioRecordTrial``, which declares ``True``.
+    recording trial such as ``AudioRecordTrial``, which declares ``True``;
+  * set ``async_post_grow_network_cpu_heavy`` on each network class that
+    defines ``async_post_grow_network``, and ``async_on_deploy_cpu_heavy``
+    on each node class that defines ``async_on_deploy``. Media
+    imitation-chain and media Gibbs nodes, which synthesize stimuli there,
+    declare ``True``.
 
   ``psynet test local`` warns when a job's measured CPU time contradicts
   its declaration. See :ref:`async_job_cpu_heavy`.

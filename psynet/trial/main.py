@@ -124,6 +124,23 @@ def _check_no_sync_group_options(trial_maker_id, **options):
         )
 
 
+def _check_hook_cpu_heavy(cls, base, hook, run_attribute=None):
+    """Raise ``TypeError`` if ``cls`` defines the async ``hook`` without ``<hook>_cpu_heavy``.
+
+    ``base`` is the class that defines the empty hook, and ``run_attribute``
+    an optional class attribute that turns the hook off when ``False``.
+    """
+    if run_attribute and getattr(cls, run_attribute) is False:
+        return
+    if getattr(cls, hook) is getattr(base, hook):
+        return
+    check_cpu_heavy(
+        getattr(cls, f"{hook}_cpu_heavy"),
+        f"{base.__name__} class {cls.__name__}, which defines {hook},",
+        name=f"{hook}_cpu_heavy",
+    )
+
+
 def with_trial_maker_namespace(trial_maker_id: str, x: Optional[str] = None):
     if x is None:
         return trial_maker_id
@@ -998,15 +1015,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @classmethod
     def _check_async_post_trial_cpu_heavy(cls):
         """Raise ``TypeError`` if this class runs its own ``async_post_trial`` without :attr:`async_post_trial_cpu_heavy`."""
-        if cls.run_async_post_trial is False or (
-            cls.async_post_trial is Trial.async_post_trial
-        ):
-            return
-        check_cpu_heavy(
-            cls.async_post_trial_cpu_heavy,
-            f"Trial class {cls.__name__}, which defines async_post_trial,",
-            name="async_post_trial_cpu_heavy",
-        )
+        _check_hook_cpu_heavy(cls, Trial, "async_post_trial", "run_async_post_trial")
 
     @classmethod
     def _get_async_post_trial_priority(cls, trial_maker):
@@ -3673,6 +3682,8 @@ class NetworkTrialMaker(TrialMaker):
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
             n_participants_completion=n_participants_completion,
         )
+        if network_class is not None:
+            network_class._check_async_post_grow_network_cpu_heavy()
         self.network_class = network_class
         self.wait_for_networks = wait_for_networks
 
@@ -3998,6 +4009,7 @@ class NetworkTrialMaker(TrialMaker):
             self.queue_async_post_grow_network(network)
 
     def queue_async_post_grow_network(self, network):
+        network._check_async_post_grow_network_cpu_heavy()
         WorkerAsyncJob(
             network.call_async_post_grow_network,
             label="post_grow_network",
@@ -4005,7 +4017,7 @@ class NetworkTrialMaker(TrialMaker):
             network=network,
             # Participants may wait for the network's next node.
             priority="high",
-            cpu_heavy=False,
+            cpu_heavy=network.async_post_grow_network_cpu_heavy,
         ).enqueue()
 
     @property
@@ -4190,6 +4202,13 @@ class TrialNetwork(SQLMixinDallinger, Network, AssetParentMixin):
     run_async_post_grow_network : bool
         Set this to ``True`` if you want the :meth:`~psynet.trial.main.TrialNetwork.async_post_grow_network`
         method to run after the network is grown.
+
+    async_post_grow_network_cpu_heavy : bool or None
+        Whether :meth:`~psynet.trial.main.TrialNetwork.async_post_grow_network`
+        computes for long; see the ``cpu_heavy`` parameter of
+        :class:`~psynet.async_job.WorkerAsyncJob`. A network class that
+        defines ``async_post_grow_network`` must set it to ``True`` or
+        ``False``, or creating its trial maker fails.
     """
 
     def __repr__(self):
@@ -4347,6 +4366,17 @@ class TrialNetwork(SQLMixinDallinger, Network, AssetParentMixin):
         self.async_post_grow_network_failed = False
 
     run_async_post_grow_network = None
+    async_post_grow_network_cpu_heavy = None
+
+    @classmethod
+    def _check_async_post_grow_network_cpu_heavy(cls):
+        """Raise ``TypeError`` if this class defines ``async_post_grow_network`` without :attr:`async_post_grow_network_cpu_heavy`."""
+        _check_hook_cpu_heavy(
+            cls,
+            TrialNetwork,
+            "async_post_grow_network",
+            "run_async_post_grow_network",
+        )
 
     def async_post_grow_network(self):
         """
@@ -4514,6 +4544,7 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
         self.on_deploy_complete = True
 
     def queue_async_on_deploy(self):
+        self._check_async_on_deploy_cpu_heavy()
         WorkerAsyncJob(
             function=self.call_async_on_deploy,
             node=self,
@@ -4521,7 +4552,7 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
             unique=True,
             # Participants may wait for this node to be deployed.
             priority="high",
-            cpu_heavy=False,
+            cpu_heavy=self.async_on_deploy_cpu_heavy,
         ).enqueue()
         self.async_on_deploy_requested = True
 
@@ -4533,6 +4564,18 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
             db.session.commit()
             raise
         self.async_on_deploy_complete = True
+
+    #: Whether :meth:`async_on_deploy` computes for long, such as when it
+    #: synthesizes media; see the ``cpu_heavy`` parameter of
+    #: :class:`~psynet.async_job.WorkerAsyncJob`. A node class that defines
+    #: ``async_on_deploy`` must set it to ``True`` or ``False``, or creating
+    #: its trial maker fails.
+    async_on_deploy_cpu_heavy = None
+
+    @classmethod
+    def _check_async_on_deploy_cpu_heavy(cls):
+        """Raise ``TypeError`` if this class defines ``async_on_deploy`` without :attr:`async_on_deploy_cpu_heavy`."""
+        _check_hook_cpu_heavy(cls, TrialNode, "async_on_deploy")
 
     def async_on_deploy(self):
         """

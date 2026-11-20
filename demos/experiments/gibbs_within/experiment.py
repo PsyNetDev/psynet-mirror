@@ -73,6 +73,7 @@ class ColorSliderPage(ModularPage):
 
 class CustomNetwork(GibbsNetwork):
     run_async_post_grow_network = True
+    async_post_grow_network_cpu_heavy = False
 
     def async_post_grow_network(self):
         # This is a silly example of how we might define a function that runs every time

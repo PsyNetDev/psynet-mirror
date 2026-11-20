@@ -53,6 +53,8 @@ class CustomTrial(MCMCPTrial):
 
 
 class CustomNode(MCMCPNode):
+    async_on_deploy_cpu_heavy = False
+
     def async_on_deploy(self):
         super().async_on_deploy()
         self.var.api_response = self.make_api_call(

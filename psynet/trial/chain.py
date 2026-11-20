@@ -1669,6 +1669,12 @@ class ChainTrialMaker(NetworkTrialMaker):
             "balance_across_chains", balance_across_chains, "chain_order"
         )
 
+        node_classes = {node_class} | {
+            type(node)
+            for node in (start_nodes if isinstance(start_nodes, list) else [])
+        }
+        for cls in node_classes - {None}:
+            cls._check_async_on_deploy_cpu_heavy()
         self.node_class = node_class
         assert isinstance(expected_trials_per_participant, (int, float, str))
         if isinstance(expected_trials_per_participant, str):

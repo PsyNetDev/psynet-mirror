@@ -88,6 +88,7 @@ class CustomNetwork(GibbsNetwork):
 
     # Minimal example of an async_post_grow_network function
     run_async_post_grow_network = True
+    async_post_grow_network_cpu_heavy = False
 
     def async_post_grow_network(self):
         logger.info(

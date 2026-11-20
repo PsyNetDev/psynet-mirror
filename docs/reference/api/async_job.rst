@@ -82,8 +82,15 @@ Every job of yours says which kind it is; PsyNet raises an error otherwise:
 
     WorkerAsyncJob(refit_model, cpu_heavy=True).enqueue()
 
+Network and node hooks are declared the same way, with
+``async_post_grow_network_cpu_heavy`` on a network class that defines
+:meth:`~psynet.trial.main.TrialNetwork.async_post_grow_network` and
+``async_on_deploy_cpu_heavy`` on a node class that defines
+:meth:`~psynet.trial.main.TrialNode.async_on_deploy`.
+
 Recording trials such as :class:`~psynet.trial.audio.AudioRecordTrial`
-declare their analysis CPU-heavy already. A job that waits without letting
+declare their analysis CPU-heavy already, and the media imitation-chain and
+media Gibbs nodes declare their stimulus synthesis CPU-heavy. A job that waits without letting
 other jobs run, such as a network call made by a C extension, stalls the
 worker too, so declare it CPU-heavy even though it uses little CPU.
 

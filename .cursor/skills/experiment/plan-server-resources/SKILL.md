@@ -49,7 +49,8 @@ A **CPU-heavy** job, such as audio analysis or model fitting, keeps a CPU core
 busy while it runs, and would stall the other jobs of a worker process, which
 runs up to `worker_greenlets_per_process` jobs at once. Every job declares
 whether it is CPU-heavy (`cpu_heavy=` on `WorkerAsyncJob` and `AsyncCodeBlock`,
-`async_post_trial_cpu_heavy` on a trial class that defines `async_post_trial`;
+`async_post_trial_cpu_heavy` on a trial class that defines `async_post_trial`,
+and likewise `async_post_grow_network_cpu_heavy` and `async_on_deploy_cpu_heavy`;
 recording trials declare `True`), and CPU-heavy jobs run in CPU workers. Each
 worker process starts `cpu_processes_per_worker` of them (default 1), which run
 one job at a time, so CPU-heavy jobs queue behind each other unless there are
