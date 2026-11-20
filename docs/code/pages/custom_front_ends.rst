@@ -129,6 +129,41 @@ Read these values through ``psynet.var``:
 
     const maximumLength = psynet.var.color_text_config.maximum_length;
 
+PsyNet calls ``get_js_vars()`` once, when the page is built. A page written
+directly in the experiment's timeline is built when the experiment loads, so
+every participant gets the same values. For a value that depends on the
+participant who sees the page, such as something they entered on an earlier
+page, implement ``get_render_js_vars(experiment, participant)``, instead of
+``get_js_vars()`` or alongside it. PsyNet calls it each time the page is shown
+to a participant, including when they reload it, and adds what it returns to
+``psynet.var``:
+
+.. code-block:: python
+
+    class ColorText(Control):
+        def get_render_js_vars(self, experiment, participant):
+            # The text this participant entered last time, stored in
+            # participant.var.color_text, or None the first time.
+            return {"color_text_previous": participant.var.get("color_text", None)}
+
+.. code-block:: javascript
+
+    const previous = psynet.var.color_text_previous;
+    if (previous !== null) {
+        root.querySelector("#color-text").value = previous;
+    }
+
+A page that a :class:`~psynet.timeline.PageMaker` builds for each participant
+can pass what it needs to the control's constructor instead, and return it
+from ``get_js_vars()``.
+
+Each key can come from only one place: the page's ``js_vars`` or one of its
+components, such as its prompt or control. If two of them use the same key,
+PsyNet raises an error. For a
+key from ``get_js_vars()`` it does so when the page is built, but for a key
+from ``get_render_js_vars()`` only when the page is shown, so a test has to
+reach the page to catch it.
+
 Sharing JavaScript functions between components
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -320,7 +355,8 @@ Supply page-local CSS and JavaScript through explicit page arguments:
 
 Custom prompts and controls supply the same assets from Python through
 ``get_css()``, ``get_css_links()``, ``get_js_dependencies()``,
-``get_js_page_code()``, ``get_js_page_modules()`` and ``get_js_vars()``.
+``get_js_page_code()``, ``get_js_page_modules()``, ``get_js_vars()`` and
+``get_render_js_vars()``.
 
 These rules exist because PsyNet swaps pages in place by default, without
 reloading the browser document; :doc:`/developer/page_lifecycle` describes

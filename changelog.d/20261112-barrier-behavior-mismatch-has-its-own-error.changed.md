@@ -1,0 +1,1 @@
+A participant who arrives at a barrier whose waiting pool was started with the same barrier ID and different behavior now gets `psynet.sync.BarrierBehaviorMismatch`, a `ValueError` with the same message as before. A barrier subclass can catch it to explain the mismatch in its own terms, as `LiveSessionInitializer` does for a group whose members arrive with different settings.

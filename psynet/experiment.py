@@ -168,6 +168,7 @@ from .timeline import (
     PreDeployRoutine,
     RecruitmentCriterion,
     Response,
+    ResponseNotReady,
     Timeline,
     WebSocketElt,
     _ending_released_pass,
@@ -403,6 +404,12 @@ class ExperimentMeta(type):
         # inadvertently altering the base class.
         cls.css = cls.css.copy()
         cls.css_links = cls.css_links.copy()
+
+        from .live_session import live_session_game_types
+
+        listed = dct.get("realtime_games", getattr(cls, "_listed_realtime_games", []))
+        cls._listed_realtime_games = list(listed)
+        cls.realtime_games = list(dict.fromkeys([*listed, *live_session_game_types()]))
 
         if hasattr(cls, "test_create_bots"):
             raise RuntimeError(
@@ -968,6 +975,16 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         this when it deploys the app, and later updates of the app build them
         in again. Don't set it yourself.
         Default: unset.
+
+    realtime_games : ``list``
+        The game types of the experiment's live sessions (see
+        :mod:`psynet.live_session`). PsyNet adds every
+        :class:`~psynet.live_session.LiveSession` with a ``channel`` that is
+        defined or imported before the experiment class, whichever module
+        defines it, so list only other game types the experiment plays. A
+        ``LiveSession`` defined after the experiment class stops the
+        experiment at launch.
+        Default: ``[]``.
 
 
 
@@ -2923,12 +2940,19 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Accept a websocket connection only from one of the participant's own pages.
 
         PsyNet's pages send :attr:`~psynet.participant.Participant.websocket_scope`
-        as the connection's scope.
+        as the connection's scope. A live session's game page adds a ``.``
+        and a name for its connection, of up to 64 letters, digits and
+        dots, since Dallinger's real-time engine tells a player's open pages
+        apart by their scope. PsyNet's own messages to a participant go to
+        the connections whose scope is the token alone.
         """
         participant = Participant.query.get(int(participant_id))
-        return participant is not None and hmac.compare_digest(
-            (scope or "").encode(), participant.websocket_scope.encode()
-        )
+        if participant is None or not isinstance(scope, str):
+            return False
+        token, dot, name = scope.partition(".")
+        if dot and not re.fullmatch(r"[A-Za-z0-9.]{1,64}", name):
+            return False
+        return hmac.compare_digest(token.encode(), participant.websocket_scope.encode())
 
     def handle_websocket_message(
         self,
@@ -3110,6 +3134,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         cls.check_stale_ad_page_override()
         cls.check_unused_dallinger_quality_checks()
         cls.check_stale_bonus_override()
+        cls.check_live_session_games()
         PsyNetProlificRecruiterMixin.check_screen_out_config(config)
 
         parser = configparser.ConfigParser()
@@ -3387,6 +3412,26 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "`bad_data` or `did_not_attend`). Fail participants during "
                 "the timeline instead, for example with `fail()` or "
                 "`UnsuccessfulEndPage`."
+            )
+
+    @classmethod
+    def check_live_session_games(cls):
+        """Check that each live session game is defined or imported before
+        the experiment class, since PsyNet adds only those to
+        ``realtime_games``."""
+        from .live_session import live_session_game_types
+
+        listed = {game_type.channel for game_type in cls.realtime_games}
+        missing = [
+            game_type.__name__
+            for game_type in live_session_game_types()
+            if game_type.channel not in listed
+        ]
+        if missing:
+            raise RuntimeError(
+                f"{', '.join(missing)} must be defined or imported before the "
+                f"experiment class, {cls.__name__}, for PsyNet to add them to "
+                "its realtime_games."
             )
 
     @classmethod
@@ -4414,6 +4459,27 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             with forbid_commits(
                 f"Response processing for {_timeline_step_name(event)}"
             ):
+                # Optional, so that a page class that doesn't extend Page
+                # still works.
+                check_ready = getattr(event, "check_ready_for_response", None)
+                not_ready = (
+                    None
+                    if check_ready is None
+                    else check_ready(experiment=self, participant=participant)
+                )
+                if isinstance(not_ready, ResponseNotReady):
+                    return ResponseResult(
+                        payload={
+                            "submission": "rejected",
+                            "message": not_ready.message,
+                            "retry_after": not_ready.retry_after,
+                        }
+                    )
+                if not_ready is not None:
+                    raise TypeError(
+                        f"{type(event).__name__}.check_ready_for_response must "
+                        f"return None or a ResponseNotReady, not {not_ready!r}."
+                    )
                 response = event.process_response(
                     raw_answer=raw_answer,
                     blobs=blobs,
@@ -4994,6 +5060,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     resources.files("psynet")
                     / "resources/scripts/websocket-channel.js",
                     "/static/scripts/websocket-channel.js",
+                ),
+                (
+                    resources.files("psynet") / "resources/scripts/live-session.js",
+                    "/static/scripts/live-session.js",
                 ),
                 (
                     resources.files("psynet")
@@ -8119,6 +8189,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         clock.close("render")
         if payload.get("submission") == "rejected":
+            if "retry_after" in payload:
+                # Not the participant's to correct, so response_rejected
+                # isn't told: the page resends the response by itself.
+                logger.info("The response was refused for now: %r.", payload["message"])
+                return finish(success_response(**payload))
             return finish(exp.response_rejected(payload["message"]))
         return finish(success_response(**payload))
 
