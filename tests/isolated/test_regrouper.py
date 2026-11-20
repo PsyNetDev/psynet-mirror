@@ -494,8 +494,10 @@ def test_regrouper_left_over_waits_for_cohort_still_in_the_round(
 
 @in_consents_experiment
 def test_every_regrouper_left_over_waits_one_more_tick(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
+    # Arrive 1 s after a tick, so no tick passes before the barrier check.
+    _freeze_clocks(monkeypatch, start=time.time() // 15 * 15 + 16)
     exp = get_experiment()
     cohort_grouper = SimpleGrouper("cohort", initial_group_size=3, quorum=3)
     pairs = Regrouper(
