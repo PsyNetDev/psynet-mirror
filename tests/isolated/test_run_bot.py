@@ -54,6 +54,7 @@ class TestRunBot:
         assert status["page"]["label"] == "favourite_colour"
         assert status["page"]["time_estimate"] == 5
         assert status["page"]["is_timeline_hold"] is False
+        assert status["page"]["in_waiting_logic"] is False
         assert not bot.is_waiting
         assert status["page"]["bot_response"]["answer"] == "red"
         assert len(response_files) == 0
@@ -484,16 +485,27 @@ def test_page_min_duration_follows_the_submit_enable_triggers():
 
 
 @pytest.mark.parametrize(
-    "time_factor, min_duration, expected_sleep",
-    [(0, 5.0, 0), (1, 0.0, 2.0), (1, 5.0, 5.0), (3, 5.0, 6.0)],
+    "time_factor, min_duration, in_waiting_logic, expected_sleep",
+    [
+        (0, 5.0, False, 0),
+        (1, 0.0, False, 2.0),
+        (1, 5.0, False, 5.0),
+        (3, 5.0, False, 6.0),
+        # Unpaced bots still pause on waiting_logic pages, so the barrier
+        # can lock every waiter at once.
+        (0, 0.0, True, 0.25),
+        (1, 0.0, True, 2.0),
+    ],
 )
 def test_paced_bots_stay_on_a_page_for_at_least_its_min_duration(
-    monkeypatch, time_factor, min_duration, expected_sleep
+    monkeypatch, time_factor, min_duration, in_waiting_logic, expected_sleep
 ):
     driver = ParticipantDriver.__new__(ParticipantDriver)
     driver.status = _driver_page_status("page-a")
     driver.status["status"] = "working"
-    driver.status["page"].update(time_estimate=2.0, min_duration=min_duration)
+    driver.status["page"].update(
+        time_estimate=2.0, min_duration=min_duration, in_waiting_logic=in_waiting_logic
+    )
     driver.response_files = {}
     sleeps = []
     monkeypatch.setattr(driver, "_submit_response", lambda *args, **kwargs: None)

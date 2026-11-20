@@ -254,6 +254,9 @@ def _is_psynet_stale_timeline_response(response):
 
 
 _TIMELINE_HOLD_POLL_SECONDS = 0.1
+# A barrier check gives up while any waiter's row is locked by their own
+# request, so a group of unpaced bots on waiting_logic pages may never form.
+_WAITING_LOGIC_MIN_PAGE_SECONDS = 0.25
 _BOT_RECORDING_UPLOAD_ATTEMPTS = 5
 # Under load, a partner's barrier check can hold the participant row for
 # several seconds. A busy reply may itself take up to the lock timeout, so
@@ -1778,12 +1781,18 @@ class ParticipantDriver:
             Factor to multiply the page's ``time_estimate`` by. Above 0 the
             bot also stays at least the page's ``min_duration`` (see
             :attr:`psynet.timeline.Page.min_duration`), as a participant must.
+            A page shown while waiting at a barrier always takes a short
+            pause, so that the barrier can lock its waiters and release them.
         """
         page = self.status["page"]
         simulated_page_time = page["time_estimate"] * time_factor
         if time_factor > 0:
             simulated_page_time = max(
                 simulated_page_time, page.get("min_duration") or 0.0
+            )
+        if page.get("in_waiting_logic"):
+            simulated_page_time = max(
+                simulated_page_time, _WAITING_LOGIC_MIN_PAGE_SECONDS
             )
         wake_time = self.status_time_fetched + simulated_page_time
         self._sleep(max(wake_time - time.monotonic(), 0))

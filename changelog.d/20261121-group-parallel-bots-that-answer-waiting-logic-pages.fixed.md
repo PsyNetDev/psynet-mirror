@@ -1,0 +1,1 @@
+Fixed parallel bot tests that hung because bots answering a barrier's `waiting_logic` pages instantly (for example filler trials in a `SimpleGrouper` lobby) kept the barrier from ever grouping them; bots now stay at least 0.25 s on such pages, so you no longer need `test_time_factor` as a workaround.

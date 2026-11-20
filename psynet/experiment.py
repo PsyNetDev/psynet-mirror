@@ -6859,6 +6859,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         - bot_response_files/: the files that the participant would upload as
           a response to the page
         """
+        from .sync import waiting_page_config
+
         participant = Bot.query.get(participant_id)
         at_page_maker_start = participant.elt_id[1:] == [-1]
         if at_page_maker_start or cls._pending_redirect_replaces_open_page(participant):
@@ -6892,6 +6894,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "min_duration": current_page.min_duration,
                 "is_timeline_hold": _is_timeline_hold(current_page),
                 "is_wait_page": isinstance(current_page, WaitPage),
+                "in_waiting_logic": waiting_page_config(current_page, participant)
+                is not None,
                 "barrier_id": getattr(current_page, "barrier_id", None),
                 "bot_response": bot_response.__json__(),
             }
