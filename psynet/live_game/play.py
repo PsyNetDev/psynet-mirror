@@ -42,6 +42,7 @@ from ..utils import get_logger
 from .game import LiveGame
 from .psynet_entry import _new_session_settings
 from .record import LiveGameRecord
+from .trials import LiveTrialGame
 
 logger = get_logger()
 
@@ -382,10 +383,10 @@ class _LiveGameBarrier(GroupBarrier):
         participants = sorted(participants, key=lambda member: seats[member.id])
         settings = self.settings
         if callable(settings):
-            settings = _checked_settings(
-                game_class, settings(participants=participants)
-            )
-        token = _new_session_settings.set(settings)
+            settings = settings(participants=participants)
+        if issubclass(game_class, LiveTrialGame):
+            settings = game_class._session_settings(participants, settings)
+        token = _new_session_settings.set(_checked_settings(game_class, settings))
         try:
             session_id = create_realtime_session(
                 game_class,

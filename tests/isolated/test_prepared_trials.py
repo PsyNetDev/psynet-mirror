@@ -63,7 +63,7 @@ def test_prepared_trials_survive_breaks_and_time_out_only_when_open(
     assert items[0].node_id == items[-1].node_id
     assert alice.module_state.n_completed_trials == 0
     assert all(t.response_started_at is None for t in items)
-    assert maker.trial_plan(alice, stop=3)["_trial_ids"] == ids[:3]
+    assert maker.trial_plan(alice)["_trial_ids"] == ids
     bob_items = maker.prepare_trials(bob)
     assert [t.node_id for t in bob_items] == [t.node_id for t in items]
     assert set(ids).isdisjoint(t.id for t in bob_items)

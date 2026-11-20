@@ -493,23 +493,19 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
 
-    def trial_plan(self, participant, *, stop=None):
-        """Prepare or reload a fixed deck for a live game.
+    def trial_plan(self, participant):
+        """Prepare or reload the full ordered deck and its submitted answer prefix.
 
-        Return every definition and the submitted prefix for the participant.
-        The exclusive, zero-based ``stop`` limits which trials this session can
-        open. Keep the plan in server-side state, call ``start_trials`` from
-        ``on_start``, then ``answer_trial`` for each accepted response.
+        Keep this plan in server-side game state. A LiveTrialGame can present
+        any prefix of it by setting a stop position for that session.
         """
         trials = self.prepare_trials(participant)
-        if stop is not None and (type(stop) is not int or not 0 <= stop <= len(trials)):
-            raise ValueError("stop must be an exclusive position in the prepared deck.")
         return {
             "definitions": [trial.definition for trial in trials],
             "answers": [
                 trial.var.prepared_raw_answer for trial in trials if trial.complete
             ],
-            "_trial_ids": [trial.id for trial in trials[:stop]],
+            "_trial_ids": [trial.id for trial in trials],
         }
 
     def prepare_trials(self, participant):

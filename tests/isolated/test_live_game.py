@@ -2996,3 +2996,34 @@ def test_record_trial_saves_distinct_players_and_ignores_matching_replay(pair):
     name, payload = effects[0]
     with pytest.raises(ValueError, match="Conflicting responses"):
         game.handle_effect(name, {**payload, "answer": True}, row)
+
+
+def test_live_trial_game_owns_segment_progress():
+    from psynet.live_game import LiveTrialGame
+    from psynet.live_game.testing import LocalGame
+
+    plans = [
+        {"definitions": ["a", "b", "c"], "_trial_ids": [1, 2, 3], "answers": [False]},
+        {
+            "definitions": ["c", "b", "a"],
+            "_trial_ids": [4, 5, 6],
+            "answers": [None, True],
+        },
+    ]
+    session = LocalGame(LiveTrialGame, players=2, settings={"plans": plans, "stop": 2})
+    assert session.view(0)["definition"] == "b"
+    assert session.view(1)["definition"] is None
+    assert not {"plans", "answers", "_trial_ids"} & session.view(0).keys()
+    session.game.answer_trial(session.state["plans"], player=0, answer=False)
+    assert session.is_over()
+    assert session.view(0)["deck"] == ["a", "b", "c"]
+    assert session.view(0)["completed"] == session.view(0)["stop"] == 2
+    with pytest.raises(ValueError, match="segment is complete"):
+        session.game.answer_trial(session.state["plans"], player=0, answer=True)
+    assert plans[0]["answers"] == [False]
+    assert plans[0]["_trial_ids"] == [1, 2, 3]
+    resumed = LocalGame(LiveTrialGame, players=2, settings={"plans": plans})
+    assert resumed.view(1)["definition"] == "a"
+    assert resumed.view(1)["stop"] == 3
+    with pytest.raises(ValueError, match="beyond this segment"):
+        LocalGame(LiveTrialGame, players=2, settings={"plans": plans, "stop": 1})
