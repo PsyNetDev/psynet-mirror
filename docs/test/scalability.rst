@@ -260,8 +260,8 @@ config variables (see :doc:`/reference/configuration`) set how many run at
 once:
 
 - ``worker_processes`` (default 1): the number of worker processes, the
-  ``worker_N`` containers on an SSH server or the worker dynos on Heroku.
-  It replaces ``num_dynos_worker``.
+  ``worker_N`` containers on an SSH server. Heroku sizes its worker dynos
+  with ``num_dynos_worker`` instead.
 - ``worker_greenlets_per_process`` (default 20): how many jobs each process
   runs at once.
 

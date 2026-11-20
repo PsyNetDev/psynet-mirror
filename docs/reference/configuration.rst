@@ -125,7 +125,15 @@ differ between processes.
 Available config variables
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Config variables originate from either *PsyNet* |psynet-icon| or *Dallinger* |dlgr-icon|, the latter being the software PsyNet is built upon. What follows is an exhaustive list of all known config variables grouped into specific sections and sorted alphabetically. Sensitive variables are marked with |sensitive-icon|.
+Config variables originate from either *PsyNet* |psynet-icon| or *Dallinger* |dlgr-icon|, the latter being the software PsyNet is built upon. What follows is a list of the config variables that apply to PsyNet experiments, grouped into sections. Sensitive variables are marked with |sensitive-icon|.
+
+Dallinger also registers variables that PsyNet experiments don't use. Some
+are for Amazon Mechanical Turk, which PsyNet doesn't support (``ad_group``,
+``approve_requirement``, ``assign_qualifications``, ``group_name``,
+``keywords``, ``lifetime``, ``mturk_qualification_blocklist``,
+``mturk_qualification_requirements`` and ``us_only``). Others have no effect
+(``organization_name``, ``prolific_maximum_allowed_minutes`` and
+``lock_table_when_creating_participant``).
 
 
 General
@@ -438,8 +446,22 @@ Recruitment
 General
 ~~~~~~~
 
+``allow_repeat_worker_ids`` *bool* |dlgr-icon|
+    If ``True``, a recruitment-platform worker ID that has already taken
+    part can start the experiment again as a new participant. Default:
+    ``False``.
+
 ``auto_recruit`` *bool* |dlgr-icon|
     A boolean on whether recruitment should be automatic.
+
+``debug_recruiter`` *str* |dlgr-icon|
+    The recruiter that ``psynet debug local`` uses, by nickname or class
+    name, when that command runs with ``mode = debug``. A Prolific
+    ``recruiter`` is replaced by Dallinger's simulated ``devprolific``
+    recruiter, and a mock recruiter is used as configured. Any other
+    recruiter is replaced by this value. ``psynet debug ssh`` and
+    ``psynet debug heroku`` run with ``mode = sandbox`` and keep
+    ``recruiter``. Default: ``HotAirRecruiter``.
 
 ``description`` *str* |dlgr-icon|
     A description of the study used in deployment metadata. The default Lab
@@ -458,9 +480,13 @@ General
 
     .. note::
 
-        When running in debug mode, the HotAir recruiter (``hotair``) will
-        always be used. PsyNet's testing commands may use Dallinger's
-        BotRecruiter internally; this does not make ``recruiter = bots`` a
+        ``psynet debug local`` runs with ``mode = debug``. A Prolific
+        recruiter is replaced by the simulated ``devprolific`` recruiter,
+        a mock recruiter stays as configured, and any other recruiter is
+        replaced by ``debug_recruiter`` (by default the HotAir recruiter,
+        ``hotair``). ``psynet debug ssh`` and ``psynet debug heroku`` run
+        with ``mode = sandbox`` and keep the configured recruiter.
+        PsyNet's testing commands may use Dallinger's BotRecruiter internally; this does not make ``recruiter = bots`` a
         supported deployment configuration.
 
 ``recruiters`` *str* |dlgr-icon|
@@ -664,6 +690,18 @@ Prolific
 
     The default (``v1``) is defined in *global_config_defaults.txt*.
 
+``prolific_completion_config`` *str* |dlgr-icon|
+    A JSON object of extra Prolific completion codes to register when the
+    study is created, keyed by code type, each with its Prolific
+    ``actions`` and ``actor``. PsyNet generates the code strings and
+    completes submissions with its own researcher-actor codes
+    (``DEFAULT_RESEARCHER``, and ``UNSUCCESSFUL`` when
+    ``prolific_pay_unsuccessful`` is on). While that option is ``True``,
+    leave Prolific's ``FIXED_SCREEN_OUT_PAYMENT`` action off these codes:
+    Prolific allows one such code per study, and PsyNet registers its own.
+    Like ``prolific_recruitment_config``, the value can be read from a
+    file with ``file:``. Default: ``{}``.
+
 ``prolific_estimated_completion_minutes`` *int* |dlgr-icon|
     Estimated duration in minutes of the experiment or survey.
 
@@ -843,6 +881,14 @@ General
 ``host`` *str* |dlgr-icon|
     IP address of the host.
 
+``performance_test_app`` *bool* |psynet-icon|
+    Marks an SSH app as one that ``psynet performance-test ssh`` may fill
+    with bots and reset. ``performance-test ssh`` sets
+    it on the apps it deploys; set it yourself in ``config.txt`` to deploy
+    a performance-test app from an export, for example from a pilot. See
+    :doc:`/test/scalability`.
+    Default: ``False``.
+
 ``port`` *int* |dlgr-icon|
     Port of the host.
 
@@ -857,6 +903,33 @@ General
 
         [Parameters]
         server_pem = /path/to/your/key.pem
+
+``cloudflare_account_id``, ``cloudflare_zone_id`` and ``cloudflare_dns_zone`` *str* |dlgr-icon|
+    The Cloudflare account, zone and domain (for example
+    ``science-of-music.org``) for SSH deployments with
+    ``--ingress cloudflare``. Set them in ``~/.dallingerconfig``; see
+    :ref:`ssh_server_cloudflare`.
+
+``cloudflare_api_token`` *str* |dlgr-icon| |sensitive-icon|
+    The Cloudflare API token for ``--ingress cloudflare``. It is read from
+    the ``CLOUDFLARE_API_TOKEN`` environment variable, then
+    ``~/.dallingerconfig``, then the macOS Keychain, and is never sent to
+    the server.
+
+``cloudflare_keychain_service`` *str* |dlgr-icon|
+    The macOS Keychain item that holds the Cloudflare API token. Default:
+    ``dallinger-cloudflare-api-token``.
+
+``docker_ssh_idle_hibernate`` *bool* |dlgr-icon|
+    If ``True``, an SSH deployment goes to sleep after
+    ``docker_ssh_idle_hibernate_minutes`` without participant activity.
+    It stays awake while participants are still working, while
+    ``auto_recruit`` is on, or while async jobs are pending; see
+    :doc:`/deploy/reference/ssh_server`. Default: ``False``.
+
+``docker_ssh_idle_hibernate_minutes`` *int* |dlgr-icon|
+    How long an SSH deployment waits without activity before it goes to
+    sleep, when ``docker_ssh_idle_hibernate`` is on. Default: ``60``.
 
 ``docker_ssh_monitoring_kind`` *str* |dlgr-icon|
     The monitoring kind recorded in an SSH deployment's manifest
@@ -882,25 +955,38 @@ Web server
     URI of the Postgres database.
 
 ``num_dynos_web`` *int* |dlgr-icon|
-    Number of web processes started by the legacy local process manager
-    (``psynet test local`` and ``psynet debug local --legacy``). SSH Docker
-    deployments run a single web service, so this does not scale the
-    remote web container.
+    Number of web dynos on Heroku, and of web processes started by the
+    legacy local process manager (``psynet test local`` and
+    ``psynet debug local --legacy``). SSH Docker deployments run a single
+    web service, so this does not scale the remote web container.
+    Default: ``1``.
 
 ``worker_processes`` *int* |dlgr-icon|
     Number of worker processes for async jobs and other background
-    jobs. SSH Docker deployments create ``worker_1`` … ``worker_N``,
-    Heroku runs this many worker dynos, and the legacy local process
-    manager starts this many worker processes. Increase this for live
-    experiments that run many background jobs; see
-    :ref:`performance_testing_async_workers`. Replaces the deprecated
-    ``num_dynos_worker``. Default: ``1``.
+    jobs in Docker deployments: SSH deployments create ``worker_1`` …
+    ``worker_N``, and ``psynet debug local --docker`` runs this many worker
+    containers. Increase this for live experiments that run many
+    background jobs; see :ref:`performance_testing_async_workers`.
+    Heroku and the legacy local process manager use ``num_dynos_worker``
+    instead, and plain ``psynet debug local`` runs one worker.
+    Default: ``1``.
+
+``num_dynos_worker`` *int* |dlgr-icon|
+    Number of worker dynos on Heroku, and of worker processes started by
+    the legacy local process manager. Docker deployments use it, with a
+    warning, only if ``worker_processes`` is not set. Default: ``1``.
+
+``worker_startup_timeout`` *int* |dlgr-icon|
+    Seconds a worker process may take to start. A worker that hasn't
+    started by then exits, and Docker or Heroku restarts it. ``0``
+    disables the limit. Default: ``120``.
 
 ``worker_greenlets_per_process`` *int* |dlgr-icon|
     Number of jobs each worker process runs at once. Jobs only overlap
     while they wait on I/O; CPU-bound jobs run one at a time per process,
     so set this to ``1`` for CPU-heavy async jobs and raise
-    ``worker_processes`` instead. Default: ``20``.
+    ``worker_processes`` (or ``num_dynos_worker`` on Heroku) instead.
+    Default: ``20``.
 
 Dallinger still accepts ``worker_multiplier`` and ``docker_worker_cpu_shares``
 but deprecates them: set ``web_processes`` to a number instead of
@@ -915,6 +1001,49 @@ but deprecates them: set ``web_processes`` to a number instead of
     Default: ``auto``.
 
 For help on choosing appropriate configuration variables, also see this Dallinger documentation page at https://dallinger.readthedocs.io/latest/configuration.html#choosing-configuration-values
+
+.. _configuration_heroku:
+
+Heroku
+~~~~~~
+
+These apply to ``psynet debug heroku`` and ``psynet deploy heroku``.
+
+``database_size`` *str* |dlgr-icon|
+    The Heroku Postgres plan, for example ``essential-0`` or
+    ``standard-0``. No default; a Heroku deployment requires it.
+
+``dyno_type`` *str* |dlgr-icon|
+    The Heroku dyno type for the app's processes, for example ``basic`` or
+    ``standard-2x``. No default; a Heroku deployment requires it.
+
+``dyno_type_web`` and ``dyno_type_worker`` *str* |dlgr-icon|
+    Dyno types for the web and worker processes, overriding ``dyno_type``.
+    ``psynet deploy heroku`` and ``psynet debug heroku`` use them with or
+    without ``--docker``.
+
+``heroku_python_version`` *str* |dlgr-icon|
+    The Python version Heroku's Python buildpack runs, written to the
+    app's ``runtime.txt``. ``psynet deploy heroku --docker`` and
+    ``psynet debug heroku --docker`` use the image's Python and ignore
+    this value.
+
+``heroku_region`` *str* |dlgr-icon|
+    The Heroku region to create the app in, for example ``eu``.
+
+``heroku_team`` *str* |dlgr-icon|
+    The Heroku team that owns the app. Without it, the app belongs to your
+    personal account.
+
+``redis_size`` *str* |dlgr-icon|
+    The Heroku Redis plan. Default: ``premium-0``.
+
+``sentry`` *bool* |dlgr-icon|
+    If ``True``, add the Sentry error-tracking add-on to the app. Default:
+    ``False``.
+
+The number of web dynos is set with ``num_dynos_web`` and the number of
+worker dynos with ``num_dynos_worker``.
 
 Docker
 ~~~~~~
@@ -954,6 +1083,10 @@ Internationalization
 
 ``default_translator`` *str* |psynet-icon|
     The default translator to use for translations. Default: ``chat_gpt``.
+
+``google_translate_json_path`` and ``google_translate_project_id`` *str* |psynet-icon| |sensitive-icon|
+    Ignored: PsyNet no longer supports Google Translate; see
+    :doc:`/code/participants/internationalization`.
 
 ``disable_browser_autotranslate`` *bool* |dlgr-icon|
     Disable browser autotranslate feature. Default: ``True``.
@@ -1075,6 +1208,32 @@ Config variables not to be set manually
     The value for ``mode`` is determined by the invoking command-line command
     and is set to ``debug`` for local development, ``sandbox`` for a remote
     test deployment, or ``live`` for a production deployment.
+
+``debug_ssh_app`` *bool* |psynet-icon|
+    Set on apps deployed by ``psynet debug ssh`` and
+    ``psynet performance-test ssh``. When ``psynet destroy ssh`` cannot
+    check such an app for pending async jobs, for example because the web
+    container is down, it destroys the app instead of refusing. When the
+    check runs, it asks as usual.
+
+``performance_test_local_packages`` *str* |psynet-icon|
+    Records which local PsyNet or Dallinger checkouts a performance-test
+    app was built with, so that later ``psynet performance-test ssh`` runs
+    build them in again.
+
+``prolific_completion_codes`` *str* |dlgr-icon|
+    The Prolific completion codes that the Prolific recruiter generated for
+    the study.
+
+``heroku_app_id_root`` *str* |dlgr-icon|
+    The experiment id Dallinger stores when a local debug session or a
+    remote deployment starts. Dallinger's MTurk recruiter, which PsyNet
+    does not support, uses it when turning off ``auto_recruit``.
+
+``heroku_auth_token`` *str* |dlgr-icon| |sensitive-icon|
+    The Heroku CLI token Dallinger stores on a Heroku deployment. SSH
+    deployments omit it. Dallinger's MTurk recruiter, which PsyNet does
+    not support, uses it when turning off ``auto_recruit``.
 
 ``psynet_version``, ``dallinger_version``, ``python_version``,
 ``soft_max_experiment_payment_email_sent`` and
