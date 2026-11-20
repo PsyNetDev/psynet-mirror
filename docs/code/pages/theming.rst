@@ -179,7 +179,9 @@ that no saturated color appears near the stimuli:
     )
 
 With ``color_mode`` set to ``dark`` or ``auto``, also override the dark
-palette, as described in the next section.
+palette, as described in the next section, and set gray
+``--psynet-page-bg`` and ``--psynet-chrome-bg`` there too: the dark
+backgrounds are blue-tinted as well.
 
 Named colors on trial progress stages (``red``, ``green``, ``blue``)
 follow ``--psynet-danger``, ``--psynet-success``, and ``--psynet-accent``

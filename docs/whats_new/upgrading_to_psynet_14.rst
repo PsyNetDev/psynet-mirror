@@ -153,10 +153,7 @@ in new ways. Search your JavaScript for ``WebSocket(``, ``/chat?``,
   :doc:`/code/multiplayer/realtime_interaction`.
 * Requests to ``/worker_complete`` and ``/worker_failed`` must send
   ``unique_id`` (``dallinger.identity.uniqueId``) as well as
-  ``participant_id``; without it they get a 403. An override of
-  ``Experiment.check_worker_status`` must return
-  ``super().check_worker_status(participant)`` where it would otherwise
-  return ``None``.
+  ``participant_id``; without it they get a 403.
 * ``/timeline/progress_and_reward`` reads ``uniqueId`` instead of
   ``participantId``.
 * The global functions ``disableButton()``, ``enableButton()`` and
@@ -961,14 +958,15 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
 
   Trial analysis such as ``analyze_recording`` and trial feedback already
   wait.
-* Uploaded recordings have a size limit, and a larger one fails its trial.
-  An audio recording may be as large as an uncompressed WAV lasting one and
+* With local asset storage and in-place timeline transitions (the
+  defaults), uploaded recordings have a size limit, and a larger one fails
+  its trial. An audio recording may be as large as an uncompressed WAV lasting one and
   a half times the control's ``duration`` plus 5 seconds, up to 128 MiB,
   so a page that stops recording on its own event should set ``duration``
   to the longest expected recording. Other recordings, such as video, may
   be up to 128 MiB.
-* A bot's ``bot_response_media`` must be a WAV file for audio and a WebM
-  file for video.
+* With the same defaults, a bot's ``bot_response_media`` must be a WAV
+  file for audio and a WebM file for video.
 
 19. Async jobs
 --------------
