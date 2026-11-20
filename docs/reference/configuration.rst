@@ -459,7 +459,7 @@ General
     name, when that command runs with ``mode = debug``. A Prolific
     ``recruiter`` is replaced by Dallinger's simulated ``devprolific``
     recruiter, and a mock recruiter is used as configured. Any other
-    recruiter is replaced by this value. ``psynet debug ssh`` and
+    supported recruiter is replaced by this value. ``psynet debug ssh`` and
     ``psynet debug heroku`` run with ``mode = sandbox`` and keep
     ``recruiter``. Default: ``HotAirRecruiter``.
 
@@ -482,8 +482,8 @@ General
 
         ``psynet debug local`` runs with ``mode = debug``. A Prolific
         recruiter is replaced by the simulated ``devprolific`` recruiter,
-        a mock recruiter stays as configured, and any other recruiter is
-        replaced by ``debug_recruiter`` (by default the HotAir recruiter,
+        a mock recruiter stays as configured, and any other supported
+        recruiter is replaced by ``debug_recruiter`` (by default the HotAir recruiter,
         ``hotair``). ``psynet debug ssh`` and ``psynet debug heroku`` run
         with ``mode = sandbox`` and keep the configured recruiter.
         PsyNet's testing commands may use Dallinger's BotRecruiter internally; this does not make ``recruiter = bots`` a
@@ -693,8 +693,8 @@ Prolific
 ``prolific_completion_config`` *str* |dlgr-icon|
     A JSON object of extra Prolific completion codes to register when the
     study is created, keyed by code type, each with its Prolific
-    ``actions`` and ``actor``. PsyNet generates the code strings and
-    completes submissions with its own researcher-actor codes
+    ``actions`` and ``actor``. The recruiter generates the code strings,
+    and PsyNet completes submissions with its own researcher-actor codes
     (``DEFAULT_RESEARCHER``, and ``UNSUCCESSFUL`` when
     ``prolific_pay_unsuccessful`` is on). While that option is ``True``,
     leave Prolific's ``FIXED_SCREEN_OUT_PAYMENT`` action off these codes:
@@ -1214,7 +1214,7 @@ Config variables not to be set manually
     ``psynet performance-test ssh``. When ``psynet destroy ssh`` cannot
     check such an app for pending async jobs, for example because the web
     container is down, it destroys the app instead of refusing. When the
-    check runs, it asks as usual.
+    check runs, pending jobs are handled as for any other app.
 
 ``performance_test_local_packages`` *str* |psynet-icon|
     Records which local PsyNet or Dallinger checkouts a performance-test
@@ -1227,8 +1227,9 @@ Config variables not to be set manually
 
 ``heroku_app_id_root`` *str* |dlgr-icon|
     The experiment id Dallinger stores when a local debug session or a
-    remote deployment starts. Dallinger's MTurk recruiter, which PsyNet
-    does not support, uses it when turning off ``auto_recruit``.
+    remote deployment starts. On Heroku deployments the dashboard uses it
+    to link to the app. Dallinger's MTurk recruiter, which PsyNet does not
+    support, uses it when turning off ``auto_recruit``.
 
 ``heroku_auth_token`` *str* |dlgr-icon| |sensitive-icon|
     The Heroku CLI token Dallinger stores on a Heroku deployment. SSH
