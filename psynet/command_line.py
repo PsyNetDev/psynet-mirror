@@ -5032,7 +5032,7 @@ def rpdb(ip, port):
 @click.argument("path")
 @require_exp_directory
 def load(path):
-    """Replace the local database with a provided zip file.
+    """Replace the local database with an export folder or zip file.
 
     Stop ``psynet debug`` and any other client using this database role first.
     The command refuses to drop tables while another client using the same

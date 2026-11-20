@@ -26,10 +26,10 @@ Also see: :doc:`/whats_new/psynet_14`,
    only as a short-term experiment-wide opt-out, then keep migrating so you
    can remove it.
 4. Work page by page.
-5. Even with no custom frontend, continue through steps 10–20
-   (recruiters, Leave and error pages, changed defaults, setup, deployment
-   files, participant failure, responses, groups, assets, exports, and
-   validation).
+5. Even with no custom frontend, continue through steps 9–21
+   (trial selection, recruiters, Leave and error pages, changed defaults,
+   setup, deployment files, participant failure, responses, groups, assets,
+   async jobs, exports, and validation).
 
 To find pages that can't load in place, run ``psynet debug local`` /
 ``psynet test local`` and read the traceback. Incompatible pages raise one
@@ -91,7 +91,10 @@ replays across in-place transitions (see :doc:`/developer/page_lifecycle`).
 Author-owned external templates should contain only markup. Embedded
 ``<script type="module">`` tags are not supported.
 
-PsyNet now serves jQuery 4.0.0 and jQuery UI 1.14.1. Search your JavaScript
+PsyNet now serves jQuery 4.0.0 and no longer bundles jQuery UI: a template
+that loaded ``/static/scripts/jquery-ui.min.js`` or
+``/static/css/jquery-ui.css`` must ship its own copy in the experiment's
+``static/`` directory. Search your JavaScript
 for jQuery utilities that jQuery 4 removed, such as ``$.trim``,
 ``$.isArray``, ``$.isFunction``, ``$.parseJSON``, ``$.type``,
 ``$.isNumeric`` and ``$.now``. Replace them with native JavaScript, for
@@ -127,6 +130,45 @@ use ``js_page_code`` / ``get_js_page_code()`` instead.
 
 See :doc:`/code/pages/custom_front_ends` for ``activate(context)``
 examples and cleanup guidance.
+
+Page code that talks to the server also needs to identify the participant
+in new ways. Search your JavaScript for ``WebSocket(``, ``/chat?``,
+``/worker_complete``, ``/worker_failed``, ``participantId``,
+``disableButton``, ``enableButton``, ``onNextButton``,
+``next-button-spinner`` and ``next-button-text``:
+
+* A websocket that names a participant must send their scope token, or
+  PsyNet refuses the connection. For a socket that the page opens by hand,
+  add it to the URL::
+
+      "/chat?channel=" + channel
+          + "&participant_id=" + dallinger.identity.participantId
+          + "&scope=" + encodeURIComponent(psynetTemplateData.websocketScope)
+
+  Dallinger's helpers take it as an option:
+  ``dallinger.openExperimentSocket({scope: psynetTemplateData.websocketScope})``,
+  and likewise ``openChatSocket``, ``joinRealtimeSession`` and
+  ``waitForRealtimeSession``. See
+  :doc:`/code/multiplayer/realtime_interaction`.
+* Requests to ``/worker_complete`` and ``/worker_failed`` must send
+  ``unique_id`` (``dallinger.identity.uniqueId``) as well as
+  ``participant_id``; without it they get a 403.
+* ``/timeline/progress_and_reward`` reads ``uniqueId`` instead of
+  ``participantId``.
+* The global functions ``disableButton()``, ``enableButton()`` and
+  ``onNextButton()`` are gone. Use
+  ``psynet.page.control.nextButton.disable()``, ``.enable()`` and
+  ``.handleClick()``, which exist on a ``ModularPage`` that shows PsyNet's
+  Next button (``show_next_button``). The
+  ``#next-button-spinner`` and ``#next-button-text`` elements are gone too;
+  target ``#next-button`` instead. Disabling the button no longer shows a
+  spinner.
+* A function exposed with ``expose_to_api`` that returns a string now sends
+  it as plain text, so HTML in it is no longer rendered. Return a Flask
+  ``Response`` for another content type.
+* Browsers refuse scripts and stylesheets served with the wrong content
+  type, so give your files standard extensions such as ``.js`` and
+  ``.css``.
 
 6. Migrate page variables to ``psynet.var``
 -------------------------------------------
@@ -297,6 +339,20 @@ Search custom trial makers for ``find_networks``, ``find_node``,
 PsyNet raises an actionable ``TypeError`` when a removed or wrong-paradigm
 hook is still overridden.
 
+Also search for ``n_all_trials``, ``n_alive_trials``, ``n_failed_trials``,
+``n_completed_trials``, ``n_all_nodes``, ``Info.query`` and ``.infos(``:
+
+* Networks no longer have the trial and node count attributes
+  ``n_all_trials``, ``n_alive_trials``, ``n_failed_trials``,
+  ``n_completed_trials`` and ``n_all_nodes``. Count with
+  ``psynet.trial.chain.count_completed_trials_for_network(network.id)`` or
+  ``count_viable_trials_for_node(node.id)``, or query ``Trial`` directly.
+  ``participant.module_state.n_completed_trials`` is unchanged.
+* Trials are no longer Dallinger ``Info`` objects, so ``Info.query`` and
+  ``node.infos()`` don't return them. Query ``Trial`` instead, and store
+  extra values in ``trial.var`` rather than ``property1`` to ``property5``
+  or ``details``.
+
 10. Recruiter configuration
 ---------------------------
 
@@ -325,17 +381,31 @@ For Prolific, search for ``prolific_enable_screen_out`` and
   completion code.
 * Remove ``prolific_enable_screen_out``; it is no longer a valid key.
 
+Deploying with the Lab Recruiter now requires ``lab_recruiter_auth_token``
+in ``~/.dallingerconfig``; see :ref:`lab-deployment-lab-recruiter`.
+
+A custom subclass of the Lucid recruiter must follow two signature
+changes: ``get_participant`` takes an ``assignment_id`` (the Lucid RID)
+instead of the request, and PsyNet calls ``terminate_participant`` with a
+new keyword-only argument, ``raise_on_error``, so an override must accept
+it and pass it on to ``super().terminate_participant``.
+
 11. Leave, ads, and error recovery
 ----------------------------------
 
 Search for ``show_abort_button``, ``show_termination_button``,
-``ad_requirements``, ``ad_payment_information``, ``error_page_content``,
+``min_accumulated_reward_for_abort``, ``ad_requirements``,
+``ad_payment_information``, ``error_page_content``,
 ``error_page_content__prolific``, ``approve_assignment``,
-``reject_assignment``, and ``ExecuteFrontEndJS(``.
+``reject_assignment``, ``check_unique_id``, ``error_page(`` and
+``ExecuteFrontEndJS(``.
 
 * Config and page flags: ``show_early_exit_button`` and
   ``min_reward_for_paid_early_exit``. The old page arguments still work
-  with a ``FutureWarning``.
+  with a ``FutureWarning``, but the old config keys ``show_abort_button``
+  and ``min_accumulated_reward_for_abort`` stop the experiment from
+  starting; rename them in ``config.txt``, and in ``Experiment.config`` if
+  you set them there.
 * DOM and routes: ``#early-exit-button``, ``/execute_early_exit_plan/``.
 * Participant field: ``Participant.early_exited``.
 * Remove ``Experiment.ad_requirements`` and
@@ -358,9 +428,16 @@ Search for ``show_abort_button``, ``show_termination_button``,
 * ``ExecuteFrontEndJS`` no longer takes ``message``. It shows a spinner::
 
       ExecuteFrontEndJS("psynet.finishAndGoToExit()")
+* ``Experiment.check_unique_id`` and ``Experiment.UniqueIdError`` are
+  removed; look the participant up with
+  ``Experiment.get_participant_from_unique_id``.
+* ``Experiment.error_page`` no longer takes ``compensate``, ``error_type``
+  or ``request_data``; omit them.
 
-Stale overrides fail a pre-deployment check or fail when used, with
-migration instructions in the error.
+Stale overrides of the removed hooks fail a pre-deployment check or fail
+when used, with migration instructions in the error. Calls to removed
+methods or with removed arguments raise an ordinary ``AttributeError`` or
+``TypeError``.
 
 12. Changed defaults and option markup
 --------------------------------------
@@ -478,6 +555,19 @@ PsyNet into it, and run ``psynet setup``:
 adds the boilerplate files, and starts a Git repository if the experiment
 lacks its own. PsyNet needs Python 3.11 or later and recommends 3.14.
 
+Before running ``psynet setup``, update the PsyNet pin in
+``requirements.txt``. Setup fills in only a bare ``psynet`` line, so a pin
+such as ``psynet==13.3.0`` stays in force. Pin PsyNet 14 with the
+``[experiment]`` extra, which deploying requires, for example
+``psynet[experiment]==14.0.0``; see :ref:`dependencies_updating_psynet`.
+Remote deployments stop while ``constraints.txt`` is out of date with
+``requirements.txt``, so rerun ``psynet setup`` after changing either.
+
+* The experiment directory is no longer added to ``sys.path``. Import
+  sibling modules with ``from . import my_module``, as in ``experiment.py``;
+  a bare ``import my_module`` fails. See
+  :ref:`experiment_python_modules`.
+
 * ``psynet setup --docker`` is removed; run ``psynet setup``, then
   ``psynet debug local --docker``.
 * ``psynet services ensure`` starts PostgreSQL and Redis in Docker. It runs
@@ -520,6 +610,18 @@ debug, test or deploy command stops once and lists them.
 * Review the list with ``dallinger deployment-files list``.
 * Commit your changes before a remote deployment; PsyNet records the commit
   instead of packaging the source code.
+* On SSH deployments, the experiment runs as the SSH account instead of
+  root, and the files deployed with it stay owned by root. Experiment code
+  can still create new files, but it can't edit deployed files in place, for
+  example to overwrite a file in ``static/``. Write files that change while
+  the experiment runs to a temporary directory (Python's ``tempfile``) or
+  store them as assets.
+* Responses send ``X-Frame-Options: SAMEORIGIN``, so other sites can't show
+  the experiment in a frame. An experiment that must be framed can remove
+  the header; see :ref:`deployment_security_headers`.
+* The experiment Dockerfile template is based on Debian 13 instead of
+  Debian 12. Run ``psynet scripts update`` to rewrite it, and check that the
+  Debian packages ``prepare_docker_image.sh`` installs still exist.
 
 See :doc:`upgrading_deployment_file_selection`.
 
@@ -536,15 +638,24 @@ upgrade a server.
 15. Failing participants and trial maker arguments
 --------------------------------------------------
 
-Search for ``def fail_participant``, ``data_check_failed``,
-``attention_check_failed`` and positional arguments to ``TrialMaker(`` or
-``NetworkTrialMaker(``.
+Search for ``def fail_participant``, ``def data_check``,
+``def attention_check``, ``data_check_failed``, ``attention_check_failed``,
+``def bonus``, ``def check_bonus`` and positional arguments to
+``TrialMaker(`` or ``NetworkTrialMaker(``.
 
 * Overriding ``Experiment.fail_participant`` raises an error. Call
   ``participant.fail()``, or register a ``ParticipantFailRoutine`` for code
   that must run when a participant fails.
-* Dallinger's ``data_check_failed`` and ``attention_check_failed`` only log
-  a warning; they no longer fail the participant.
+* Overriding Dallinger's ``data_check``, ``attention_check``,
+  ``data_check_failed`` or ``attention_check_failed`` stops the experiment
+  from launching, because PsyNet doesn't use them. Fail participants during
+  the timeline instead, with ``participant.fail()`` or an
+  ``UnsuccessfulEndPage``. Calls to ``data_check_failed`` and
+  ``attention_check_failed`` only log a warning.
+* Overriding ``Experiment.bonus`` or ``Experiment.check_bonus`` also stops
+  the launch. The recruiter decides payments: customize
+  ``decide_payment``, ``platform_base_for`` or ``total_owed`` on a recruiter
+  subclass; see :doc:`/code/participants/payment`.
 * ``TrialMaker`` and ``NetworkTrialMaker`` take keyword arguments only, like
   the other trial makers.
 * The ``fail_trials_on_premature_exit`` argument is ignored: when a
@@ -557,9 +668,9 @@ See :doc:`/code/trials/participant_and_trial_failure`.
 -------------------------------------
 
 Search for ``def process_response``, ``response_approved``,
-``render_partial_timeline_payload``, ``session.commit(``,
-``session.rollback(``, ``accumulate_answers``, and code in ``render()`` or
-templates that changes the database.
+``session.commit(``, ``session.rollback(``, ``reward_bonus``,
+``terminate_participant``, ``complete_participant``, ``accumulate_answers``,
+and code in ``render()`` or templates that changes the database.
 
 * With ``accumulate_answers=True``, ``participant.answer`` is now a dict from
   the start of the page maker or trial, and each page adds its answer when it
@@ -576,6 +687,13 @@ templates that changes the database.
   PsyNet commits for you. Use ``db.session.flush()`` where you need a new
   object's ``id``. Custom POST routes still commit themselves. See
   :ref:`Saving changes <saving_changes>`.
+
+* For the same reason, payment and recruitment-platform calls such as
+  ``experiment.pay_decided_bonus``, ``recruiter.reward_bonus`` and the
+  Lucid recruiter's ``terminate_participant`` and ``complete_participant``
+  raise ``RuntimeError`` in that code. Make them from an
+  ``AsyncCodeBlock``, which runs after the participant's changes are
+  saved. The Lab and Lucid recruiters' ``reward_bonus`` always raises.
 
 * ``participant.answer``, ``save_answer`` variables and ``on_complete`` are
   now updated only after ``validate`` accepts the response. A custom
@@ -594,6 +712,8 @@ templates that changes the database.
   Search for these controls with numeric ``choices``, for example
   ``PushButtonControl([1, 2, 3])``, and compare their answers to numbers:
   ``answer == 3``, not ``answer == "3"``. ``int(answer)`` keeps working.
+  Choices with the same text, such as ``1`` and ``"1"``, raise
+  ``ValueError``.
   Fixed bot answers, from ``bot_response`` or a ``get_bot_response`` method
   that returns a plain value, are not converted, and an answer that is not
   one of the choices is rejected (see the next item), so give them as numbers
@@ -761,6 +881,10 @@ subclasses, ``get_waiting_participants(``, ``SimpleGrouper(``,
           participant.var.team_id = None if team is None else team.id
 
       ParticipantFailRoutine("record_team", record_team)
+* Synchronized trial makers no longer wait at an ``init_participant``
+  barrier before their first trial, and their ``prepare_trial`` barrier is
+  now ``{id}__prepare_trial``, where ``{id}`` is the trial maker's ID.
+  Update tests or dashboards that look for these barriers.
 * A trial maker's ``sync_group_max_wait_time`` without ``sync_group_type``
   has no effect and now warns; remove it or set ``sync_group_type``.
 * In bot tests, ``advance_past_wait_pages(bots, max_iterations=...)`` is
@@ -806,6 +930,11 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
   but warn, and ``asset(..., cache=...)`` no longer has an effect.
 * Remove ``personal=``; it now raises an error. Treat exported media as
   potentially identifying.
+* Remove ``obfuscate=`` too; it raises ``TypeError``. The URLs of locally
+  stored assets (``/asset/<access_token>``) are already unguessable.
+* HTML, SVG, XML and JavaScript assets at ``/asset/<access_token>`` are sent
+  as downloads rather than opened in the browser. Serve such files that a
+  page must display from ``static/`` instead.
 * ``compile_nodes_from_directory`` reads media from ``static/``: move the
   files there from ``data/``, replace ``asset_label`` with ``url_key``, and
   pass ``self.definition["url"]`` to prompts.
@@ -831,6 +960,15 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
 
   Trial analysis such as ``analyze_recording`` and trial feedback already
   wait.
+* With local asset storage and in-place timeline transitions (the
+  defaults), uploaded recordings have a size limit, and a larger one fails
+  its trial. An audio recording may be as large as an uncompressed WAV lasting one and
+  a half times the control's ``duration`` plus 5 seconds, up to 128 MiB,
+  so a page that stops recording on its own event should set ``duration``
+  to the longest expected recording. Other recordings, such as video, may
+  be up to 128 MiB.
+* With the same defaults, a bot's ``bot_response_media`` must be a WAV
+  file for audio and a WebM file for video.
 
 19. Async jobs
 --------------
@@ -870,8 +1008,8 @@ See :doc:`/reference/api/async_job`.
 --------------------------------
 
 Search scripts and notes for ``--assets all``, ``--legacy``,
-``--anonymize``, ``psynet.zip``, ``database.zip``, ``extra_var`` and
-``export_classes_to_skip``.
+``--anonymize``, ``psynet.zip``, ``database.zip``, ``extra_var``,
+``claim_var``, ``export_classes_to_skip`` and ``min_group_size``.
 
 * ``psynet export`` writes one archive to ``exports/latest/`` and keeps
   earlier exports under ``exports/history/``. Table CSVs are in a flat
@@ -886,7 +1024,11 @@ Search scripts and notes for ``--assets all``, ``--legacy``,
   ``f``, and the ``type`` column of ``assets/manifest.csv`` uses the new
   asset class names.
 * ``extra_var`` is removed; read variables from the ``vars`` column with
-  ``psynet.export.unpack_json_column``.
+  ``psynet.export.unpack_json_column``. Delete ``@extra_var`` and
+  ``register_extra_var``, and write ``claim_var(name)`` without the
+  ``__extra_vars__`` dict, which now raises ``TypeError``.
+* ``export_classes_to_skip`` no longer has an effect; delete it.
+* The ``sync_group`` table's ``min_group_size`` column is now ``quorum``.
 * Search experiment code for ``copy_expert``, ``copy_from``, ``copy_to`` and
   ``COPY``. In a web request or background job, PostgreSQL ``COPY`` must run
   inside :func:`psynet.db.blocking_psycopg`, or psycopg2 raises
@@ -923,6 +1065,29 @@ Before the bots run, ``psynet test local`` checks static timeline pages
 against the in-place page requirements, so migration errors appear directly
 in the test failure. Pages created by a ``PageMaker`` are checked when they
 are first rendered.
+
+Bots in parallel tests (``--parallel`` or ``test_mode = "parallel"``) and in
+``psynet performance-test`` now run as threads that share one experiment
+instance, instead of a process each. Large performance tests spread the
+bots over several such processes (see
+:ref:`performance_testing_bot_processes`). Bot code that keeps state at
+module level or on ``self``, such as a global counter or ``random.seed()``,
+now affects every bot in the same process: store per-bot traits on
+``bot.var`` in ``initialize_bot``, and use a ``random.Random()`` instance.
+See :ref:`parallel_bot_tests`.
+
+Other test commands changed too:
+
+* ``psynet simulate`` is removed. Use ``psynet audit simulate``, which needs
+  an audit packet and writes its export to
+  ``audit/simulate/analysis/simulated_export/``; see
+  :doc:`/test/audit_reference`.
+* ``psynet performance-test ssh`` runs only on apps it deployed itself, so
+  you no longer run ``psynet debug ssh`` first. In Python,
+  ``PerformanceTester.run`` is replaced by
+  ``PerformanceSuite(tester).run(bot_counts)`` and
+  ``PerformanceSuite(tester).find_capacity()``; see
+  :doc:`/test/scalability`.
 
 Confirm the default in-place mode works (opt-out removed if possible), page
 modules activate without console errors, cleanup runs for persistent
