@@ -175,10 +175,11 @@ class GroupPrompt(Prompt):
                 "don't pass show_progress=True with answers."
             )
         for name, ids in (("answers", answers or {}), ("highlight", highlight or {})):
-            if not all(isinstance(id_, int) for id_ in ids):
+            wrong = [id_ for id_ in ids if type(id_) is not int]
+            if wrong:
                 raise TypeError(
                     f"GroupPrompt's {name} must be keyed by integer participant "
-                    f"IDs, not {sorted(map(repr, ids))}."
+                    f"IDs, not {', '.join(map(repr, wrong))}."
                 )
         if group is not _PARTICIPANTS_GROUP and group_type is not None:
             raise ValueError(
@@ -188,8 +189,8 @@ class GroupPrompt(Prompt):
             group = _participants_group(participant, group_type)
         self.group = group
         self.participant = participant
-        self.answers = answers
-        self.highlight = highlight or {}
+        self.answers = None if answers is None else dict(answers)
+        self.highlight = dict(highlight or {})
         self.note = note
         self.show_progress = show_progress
         self.live_ticks = show_progress

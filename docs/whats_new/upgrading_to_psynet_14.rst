@@ -588,7 +588,10 @@ templates that changes the database.
     original key: ``choices[participant.id]``.
   * If it stores string keys, such as ``{str(participant.id): choice}``, keep
     reading ``str(participant.id)``, or change the write and the read
-    together. ``int(key)`` while iterating works for both.
+    together. ``int(key)`` while iterating works for both. ``GroupPrompt``'s
+    ``answers`` and ``highlight`` take only integer participant IDs, so store
+    a dictionary you pass to them with integer keys, such as
+    ``{t.participant_id: t.answer for t in trials}``.
   * A dictionary with both string and non-string keys keeps its key types
     but not its key order: string keys come first.
   * JSON turns integer, float, boolean and ``None`` keys into strings, so
