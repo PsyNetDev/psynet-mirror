@@ -5857,6 +5857,11 @@ def test_run_local_prepares_before_legacy_cleanup():
         ),
         patch("psynet.command_line.kill_psynet_worker_processes"),
         patch("psynet.command_line._cleanup_exp_directory"),
+        # Parallel CI test sessions can hold the configured port.
+        patch(
+            "psynet.command_line._refuse_if_local_server_running",
+            lambda **kwargs: contextlib.nullcontext(),
+        ),
     ):
         _run_local(
             Mock(),
