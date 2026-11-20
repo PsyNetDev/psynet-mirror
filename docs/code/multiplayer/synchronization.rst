@@ -1792,7 +1792,10 @@ If a pass of ``waiting_logic`` has nothing to show, for example because a
 trial maker has no trial left for the participant or a
 :func:`~psynet.timeline.conditional` in it is false, PsyNet shows a
 waiting page ("Waiting for other participants…") for about 2 seconds
-and then runs the waiting logic again.
+and then runs the waiting logic again, so that trials that become
+available later are shown. Each of these waiting pages is a request and
+a stored response, so give the waiting logic enough to do for the
+expected wait. A release ends the waiting page at once.
 
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
@@ -1890,8 +1893,9 @@ How the pieces fit:
   finalized trials, as ``quiz_points`` does, rather than keeping a separate
   total. Don't use ``check_performance_at_end``, since interrupted trials
   count in performance checks (see above).
-- **No repeated questions.** A static trial maker gives each participant
-  each node at most once, unless you pass ``allow_repeated_nodes=True``.
+- **No repeated questions.** A static trial maker doesn't give a
+  participant a node they have answered again, unless you pass
+  ``allow_repeated_nodes=True``.
 - **Running out of questions.** Once a participant has answered every
   question, ``cue_trial`` finds no trial and shows nothing, so PsyNet shows
   its waiting page instead until the group forms (see above).
@@ -1901,7 +1905,9 @@ How the pieces fit:
   scored and paid, and the feedback page is skipped. A question left
   unanswered is failed with ``failed_reason="interrupted_by_release"``,
   earns nothing, and isn't counted as answered. Raise ``release_grace`` for
-  questions that take longer to answer.
+  questions that take longer to answer. Someone on a feedback page has
+  already been scored and paid; the page stays for the grace period unless
+  they move on.
 
 Time credit
 ~~~~~~~~~~~

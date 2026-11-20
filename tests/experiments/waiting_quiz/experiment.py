@@ -8,6 +8,8 @@ them its waiting page until the group forms. The documentation's recipe for
 quiz questions while waiting includes this file.
 """
 
+import json
+import math
 from typing import List
 
 import psynet.experiment
@@ -45,7 +47,7 @@ class QuizTrial(StaticTrial):
     def show_trial(self, experiment, participant):
         return ModularPage(
             "waiting_quiz",
-            f"While you wait ({quiz_points(participant)} points so far): "
+            f"While you wait ({points_text(participant)} so far): "
             f"{self.definition['question']}",
             PushButtonControl(self.definition["choices"]),
             time_estimate=7,
@@ -64,17 +66,24 @@ class QuizTrial(StaticTrial):
         else:
             verdict = f"Not quite: the answer is {self.definition['answer']}."
         return InfoPage(
-            f"{verdict} You have {quiz_points(participant)} points.", time_estimate=3
+            f"{verdict} You have {points_text(participant)}.", time_estimate=3
         )
 
 
 def answered_trials(participant):
     """Return the participant's answered quiz trials, leaving out interrupted ones."""
-    return QuizTrial.query.filter_by(participant_id=participant.id, finalized=True)
+    return QuizTrial.query.filter_by(
+        participant_id=participant.id, finalized=True, failed=False
+    )
 
 
 def quiz_points(participant):
     return int(sum(trial.score for trial in answered_trials(participant)))
+
+
+def points_text(participant):
+    points = quiz_points(participant)
+    return "1 point" if points == 1 else f"{points} points"
 
 
 quiz = StaticTrialMaker(
@@ -111,32 +120,64 @@ class Exp(psynet.experiment.Experiment):
         first, second, third = bots
 
         first.take_page()
-        for _ in QUESTIONS:
+        for answer_wrongly in [False, True, False]:
             assert first.current_page_label == "waiting_quiz"
-            first.take_page()
-            assert "Correct!" in first.current_page_text
+            if answer_wrongly:
+                first.take_page(response=_wrong_choice(first.current_page_text))
+                assert "Not quite: the answer is" in first.current_page_text
+            else:
+                first.take_page()
+                assert "Correct!" in first.current_page_text
             first.take_page()
         assert first.current_page_label == "wait"
 
         second.take_page()
-        assert second.current_page_label == "waiting_quiz"
         second.take_page()
         second.take_page()
-        assert "1 points so far" in second.current_page_text
+        assert "1 point so far" in second.current_page_text
 
-        # The third arrival completes the group and skips the quiz, and the
-        # second still gets the point for the question they were on.
+        # The third arrival completes the group and skips the quiz. The group
+        # forming ends the second's question unanswered, as their browser
+        # would once the grace period is over.
         third.take_page()
         assert third.current_page_text == "Your group is ready."
-        second.take_page()
+        _end_page_unanswered(second)
         first.take_page()
-        for bot, points in zip(bots, [3, 2, 0]):
+        for bot, points in zip(bots, [2, 1, 0]):
             assert bot.current_page_text == "Your group is ready."
             participant = Participant.query.get(bot.id)
             assert quiz_points(participant) == points
-            assert participant.performance_reward == points * REWARD_PER_POINT
+            assert math.isclose(
+                participant.performance_reward, points * REWARD_PER_POINT
+            )
+        interrupted = QuizTrial.query.filter_by(
+            participant_id=second.id, failed_reason="interrupted_by_release"
+        )
+        assert interrupted.count() == 1
 
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
         node_ids = [trial.node_id for trial in answered_trials(bot)]
         assert len(set(node_ids)) == len(node_ids)
+
+
+def _wrong_choice(page_text):
+    """Return a wrong choice for the question on the page."""
+    (question,) = [q for q in QUESTIONS if q["question"] in page_text]
+    return next(c for c in question["choices"] if c != question["answer"])
+
+
+def _end_page_unanswered(bot):
+    """Send the interrupt that a browser sends when a release ends a waiting page."""
+    payload = {
+        "participant_id": bot.id,
+        "page_uuid": bot.current_page_uuid,
+        "raw_answer": None,
+        "metadata": {"time_taken": 1},
+        "interrupted": True,
+    }
+    response = bot.http_session.post(
+        f"{bot.experiment.base_url}/response", data={"json": json.dumps(payload)}
+    )
+    assert response.json()["submission"] == "approved"
+    bot.refresh_status()

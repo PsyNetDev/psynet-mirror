@@ -906,13 +906,27 @@ class _ReadOnlyParticipantList(list):
 _EMPTY_WAITING_PASS_SECONDS = 2.0
 
 
-def _empty_waiting_pass_page():
-    """Return the wait page shown when a pass of ``waiting_logic`` shows no page."""
-    _p = get_translator(context=True)
-    return WaitPage(
-        wait_time=_EMPTY_WAITING_PASS_SECONDS,
-        content=_p("timeline_hold", "Waiting for other participants…"),
-    )
+# Participant.__dict__ key: page_count when each barrier's current pass of
+# waiting_logic began. A pass that shows no page starts and ends within one
+# Timeline.advance_page call, which stops at the first page, so the value
+# never needs to outlive the request.
+_WAITING_PASS_PAGE_COUNTS = "_psynet_waiting_pass_page_counts"
+
+
+class _EmptyWaitingPassPage(WaitPage):
+    """Short wait shown when a pass of ``waiting_logic`` shows no page.
+
+    It saves no answer, and a release ends it at once, without the
+    barrier's ``release_grace`` countdown (see :func:`waiting_page_config`).
+    """
+
+    def __init__(self):
+        _p = get_translator(context=True)
+        super().__init__(
+            wait_time=_EMPTY_WAITING_PASS_SECONDS,
+            content=_p("timeline_hold", "Waiting for other participants…"),
+            save_answer=False,
+        )
 
 
 def _expected_repetitions(waiting_logic, expected_wait, default):
@@ -1236,7 +1250,7 @@ class Barrier(EltCollection):
                         "waiting_pass_showed_no_page",
                         self._waiting_pass_showed_no_page,
                         logic_if_true=PageMaker(
-                            _empty_waiting_pass_page,
+                            _EmptyWaitingPassPage,
                             time_estimate=_EMPTY_WAITING_PASS_SECONDS,
                         ),
                         time_estimate=0,
@@ -1273,22 +1287,21 @@ class Barrier(EltCollection):
 
     def _start_waiting_pass(self, participant):
         """Remember how many pages the participant had seen when this pass of ``waiting_logic`` began."""
-        link = participant.active_barriers.get(self.id)
-        if link is not None:
-            link.waiting_pass_page_count = participant.page_count
+        counts = participant.__dict__.setdefault(_WAITING_PASS_PAGE_COUNTS, {})
+        counts[self.id] = participant.page_count
 
     def _waiting_pass_showed_no_page(self, participant):
         """Return whether this pass of ``waiting_logic`` showed no page and the participant still waits.
 
         Without a page, the waiting loop would repeat on the server until
         ``max_wait_time``; a short wait page lets the next poll try again.
+        A pass that began in an earlier request showed a page, so it has no
+        entry on this request's participant object.
         """
-        link = participant.active_barriers.get(self.id)
-        if (
-            link is None
-            or link.released
-            or link.waiting_pass_page_count != participant.page_count
-        ):
+        counts = participant.__dict__.get(_WAITING_PASS_PAGE_COUNTS, {})
+        if counts.pop(self.id, None) != participant.page_count:
+            return False
+        if self.can_participant_exit(participant):
             return False
         logger.debug(
             "Barrier '%s': waiting_logic showed participant %s no page; "
@@ -6469,9 +6482,6 @@ class ParticipantLinkBarrier(SQLBase, SQLMixin):
     # With explicit waiting_logic there is no hold record, so the link keeps
     # the max_wait_time deadline for the poller.
     deadline_at = Column(DateTime)
-    # Participant.page_count when the current pass of waiting_logic began, so
-    # a pass that shows no page can show a wait page instead of looping.
-    waiting_pass_page_count = Column(Integer)
     timeline_hold_id = Column(Integer, ForeignKey("timeline_hold.id"), index=True)
     timeline_hold = relationship("TimelineHoldRecord", backref="barrier_links")
 
@@ -6759,7 +6769,9 @@ def _interruptible_waiting_barrier(page, participant):
     Every such page may end, including a trial's; see :func:`_end_waiting_page`.
     """
     barrier = (getattr(page, "links", None) or {}).get("barrier")
-    if not isinstance(barrier, Barrier) or barrier.release_grace is None:
+    if not isinstance(barrier, Barrier):
+        return None
+    if barrier.release_grace is None and not isinstance(page, _EmptyWaitingPassPage):
         return None
     if participant.waiting_barrier_id != barrier.id:
         return None
@@ -6845,6 +6857,8 @@ def waiting_page_config(page, participant):
     if _is_timeline_hold(page):
         return None
     barrier = _interruptible_waiting_barrier(page, participant)
+    if isinstance(page, _EmptyWaitingPassPage) and barrier is not None:
+        return {"barrier_id": barrier.id, "release_grace_ms": 0, "release_notice": None}
     if barrier is not None:
         return {
             "barrier_id": barrier.id,

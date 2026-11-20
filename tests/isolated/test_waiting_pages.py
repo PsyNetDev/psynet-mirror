@@ -474,34 +474,51 @@ def test_waiting_pages_after_an_inner_barrier_belong_to_the_outer_one(
         exp.timeline = original
 
 
-@pytest.mark.parametrize("empty", ["list", "false_conditional"])
+@pytest.mark.parametrize(
+    "empty, release_grace",
+    [("list", 3), ("list", None), ("false_conditional", 3)],
+)
 @in_consents_experiment
 def test_waiting_logic_without_a_page_shows_a_wait_page(
-    in_experiment_directory, db_session, empty
+    in_experiment_directory, db_session, empty, release_grace
 ):
-    """A pass that shows no page shows a wait page, then runs the waiting logic again."""
+    """A pass that shows no page shows a wait page, then runs the waiting logic again.
+
+    A release ends the wait page at once, whatever the barrier's ``release_grace``.
+    """
     exp = get_experiment()
     original = exp.timeline
     ready = {"filler": False}
     filler = conditional("ready", lambda: ready["filler"], _filler("filler"))
-    _use_timeline(exp, [] if empty == "list" else filler, max_wait_time=5)
+    waiting_logic = [] if empty == "list" else filler
+    _use_timeline(exp, waiting_logic, max_wait_time=5, release_grace=release_grace)
     try:
         first, last = _working_participants(exp, 2)
         first_id, last_id = first.id, last.id
-        _json_timeline(exp, first)
+        waiting = _json_timeline(exp, first).get_json()["attributes"]["waiting"]
         assert isinstance(exp.timeline.get_current_elt(exp, first), WaitPage)
+        assert (waiting["release_grace_ms"], waiting["release_notice"]) == (0, None)
 
         ready["filler"] = True
+        first.answer = "earlier answer"
+        db.session.commit()
         _post_response(first)
         db.session.expire_all()
         first = Participant.query.get(first_id)
         expected = "wait" if empty == "list" else "filler"
         assert exp.timeline.get_current_elt(exp, first).label == expected
+        assert first.answer == "earlier answer"
 
         _json_timeline(exp, Participant.query.get(last_id))
         db.session.expire_all()
         last = Participant.query.get(last_id)
         assert exp.timeline.get_current_elt(exp, last).label == "after"
+
+        first = Participant.query.get(first_id)
+        _post_response(first, interrupted=True)
+        db.session.expire_all()
+        first = Participant.query.get(first_id)
+        assert exp.timeline.get_current_elt(exp, first).label == "after"
     finally:
         exp.timeline = original
 
