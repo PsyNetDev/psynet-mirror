@@ -849,9 +849,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     def sync_group(self) -> Optional[SyncGroup]:
         """
         The :class:`~psynet.sync.SyncGroup` that the trial was played in
-        (``sync_group_id``), or ``None`` if the trial is not synchronised or the
-        participant was in no group of that type when the trial was created.
-        The group is returned even if the participant has left it since.
+        (``sync_group_id``), or ``None`` for an ungrouped trial. The group is
+        returned even if the participant has left it, including a member
+        removed before their cue whose trial :meth:`cue` put in the round
+        that was under way. For current membership, use
+        ``participant.in_sync_group(...)``.
         """
         if self.sync_group_id is None:
             return None
@@ -4774,14 +4776,8 @@ def _cued_round(group, round_number, participant, make_definition, trial_class):
             return newest
         else:
             round_number = newest.number + 1
-    elif len(participant.module_states.get(module_id, [])) > 1:
-        raise RuntimeError(
-            f"Participant {participant.id} cued round {round_number} of "
-            f"'{group.group_type}' group {group.id} in module "
-            f"'{module_id}' again: the participant has run this module "
-            "before. A module whose cues pass round= can run only once "
-            "per participant; give each run of it its own module id."
-        )
+    else:
+        _check_first_run(participant, group.group_type, group.id, round_number)
     group_round, created = SyncGroupRound._find_or_create(
         group.id, module_id, round_number
     )
@@ -4790,6 +4786,22 @@ def _cued_round(group, round_number, participant, make_definition, trial_class):
     else:
         _check_named_round(group_round, group, participant, trial_class)
     return group_round
+
+
+def _check_first_run(participant, group_type, group_id, round_number):
+    """Raise a ``RuntimeError`` if ``participant`` names a round of a module they have run before.
+
+    The group's rounds for the module would be reused.
+    """
+    module_id = participant.module_id
+    if len(participant.module_states.get(module_id, [])) > 1:
+        raise RuntimeError(
+            f"Participant {participant.id} cued round {round_number} of "
+            f"'{group_type}' group {group_id} in module "
+            f"'{module_id}' again: the participant has run this module "
+            "before. A module whose cues pass round= can run only once "
+            "per participant; give each run of it its own module id."
+        )
 
 
 def _round_left_before_cue(participant, trial_class, round_number):
@@ -4802,11 +4814,12 @@ def _round_left_before_cue(participant, trial_class, round_number):
     they have no trial in it; with ``round_number`` it is that round, if it
     started before then, they have no trial of ``trial_class`` in it or in
     a later round, and, if it closed before they left, they have another
-    trial in it (see :func:`_check_named_round`). A barrier's
-    ``late_after`` can remove a member whose request hasn't reached the cue
-    yet, while the others play the round. Gives ``None`` for a participant
-    still in the group, never admitted to it, or whom a grouper let
-    continue without one since.
+    trial in it (see :func:`_check_named_round`). Naming such a round when
+    they have run the module before raises a ``RuntimeError``, as for a
+    member. A barrier's ``late_after`` can remove a member whose request
+    hasn't reached the cue yet, while the others play the round. Gives
+    ``None`` for a participant still in the group, never admitted to it, or
+    whom a grouper let continue without one since.
     """
     group_type = trial_class.sync_group_type
     if group_type in (participant.ungrouped_group_types or []):
@@ -4842,6 +4855,8 @@ def _round_left_before_cue(participant, trial_class, round_number):
         and not _has_trial_in(group_round, participant)
     ):
         return None
+    if round_number is not None:
+        _check_first_run(participant, group_type, link.sync_group_id, round_number)
     return group_round
 
 

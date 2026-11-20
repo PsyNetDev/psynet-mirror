@@ -790,6 +790,18 @@ def test_a_member_removed_before_their_cue_can_t_cue_a_round_before_one_played(
     assert leaver.current_trial.sync_group_round == 1
 
 
+@in_consents_experiment
+def test_a_member_removed_before_their_cue_can_t_name_a_round_on_a_second_run(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, first_trials = _start_a_second_run(exp)
+    cohort[0].active_sync_groups["pair"].remove_participant(cohort[1], reason="late")
+    with pytest.raises(RuntimeError, match="has run this module before"):
+        VoteTrial.cue({}, round=0)[0].consume(exp, cohort[1])
+    assert first_trials[0].group_round.trials == first_trials
+
+
 _voted = GroupBarrier("voted", group_type="pair", on_release=PairTrial.record_release)
 
 

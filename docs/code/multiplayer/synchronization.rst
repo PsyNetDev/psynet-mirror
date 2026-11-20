@@ -435,9 +435,12 @@ later:
   :data:`~psynet.sync.SyncGroupOutcome`);
 - ``None`` before either happens, and for a trial played without a group.
 
-The outcome is only written during the trial's pages (``show_trial``), while
+The outcome is written during the trial's pages (``show_trial``), while
 :attr:`~psynet.trial.main.Trial.complete` is ``False``, and only until a
-barrier there releases the group with the player in it. So ``"stayed"``
+barrier there releases the group with the player in it: the barrier writes
+``"stayed"``, and a removal during those pages writes its reason. The one
+exception is a member removed before their cue, whose trial gets the
+reason when the cue creates it (see below). So ``"stayed"``
 means the player took part in the round's first release, not that they
 stayed to the end of its pages: ``complete`` and
 ``participant.sync_group_removal_reason(group_type)`` say that. A player who
@@ -991,7 +994,9 @@ have joined, with their role and their removal reason as
 ``sync_group_outcome``, so ``group_round.trials`` and the export include
 them, whether the removal came just before or just after their trial
 started. Rounds that started after they left, or had already closed by
-then, are not theirs. Such a trial's
+then, are not theirs, except that, as for a member, a ``round=`` cue still
+joins a round that closed before they left if they already have a trial
+of another class in it. Such a trial's
 ``show_trial`` needs no ``GroupBarrier``; branch on
 ``participant.in_sync_group(...)`` rather than ``self.sync_group is None``
 to give a member who left the solo version.

@@ -324,7 +324,8 @@ Module("game", for_loop(
   before that, why they left, such as `"late"`), a partner's from their
   trial in `self.group_round.trials`, rather than from current group
   membership. Put the scoring barrier in `show_trial`, because only
-  barriers there write the outcome. A barrier's `waiting_screen` can take
+  barriers and removals there write the outcome, apart from a removal
+  before the cue, written when the cue creates the trial. A barrier's `waiting_screen` can take
   `trial` and `group_round` to show the round's state.
 
 ## Recruitment and platform design
