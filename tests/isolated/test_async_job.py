@@ -20,7 +20,8 @@ from psynet.command_line import psynet
 from psynet.db import forbid_commits
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.timeline import AsyncCodeBlock
-from psynet.trial.main import Trial, TrialNetwork, TrialNode
+from psynet.trial.main import Trial, TrialNetwork
+from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 from psynet.utils import get_authenticated_session
 
 
@@ -791,12 +792,17 @@ def test_cpu_time_summary_flags_jobs_that_contradict_their_declaration(
     assert [n[: len(note)] for n in notes] == ([note] if note else [])
 
 
-class _UndeclaredAnalysisTrial(Trial):
+class _UndeclaredAnalysisTrial(StaticTrial):
     def async_post_trial(self):
         pass
 
 
-class _UndeclaredSynthesisNode(TrialNode):
+class _SkippedAnalysisTrial(_UndeclaredAnalysisTrial):
+    run_async_post_trial = False
+    time_estimate = 1
+
+
+class _UndeclaredSynthesisNode(StaticNode):
     def async_on_deploy(self):
         pass
 
@@ -806,15 +812,24 @@ class _UndeclaredGrowthNetwork(TrialNetwork):
         pass
 
 
+def _static_maker(trial_class=StaticTrial, node_class=StaticNode):
+    return StaticTrialMaker(
+        id_="cpu_heavy_check",
+        trial_class=trial_class,
+        nodes=[node_class(definition={})],
+        expected_trials_per_participant=1,
+    )
+
+
 def test_async_jobs_must_say_whether_they_are_cpu_heavy():
     with pytest.raises(TypeError, match="WorkerAsyncJob needs cpu_heavy"):
         WorkerAsyncJob(do_nothing)
     with pytest.raises(TypeError, match="AsyncCodeBlock needs cpu_heavy"):
         AsyncCodeBlock(do_nothing, wait=False)
     with pytest.raises(TypeError, match="_UndeclaredAnalysisTrial, which defines"):
-        _UndeclaredAnalysisTrial._check_async_post_trial_cpu_heavy()
-    Trial._check_async_post_trial_cpu_heavy()
+        _static_maker(trial_class=_UndeclaredAnalysisTrial)
+    _static_maker(trial_class=_SkippedAnalysisTrial)
     with pytest.raises(TypeError, match="async_on_deploy_cpu_heavy"):
-        _UndeclaredSynthesisNode._check_async_on_deploy_cpu_heavy()
+        _static_maker(node_class=_UndeclaredSynthesisNode)
     with pytest.raises(TypeError, match="async_post_grow_network_cpu_heavy"):
         _UndeclaredGrowthNetwork._check_async_post_grow_network_cpu_heavy()

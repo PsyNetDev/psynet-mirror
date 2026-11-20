@@ -43,7 +43,7 @@ To override the choice:
     class MyTrial(StaticTrial):
         async_post_trial_priority = "low"
 
-    WorkerAsyncJob(refit_model, priority="low", cpu_heavy=True).enqueue()
+    WorkerAsyncJob(send_reminder_email, priority="low", cpu_heavy=False).enqueue()
 
 Priority only decides which waiting job starts next; a running job is never
 interrupted. If every worker is busy with long low-priority jobs, a

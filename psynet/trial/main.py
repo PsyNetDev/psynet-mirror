@@ -1530,8 +1530,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 f"{cls.__name__}.cue() takes round= as a non-negative integer, "
                 f"got {round!r}."
             )
+        cls._check_async_post_trial_cpu_heavy()
 
         if isinstance(definition, ChainNode):
+            type(definition)._check_async_on_deploy_cpu_heavy()
             if cls.sync_group_type is not None:
                 raise TypeError(
                     f"{cls.__name__} has a sync_group_type, so cue() puts the "

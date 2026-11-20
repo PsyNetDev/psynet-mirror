@@ -109,7 +109,7 @@ def _queue_name(priority, cpu_heavy):
     Without CPU workers, ordinary workers take ``cpu`` jobs after all their
     other queues, so a CPU-heavy job keeps its priority's queue then.
     """
-    from dallinger.config import get_config
+    from psynet.utils import get_config
 
     if cpu_heavy and get_config().get("cpu_processes_per_worker", 0) > 0:
         return "cpu"
@@ -740,7 +740,7 @@ def _get_cpu_time_summary():
                 cls.time_taken != None,  # noqa: E711
             )
             .group_by(cls.label, cls.priority, *group_by)
-            .order_by(cls.label, cls.priority)
+            .order_by(cls.label, cls.priority, *group_by)
             .all()
         )
         summary += [dict(zip(keys, (runs_in, *row))) for row in rows]

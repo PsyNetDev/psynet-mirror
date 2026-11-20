@@ -594,7 +594,8 @@ def _worker_demand(result):
     CPU time includes its neighbours', so ``c / max(R, 1)`` is its own share.
     CPU-heavy jobs move to one slot each, needing ``R`` processes; others
     keep their slots, with ``max(R / slots, c × min(R, 1))`` for both. Busy
-    is at most 1.
+    is at most 1. With CPU workers, CPU-heavy jobs belong there instead, so
+    the worker processes keep their slots.
     """
     load, workers = result.worker_load or {}, result.n_rq_workers
     steady_s = result.steady_state_s
@@ -603,7 +604,8 @@ def _worker_demand(result):
     running = load["busy_s"] / (workers * steady_s)
     slots = (result.n_rq_job_slots or 0) // workers
     cpu = load.get("cpu_share") or 0
-    if slots <= 1 or cpu / max(running, 1) >= _CPU_HEAVY_RATIO:
+    cpu_heavy = cpu / max(running, 1) >= _CPU_HEAVY_RATIO
+    if slots <= 1 or (cpu_heavy and not result.n_cpu_workers):
         return min(running, 1), running, 1
     busy = max(running / slots, cpu * min(running, 1))
     return min(busy, 1), busy, slots
@@ -646,9 +648,9 @@ def workers_falling_behind(result):
         return None
     startup, steady = result.startup_phase, result.steady_state_phase
     reasons = []
-    for utilization, were in [
-        (worker_utilization(result), _were(result.n_rq_workers, "worker process")),
-        (cpu_worker_utilization(result), _were(result.n_cpu_workers, "CPU worker")),
+    for utilization, group in [
+        (worker_utilization(result), were(result.n_rq_workers, "worker process")),
+        (cpu_worker_utilization(result), were(result.n_cpu_workers, "CPU worker")),
     ]:
         if utilization is not None and utilization > MAX_WORKER_UTILIZATION:
             busy = (
@@ -656,7 +658,7 @@ def workers_falling_behind(result):
                 if utilization >= SATURATED_UTILIZATION
                 else f"{utilization:.0%} of the time"
             )
-            reasons.append(f"the {were} busy {busy}")
+            reasons.append(f"the {group} busy {busy}")
     start = ((startup.get("queue_waits") or {}).get("low") or {}).get("backlog") or 0
     end = ((steady.get("queue_waits") or {}).get("low") or {}).get("backlog") or 0
     if (
@@ -667,7 +669,15 @@ def workers_falling_behind(result):
     return " and ".join(reasons) or None
 
 
-def _were(n, noun):
+def steady_worker_jobs(result):
+    """Return the worker jobs, including CPU workers', that finished in the steady state of ``result``."""
+    return sum(
+        (load or {}).get("jobs") or 0
+        for load in (result.worker_load, result.cpu_worker_load)
+    )
+
+
+def were(n, noun):
     """Return e.g. ``3 worker processes were`` or ``1 CPU worker was``."""
     plural = "es" if noun.endswith("s") else "s"
     return f"{n} {noun}{plural + ' were' if n != 1 else ' was'}"
@@ -731,7 +741,7 @@ def recommend_workers(result, n_participants):
     """
     load, workers = result.worker_load or {}, result.n_rq_workers
     demand = _worker_demand(result)
-    jobs = (load.get("jobs") or 0) + ((result.cpu_worker_load or {}).get("jobs") or 0)
+    jobs = steady_worker_jobs(result)
     if demand is None or jobs < _MIN_STEADY_WORKER_JOBS or not result.n_bots:
         test = describe_test(result)
         if not workers:

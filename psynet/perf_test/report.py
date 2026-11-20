@@ -59,10 +59,12 @@ from psynet.perf_test.results import (
     recommend_workers,
     retry_bot_count,
     start_rate_limits,
+    steady_worker_jobs,
     tester_lagged,
     top_counts,
     wait_timeout_cause,
     wait_timeout_reasons,
+    were,
     worker_utilization,
     workers_falling_behind,
 )
@@ -928,7 +930,7 @@ def _worker_lines(outcome, confirmation, capacity_result, limits, confirmation_p
     n = cap or measured.n_bots
     advice = recommend_workers(measured, n)
     behind = workers_falling_behind(measured)
-    ran_jobs = (measured.worker_load or {}).get("jobs")
+    ran_jobs = steady_worker_jobs(measured)
     if not (queue_bound or behind or (ran_jobs and (cap or not advice.skipped))):
         return []
     text = []
@@ -997,16 +999,18 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
     else:
         busy = f"{advice.utilization:.0%} of the time"
     if advice.cpu_bound:
-        n_cpu = result.n_cpu_workers
-        were = f"{n_cpu} CPU worker{'s were' if n_cpu != 1 else ' was'}"
+        group = were(result.n_cpu_workers, "CPU worker")
     else:
-        were = f"{ran} {'were' if workers != 1 else 'was'}"
-    measured = [f"In {test}, the {were} busy {busy}."] if test else []
+        group = were(workers, "worker process")
+    measured = [f"In {test}, the {group} busy {busy}."] if test else []
     implied = f"would be about {advice.implied_utilization:.0%} busy"
+    cores_left = (result.server_cores or 0) - CORES_FOR_OTHERS
     server = (
-        f"{result.server_cores}-core server has only {processes} cores left "
+        f"{result.server_cores}-core server has only {cores_left} cores left "
         f"after {CORES_FOR_OTHERS} for the web server and database"
     )
+    if cores_left != processes:
+        server += f", room for {processes} worker processes with their CPU workers"
     # Only the cores keep the count below the test's, so no larger server is needed yet.
     trimmed = advice.demand <= processes < workers
     if advice.demand > processes:

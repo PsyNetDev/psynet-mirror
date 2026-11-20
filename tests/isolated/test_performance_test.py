@@ -1425,6 +1425,12 @@ def _with_cpu_workers(result, n_cpu, busy):
             288,
             dict(processes=7, demand=10, reason="cores", cpu_bound=True),
         ),
+        # With CPU workers, busy ordinary jobs keep their greenlets.
+        (
+            _with_cpu_workers(_tapping_result(40, 2, 1.5, slots=20), 2, 0.3),
+            40,
+            dict(greenlets=20),
+        ),
     ],
 )
 def test_recommend_workers(result, n, expected):
@@ -1509,6 +1515,27 @@ def test_recommend_workers(result, n, expected):
             [_with_cpu_workers(_tapping_result(96, 10, 0.1), 10, 0.55)],
             "In the 96-bot test, the 10 CPU workers were busy 55% of the time.",
             "worker processes were busy",
+        ),
+        # Every worker job was CPU-heavy.
+        (
+            [
+                _with_cpu_workers(
+                    _tapping_result(
+                        96, 10, 0.1, worker_load=dict(jobs=0, busy_s=0, cpu_share=0)
+                    ),
+                    10,
+                    0.55,
+                )
+            ],
+            "In the 96-bot test, the 10 CPU workers were busy 55% of the time.",
+            "No estimate of worker_processes",
+        ),
+        # Two CPU workers per process halve the worker processes the cores allow.
+        (
+            [_with_cpu_workers(_tapping_result(96, 4, 0.1, server_cores=6), 8, 0.55)],
+            "6-core server has only 4 cores left after 2 for the web server and "
+            "database, room for 2 worker processes with their CPU workers",
+            "only 2 cores left",
         ),
     ],
 )

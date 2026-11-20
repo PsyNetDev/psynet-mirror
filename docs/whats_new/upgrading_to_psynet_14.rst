@@ -773,7 +773,8 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
 
 Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
 ``LocalAsyncProcess``, ``async_processes``, ``process_id``,
-``AsyncCodeBlock(``, ``WorkerAsyncJob(`` and ``def async_post_trial``.
+``AsyncCodeBlock(``, ``WorkerAsyncJob(``, ``def async_post_trial``,
+``def async_post_grow_network`` and ``def async_on_deploy``.
 
 * Async processes are now called async jobs, and live in
   ``psynet.async_job``: ``AsyncJob``, ``WorkerAsyncJob`` and
