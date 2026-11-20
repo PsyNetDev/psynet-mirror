@@ -754,8 +754,9 @@ def _format_cpu_time_summary(rows):
     A row counts as CPU-heavy when its mean CPU time is at least
     ``_CPU_HEAVY_RATIO`` of its mean wall time; such jobs need a CPU core
     each while they run, whereas I/O-bound jobs mostly wait. The "Runs in"
-    column says whether that core is in a worker or the web process. Web
-    jobs have no priority and show ``-``. Notes after the table point out
+    column says whether that core is in a worker or the web process, and
+    "Declared" gives a worker job's ``cpu_heavy`` declaration. Web jobs have
+    neither and show ``-``. Notes after the table point out
     worker jobs whose measurements contradict their ``cpu_heavy``
     declaration: CPU-heavy ones declared ``False`` that ran for at least
     ``_STALL_WARNING_S`` of CPU once, and ones declared ``True`` that are
@@ -767,6 +768,7 @@ def _format_cpu_time_summary(rows):
         "Runs in",
         "Label",
         "Priority",
+        "Declared",
         "Count",
         "Mean CPU (s)",
         "Max CPU (s)",
@@ -800,6 +802,7 @@ def _format_cpu_time_summary(rows):
                 row["runs_in"],
                 row["label"],
                 row["priority"] or "-",
+                {True: "CPU-heavy", False: "waits"}.get(declared, "-"),
                 str(row["count"]),
                 f"{row['mean_cpu']:.3f}",
                 f"{row['max_cpu']:.3f}",
@@ -813,8 +816,8 @@ def _format_cpu_time_summary(rows):
         "of mean wall time):"
     ]
     for line in table:
-        cells = [cell.ljust(width) for cell, width in zip(line[:3], widths[:3])]
-        cells += [cell.rjust(width) for cell, width in zip(line[3:], widths[3:])]
+        cells = [cell.ljust(width) for cell, width in zip(line[:4], widths[:4])]
+        cells += [cell.rjust(width) for cell, width in zip(line[4:], widths[4:])]
         lines.append("  " + "  ".join(cells))
     return "\n".join(lines + notes)
 

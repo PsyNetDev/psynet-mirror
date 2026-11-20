@@ -1005,19 +1005,26 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
     measured = [f"In {test}, the {group} busy {busy}."] if test else []
     if advice.cpu_bound:
         implied = (
-            f"would keep their CPU workers about {advice.implied_utilization:.0%} busy"
+            f"would keep {'their' if processes != 1 else 'its'} CPU workers "
+            f"about {advice.implied_utilization:.0%} busy"
         )
     else:
         implied = f"would be about {advice.implied_utilization:.0%} busy"
     cores_left = max(0, (result.server_cores or 0) - CORES_FOR_OTHERS)
+    left = (
+        f"only {cores_left} core{'s' if cores_left != 1 else ''} left"
+        if cores_left
+        else "no cores left"
+    )
     server = (
-        f"{result.server_cores}-core server has only {cores_left} cores left "
+        f"{result.server_cores}-core server has {left} "
         f"after {CORES_FOR_OTHERS} for the web server and database"
     )
     if result.n_cpu_workers and cores_left > processes:
         server += (
-            f", room for {processes} worker process{'es' if processes != 1 else ''} "
-            "with their CPU workers"
+            f", room for {processes} worker process"
+            + ("es with their" if processes != 1 else " with its")
+            + " CPU workers"
         )
     # Only the cores keep the count below the test's, so no larger server is needed yet.
     trimmed = advice.demand <= processes < workers
@@ -1043,7 +1050,10 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
     if advice.demand < workers:
         keep += f" (the load needs about {advice.demand})"
     why = {
-        "estimate": [*measured, f"{processes} worker processes {implied}."],
+        "estimate": [
+            *measured,
+            f"{processes} worker process{'es' if processes != 1 else ''} {implied}.",
+        ],
         "current": [*measured, f"{keep}."],
         "behind": [
             *measured,
@@ -1059,7 +1069,7 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
     elif above_cap and (advice.reason != "cores" or trimmed):
         why.append(f"To go above {n:,}, use a larger server or cheaper jobs.")
     notes = ["minimum"] * (advice.reason == "minimum")
-    notes += ["all the cores left"] * advice.all_cores
+    notes += ["all the cores left"] * (advice.all_cores and cores_left >= processes)
     setting = (
         f"worker_processes {'>=' if advice.reason == 'minimum' else '='} {processes}"
     )

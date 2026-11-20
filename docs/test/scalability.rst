@@ -21,8 +21,8 @@ async job used, grouped by where the job runs, label,
 .. code-block:: text
 
     Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
-      Runs in  Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
-      worker   AsyncCodeBlock  high          2         0.027        0.052          0.085         no
+      Runs in  Label           Priority  Declared  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
+      worker   AsyncCodeBlock  high      waits         2         0.027        0.052          0.085         no
 
 ``worker`` rows are :class:`~psynet.async_job.WorkerAsyncJob` jobs, which run
 in worker processes. ``web`` rows are :class:`~psynet.async_job.LocalAsyncJob`

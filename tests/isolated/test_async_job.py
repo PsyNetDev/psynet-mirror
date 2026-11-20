@@ -735,6 +735,7 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
                 "runs_in": "worker",
                 "label": "analyse",
                 "priority": "high",
+                "cpu_heavy": True,
                 "count": 3,
                 "mean_cpu": 0.8,
                 "max_cpu": 1.2,
@@ -756,13 +757,14 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
         "worker",
         "analyse",
         "high",
+        "CPU-heavy",
         "3",
         "0.800",
         "1.200",
         "1.000",
         "yes",
     ]
-    assert rows["upload"][:3] == ["web", "upload", "-"]
+    assert rows["upload"][:4] == ["web", "upload", "-", "-"]
     assert rows["upload"][-1] == "no"
 
     assert _format_cpu_time_summary([]) == "No async jobs finished."

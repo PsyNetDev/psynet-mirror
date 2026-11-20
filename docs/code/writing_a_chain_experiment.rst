@@ -62,7 +62,8 @@ like a static trial:
 If a node needs new media, for example a sound synthesized from the previous
 participant's answer, override the node's ``async_on_deploy`` method and call
 ``self.add_assets`` there. It runs in the background after the node is
-created, and participants cannot visit the node until it finishes.
+created, and participants cannot visit the node until it finishes. Also set
+``async_on_deploy_cpu_heavy`` on the node class (see :ref:`async_job_cpu_heavy`).
 
 Within and across participants
 ------------------------------

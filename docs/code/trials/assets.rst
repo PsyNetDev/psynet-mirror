@@ -112,7 +112,9 @@ Assets for new chain nodes
 In chain experiments such as imitation chains, a new node may need a new
 file. Override the node's ``async_on_deploy`` method, which runs in the
 background after the node is created, and deposit the asset with the node as
-its parent. From :class:`~psynet.trial.record.MediaImitationChainNode`:
+its parent, and set ``async_on_deploy_cpu_heavy`` on the node class (see
+:ref:`async_job_cpu_heavy`). From
+:class:`~psynet.trial.record.MediaImitationChainNode`:
 
 .. literalinclude:: ../../../psynet/trial/record.py
    :pyobject: MediaImitationChainNode.async_on_deploy

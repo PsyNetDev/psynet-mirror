@@ -92,7 +92,7 @@ in the JSON) is only reported, but if the summary warns that it grew during
 a steady state, the workers can't keep up long-term. That check uses the
 validation test if there is one, otherwise the largest passing test or the
 first failing one. For CPU-heavy jobs,
-also work out worker throughput: one worker process keeps up with about
+also work out worker throughput: one CPU worker keeps up with about
 (session length) ÷ (job CPU time × jobs per participant) participants, with
 `cpu_avg` from `async_job_stats`. If the queue fails the next count, check
 that the CPU-heavy jobs are marked `cpu_heavy` (so they run in CPU workers)
