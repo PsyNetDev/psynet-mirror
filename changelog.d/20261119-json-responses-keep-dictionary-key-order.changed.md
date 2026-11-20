@@ -1,0 +1,1 @@
+Flask's JSON responses, such as `jsonify` and dictionaries returned from routes, and Jinja's `tojson` filter now keep the order of dictionary keys instead of sorting them. Sorting raised `TypeError` for dictionaries with keys that cannot be compared, such as `{12: "rock", "round": 1}`.
