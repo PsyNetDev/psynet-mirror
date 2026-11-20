@@ -735,13 +735,59 @@ def test_a_member_removed_before_their_cue_skips_a_round_finished_without_them(
     exp = get_experiment()
     cohort, newcomer, pair = _newcomer_in_round_0(exp, round_closed=True)
     pair.remove_participant(newcomer, reason="late")
-    with pytest.raises(RuntimeError, match="sync_group_optional"):
-        _cue_round(exp, newcomer, 0)
+    for cue in [PairTrial.cue({"target": 0}, round=0), PairTrial.cue({"target": 0})]:
+        with pytest.raises(RuntimeError, match="sync_group_optional"):
+            cue[0].consume(exp, newcomer)
     monkeypatch.setattr(PairTrial, "sync_group_optional", True)
     assert _cue_round(exp, newcomer, 0).group_round is None
     assert cohort[0].current_trial.group_round.trials == [
         p.current_trial for p in cohort
     ]
+
+
+@in_consents_experiment
+def test_a_member_removed_before_their_cue_skips_rounds_they_have_played(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    stayer, leaver = cohort
+    pair = stayer.active_sync_groups["pair"]
+    for participant in cohort:
+        PairTrial.cue({"target": 0})[0].consume(exp, participant)
+    pair.remove_participant(leaver, reason="late")
+    _arrive(exp, GroupBarrier("answered", group_type="pair"), [stayer])
+    VoteTrial.cue({"target": 1})[0].consume(exp, stayer)
+
+    # As for a member, an automatic cue of another class doesn't join a
+    # round they have a trial in.
+    with pytest.raises(RuntimeError, match="sync_group_optional"):
+        VoteTrial.cue({"target": 1})[0].consume(exp, leaver)
+    monkeypatch.setattr(VoteTrial, "sync_group_optional", True)
+    VoteTrial.cue({"target": 1})[0].consume(exp, leaver)
+    assert leaver.current_trial.group_round is None
+    assert len(stayer.current_trial.group_round.trials) == 1
+
+
+@in_consents_experiment
+def test_a_member_removed_before_their_cue_can_t_cue_a_round_before_one_played(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    stayer, leaver = cohort
+    pair = stayer.active_sync_groups["pair"]
+    for i in [0, 1]:
+        for participant in cohort:
+            _cue_round(exp, participant, i)
+        if i == 0:
+            _arrive(exp, GroupBarrier("answered", group_type="pair"), cohort)
+    pair.remove_participant(leaver, reason="late")
+
+    with pytest.raises(RuntimeError, match="sync_group_optional"):
+        VoteTrial.cue({"target": 0}, round=0)[0].consume(exp, leaver)
+    VoteTrial.cue({"target": 1}, round=1)[0].consume(exp, leaver)
+    assert leaver.current_trial.sync_group_round == 1
 
 
 _voted = GroupBarrier("voted", group_type="pair", on_release=PairTrial.record_release)

@@ -4796,15 +4796,17 @@ def _round_left_before_cue(participant, trial_class, round_number):
     """Return the round that ``participant`` left their group in before cueing ``trial_class`` there, or ``None``.
 
     That is the cued round in the module of their latest group of the
-    class's ``sync_group_type`` that was under way when they left: the
-    newest one that started before then (or the one numbered
-    ``round_number``, if it started before then), unless it had already
-    closed by then or they have a trial of ``trial_class`` in it. As for a
-    member, a named round that closed before they left is still joined if
-    they have another trial in it. A barrier's ``late_after`` can remove a
-    member whose request hasn't reached the cue yet, while the others play
-    the round. Gives ``None`` for a participant still in the group, never
-    admitted to it, or whom a grouper let continue without one since.
+    class's ``sync_group_type`` that was under way when they left, unless
+    it had already closed by then. As in :func:`_cued_round`, without
+    ``round_number`` it is the newest round that started before then, if
+    they have no trial in it; with ``round_number`` it is that round, if it
+    started before then, they have no trial of ``trial_class`` in it or in
+    a later round, and, if it closed before they left, they have another
+    trial in it (see :func:`_check_named_round`). A barrier's
+    ``late_after`` can remove a member whose request hasn't reached the cue
+    yet, while the others play the round. Gives ``None`` for a participant
+    still in the group, never admitted to it, or whom a grouper let
+    continue without one since.
     """
     group_type = trial_class.sync_group_type
     if group_type in (participant.ungrouped_group_types or []):
@@ -4821,17 +4823,25 @@ def _round_left_before_cue(participant, trial_class, round_number):
         rounds = rounds.filter(SyncGroupRound.creation_time <= link.removal_time)
     else:
         rounds = rounds.filter_by(number=round_number)
-    group_round = rounds.order_by(SyncGroupRound.number.desc()).first()
-    if (
-        group_round is None
-        or group_round.creation_time > link.removal_time
-        or _has_trial_in(group_round, participant, trial_class)
-    ):
+    group_round = (
+        rounds.order_by(SyncGroupRound.number.desc()).populate_existing().first()
+    )
+    if group_round is None or group_round.creation_time > link.removal_time:
+        return None
+    if round_number is None:
+        if _has_trial_in(group_round, participant):
+            return None
+    elif _has_trial_in(
+        group_round, participant, trial_class
+    ) or _has_trial_in_later_round(group_round, participant):
         return None
     closed_at = group_round.closed_at
-    if closed_at is not None and closed_at < link.removal_time:
-        if round_number is None or not _has_trial_in(group_round, participant):
-            return None
+    if (
+        closed_at is not None
+        and closed_at < link.removal_time
+        and not _has_trial_in(group_round, participant)
+    ):
+        return None
     return group_round
 
 
@@ -4843,6 +4853,20 @@ def _has_trial_in(group_round, participant, trial_class=None):
     return query.first() is not None
 
 
+def _has_trial_in_later_round(group_round, participant):
+    """Return whether ``participant`` has a trial in a cued round of the group in the module that started after ``group_round``."""
+    later = Trial.query.join(
+        SyncGroupRound, Trial.sync_group_round_id == SyncGroupRound.id
+    ).filter(
+        Trial.participant_id == participant.id,
+        SyncGroupRound.module_id == group_round.module_id,
+        SyncGroupRound.sync_group_id == group_round.sync_group_id,
+        SyncGroupRound.trial_maker_id.is_(None),
+        SyncGroupRound.id > group_round.id,
+    )
+    return later.first() is not None
+
+
 def _check_named_round(group_round, group, participant, trial_class):
     """Check that ``participant`` may cue ``group_round``, an existing round of ``group``.
 
@@ -4851,16 +4875,7 @@ def _check_named_round(group_round, group, participant, trial_class):
     started after it, or if a barrier closed the round before they had any
     trial in it.
     """
-    later = Trial.query.join(
-        SyncGroupRound, Trial.sync_group_round_id == SyncGroupRound.id
-    ).filter(
-        Trial.participant_id == participant.id,
-        SyncGroupRound.module_id == group_round.module_id,
-        SyncGroupRound.sync_group_id == group.id,
-        SyncGroupRound.trial_maker_id.is_(None),
-        SyncGroupRound.id > group_round.id,
-    )
-    if later.first() is not None or _has_trial_in(
+    if _has_trial_in_later_round(group_round, participant) or _has_trial_in(
         group_round, participant, trial_class
     ):
         raise RuntimeError(
