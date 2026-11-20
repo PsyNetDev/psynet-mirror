@@ -2050,7 +2050,7 @@ def test_by_default_a_game_for_two_ends_a_minute_after_one_player_leaves():
     assert game.outcome() == {"left_alone": False}
 
 
-def test_a_local_game_gives_the_game_s_reasons_and_refuses_an_empty_one():
+def test_a_local_game_gives_the_game_s_reasons_or_the_defaults_and_refuses_an_empty_one():
     class Over(_Game):
         name = "over_with_reasons"
 
@@ -2073,6 +2073,18 @@ def test_a_local_game_gives_the_game_s_reasons_and_refuses_an_empty_one():
         game.done_reason(1)
     game.state["reason"] = "own"
     assert (game.end_reason(), game.done_reason(1)) == ("own", "player 1")
+
+    class OverWithoutReasons(_Game):
+        name = "over_without_reasons"
+
+        def is_over(self, state):
+            return True
+
+        def is_done(self, state, player):
+            return True
+
+    game = LocalGame(OverWithoutReasons, players=2)
+    assert (game.end_reason(), game.done_reason(1)) == ("finished", "done")
 
 
 def test_a_game_s_join_timeout_is_its_ready_timeout(registry):
@@ -2757,6 +2769,15 @@ def test_an_ending_handler_that_calls_super_pays_each_player_once(pair):
     session_id = _pair_session(pair)
     row = db.session.get(RealtimeSession, session_id)
     row.status, row.end_reason, row.outcome = "ended", "finished", [1, 1]
+    db.session.add(
+        RealtimeEvent(
+            session_id=session_id,
+            sequence=1,
+            event_type="effect",
+            name="psynet_game_started",
+            session_time=4.0,
+        )
+    )
     players_ended, games_ended = [], []
 
     class PaysOnce(_played_pick_numbers()):
@@ -2770,14 +2791,18 @@ def test_an_ending_handler_that_calls_super_pays_each_player_once(pair):
             return super().handle_ending(game)
 
         def handle_player_ending(self, game, player, ending):
-            players_ended.append(player)
+            players_ended.append((game, player, ending))
             return super().handle_player_ending(game, player, ending)
 
     first = min(members, key=lambda member: member.id)
-    PaysOnce().handle_player_ending(
-        row, str(first.id), {"outcome": [1, None], "reason": "done"}
-    )
-    assert players_ended == [[int(m) for m in row.members].index(first.id)]
+    ending = {"outcome": [1, None], "reason": "done", "time": 10.0}
+    PaysOnce().handle_player_ending(row, str(first.id), ending)
+    ((game, player, game_ending),) = players_ended
+    assert isinstance(game, LiveGameRecord) and game.id == session_id
+    assert player == [int(m) for m in row.members].index(first.id)
+    # The ending's time is the game's, from the game's start at 4 s.
+    assert game_ending == {**ending, "time": 6.0}
+    assert ending["time"] == 10.0
     assert _reward(first) == pytest.approx(0.25)
 
     before = [_reward(member) for member in members]

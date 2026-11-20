@@ -19,6 +19,8 @@ from .method_wrappers import _as_game_code, _in_game_code
 from .record import (
     _PSYNET_EFFECTS,
     _REWARD_EFFECT,
+    _game_started_at,
+    _game_time,
     _has_outcome,
     _player_ids,
     _players_ended_early,
@@ -157,6 +159,10 @@ def _handles_player_ending(method):
         what = f"{type(self).__name__}.performance_reward"
         _add_reward(participant, _check_reward(amount, what), session_row)
         _end_game_page_deadlines(session_row, [participant], timenow())
+        ending = {
+            **ending,
+            "time": _game_time(_game_started_at(session_row.id), ending["time"]),
+        }
         return _as_game_code(
             method, self, _record_from_row(session_row), player, ending
         )

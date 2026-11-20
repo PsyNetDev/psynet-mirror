@@ -496,8 +496,8 @@ class LiveGame(RealtimeGame):
 
         ending
             A dict with the ending's ``reason``, from :meth:`done_reason`,
-            the ``outcome`` then, and its ``time`` on Dallinger's session
-            clock.
+            the ``outcome`` then, and its ``time`` in seconds since the
+            game started.
         """
         return super().handle_player_ending(game, player, ending)
 
