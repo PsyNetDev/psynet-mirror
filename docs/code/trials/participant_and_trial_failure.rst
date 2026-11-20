@@ -23,8 +23,9 @@ PsyNet also fails trials itself:
 
 - when recording analysis returns ``"failed": True``;
 - when the participant has not responded ``response_timeout_sec`` seconds
-  after the trial was created (a trial maker attribute, default five
-  minutes). If they submit later, the answer is still stored, but the trial
+  after the response clock starts (at creation for ordinary trials, at
+  presentation for prepared trials). The trial maker defaults to five
+  minutes. Set its timeout to ``None`` for an open-ended response window. If they submit later, the answer is still stored, but the trial
   stays failed and the participant is not failed;
 - when the participant fails or leaves before completing the trial;
 - when background work for the trial raises an error: ``async_post_trial``

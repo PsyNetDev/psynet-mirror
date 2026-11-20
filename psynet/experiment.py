@@ -3436,7 +3436,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         serial = cls.test_mode != "parallel" and not cls._subclass_overridden_names(
             "test_serial_run_bots"
         )
-        if live_game_classes() and cls.test_n_bots > 1 and serial:
+        if (
+            cls.test_n_bots > 1
+            and serial
+            and any(game.max_players != 1 for game in live_game_classes())
+        ):
             raise RuntimeError(
                 "The experiment plays live games, whose bots have to play "
                 "together, but psynet test runs its bots one at a time. Set "
@@ -5074,6 +5078,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 (
                     resources.files("psynet") / "resources/scripts/live-game.js",
                     "/static/scripts/live-game.js",
+                ),
+                (
+                    resources.files("psynet") / "resources/scripts/vocabtest.js",
+                    "/static/scripts/vocabtest.js",
                 ),
                 (
                     resources.files("psynet")

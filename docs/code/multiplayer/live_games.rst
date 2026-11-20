@@ -1295,12 +1295,19 @@ reloads the native trials for each player in seat order.
 Set ``settings={"stop": 25}`` to play up to position 25 (exclusive).
 A second step with its own game ID can omit ``stop`` to finish the full deck.
 Each session starts at the first unanswered item. The default view supplies
-the player's ``definition``, full ``deck``, number ``completed``, ``total`` and
-``stop``. Extend it with your own display fields. For a response message,
-check the incoming item against ``game.current_definition(state, player)``
-and then call ``game.answer_trial(state["plans"], player=player, answer=value)``.
-PsyNet opens the first response clock, advances it after each saved answer
-and ends the session when everyone reaches their boundary.
+the player's current ``definition``, number ``completed``, ``total`` and
+``stop``. To preload stimuli, set ``preload_fields`` on the game to the
+public keys of each definition. The view then includes a ``deck`` up to the
+segment boundary and applies the same field selection to the current item.
+Override ``StaticTrialMaker.live_trial_definition(trial)`` to present a
+different representation, such as the URL of a node's image asset.
+
+A response message can call
+``game.answer_trial(state, player=player, answer=value, position=position)``.
+Passing the zero-based position shown to the player rejects stale responses,
+including when the next trial repeats the same stimulus. PsyNet opens the
+first response clock, advances it after each saved answer and ends the session
+when everyone reaches their boundary.
 
 Each player's native trials hold their definitions and answers. Query completed
 trials by ``module_state_id`` to read responses across sessions in the same

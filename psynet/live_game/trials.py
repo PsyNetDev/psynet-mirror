@@ -14,10 +14,15 @@ class LiveTrialGame(LiveGame):
     session resumes at the first unanswered trial. Define the response message
     and participant interface for your experiment.
 
-    The default view exposes the player's deck, current definition, and progress.
+    The default view exposes the current definition and progress. Set
+    ``preload_fields`` to the public keys of a dictionary definition to include
+    a deck for immediate browser presentation. This also limits the current
+    definition to those fields.
     The game ends when everyone reaches their own segment boundary. If overriding
     ``on_start``, call ``super().on_start(state)`` to open the response clocks.
     """
+
+    preload_fields = None
 
     @staticmethod
     def _session_settings(participants, settings):
@@ -63,7 +68,7 @@ class LiveTrialGame(LiveGame):
         return state
 
     def on_start(self, state):
-        self.start_trials(state["plans"])
+        self.start_trials(state)
 
     def current_definition(self, state, player):
         """Return the player's current definition, or None at the segment boundary."""
@@ -85,10 +90,22 @@ class LiveTrialGame(LiveGame):
 
     def view(self, state, player):
         plan = state["plans"][player]
-        return {
-            "definition": self.current_definition(state, player),
-            "deck": plan["definitions"],
+        current = self.current_definition(state, player)
+        view = {
+            "definition": current,
             "completed": len(plan["answers"]),
             "total": len(plan["definitions"]),
             "stop": len(plan["_trial_ids"]),
         }
+        if self.preload_fields is not None:
+
+            def public(item):
+                return {key: item[key] for key in self.preload_fields if key in item}
+
+            view["deck"] = [
+                public(item) for item in plan["definitions"][: view["stop"]]
+            ]
+            view["definition"] = (
+                None if current is None else view["deck"][view["completed"]]
+            )
+        return view

@@ -2181,8 +2181,9 @@ class TrialMaker(Module):
         How often to check for timeouts, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300).
+        Set to None to allow an open-ended response window
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
@@ -2832,20 +2833,18 @@ class TrialMaker(Module):
         ]
 
     def check_old_trials(self):
+        if self.response_timeout_sec is None:
+            return
         time_threshold = datetime.datetime.now() - datetime.timedelta(
             seconds=self.response_timeout_sec
         )
         trials_to_fail = (
-            self.trial_class.query.filter_by(complete=False, failed=False)
+            self.trial_class.query.filter_by(
+                trial_maker_id=self.id, complete=False, failed=False
+            )
             .filter(
                 or_(
-                    and_(
-                        or_(
-                            self.trial_class.prepared_in_advance.is_(False),
-                            self.trial_class.trial_maker_id == self.id,
-                        ),
-                        self.trial_class.response_started_at < time_threshold,
-                    ),
+                    self.trial_class.response_started_at < time_threshold,
                     # Preserve the timeout for ordinary trials awaiting their first
                     # page, and for historical rows without a response start.
                     and_(
@@ -3618,8 +3617,9 @@ class NetworkTrialMaker(TrialMaker):
         How often to check for trials that have timed out, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300).
+        Set to None to allow an open-ended response window
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,

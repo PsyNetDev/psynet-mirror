@@ -493,6 +493,10 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
 
+    def live_trial_definition(self, trial):
+        """Return the stimulus used by a live game for this prepared trial."""
+        return trial.definition
+
     def trial_plan(self, participant):
         """Prepare or reload the full ordered deck and its submitted answer prefix.
 
@@ -501,7 +505,7 @@ class StaticTrialMaker(ChainTrialMaker):
         """
         trials = self.prepare_trials(participant)
         return {
-            "definitions": [trial.definition for trial in trials],
+            "definitions": [self.live_trial_definition(trial) for trial in trials],
             "answers": [
                 trial.var.prepared_raw_answer for trial in trials if trial.complete
             ],

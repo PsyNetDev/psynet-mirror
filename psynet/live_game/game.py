@@ -444,9 +444,9 @@ class LiveGame(RealtimeGame):
         """
         return super().handle_player_ending(session_row, player, ending)
 
-    def start_trials(self, plans):
+    def start_trials(self, state):
         """Open each player's current trial when this game starts."""
-        for player, plan in enumerate(plans):
+        for player, plan in enumerate(state["plans"]):
             position = len(plan["answers"])
             ids = plan["_trial_ids"]
             if position < len(ids):
@@ -455,11 +455,16 @@ class LiveGame(RealtimeGame):
                     {"player": player, "trial_id": ids[position]},
                 )
 
-    def answer_trial(self, plans, *, player, answer, time_taken=None):
+    def answer_trial(self, state, *, player, answer, position=None, time_taken=None):
         """Answer the open trial and start the next one in the same event transaction."""
+        plans = state["plans"]
         if type(player) is not int or not 0 <= player < len(plans):
             raise ValueError("Unknown player for these trial plans.")
         plan = plans[player]
+        if position is not None and (
+            type(position) is not int or position != len(plan["answers"])
+        ):
+            raise Reject("This trial is no longer current.")
         position = len(plan["answers"])
         ids = plan["_trial_ids"]
         if position >= len(ids):

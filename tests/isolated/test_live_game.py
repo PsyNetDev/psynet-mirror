@@ -3014,14 +3014,14 @@ def test_live_trial_game_owns_segment_progress():
     assert session.view(0)["definition"] == "b"
     assert session.view(1)["definition"] is None
     assert not {"plans", "answers", "_trial_ids"} & session.view(0).keys()
-    session.game.answer_trial(session.state["plans"], player=0, answer=False)
+    session.game.answer_trial(session.state, player=0, answer=False)
     assert session.is_over()
     assert session.outcome() == session.answer(0) == session.answer(1) == {}
     assert session.outcome("timeout") == {}
-    assert session.view(0)["deck"] == ["a", "b", "c"]
+    assert "deck" not in session.view(0)
     assert session.view(0)["completed"] == session.view(0)["stop"] == 2
     with pytest.raises(ValueError, match="segment is complete"):
-        session.game.answer_trial(session.state["plans"], player=0, answer=True)
+        session.game.answer_trial(session.state, player=0, answer=True)
     assert plans[0]["answers"] == [False]
     assert plans[0]["_trial_ids"] == [1, 2, 3]
     resumed = LocalGame(LiveTrialGame, players=2, settings={"plans": plans})

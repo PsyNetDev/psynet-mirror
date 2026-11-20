@@ -110,6 +110,14 @@ def test_prepared_trials_survive_breaks_and_time_out_only_when_open(
     assert fourth.response_started_at is None
     fourth.start_response(alice)
     fourth.response_started_at = old
+    with monkeypatch.context() as scoped:
+        scoped.setattr(maker, "response_timeout_sec", None)
+        maker.check_old_trials()
+        assert not fourth.failed
+    with monkeypatch.context() as scoped:
+        scoped.setattr(maker, "id", "another_trial_maker")
+        maker.check_old_trials()
+        assert not fourth.failed
     maker.check_old_trials()
     assert fourth.failed and fourth.failed_reason == "response_timeout"
     assert all(not t.failed and t.response_started_at is None for t in items[4:])
