@@ -355,6 +355,18 @@ def test_publishing_refuses_a_destination_with_other_files(tmp_path):
     assert (staging / "manifest.json").read_text() == "new"
 
 
+def test_publishing_fills_an_empty_destination_folder(tmp_path):
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "manifest.json").write_text("new")
+    destination = tmp_path / "empty"
+    destination.mkdir()
+
+    publish_export(str(staging), str(destination))
+
+    assert (destination / "manifest.json").read_text() == "new"
+
+
 def test_publishing_uses_the_history_rotation_hook_when_provided(tmp_path):
     staging = tmp_path / "staging"
     staging.mkdir()

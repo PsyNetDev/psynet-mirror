@@ -1,1 +1,0 @@
-`psynet export --path <folder>` no longer deletes the folder's existing contents. The path must be new, empty or hold a previous export, which is replaced as before; PsyNet now refuses any other existing file or folder before it starts the export.

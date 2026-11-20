@@ -870,13 +870,17 @@ See :doc:`/reference/api/async_job`.
 --------------------------------
 
 Search scripts and notes for ``--assets all``, ``--legacy``,
-``--anonymize``, ``psynet.zip``, ``database.zip``, ``extra_var`` and
-``export_classes_to_skip``.
+``--anonymize``, ``--path``, ``psynet.zip``, ``database.zip``, ``extra_var``
+and ``export_classes_to_skip``.
 
 * ``psynet export`` writes one archive to ``exports/latest/`` and keeps
   earlier exports under ``exports/history/``. Table CSVs are in a flat
   ``database/`` folder, with pseudonymous participant IDs; recruiter IDs are
   in ``participant_identifiers.csv``.
+* ``--path`` must name a new folder, an empty folder or a previous PsyNet 14
+  export, which is replaced. PsyNet refuses any other existing file or
+  folder, including one holding a PsyNet 13 export, so point scripts that
+  export into a shared folder at a new one.
 * ``--assets`` takes ``collected`` (the default: files created during the
   study) or ``none``. ``--assets all``, ``--legacy`` and ``--anonymize`` are
   removed, and stimuli declared in the timeline are not exported.
