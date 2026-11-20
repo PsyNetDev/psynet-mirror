@@ -234,20 +234,42 @@ the round on their own.
 
 By default, players are grouped at random, those who have played the most
 rounds sit out when not everyone fits, and roles are shuffled across each
-group's members. Override :meth:`~psynet.sync.Regrouper.form_groups` for
-other grouping rules and :meth:`~psynet.sync.Regrouper.assign_roles` for
-other role rules. The ``ultimatum_pairing`` demo overrides both, to keep
-last round's partners apart and to give each role to whoever has held it
-least often, so that roles alternate. Its ``pairing.py`` defines:
+group's members. Two options change this:
+
+- ``avoid_repeats=True`` keeps players apart from their last group's
+  members when another grouping is possible, without changing who sits out
+  or breaking the roles.
+- ``keep_roles=True`` lets each player keep the role of their first group,
+  for example a proposer who stays a proposer. A newcomer gets the role
+  fewest of the waiting players have, then the one fewest current members
+  have, and players of a role with too few partners sit out.
+
+:meth:`~psynet.sync.Regrouper.role` returns a player's role from their
+latest group, which with ``keep_roles`` is the role they keep:
+
+.. code-block:: python
+
+    pairing = Regrouper(
+        "pair",
+        roles=["proposer", "responder"],
+        keep_roles=True,
+        avoid_repeats=True,
+        every=40,
+        left_over="sit_out",
+    )
+
+    def is_proposer(participant):
+        return pairing.role(participant) == "proposer"
+
+Override :meth:`~psynet.sync.Regrouper.form_groups` for other grouping
+rules and :meth:`~psynet.sync.Regrouper.assign_roles` for other role rules.
+The ``ultimatum_pairing`` demo keeps last round's partners apart with
+``avoid_repeats=True`` and overrides ``assign_roles`` to give each role to
+whoever has held it least often, so that roles alternate. Its ``pairing.py``
+defines:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
    :pyobject: PairingRegrouper
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
-   :pyobject: is_rematch
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
-   :pyobject: last_partner_id
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
    :pyobject: times_held

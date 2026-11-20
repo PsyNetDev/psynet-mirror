@@ -128,10 +128,12 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 - The regrouper groups players at random, sits out whoever has played most,
   and counts rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]`
   (given out at random by default) and read `self.sync_group_role` in the
-  cued trial instead of assigning roles yourself. To avoid last round's partner or to
-  alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
-  demo's `pairing.py`, which overrides `form_groups` and `assign_roles`; override them
-  likewise for other rules. With `left_over="sit_out"`, odd
+  cued trial instead of assigning roles yourself. Pass `avoid_repeats=True`
+  to avoid last round's partners where possible, and `keep_roles=True` for
+  players who keep their first role (read it with `regrouper.role(participant)`).
+  To alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
+  demo's `pairing.py`, which overrides `assign_roles`; override `form_groups`
+  or `assign_roles` likewise for other rules. With `left_over="sit_out"`, odd
   players out sit out the round; with `within`, a player waiting alone first
   waits one more period for cohort members. The default `max_wait_time`
   allows for this; an explicit one must then exceed twice the `deadline` or

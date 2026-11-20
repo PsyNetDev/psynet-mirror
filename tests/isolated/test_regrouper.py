@@ -541,6 +541,12 @@ def test_every_regrouper_left_over_waits_one_more_tick(
             {"group_size": 2, "within": None, "stop_top_ups_after_rounds": 1},
             "needs within",
         ),
+        ({"group_size": 2, "keep_roles": True}, "keep_roles needs roles"),
+        (
+            {"roles": ["a", "b"], "keep_roles": True, "assign_roles": print},
+            "keep_roles gives out the roles",
+        ),
+        ({"group_size": 2, "avoid_repeats": True, "form_groups": print}, "default"),
     ],
 )
 def test_regrouper_checks_its_settings(kwargs, message):
@@ -757,10 +763,72 @@ def test_regrouper_alternates_roles_and_counts_rounds(
     assert not pairs.sat_out(sitter)
 
 
-def _scripted_pair(members, **_):
-    first, second = _scripted_pair.script.pop(0)
-    ordered = sorted(members, key=lambda p: p.id)
-    return [[ordered[first], ordered[second]]]
+@in_consents_experiment
+def test_regrouper_keeps_roles_and_avoids_last_rounds_partner(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, pairs = _cohort_and_pairs(exp, 4, keep_roles=True, avoid_repeats=True)
+    _arrive(exp, pairs, cohort)
+    roles = {p.id: pairs.role(p) for p in cohort}
+    assert sorted(roles.values()) == ["proposer"] * 2 + ["responder"] * 2
+    for _ in range(3):
+        partners = {p.id: _partner(p) for p in cohort}
+        _arrive(exp, pairs, cohort)
+        for p in cohort:
+            assert _role(p) == pairs.role(p) == roles[p.id]
+            assert _partner(p) is not partners[p.id]
+
+    # With nobody else to play, last round's partners meet again.
+    duo, duo_pairs = _cohort_and_pairs(exp, 2, keep_roles=True, avoid_repeats=True)
+    for _ in range(2):
+        _arrive(exp, duo_pairs, duo)
+        assert _partner(duo[0]) is duo[1]
+
+
+@in_consents_experiment
+def test_regrouper_gives_a_newcomer_the_scarcer_kept_role(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, pairs = _cohort_and_pairs(exp, 5, keep_roles=True)
+    _arrive(exp, pairs, cohort)
+    # Sitting out the first round, the fifth player has no role yet.
+    (newcomer,) = [p for p in cohort if pairs.role(p) is None]
+    (p1, p2), (r1, r2) = [
+        [p for p in cohort if pairs.role(p) == role]
+        for role in ("proposer", "responder")
+    ]
+    cohort_group = p1.active_sync_groups["cohort"]
+    cohort_group.remove_participant(r2, reason="removed_by_experimenter")
+
+    # The roles waiting are balanced, but the cohort has more proposers, so
+    # the newcomer responds; r1, who has played more, sits out.
+    present = [p1, r1, newcomer]
+    _arrive(exp, pairs, present)
+    _backdate_splits(pairs, cohort_group, 31)
+    _backdate_arrivals(pairs, present, 31)
+    pairs.choose_who_to_release(present)
+    assert pairs.role(newcomer) == "responder"
+    assert _partner(newcomer) is p1
+    assert pairs.sat_out(r1)
+    assert pairs.role(r1) == "responder"
+
+
+@in_consents_experiment
+def test_regrouper_avoids_repeats_without_roles(in_experiment_directory, db_session):
+    exp = get_experiment()
+    cohort_grouper = SimpleGrouper(
+        "cohort", initial_group_size=4, quorum=2, below_quorum="fail"
+    )
+    pairs = Regrouper("pair", within="cohort", group_size=2, avoid_repeats=True)
+    cohort = _working_participants(exp, 4)
+    _arrive(exp, cohort_grouper, cohort)
+    _arrive(exp, pairs, cohort)
+    for _ in range(3):
+        partners = {p.id: _partner(p) for p in cohort}
+        _arrive(exp, pairs, cohort)
+        assert all(_partner(p) is not partners[p.id] for p in cohort)
 
 
 def _load_demo_pairing():
@@ -771,20 +839,35 @@ def _load_demo_pairing():
     return module
 
 
+class _ScriptedPairs(Regrouper):
+    """Pairs players by their order of ID as scripted, then as by default."""
+
+    script = []
+
+    def form_groups(self, members, within_group=None):
+        if not self.script:
+            return super().form_groups(members, within_group)
+        ordered = sorted(members, key=lambda p: p.id)
+        return [[ordered[i] for i in pair] for pair in self.script.pop(0)]
+
+
 @in_consents_experiment
-def test_demo_pairing_spots_a_rematch_after_a_sit_out(
+def test_avoid_repeats_counts_a_partner_who_has_played_since(
     in_experiment_directory, db_session
 ):
-    """A played B, then sat out while B played C: A and B are still last partners."""
-    pairing = _load_demo_pairing()
+    """A played B, then waited while B played C: A and B are still last partners."""
     exp = get_experiment()
-    cohort, pairs = _cohort_and_pairs(exp, 3, form_groups=_scripted_pair)
-    a, b, c = sorted(cohort, key=lambda p: p.id)
-    _scripted_pair.script = [(0, 1), (1, 2)]
-    _arrive(exp, pairs, cohort)
-    _arrive(exp, pairs, cohort)
-    assert pairing.is_rematch(a, b) and pairing.is_rematch(b, a)
-    assert not pairing.is_rematch(a, c)
+    cohort_grouper = SimpleGrouper(
+        "cohort", initial_group_size=4, quorum=2, below_quorum="fail"
+    )
+    pairs = _ScriptedPairs("pair", within="cohort", group_size=2, avoid_repeats=True)
+    a, b, c, d = _working_participants(exp, 4)
+    _arrive(exp, cohort_grouper, [a, b, c, d])
+    _ScriptedPairs.script = [[(0, 1), (2, 3)], [(1, 2)]]
+    _arrive(exp, pairs, [a, b, c, d])
+    _arrive(exp, pairs, [a, b, c, d])
+    _arrive(exp, pairs, [b, c])
+    assert (_partner(a), _partner(b)) == (c, d)
 
 
 @in_consents_experiment

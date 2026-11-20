@@ -91,7 +91,10 @@ group and splits those waiting into new groups at random, giving out roles,
 such as proposer and responder, at random too. It doesn't split them as soon
 as two are waiting, which would pair whoever finished at the same moment,
 often the same people every round: it collects players and splits them at a
-deadline, for example every 10 seconds (``every=10``).
+deadline, for example every 10 seconds (``every=10``). With
+``avoid_repeats=True`` it keeps players apart from last round's partners
+when it can, and with ``keep_roles=True`` each player keeps the role of their
+first round, for example a proposer who stays a proposer.
 
 If the players don't divide evenly into groups, the one who has played the
 most rounds *sits out* the round: they see a page saying so, and play again
