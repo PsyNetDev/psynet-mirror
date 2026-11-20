@@ -1223,6 +1223,37 @@ def test_two_play_live_games_with_one_id_are_refused_when_the_experiment_loads(
         Twice.check_live_games()
 
 
+def test_solo_game_needs_no_group_and_keys_must_be_unique(registry):
+    class Solo(LiveGame):
+        name = "one_player"
+        min_players = max_players = 1
+
+        def bot(self, view, player, now):
+            return None
+
+    def step(**kwargs):
+        return PlayLiveGame(
+            game_class=Solo,
+            page=ModularPage("solo", "Play.", LiveGameControl(), time_estimate=1),
+            **kwargs,
+        )
+
+    class Once(Experiment):
+        timeline = Timeline(step())
+
+    Once.check_live_games()
+
+    class Twice(Experiment):
+        timeline = Timeline(step(), step())
+
+    with pytest.raises(RuntimeError, match="more than one PlayLiveGame"):
+        Twice.check_live_games()
+    with pytest.raises(TypeError, match="require group_type"):
+        step(max_wait_time=1)
+    with pytest.raises(ValueError, match="exactly one player"):
+        PlayLiveGame(game_class=type(_pick_numbers()), page=None)
+
+
 def test_live_games_need_their_bots_to_play_together(pair):
     class Serial(Experiment):
         test_n_bots = 2

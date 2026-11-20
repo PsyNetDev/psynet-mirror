@@ -3079,6 +3079,10 @@ class TrialMaker(Module):
         """
         return join(UnsuccessfulEndPage(failure_tags=["performance_check"]))
 
+    def check_performance(self):
+        """Timeline step applying this maker’s screening check at the current position."""
+        return self._check_performance_logic(type="trial")
+
     def _check_performance_logic(self, type):
         assert type in ["trial", "end"]
 

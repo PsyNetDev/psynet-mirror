@@ -8,9 +8,8 @@ from pydantic import Field
 
 from psynet.live_game import LiveGameControl, LiveMessage, LiveTrialGame, PlayLiveGame
 from psynet.modular_page import ModularPage
-from psynet.page import InfoPage, UnsuccessfulEndPage
-from psynet.sync import SimpleGrouper, leave_group
-from psynet.timeline import PageMaker, conditional, join
+from psynet.page import InfoPage
+from psynet.timeline import PageMaker, join
 from psynet.utils import get_translator
 
 _ = get_translator()
@@ -32,9 +31,20 @@ class WordResponse(LiveMessage):
         )
 
 
+class WordShown(LiveMessage):
+    """A browser display, including redisplay of the same trial after a reload."""
+
+    type = "shown"
+    position: int = Field(ge=0, strict=True)
+
+    def apply(self, game, state, player, now):
+        game.record_trial_presentation(state, player=player, position=self.position)
+
+
 class VocabularyGame(LiveTrialGame):
     name = "psynet_vocabulary"
-    messages = [WordResponse]
+    messages = [WordShown, WordResponse]
+    timeout = None
     min_players = max_players = 1
     preload_fields = ("stimulus", "image")
 
@@ -45,11 +55,8 @@ class VocabularyGame(LiveTrialGame):
             )
 
 
-def _form(maker, number, group_type):
+def _form(maker, number):
     game_id = f"{maker.id}_form_{number}"
-
-    def finished(participant):
-        return participant.live_games[game_id].finished
 
     def feedback(participant):
         score = maker.score_form(participant, maker.get_participant_trials(participant))
@@ -60,6 +67,19 @@ def _form(maker, number, group_type):
             time_estimate=5,
         )
 
+    return join(
+        PlayLiveGame(
+            id_=game_id,
+            game_class=VocabularyGame,
+            settings={"stop": number * maker.form_size},
+            page=_word_page(maker),
+        ),
+        PageMaker(feedback, time_estimate=5) if maker.show_feedback else None,
+        maker.check_performance(),
+    )
+
+
+def _word_page(maker):
     def choice(value, label, key):
         caption = f"{label} ({key})" if maker.use_keyboard else label
         if maker.use_buttons:
@@ -73,7 +93,7 @@ def _form(maker, number, group_type):
         return tags.span(caption, cls="mx-2")
 
     height = maker.image_height if maker.present_as_image else 260
-    page = ModularPage(
+    return ModularPage(
         "vocabtest",
         tags.div(
             tags.div(
@@ -103,32 +123,7 @@ def _form(maker, number, group_type):
         js_page_modules=["/static/scripts/vocabtest.js"],
         time_estimate=maker.form_size * maker.trial_class.time_estimate,
     )
-    return join(
-        PlayLiveGame(
-            id_=game_id,
-            group_type=group_type,
-            game_class=VocabularyGame,
-            settings={"stop": number * maker.form_size},
-            page=page,
-            max_wait_time=60,
-            max_wait_action="leave_group",
-        ),
-        conditional(
-            f"{game_id}_finished",
-            finished,
-            join(
-                PageMaker(feedback, time_estimate=5) if maker.show_feedback else None,
-                maker._check_performance_logic(type="trial"),
-            ),
-            UnsuccessfulEndPage(failure_tags=["incomplete_vocabulary_form"]),
-        ),
-    )
 
 
 def present_forms(maker):
-    group_type = f"{maker.id}_solo"
-    return join(
-        SimpleGrouper(group_type=group_type, initial_group_size=1, max_wait_time=60),
-        *[_form(maker, number, group_type) for number in range(1, maker.n_trials + 1)],
-        leave_group(group_type),
-    )
+    return join(*[_form(maker, number) for number in range(1, maker.n_trials + 1)])

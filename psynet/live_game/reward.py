@@ -148,14 +148,39 @@ def _apply_prepared_trial(payload, session_row):
         )
 
     trial = locked_trial(payload["trial_id"])
+    run = participant.module_state
+    solo = run is not None and run.var.get("solo_trial_session") == session_row.id
+
+    def open_response(item):
+        if solo:
+            item.var.solo_live_session = session_row.id
+        item.start_response(participant)
+
+    if solo and not trial.complete:
+        # An expired word can have later, optimistically queued input behind it.
+        # Only the current, still-open occurrence may advance the native cursor.
+        if participant.failed or trial.position != run.n_completed_trials:
+            return
+        if trial.failed:
+            from .play import _end_expired_session
+
+            db.run_after_commit(functools.partial(_end_expired_session, session_row.id))
+            return
+        if trial.var.get("solo_live_session") != session_row.id:
+            trial.var.solo_live_session = session_row.id
+        if trial._expire_if_overdue():
+            return
+    if payload.get("presented"):
+        trial.var.n_presentations = trial.var.get("n_presentations", 0) + 1
+        return
     if "answer" not in payload:
-        trial.start_response(participant)
+        open_response(trial)
         return
     recorded = trial.submit_response(
         participant, payload["answer"], payload["time_taken"]
     )
     if recorded and payload["next_id"] is not None:
-        locked_trial(payload["next_id"]).start_response(participant)
+        open_response(locked_trial(payload["next_id"]))
 
 
 def _handles_reward(method):

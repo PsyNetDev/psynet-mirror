@@ -60,6 +60,7 @@ class Exp(psynet.experiment.Experiment):
         from psynet.experiment import get_experiment
 
         assert not bot.failed
+        assert not bot.sync_group_links
         trials = bot.all_trials
         assert len(trials) == 30 + 34 + 60
         assert all(

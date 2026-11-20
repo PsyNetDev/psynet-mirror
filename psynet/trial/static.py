@@ -88,6 +88,32 @@ class StaticTrial(ChainTrial):
         ):
             raise ValueError("Trial is outside the participant's active sequence.")
 
+    def _expire_if_overdue(self):
+        """Check the native response deadline while holding the trial lock."""
+        if self.complete or self.failed or self.response_started_at is None:
+            return False
+        from ..experiment import get_trial_maker
+
+        seconds = get_trial_maker(self.trial_maker_id).response_timeout_sec
+        if (
+            seconds is None
+            or datetime.datetime.now()
+            < self.response_started_at + datetime.timedelta(seconds=seconds)
+        ):
+            return False
+        self.fail(reason="response_timeout")
+        return True
+
+    def fail(self, reason=None):
+        already_failed = self.failed
+        super().fail(reason=reason)
+        if not already_failed and reason == "response_timeout":
+            session_id = self.var.get("solo_live_session")
+            if session_id is not None:
+                from ..live_game.play import _end_expired_session
+
+                db.run_after_commit(lambda: _end_expired_session(session_id))
+
     def start_response(self, participant):
         """Open the response clock once. The caller locks the participant and trial."""
         if (

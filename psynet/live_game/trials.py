@@ -25,26 +25,26 @@ class LiveTrialGame(LiveGame):
     preload_fields = None
 
     @staticmethod
-    def _session_settings(participants, settings):
+    def _active_maker(participant):
         from ..experiment import get_trial_maker
         from ..trial.main import TrialMakerState
         from ..trial.static import StaticTrialMaker
 
+        run = participant.module_state
+        maker = (
+            get_trial_maker(run.module_id) if isinstance(run, TrialMakerState) else None
+        )
+        if not isinstance(maker, StaticTrialMaker):
+            raise ValueError("Play a LiveTrialGame inside a StaticTrialMaker.")
+        return maker
+
+    @classmethod
+    def _session_settings(cls, participants, settings):
         if settings is not None and not isinstance(settings, dict):
             raise ValueError("LiveTrialGame settings must be a dictionary.")
         if settings and "plans" in settings:
             raise ValueError("LiveTrialGame loads plans from the active trial maker.")
-        plans = []
-        for participant in participants:
-            run = participant.module_state
-            maker = (
-                get_trial_maker(run.module_id)
-                if isinstance(run, TrialMakerState)
-                else None
-            )
-            if not isinstance(maker, StaticTrialMaker):
-                raise ValueError("Play a LiveTrialGame inside a StaticTrialMaker.")
-            plans.append(maker.trial_plan(participant))
+        plans = [cls._active_maker(p).trial_plan(p) for p in participants]
         return {**(settings or {}), "plans": plans}
 
     def initial_state(self, players, settings=None):

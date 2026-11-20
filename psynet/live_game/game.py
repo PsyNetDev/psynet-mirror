@@ -455,20 +455,36 @@ class LiveGame(RealtimeGame):
                     {"player": player, "trial_id": ids[position]},
                 )
 
-    def answer_trial(self, state, *, player, answer, position=None, time_taken=None):
-        """Answer the open trial and start the next one in the same event transaction."""
+    def _open_trial(self, state, player, position):
         plans = state["plans"]
         if type(player) is not int or not 0 <= player < len(plans):
             raise ValueError("Unknown player for these trial plans.")
         plan = plans[player]
+        current = len(plan["answers"])
+        ids = plan["_trial_ids"]
         if position is not None and (
-            type(position) is not int or position != len(plan["answers"])
+            type(position) is not int or position != current or current >= len(ids)
         ):
             raise Reject("This trial is no longer current.")
-        position = len(plan["answers"])
-        ids = plan["_trial_ids"]
-        if position >= len(ids):
+        if current >= len(ids):
             raise ValueError("This player's trial segment is complete.")
+        return plan, ids, current
+
+    def record_trial_presentation(self, state, *, player, position):
+        """Count a browser display of the current occurrence, including a redisplay."""
+        _, ids, position = self._open_trial(state, player, position)
+        super().queue_effect(
+            _PREPARED_TRIAL_EFFECT,
+            {
+                "player": player,
+                "trial_id": ids[position],
+                "presented": True,
+            },
+        )
+
+    def answer_trial(self, state, *, player, answer, position=None, time_taken=None):
+        """Answer the open trial and start the next one in the same event transaction."""
+        plan, ids, position = self._open_trial(state, player, position)
         if time_taken is not None and (not is_number(time_taken) or time_taken < 0):
             raise ValueError("Invalid presentation duration.")
         super().queue_effect(

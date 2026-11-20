@@ -143,3 +143,91 @@ def test_prepared_trials_survive_breaks_and_time_out_only_when_open(
     assert all(t.failed_reason == "participant_exit" for t in bob_items[3:])
     assert bob_items[3].response_started_at is not None
     assert all(t.response_started_at is None for t in bob_items[4:])
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_solo_resume_keeps_deadline_and_late_answers_do_not_advance(
+    db_session, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from dallinger.models import RealtimeSession
+
+    from psynet.live_game import LiveGameControl, PlayLiveGame
+    from psynet.live_game.reward import _apply_prepared_trial
+    from psynet.modular_page import ModularPage
+    from psynet.prescreen.vocab_live import VocabularyGame
+
+    experiment = get_experiment()
+    maker = StaticTrialMaker(
+        id_="solo_screen",
+        trial_class=PreparedRating,
+        nodes=[StaticNode(definition=i) for i in range(2)],
+        expected_trials_per_participant=2,
+        max_trials_per_participant=2,
+        node_order="listed",
+    )
+    monkeypatch.setattr("psynet.experiment.get_trial_maker", lambda id_: maker)
+    maker.create_networks_across(experiment)
+    player = start_run(experiment, maker)
+    first, second = maker.prepare_trials(player)
+    run = player.module_state
+    ended = []
+    monkeypatch.setattr("psynet.live_game.play._end_expired_session", ended.append)
+
+    def apply(session_id, trial, **data):
+        row = SimpleNamespace(id=session_id, members=[player.id])
+        _apply_prepared_trial({"player": 0, "trial_id": trial.id, **data}, row)
+
+    def create_session(game_class, participants, settings):
+        row = RealtimeSession(
+            game_type=game_class.channel, members=[p.id for p in participants], bots=[]
+        )
+        db.session.add(row)
+        db.session.flush()
+        return row.id
+
+    monkeypatch.setattr("psynet.live_game.play._create_game_session", create_session)
+    solo = PlayLiveGame(
+        game_class=VocabularyGame,
+        page=ModularPage("words", "Play.", LiveGameControl(), time_estimate=2),
+    ).solo
+    solo._prepare(player)
+    assert solo._pending(player)
+    solo._start_segment(player)
+    original = run.var.solo_trial_session
+    apply(original, first)
+    apply(original, first, answer=True, time_taken=0.5, next_id=second.id)
+    apply(original, second, presented=True)
+    opened = second.response_started_at
+    transport = db.session.get(RealtimeSession, original)
+    transport.status, transport.end_reason = "ended", "players_left"
+    db.session.flush()
+    assert solo._pending(player)
+    solo._start_segment(player)
+    resumed = run.var.solo_trial_session
+    assert resumed != original
+    assert [item.id for item in maker.prepare_trials(player)] == [first.id, second.id]
+    apply(resumed, second)
+    assert second.response_started_at == opened
+    apply(resumed, second, presented=True)
+    assert second.var.n_presentations == 2
+    second.response_started_at = datetime.now() - timedelta(days=1)
+    with monkeypatch.context() as scoped:
+        scoped.setattr(maker, "response_timeout_sec", None)
+        assert not second._expire_if_overdue()
+    db.session.commit()
+    apply(resumed, second, answer=False, time_taken=1, next_id=None)
+    assert second.failed_reason == "response_timeout" and not second.complete
+    db.session.rollback()
+    assert ended == [] and not second.failed
+    # The ordinary timeout sweep reaches the same terminal state without a click.
+    maker.check_old_trials()
+    db.session.commit()
+    assert ended == [resumed]
+    assert not solo._pending(player) and not solo._completed(player)
+    assert run.n_completed_trials == 1 and first.answer is True
+    assert second.failed_reason == "response_timeout" and second.answer is None

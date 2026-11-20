@@ -45,6 +45,7 @@ export function activate({root, psynet}) {
         } else {
             target.textContent = word.stimulus;
         }
+        game.send("shown", {position: expected});
         enable(true);
         timer = setTimeout(() => { target.textContent = "…"; }, config.hideAfter);
     }

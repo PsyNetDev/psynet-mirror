@@ -1309,6 +1309,36 @@ including when the next trial repeats the same stimulus. PsyNet opens the
 first response clock, advances it after each saved answer and ends the session
 when everyone reaches their boundary.
 
+For a one-player game (both ``min_players`` and ``max_players`` are 1), omit
+``group_type`` from ``PlayLiveGame``. This starts a session directly for the
+participant. For example, the vocabulary screen plays a form and then
+applies its trial maker's existing performance check::
+
+    join(
+        PlayLiveGame(
+            id_="vocabulary_form_1",
+            game_class=VocabularyGame,
+            settings={"stop": 34},
+            page=word_page,
+        ),
+        maker.check_performance(),
+    )
+
+A solo prepared segment advances when the required native trials are complete.
+If the live session ends because the participant leaves, fails to join, or
+reaches the session timeout, returning starts a session on the same open
+trial. Its original ``response_started_at`` still applies. Expiry of the
+maker's ``response_timeout_sec`` ends the segment as incomplete. Setting it
+to ``None`` leaves the response window open. Normal participant exit and
+failure rules still apply. Use ``maker.check_performance()`` in the timeline
+to run the screening check after a completed form.
+
+A browser can report each display (including a reload) via a message that
+calls ``game.record_trial_presentation(state, player=player, position=position)``.
+PsyNet then stores the observed display count in ``trial.var.n_presentations``.
+VocabTest's ``time_taken`` is measured from the display on which the person
+answered. Bots that supply an answer without displaying a word have no count.
+
 Each player's native trials hold their definitions and answers. Query completed
 trials by ``module_state_id`` to read responses across sessions in the same
 trial-maker run. The default session outcome and page answer are both empty

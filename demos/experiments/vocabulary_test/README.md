@@ -11,4 +11,10 @@ time in seconds, and `score` for accuracy. Within a module run, `position` gives
 the presentation order and `node_id` identifies repeated presentations. A form
 contains `n_items + n_repeat_items` consecutive trials.
 
+A form resumes at the first unanswered word after a disconnect. The open word
+keeps its original response deadline. If it expires, the form ends as incomplete
+and the trial retains its failure reason. A completed word's `time_taken` starts
+at its latest display in the answering browser. `trial.var.n_presentations`
+counts reported browser displays of that occurrence, including reloads.
+
 See the [PsyNet documentation](https://psynetdev.gitlab.io/PsyNet/) for run instructions.
