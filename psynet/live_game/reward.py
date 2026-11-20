@@ -95,9 +95,9 @@ def _handles_reward(self, game_code, name, payload, session_row):
     if name not in _PSYNET_EFFECTS:
         return game_code(name, payload, _record_from_row(session_row))
     if name == _CLOSED_EFFECT:
-        from .play import _stop_top_ups
+        from .play import _stop_top_ups_soon
 
-        _stop_top_ups(payload["group_id"])
+        _stop_top_ups_soon(payload["group_id"])
         return None
     if name != _REWARD_EFFECT:
         # Only recorded, for a game record's messages and moments.
@@ -127,7 +127,7 @@ def _handles_ending(self, game_code, session_row):
         if participant_id not in ended_early
     ]
     players = _locked_players(session_row, remaining) if remaining else []
-    from .play import _remove_absent_players, _stop_top_ups
+    from .play import _remove_absent_players, _stop_top_ups_soon
 
     if _has_outcome(session_row.status, session_row.outcome):
         _pay_outcome_rewards(self, session_row, players)
@@ -135,7 +135,7 @@ def _handles_ending(self, game_code, session_row):
     _end_game_page_deadlines(session_row, players, session_row.end_time)
     entry = (session_row.final_state or {}).get("psynet")
     if entry is not None and entry["stop_top_ups_at_end"]:
-        _stop_top_ups(entry["group_id"])
+        _stop_top_ups_soon(entry["group_id"])
     if session_row.status != "failed":
         _remove_absent_players(self, session_row, players)
     return game_code(_record_from_row(session_row))

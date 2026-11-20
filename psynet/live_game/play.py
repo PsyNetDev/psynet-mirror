@@ -733,6 +733,21 @@ def _remove_absent_players(game, session_row, players):
         group.dissolve_if_below_quorum()
 
 
+def _stop_top_ups_soon(group_id):
+    """Stop the group of id ``group_id``, a game's, taking newcomers, in a
+    job of its own once the current transaction commits. A game's record is
+    written in one transaction, which locks its players' rows, and a group's
+    row has to be locked after its members' rows, never before."""
+    from ..async_job import WorkerAsyncJob
+
+    if group_id is not None:
+        WorkerAsyncJob(
+            _stop_top_ups,
+            arguments={"group_id": group_id},
+            label="stop_live_game_top_ups",
+        ).enqueue()
+
+
 def _stop_top_ups(group_id):
     """Stop the group of id ``group_id``, a game's, taking newcomers, as
     SimpleSyncGroup.stop_top_ups does, if it still does. ``group_id`` is
