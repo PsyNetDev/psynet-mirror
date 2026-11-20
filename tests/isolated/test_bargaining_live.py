@@ -107,14 +107,15 @@ class TestBargainingLive:
             "You didn't arrive in time, so there was no game this round."
         )
 
-    @pytest.mark.parametrize("reason", ["finished", "not_joined"])
+    @pytest.mark.parametrize("reason", ["no_show", "not_joined"])
     def test_players_who_both_miss_the_game_are_each_told_they_didn_t_arrive(
         self, demo, reason
     ):
         game = LocalGame(demo.Bargain, players=2, settings={"stake": 10}, start=False)
-        if reason == "finished":
+        if reason == demo.NO_SHOW:
             # They opened the game, then left before it started.
             game.tick(demo.Bargain.ready_timeout)
+            assert game.is_over() and game.end_reason() == demo.NO_SHOW
 
         for player in (0, 1):
             assert self._feedback(demo, game.answer(player, reason)) == (

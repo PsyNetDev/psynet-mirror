@@ -156,7 +156,9 @@ class LiveGameRecord:
     @property
     def player(self) -> Optional[int]:
         """The participant's player number in the game, as the game's
-        methods see it, or ``None`` if no game started."""
+        methods see it, or ``None`` if no game started or the participant
+        isn't among its players, for example because the game ended before
+        it could add them."""
         participant_id = self._own_participant_id("player")
         ids = self.participant_ids
         return ids.index(participant_id) if participant_id in ids else None

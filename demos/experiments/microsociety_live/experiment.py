@@ -392,21 +392,26 @@ def get_timeline():
 
 def why_left(participant: Participant) -> str:
     """Return why the member left the lake, or ``"closed"`` if it closed while they fished."""
-    left = _left(participant.live_games.get("fishing"))
+    _, left = _result(participant.live_games.get("fishing"))
     return left if left in (RETIRED, STAYED) else "closed"
 
 
-def _left(lake):
-    """Return why the member left the lake: the outcome's reason once the
-    lake has closed, otherwise their ``player_end_reason``.
+def _result(lake):
+    """Return the member's fish and why they left the lake, or ``(None,
+    None)`` if they never got a boat, for example because the lake closed
+    as they joined it.
 
-    The outcome comes first because the last member's stay ends on the tick
-    the lake closes, so their ``player_end_reason`` is the lake's
-    ``"finished"``."""
-    if lake is None:
-        return None
-    left = lake.outcome and lake.outcome["left"][lake.player]
-    return left or lake.player_end_reason
+    Once the lake has closed, both come from its outcome, which comes first
+    because the last member's stay ends on the tick the lake closes, so
+    their ``player_end_reason`` is the lake's ``"finished"``. Until then
+    they come from the member's answer and ``player_end_reason``."""
+    player = None if lake is None else lake.player
+    if player is None:
+        return None, None
+    outcome = lake.outcome
+    if outcome is None:
+        return (lake.answer or {}).get("fish"), lake.player_end_reason
+    return outcome["fish"][player], outcome["left"][player] or lake.player_end_reason
 
 
 def in_society(participant: Participant) -> bool:
@@ -494,15 +499,15 @@ def final_page(participant: Participant):
 
 
 def member_row(participant: Participant, lake) -> dict:
-    """Return a member's row of the export. It comes from the lake's outcome
-    and record rather than the member's answer, which is missing if they
-    closed their page while they fished."""
-    ended = lake is not None and lake.outcome is not None
+    """Return a member's row of the export. Once the lake has closed it
+    comes from the lake's outcome rather than the member's answer, which is
+    missing if they closed their page while they fished."""
+    fish, left = _result(lake)
     return {
         "participant_id": participant.id,
         "lake_id": lake.id if lake else None,
-        "fish": lake.outcome["fish"][lake.player] if ended else None,
-        "left": _left(lake),
+        "fish": fish,
+        "left": left,
         "tip": participant.var.get("tip"),
     }
 
