@@ -683,7 +683,7 @@
 ### Fixed
 
 - Fixed the Lucid deployment test closing its survey while participants were still working, which made Lucid record their completes as Survey Closed.
-- Fixed Lucid submissions not sending PsyNet's server-side complete or terminate call, so Lucid only recorded a complete when the participant's browser made it back to the panel. Calling ``reward_bonus`` on the Lucid recruiter raises; the complete or terminate is sent from ``report_submission_outcome``.
+- Fixed Lucid submissions not sending PsyNet's server-side complete or terminate call, so Lucid only recorded a complete when the participant's browser made it back to the panel. Calling `reward_bonus` on the Lucid recruiter raises; the complete or terminate is sent from `report_submission_outcome`.
 - Fixed Prolific participants who leave early seeing an error page instead of the "Your submission has been sent to Prolific" confirmation when the page reloads after Submit.
 - Fixed the wrong-browser and mobile-device warnings, which crashed before they appeared, so participants were neither warned nor, on Lucid, sent back to the panel.
 - Fixed cached function assets leaving their temporary file open until garbage collection, which Python 3.14 reports as an error.

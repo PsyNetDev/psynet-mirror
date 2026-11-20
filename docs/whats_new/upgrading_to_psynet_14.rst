@@ -133,7 +133,6 @@ examples and cleanup guidance.
 
 Page code that talks to the server also needs to identify the participant
 in new ways. Search your JavaScript for ``WebSocket(``, ``/chat?``,
-``openExperimentSocket``, ``openChatSocket``, ``joinRealtimeSession``,
 ``/worker_complete``, ``/worker_failed``, ``participantId``,
 ``disableButton``, ``enableButton``, ``onNextButton``,
 ``next-button-spinner`` and ``next-button-text``:
@@ -159,7 +158,8 @@ in new ways. Search your JavaScript for ``WebSocket(``, ``/chat?``,
 * The global functions ``disableButton()``, ``enableButton()`` and
   ``onNextButton()`` are gone. Use
   ``psynet.page.control.nextButton.disable()``, ``.enable()`` and
-  ``.handleClick()``, which exist on pages with a Next button. The
+  ``.handleClick()``, which exist on a ``ModularPage`` that shows PsyNet's
+  Next button (``show_next_button``). The
   ``#next-button-spinner`` and ``#next-button-text`` elements are gone too;
   target ``#next-button`` instead. Disabling the button no longer shows a
   spinner.
@@ -668,10 +668,9 @@ See :doc:`/code/trials/participant_and_trial_failure`.
 -------------------------------------
 
 Search for ``def process_response``, ``response_approved``,
-``session.commit(``, ``session.rollback(``, ``pay_decided_bonus``,
-``reward_bonus``, ``terminate_participant``, ``complete_participant``,
-``accumulate_answers``, and code in ``render()`` or templates that changes
-the database.
+``session.commit(``, ``session.rollback(``, ``reward_bonus``,
+``terminate_participant``, ``complete_participant``, ``accumulate_answers``,
+and code in ``render()`` or templates that changes the database.
 
 * With ``accumulate_answers=True``, ``participant.answer`` is now a dict from
   the start of the page maker or trial, and each page adds its answer when it
