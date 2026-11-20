@@ -94,9 +94,10 @@ validation test if there is one, otherwise the largest passing test or the
 first failing one. For CPU-heavy jobs,
 also work out worker throughput: one worker process keeps up with about
 (session length) ÷ (job CPU time × jobs per participant) participants, with
-`cpu_avg` from `async_job_stats`. If the queue fails the next count, set
-`worker_greenlets_per_process = 1` and raise `worker_processes`, about one
-per spare CPU core. Report how you reached the recommended number of participants.
+`cpu_avg` from `async_job_stats`. If the queue fails the next count, check
+that the CPU-heavy jobs are marked `cpu_heavy` (so they run in CPU workers)
+and raise `worker_processes`, about one per spare CPU core for each CPU
+worker it brings. Report how you reached the recommended number of participants.
 
 Each search test lasts one session but at most 5 minutes, so in a longer
 experiment the search only loads its first few minutes, such as consent and

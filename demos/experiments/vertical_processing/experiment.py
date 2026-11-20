@@ -88,6 +88,7 @@ VOCAL_RANGES = {
 
 class VerticalProcessingTrial(StaticTrial):
     time_estimate = 15
+    async_post_trial_cpu_heavy = True
 
     def finalize_definition(self, definition, experiment, participant):
         n_pitches = len(definition["chord_type"])

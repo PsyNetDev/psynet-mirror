@@ -74,6 +74,7 @@ class RecordTrial:
     analysis = claim_var("analysis")
 
     run_async_post_trial = True
+    async_post_trial_cpu_heavy = True
 
     @property
     def recording(self):

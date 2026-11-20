@@ -251,8 +251,14 @@ class PerformanceTestResult:
     n_rq_job_slots: int | None = None
     #: The server's worker_processes config variable.
     configured_worker_processes: int | None = None
-    #: How busy the async workers were (see measure.worker_load).
+    #: How busy the async workers were (see measure.worker_load). With CPU
+    #: workers, this leaves out the CPU-heavy jobs they ran.
     worker_load: dict = field(default_factory=dict)
+    #: CPU workers registered with RQ at the end of the test, which
+    #: cpu_processes_per_worker starts beside the worker processes.
+    n_cpu_workers: int | None = None
+    #: How busy the CPU workers were, measured like worker_load.
+    cpu_worker_load: dict = field(default_factory=dict)
     #: CPU cores where the test ran: on an SSH server, the web container's.
     server_cores: int | None = None
     #: Seconds from the test start until the first bot completed the
@@ -603,9 +609,29 @@ def _worker_demand(result):
     return min(busy, 1), busy, slots
 
 
+def _cpu_worker_demand(result):
+    """Return ``(busy, demand)`` per CPU worker for the steady state of ``result``, or ``None``.
+
+    A CPU worker runs one job at a time, so both are the jobs running per CPU
+    worker; busy is at most 1.
+    """
+    load, workers = result.cpu_worker_load or {}, result.n_cpu_workers
+    steady_s = result.steady_state_s
+    if not (workers and load and steady_s):
+        return None
+    running = load["busy_s"] / (workers * steady_s)
+    return min(running, 1), running
+
+
 def worker_utilization(result):
     """Return the share of the steady state of ``result`` that its worker processes were busy, or ``None``."""
     demand = _worker_demand(result)
+    return demand[0] if demand else None
+
+
+def cpu_worker_utilization(result):
+    """Return the share of the steady state of ``result`` that its CPU workers were busy, or ``None``."""
+    demand = _cpu_worker_demand(result)
     return demand[0] if demand else None
 
 
@@ -620,16 +646,17 @@ def workers_falling_behind(result):
         return None
     startup, steady = result.startup_phase, result.steady_state_phase
     reasons = []
-    utilization = worker_utilization(result)
-    if utilization is not None and utilization > MAX_WORKER_UTILIZATION:
-        busy = (
-            "the whole time"
-            if utilization >= SATURATED_UTILIZATION
-            else f"{utilization:.0%} of the time"
-        )
-        workers = result.n_rq_workers
-        were = f"{workers} worker process{'es were' if workers != 1 else ' was'}"
-        reasons.append(f"the {were} busy {busy}")
+    for utilization, were in [
+        (worker_utilization(result), _were(result.n_rq_workers, "worker process")),
+        (cpu_worker_utilization(result), _were(result.n_cpu_workers, "CPU worker")),
+    ]:
+        if utilization is not None and utilization > MAX_WORKER_UTILIZATION:
+            busy = (
+                "the whole time"
+                if utilization >= SATURATED_UTILIZATION
+                else f"{utilization:.0%} of the time"
+            )
+            reasons.append(f"the {were} busy {busy}")
     start = ((startup.get("queue_waits") or {}).get("low") or {}).get("backlog") or 0
     end = ((steady.get("queue_waits") or {}).get("low") or {}).get("backlog") or 0
     if (
@@ -638,6 +665,12 @@ def workers_falling_behind(result):
     ):
         reasons.append(f"the low-priority backlog grew from {start:,} to {end:,} jobs")
     return " and ".join(reasons) or None
+
+
+def _were(n, noun):
+    """Return e.g. ``3 worker processes were`` or ``1 CPU worker was``."""
+    plural = "es" if noun.endswith("s") else "s"
+    return f"{n} {noun}{plural + ' were' if n != 1 else ' was'}"
 
 
 @dataclass
@@ -659,6 +692,9 @@ class WorkerAdvice:
     # Worker time per participant, if it set ``processes``.
     per_participant_s: float | None = None
     skipped: str | None = None
+    # Whether the CPU workers, rather than the worker processes' own jobs,
+    # set ``processes`` and ``utilization``.
+    cpu_bound: bool = False
 
 
 def describe_test(result):
@@ -677,6 +713,11 @@ def recommend_workers(result, n_participants):
     :func:`workers_falling_behind`) and at most the cores less
     :data:`CORES_FOR_OTHERS`.
 
+    CPU workers, ``C`` per worker process, are sized the same way from
+    :func:`_cpu_worker_demand`, and need ``1 / C`` worker processes each;
+    the larger of the two demands wins. Each CPU worker needs a core, so
+    then the cores cap ``W`` at ``1 / C`` of the cores left.
+
     Parameters
     ----------
     result : PerformanceTestResult
@@ -690,7 +731,7 @@ def recommend_workers(result, n_participants):
     """
     load, workers = result.worker_load or {}, result.n_rq_workers
     demand = _worker_demand(result)
-    jobs = load.get("jobs") or 0
+    jobs = (load.get("jobs") or 0) + ((result.cpu_worker_load or {}).get("jobs") or 0)
     if demand is None or jobs < _MIN_STEADY_WORKER_JOBS or not result.n_bots:
         test = describe_test(result)
         if not workers:
@@ -717,9 +758,28 @@ def recommend_workers(result, n_participants):
         used = n_participants * per_participant_s / session_s
     else:
         used = per_process * workers * n_participants / result.n_bots
+    cpu_bound = False
+    cores_left = max(1, (result.server_cores or math.inf) - CORES_FOR_OTHERS)
+    if (cpu_demand := _cpu_worker_demand(result)) is not None:
+        # Each worker process brings this many CPU workers, which need a core each.
+        cpu_per_process = max(1, round(result.n_cpu_workers / workers))
+        cores_left = max(1, cores_left // cpu_per_process)
+        cpu_busy, cpu_per_worker = cpu_demand
+        cpu_saturated = cpu_busy >= SATURATED_UTILIZATION
+        cpu_per_participant_s = result.cpu_worker_load.get("per_participant_s")
+        if cpu_saturated and session_s and cpu_per_participant_s:
+            cpu_used = n_participants * cpu_per_participant_s / session_s
+        else:
+            cpu_per_participant_s = None
+            cpu_used = (
+                cpu_per_worker * result.n_cpu_workers * n_participants / result.n_bots
+            )
+        if cpu_used / cpu_per_process > used:
+            used = cpu_used / cpu_per_process
+            busy, saturated = cpu_busy, cpu_saturated
+            per_participant_s, cpu_bound = cpu_per_participant_s, True
     demand = _round_up(used / TARGET_WORKER_UTILIZATION)
     floor = workers + bool(workers_falling_behind(result))
-    cores_left = max(1, (result.server_cores or math.inf) - CORES_FOR_OTHERS)
     processes = min(max(demand, floor), cores_left)
     if processes < max(demand, floor):
         reason = "cores"
@@ -740,6 +800,7 @@ def recommend_workers(result, n_participants):
         reason,
         processes >= cores_left,
         per_participant_s,
+        cpu_bound=cpu_bound,
     )
 
 

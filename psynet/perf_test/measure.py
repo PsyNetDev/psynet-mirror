@@ -579,21 +579,29 @@ def bot_duration_stats(bot_durations, outcomes):
 
 
 def count_rq_workers():
-    """Return how many async worker processes there are and how many jobs they can run at once.
+    """Count the async worker processes, the jobs they can run at once, and the CPU workers.
 
-    Returns ``(None, None)`` if they can't be counted.
+    CPU workers, which ``cpu_processes_per_worker`` starts beside each worker
+    process to run CPU-heavy jobs one at a time, are counted only in the
+    third number. Returns ``(None, None, None)`` if the workers can't be
+    counted.
     """
     try:
         from dallinger.db import redis_conn
         from rq import Worker
 
-        workers = Worker.all(connection=redis_conn)
+        workers, n_cpu = [], 0
+        for w in Worker.all(connection=redis_conn):
+            if w.queue_names() == ["cpu"]:
+                n_cpu += 1
+            else:
+                workers.append(w)
         # Dallinger's gevent workers record how many jobs each can run at once.
         n_slots = sum(int(redis_conn.hget(w.key, "pool_size") or 1) for w in workers)
-        return len(workers), n_slots
+        return len(workers), n_slots, n_cpu
     except Exception as e:
         logger.warning(f"Could not count async workers: {e}")
-        return None, None
+        return None, None, None
 
 
 def configured_worker_processes():
@@ -607,8 +615,11 @@ def configured_worker_processes():
         return None
 
 
-def worker_load(after_async_job_id, ended_at, boundary, outcomes):
+def worker_load(after_async_job_id, ended_at, boundary, outcomes, cpu_heavy=None):
     """Return how busy the async worker processes were in the steady state, from ``boundary`` to ``ended_at``.
+
+    ``cpu_heavy`` limits the jobs to those with that ``cpu_heavy`` flag, to
+    measure CPU workers and the other workers apart; ``None`` counts all.
 
     Returns
     -------
@@ -633,6 +644,9 @@ def worker_load(after_async_job_id, ended_at, boundary, outcomes):
         func.least(stopped_at, ended_at) - func.greatest(Job.time_started, boundary),
     )
     in_window = (done, Job.time_finished > boundary)
+    selected = [Job.id > after_async_job_id, Job.time_started <= ended_at]
+    if cpu_heavy is not None:
+        selected.append(Job.cpu_heavy.is_(cpu_heavy))
     jobs, busy_s, cpu_s, wall_s, succeeded_s = (
         db.session.query(
             func.count(Job.id).filter(*in_window),
@@ -641,7 +655,7 @@ def worker_load(after_async_job_id, ended_at, boundary, outcomes):
             func.sum(Job.time_taken).filter(*in_window, Job.cpu_time.isnot(None)),
             func.sum(Job.time_taken).filter(done, Job.participant_id.in_(succeeded)),
         )
-        .filter(Job.id > after_async_job_id, Job.time_started <= ended_at)
+        .filter(*selected)
         .one()
     )
     return dict(

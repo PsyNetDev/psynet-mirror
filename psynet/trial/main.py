@@ -292,6 +292,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         :meth:`~psynet.trial.main.Trial.gives_feedback` with
         ``wait_for_feedback`` set; it is ``"low"`` otherwise.
 
+    async_post_trial_cpu_heavy : bool
+        Set this to ``True`` if :meth:`~psynet.trial.main.Trial.async_post_trial`
+        computes for long, as an audio analysis does, so that it runs in a
+        worker process of its own; see the ``cpu_heavy`` parameter of
+        :class:`~psynet.async_job.WorkerAsyncJob`. ``False`` by default, and
+        ``True`` for recording trials such as
+        :class:`~psynet.trial.audio.AudioRecordTrial`.
+
     accumulate_answers : bool
         Set this class attribute to ``True`` if the trial contains multiple pages and you want
         the answers to all of these pages to be stored as a dict in ``participant.answer``,
@@ -979,6 +987,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     run_async_post_trial = None
     async_post_trial_priority = None
+    async_post_trial_cpu_heavy = False
 
     @classmethod
     def _get_async_post_trial_priority(cls, trial_maker):
@@ -1302,6 +1311,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             trial=self,
             unique=True,
             priority=self._get_async_post_trial_priority(self.trial_maker),
+            cpu_heavy=self.async_post_trial_cpu_heavy,
         ).enqueue()
 
     def on_finalized(self):

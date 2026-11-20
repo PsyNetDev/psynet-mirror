@@ -2643,6 +2643,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "check_dallinger_version": False,
             "clock_on": True,
             "color_mode": "light",
+            # Recording analyses run there; see WorkerAsyncJob's cpu_heavy.
+            "cpu_processes_per_worker": 1,
             "currency": "$",
             "default_translator": "chat_gpt",
             "disable_browser_autotranslate": True,

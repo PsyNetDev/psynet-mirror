@@ -889,9 +889,19 @@ Web server
 
 ``worker_greenlets_per_process`` *int* |dlgr-icon|
     Number of jobs each worker process runs at once. Jobs only overlap
-    while they wait on I/O; CPU-bound jobs run one at a time per process,
-    so set this to ``1`` for CPU-heavy async jobs and raise
-    ``worker_processes`` instead. Default: ``20``.
+    while they wait on I/O, so a CPU-heavy job stalls the other jobs in its
+    process; such jobs run in CPU workers instead (see
+    ``cpu_processes_per_worker``). Default: ``20``.
+
+``cpu_processes_per_worker`` *int* |dlgr-icon|
+    Number of CPU workers that each worker process starts beside it. They
+    run CPU-heavy async jobs, such as recording analyses, one at a time:
+    jobs created with ``cpu_heavy=True`` (see
+    :class:`~psynet.async_job.WorkerAsyncJob`) and the
+    ``async_post_trial`` of trial classes with
+    ``async_post_trial_cpu_heavy = True``, which includes recording trials.
+    With ``0``, those jobs run in the worker processes with the others.
+    Default in PsyNet: ``1``.
 
 Dallinger still accepts ``worker_multiplier`` and ``docker_worker_cpu_shares``
 but deprecates them: set ``web_processes`` to a number instead of

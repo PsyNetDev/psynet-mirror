@@ -97,7 +97,4 @@ isochronous_stimuli = [
 
 
 class Exp(psynet.experiment.Experiment):
-    # REPP analyses are CPU-heavy and never yield to other async jobs, so
-    # run one job per worker process at a time; add worker processes to scale.
-    config = {"worker_greenlets_per_process": 1}
     timeline = get_timeline()

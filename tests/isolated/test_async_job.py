@@ -333,6 +333,29 @@ def test_cancel_cancels_the_queued_worker_job(monkeypatch):
     "experiment_directory", [path_to_test_experiment("static")], indirect=True
 )
 @pytest.mark.usefixtures("launched_experiment")
+def test_cpu_heavy_jobs_use_the_cpu_queue_only_when_there_are_cpu_workers():
+    from dallinger.config import get_config
+
+    config = get_config()
+    heavy = WorkerAsyncJob(do_nothing, cpu_heavy=True, priority="low").enqueue()
+    light = WorkerAsyncJob(do_nothing, priority="low").enqueue()
+    db.session.commit()
+    assert heavy.redis_job.origin == "cpu"
+    assert light.redis_job.origin == "low"
+
+    config.set("cpu_processes_per_worker", 0)
+    try:
+        without_cpu_workers = WorkerAsyncJob(do_nothing, cpu_heavy=True).enqueue()
+        db.session.commit()
+        assert without_cpu_workers.redis_job.origin == "high"
+    finally:
+        config.set("cpu_processes_per_worker", 1)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("static")], indirect=True
+)
+@pytest.mark.usefixtures("launched_experiment")
 def test_only_enqueued_jobs_launch(monkeypatch, caplog):
     launched = []
     monkeypatch.setattr(

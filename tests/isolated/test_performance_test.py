@@ -1347,6 +1347,15 @@ def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
     return _base_result(**{**fields, **overrides})
 
 
+def _with_cpu_workers(result, n_cpu, busy):
+    """Give ``result`` ``n_cpu`` CPU workers ``busy`` with tapping's analyses."""
+    result.n_cpu_workers = n_cpu
+    result.cpu_worker_load = dict(
+        jobs=500, busy_s=busy * n_cpu * 900, cpu_share=0.95, per_participant_s=43.0
+    )
+    return result
+
+
 # One worker keeps up with about 777 / 43 = 18 participants, so 3 with about 54.
 @pytest.mark.parametrize(
     "result, n, expected",
@@ -1398,6 +1407,23 @@ def _tapping_result(n_bots, workers, busy, slots=1, cpu_share=0.9, **overrides):
             dict(
                 skipped="the 96-bot test ran for less than 60 s after its first bot finished"
             ),
+        ),
+        # The analyses ran in 10 CPU workers 55% busy, so they set the advice.
+        (
+            _with_cpu_workers(_tapping_result(96, 10, 0.1), 10, 0.55),
+            96,
+            dict(processes=10, demand=8, reason="current", cpu_bound=True),
+        ),
+        (
+            _with_cpu_workers(_tapping_result(60, 3, 0.1), 3, 0.98),
+            60,
+            dict(processes=5, reason="minimum", cpu_bound=True),
+        ),
+        # Two CPU workers per process leave room for 14 / 2 = 7 processes.
+        (
+            _with_cpu_workers(_tapping_result(96, 4, 0.1), 8, 0.55),
+            288,
+            dict(processes=7, demand=10, reason="cores", cpu_bound=True),
         ),
     ],
 )
@@ -1479,6 +1505,11 @@ def test_recommend_workers(result, n, expected):
             "worker_greenlets_per_process = 1",
             "150%",
         ),
+        (
+            [_with_cpu_workers(_tapping_result(96, 10, 0.1), 10, 0.55)],
+            "In the 96-bot test, the 10 CPU workers were busy 55% of the time.",
+            "worker processes were busy",
+        ),
     ],
 )
 def test_worker_text_states_what_was_measured(results, present, absent):
@@ -1506,10 +1537,11 @@ def test_worker_load_sums_worker_time_in_the_steady_state(db_session):
     worker, local = (
         c.__mapper__.polymorphic_identity for c in (WorkerAsyncJob, LocalAsyncJob)
     )
-    # (type, started, finished, failed, CPU s); the steady state is 60 s to 100 s.
-    jobs = [(worker, 50, 70, None, 18.0), (worker, 80, 90, None, 9.0)]
-    jobs += [(worker, 95, None, None, None), (local, 80, 90, None, 1.0)]
-    jobs += [(worker, 85, None, 95, None), (worker, None, None, 90, None)]
+    # (type, started, finished, failed, CPU s, CPU-heavy); the steady state is
+    # 60 s to 100 s.
+    jobs = [(worker, 50, 70, None, 18.0, False), (worker, 80, 90, None, 9.0, True)]
+    jobs += [(worker, 95, None, None, None, False), (local, 80, 90, None, 1.0, False)]
+    jobs += [(worker, 85, None, 95, None, False), (worker, None, None, 90, None, False)]
     db.session.execute(
         AsyncJob.__table__.insert(),
         [
@@ -1522,8 +1554,9 @@ def test_worker_load_sums_worker_time_in_the_steady_state(db_session):
                 cpu_time=cpu,
                 finished=finished is not None,
                 failed=failed is not None,
+                cpu_heavy=cpu_heavy,
             )
-            for job_type, started, finished, failed, cpu in jobs
+            for job_type, started, finished, failed, cpu, cpu_heavy in jobs
         ],
     )
     db.session.flush()
@@ -1532,6 +1565,8 @@ def test_worker_load_sums_worker_time_in_the_steady_state(db_session):
     assert worker_load(0, at(100), at(60), outcomes={}) == dict(
         jobs=2, busy_s=35.0, cpu_share=pytest.approx(0.9), per_participant_s=None
     )
+    assert worker_load(0, at(100), at(60), {}, cpu_heavy=True)["busy_s"] == 10.0
+    assert worker_load(0, at(100), at(60), {}, cpu_heavy=False)["busy_s"] == 25.0
 
 
 def test_fewer_running_workers_than_configured_are_flagged():
@@ -1669,7 +1704,7 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
         "of worker_processes: no bot finished, so there's no steady state to "
         "measure. Raise worker_processes in config.txt"
     ) in text
-    assert "worker_greenlets_per_process = 1" in text
+    assert "cpu_heavy=True" in text
 
 
 @pytest.mark.parametrize(

@@ -24,6 +24,8 @@ pointing at the job.
 
 A :class:`WorkerAsyncJob` has a priority, ``"high"`` or ``"low"``, naming the
 RQ queue it is enqueued on; workers take jobs from the ``high`` queue first.
+A CPU-heavy job goes to Dallinger's ``cpu`` queue instead, when the
+``cpu_processes_per_worker`` setting starts CPU workers to run it.
 """
 
 import datetime
@@ -82,6 +84,19 @@ def check_priority(priority):
         raise ValueError(
             f"Invalid async job priority {priority!r}; expected one of {PRIORITIES}."
         )
+
+
+def _queue_name(priority, cpu_heavy):
+    """Return the RQ queue a :class:`WorkerAsyncJob` runs on.
+
+    Without CPU workers, ordinary workers take ``cpu`` jobs after all their
+    other queues, so a CPU-heavy job keeps its priority's queue then.
+    """
+    from dallinger.config import get_config
+
+    if cpu_heavy and get_config().get("cpu_processes_per_worker", 0) > 0:
+        return "cpu"
+    return priority
 
 
 _running_async_job = ContextVar("psynet_running_async_job", default=False)
@@ -887,14 +902,23 @@ class WorkerAsyncJob(AsyncJob):
         jobs from the ``high`` queue before the ``low`` queue, but do not
         interrupt a running job: a high-priority job still waits for a free
         worker if every worker is busy.
+    cpu_heavy : bool, default ``False``
+        Set this for a job that computes for long without waiting on the
+        network or the database, such as an audio analysis. A worker runs
+        many jobs at once in one process, and such a job would stall all of
+        them. If ``cpu_processes_per_worker`` is above 0 (PsyNet's default
+        is 1), the job runs on the ``cpu`` queue, in a process that runs one
+        job at a time, whatever its priority; otherwise it runs on its
+        priority's queue.
     """
 
     cancelled = Column(Boolean, default=False)
+    cpu_heavy = Column(Boolean, default=False)
 
     def get_launch_spec(self) -> dict:
         spec = super().get_launch_spec()
         spec["timeout"] = self.timeout
-        spec["priority"] = self.priority
+        spec["queue"] = _queue_name(self.priority, self.cpu_heavy)
         return spec
 
     def __init__(
@@ -911,8 +935,10 @@ class WorkerAsyncJob(AsyncJob):
         unique=False,
         timeout=None,
         priority="high",
+        cpu_heavy=False,
     ):
         check_priority(priority)
+        self.cpu_heavy = cpu_heavy
         super().__init__(
             function,
             arguments,
@@ -929,13 +955,13 @@ class WorkerAsyncJob(AsyncJob):
         )
 
     @classmethod
-    def get_redis_queue(cls, priority):
-        """Return the RQ queue for jobs of the given priority."""
-        return Queue(priority, connection=redis_conn)
+    def get_redis_queue(cls, name):
+        """Return the RQ queue with the given name, a priority or ``"cpu"``."""
+        return Queue(name, connection=redis_conn)
 
     @classmethod
     def launch(cls, spec: dict):
-        cls.get_redis_queue(spec["priority"]).enqueue_call(
+        cls.get_redis_queue(spec["queue"]).enqueue_call(
             func=cls.call_function_with_logger,
             args=(),
             kwargs=dict(async_job_id=spec["id"]),

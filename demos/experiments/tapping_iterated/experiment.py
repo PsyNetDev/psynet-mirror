@@ -212,9 +212,6 @@ class CustomNode(AudioImitationChainNode):
 
 class Exp(psynet.experiment.Experiment):
     label = "Iterated tapping demo"
-    # REPP analyses are CPU-heavy and never yield to other async jobs, so
-    # run one job per worker process at a time; add worker processes to scale.
-    config = {"worker_greenlets_per_process": 1}
 
     # asset_storage = S3Storage("psynet-tests", "iterated-tapping")
 

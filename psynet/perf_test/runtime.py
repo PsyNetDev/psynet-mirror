@@ -886,6 +886,9 @@ class PerformanceTester:
             **bot_stats,
             **bot_duration_stats(bot_state.bot_durations, outcomes),
         )
+        result.n_rq_workers, result.n_rq_job_slots, result.n_cpu_workers = (
+            count_rq_workers()
+        )
         completed_at = bot_state.first_completed_at
         if completed_at is not None:
             result.first_completion_s = completed_at - start_time
@@ -898,10 +901,17 @@ class PerformanceTester:
                     ended_at,
                     steady_from,
                 )
-                result.worker_load = worker_load(
-                    initial_state["max_async_job_id"], ended_at, steady_from, outcomes
+                load_args = (
+                    initial_state["max_async_job_id"],
+                    ended_at,
+                    steady_from,
+                    outcomes,
                 )
-        result.n_rq_workers, result.n_rq_job_slots = count_rq_workers()
+                if result.n_cpu_workers:
+                    result.worker_load = worker_load(*load_args, cpu_heavy=False)
+                    result.cpu_worker_load = worker_load(*load_args, cpu_heavy=True)
+                else:
+                    result.worker_load = worker_load(*load_args)
         result.configured_worker_processes = configured_worker_processes()
         result.server_cores = os.cpu_count()
         # Release the locks the counts took before the next test starts.

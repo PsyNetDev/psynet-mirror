@@ -261,27 +261,34 @@ once:
   It replaces ``num_dynos_worker``.
 - ``worker_greenlets_per_process`` (default 20): how many jobs each process
   runs at once.
+- ``cpu_processes_per_worker`` (PsyNet's default 1): how many CPU workers
+  each worker process starts beside it for CPU-heavy jobs.
 
 Jobs in one process only overlap while they wait, for example on a web API
 or the database. A CPU-heavy job, such as audio analysis in Python, blocks
 the other jobs in its process: in the ``async_codeblock`` demo, one process
 finished about 14 one-second jobs a second when they slept, but only about
-one a second when they computed. For CPU-heavy jobs, such as tapping
-experiments that analyse recordings with REPP, set
-``worker_greenlets_per_process = 1`` and plan on about one worker process
-per CPU core. On SSH servers the workers get a low CPU priority, so they
-don't slow down participants' pages.
+one a second when they computed. Such jobs therefore run in CPU workers,
+which run one job at a time. Recording trials such as
+:class:`~psynet.trial.audio.AudioRecordTrial` mark their analysis as
+CPU-heavy; mark your own with ``async_post_trial_cpu_heavy = True`` on the
+trial class, or ``cpu_heavy=True`` on a
+:class:`~psynet.async_job.WorkerAsyncJob`. Plan on a CPU core for each CPU
+worker. On SSH servers the workers get a low CPU priority, so they don't
+slow down participants' pages.
 
 The summary estimates ``worker_processes`` from the steady state of one
 test, aiming to keep the workers about 70% busy at the recommended number
-of participants, and suggests ``worker_greenlets_per_process = 1`` when
-the jobs are CPU-heavy. For example, a tapping study with 43 s of audio
-analysis per 13-minute session gets::
+of participants. With CPU workers, it sizes them the same way and
+recommends enough worker processes for whichever needs more. It suggests
+``worker_greenlets_per_process = 1`` when the other jobs are CPU-heavy too;
+mark those jobs CPU-heavy instead if you can. For example, a tapping study
+with 43 s of audio analysis per 13-minute session gets::
 
-    In the 130-bot test, jobs that participants wait for waited too long for one of the 10 worker processes.
+    In the 130-bot test, jobs that participants wait for waited too long for one of the 10 worker processes, up to 200 jobs at once, and 10 CPU workers.
     Recommended settings for 96 participants at once:
         worker_processes = 10
-    In the 96-bot validation test, the 10 worker processes were busy 55% of the time. Keep the current 10 (the load needs about 8). To go above 96, raise worker_processes above 10 and test again.
+    In the 96-bot validation test, the 10 CPU workers were busy 55% of the time. Keep the current 10 (the load needs about 8). To go above 96, raise worker_processes above 10 and test again.
 
 The settings are in ``config.txt`` form. ``(minimum)`` marks an estimate
 from workers that were saturated, and ``(all the cores left)`` a number

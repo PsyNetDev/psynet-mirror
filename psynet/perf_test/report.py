@@ -43,6 +43,7 @@ from psynet.perf_test.results import (
     capacity_outcome,
     confirmation_timing,
     count_wait_timeouts,
+    cpu_worker_utilization,
     describe_bot_errors,
     describe_busy_early_finish,
     describe_test,
@@ -109,6 +110,8 @@ def _describe_workers(result):
     n_slots = result.n_rq_job_slots
     if n_slots and n_slots != n_workers:
         text += f", up to {n_slots} jobs at once"
+    if n_cpu := result.n_cpu_workers:
+        text += f", and {n_cpu} CPU worker{'s' if n_cpu != 1 else ''}"
     return text
 
 
@@ -418,6 +421,8 @@ def _async_job_lines(result):
             f"  Worker processes busy in the steady state: {utilization:.0%}.",
             "",
         ]
+    if (utilization := cpu_worker_utilization(result)) is not None:
+        lines += [f"  CPU workers busy in the steady state: {utilization:.0%}.", ""]
 
     for priority in PRIORITIES:
         waits = (result.queue_waits or {}).get(priority) or {}
@@ -870,9 +875,9 @@ _POSTGRES_ADVICE = (
 )
 _WORKER_ADVICE = (
     "Raise worker_processes in config.txt (worker dynos on Heroku), or make "
-    "the jobs faster. For CPU-heavy jobs, such as audio analysis, also set "
-    "worker_greenlets_per_process = 1 and plan on one worker process per CPU "
-    "core; see 'Async workers' in the PsyNet docs on testing scalability."
+    "the jobs faster. Mark CPU-heavy jobs, such as audio analysis, with "
+    "cpu_heavy=True, so that they run in CPU workers, and plan on a CPU core "
+    "for each; see 'Async workers' in the PsyNet docs on testing scalability."
 )
 
 
@@ -991,8 +996,12 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
         busy = "the whole time"
     else:
         busy = f"{advice.utilization:.0%} of the time"
-    were = "were" if workers != 1 else "was"
-    measured = [f"In {test}, the {ran} {were} busy {busy}."] if test else []
+    if advice.cpu_bound:
+        n_cpu = result.n_cpu_workers
+        were = f"{n_cpu} CPU worker{'s were' if n_cpu != 1 else ' was'}"
+    else:
+        were = f"{ran} {'were' if workers != 1 else 'was'}"
+    measured = [f"In {test}, the {were} busy {busy}."] if test else []
     implied = f"would be about {advice.implied_utilization:.0%} busy"
     server = (
         f"{result.server_cores}-core server has only {processes} cores left "
