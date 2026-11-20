@@ -43,8 +43,9 @@ class LiveGameRecord:
             game.messages     # every message, in order
 
     A record from a participant or a trial is that participant's, so it has
-    their :attr:`answer` and :attr:`player` number. A group's record is the
-    whole group's, and has only :attr:`answers`, each player's.
+    their :attr:`answer`, :attr:`player` number and
+    :attr:`player_end_reason`. A group's record is the whole group's, and has
+    only :attr:`answers`, each player's.
 
     Each attribute reads the database when you use it, so it's up to date
     while the game is played: read it again rather than keep its value.
@@ -165,7 +166,9 @@ class LiveGameRecord:
         """Why the participant's own game ended: the game's ``done_reason``
         for them, such as ``"retired"``, if the game's ``is_done`` ended it
         before the game ended, and otherwise the game's :attr:`end_reason`.
-        It's ``None`` until then."""
+        It's ``None`` until then. A player whose ``is_done`` becomes true on
+        the step the game ends gets the game's :attr:`end_reason`, so read
+        per-player results from the game's :attr:`outcome`."""
         participant_id = self._own_participant_id("player_end_reason")
         ending = None if self._id is None else _player_ending(self._id, participant_id)
         return self.end_reason if ending is None else ending.reason
@@ -225,11 +228,15 @@ class LiveGameRecord:
 
     def _own_participant(self, attribute):
         if self._participant is None:
+            hint = (
+                " game.answers has each player's answer, in player order."
+                if attribute == "answer"
+                else ""
+            )
             raise AttributeError(
-                f"A group's game record has no single {attribute}. "
-                f"game.answers has each player's answer, in player order, and "
-                f"a member's own record, from participant.live_games, has "
-                f"their {attribute}."
+                f"A group's game record has no single {attribute}: a member's "
+                f"own record, from participant.live_games, has their "
+                f"{attribute}.{hint}"
             )
         return self._participant
 

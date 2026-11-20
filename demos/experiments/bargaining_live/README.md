@@ -34,8 +34,10 @@ The game's `end_reason` says how each round ended: `"deal"`, `"no_show"`
 when a player didn't open the game (`"not_joined"` when neither did),
 PsyNet's `"players_left"` when a player left it, or `"finished"` when the
 time ran out. The feedback page uses it to tell the player what happened,
-and the export's `player_round` table has it in its `end_reason` column. The `arrived` and `partner_arrived`
-columns say who didn't arrive; they are `None` for a player who didn't
+and the export's `player_round` table has it in its `end_reason` column, so
+there `"finished"` means a round that ran out of time without a deal:
+it's PsyNet's reason for a game whose time is up. The `arrived` and
+`partner_arrived` columns say who didn't arrive; they are `None` for a player who didn't
 submit their game page.
 
 A round can take up to 30 seconds for the partner to arrive, a minute of

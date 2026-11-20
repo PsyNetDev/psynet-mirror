@@ -91,8 +91,13 @@ class TestMicrosocietyLive:
 
     def test_the_export_has_the_fish_of_a_member_who_closed_their_page(self, demo):
         # Their page saved no answer, but the lake's outcome and record have them.
+        # The last member's stay ends on the tick the lake closes, so their
+        # record has the lake's end reason, but the outcome says they stayed.
         lake = SimpleNamespace(
-            id=1, outcome={"fish": [33, 35]}, player=1, player_end_reason=demo.STAYED
+            id=1,
+            outcome={"fish": [33, 35], "left": [demo.RETIRED, demo.STAYED]},
+            player=1,
+            player_end_reason="finished",
         )
         row = demo.member_row(SimpleNamespace(id=3, var={}), lake)
         assert (row["fish"], row["left"]) == (35, demo.STAYED)

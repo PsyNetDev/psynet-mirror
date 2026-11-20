@@ -1006,7 +1006,11 @@ runs and the page moves on as it would at the end of the game. They no
 longer count towards the game's ``min_players`` for its ``away_timeout``.
 The game's ``end_reason`` stays the whole game's, so a later page reads why
 the player's own game ended from their record's ``player_end_reason``
-(see `A game's record`_).
+(see `A game's record`_). If the game ends on the same step as a player's
+``is_done`` becomes true, for example because they were the last player
+left, no ending is written for that player alone, so their
+``player_end_reason`` is the game's ``end_reason``; read per-player results
+such as their ``done_reason`` from the game's ``outcome``.
 
 The game itself still ends through its ``is_over``, ``duration`` or
 ``timeout``, and the players still playing then get their results from the
@@ -1195,8 +1199,8 @@ Other records of the same games:
   ``trial.live_game.outcome``.
 - A group's :attr:`~psynet.sync.SyncGroup.running_live_games` gives the
   games it is playing now, keyed in the same way. These records are the
-  group's, not one participant's, so they have ``answers`` but no ``answer``
-  or ``player``.
+  group's, not one participant's, so they have ``answers`` but no
+  ``answer``, ``player`` or ``player_end_reason``.
 
 .. _live-games-saved-messages:
 

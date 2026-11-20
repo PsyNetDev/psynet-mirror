@@ -459,7 +459,7 @@ class LiveGame(RealtimeGame):
             players it's for.
         """
         raise NotImplementedError(
-            f"{type(self).__name__} queued the effect {name!r}, but no "
+            f"{type(self).__name__} got the effect {name!r}, but no "
             "handle_effect handles it. The game's own handle_effect must handle "
             "it, without calling super().handle_effect for it."
         )

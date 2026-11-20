@@ -95,7 +95,7 @@ class TestBargainingLive:
         game.send(0, PlayerReady())
         game.tick(demo.Bargain.ready_timeout)
 
-        assert game.is_over()
+        assert game.is_over() and game.end_reason() == demo.NO_SHOW
         assert [game.view(player)["no_show"] for player in (0, 1)] == [
             "partner",
             "you",

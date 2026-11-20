@@ -17,7 +17,8 @@ and the game's ``on_add`` gives them a boat. Each member fishes for
 ends each member's game then, so they move on and leave a tip while the
 others carry on, and its ``done_reason`` says whether they retired or stayed
 their time, which later pages read from the member's record of the lake as
-``player_end_reason``. The lake closes once nobody is left on it.
+``player_end_reason``, or from the lake's outcome once it has closed. The
+lake closes once nobody is left on it.
 
 The game records each catch with ``record``, so the newcomer's page and the
 export read the society's history from the lake's ``moments``.
@@ -391,9 +392,21 @@ def get_timeline():
 
 def why_left(participant: Participant) -> str:
     """Return why the member left the lake, or ``"closed"`` if it closed while they fished."""
-    lake = participant.live_games.get("fishing")
-    left = lake and lake.player_end_reason
+    left = _left(participant.live_games.get("fishing"))
     return left if left in (RETIRED, STAYED) else "closed"
+
+
+def _left(lake):
+    """Return why the member left the lake: the outcome's reason once the
+    lake has closed, otherwise their ``player_end_reason``.
+
+    The outcome comes first because the last member's stay ends on the tick
+    the lake closes, so their ``player_end_reason`` is the lake's
+    ``"finished"``."""
+    if lake is None:
+        return None
+    left = lake.outcome and lake.outcome["left"][lake.player]
+    return left or lake.player_end_reason
 
 
 def in_society(participant: Participant) -> bool:
@@ -489,9 +502,7 @@ def member_row(participant: Participant, lake) -> dict:
         "participant_id": participant.id,
         "lake_id": lake.id if lake else None,
         "fish": lake.outcome["fish"][lake.player] if ended else None,
-        # RETIRED or STAYED, or the lake's end reason, such as "finished",
-        # for a member still fishing when it closed.
-        "left": lake.player_end_reason if lake else None,
+        "left": _left(lake),
         "tip": participant.var.get("tip"),
     }
 
@@ -550,7 +561,9 @@ class Exp(psynet.experiment.Experiment):
         }
         lefts = [members[bot.id]["left"] for bot in bots]
         assert lefts.count(RETIRED) == 1, lefts
-        assert set(lefts) <= {RETIRED, STAYED, "finished"}, lefts
+        assert lefts.count(STAYED) == 3, lefts
+        # Everyone, including the last member on the lake, left a tip.
+        assert all(members[bot.id]["tip"] for bot in bots), members
         assert len({members[bot.id]["lake_id"] for bot in bots}) == 1
         for bot in bots:
             reward = bot.with_participant(lambda p: p.performance_reward)
