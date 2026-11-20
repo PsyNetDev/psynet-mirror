@@ -311,10 +311,6 @@ def _suppress_dallinger_header():
     dallinger.command_line.header = ""
     dallinger.command_line.utils.header = ""
 
-    # We need to use importlib here to avoid confusion with the command group of the same name
-    develop_module = importlib.import_module("dallinger.command_line.develop")
-    develop_module.header = ""
-
 
 _suppress_dallinger_header()
 
@@ -751,7 +747,7 @@ def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
             elif docker:
                 _debug_docker(ctx, archive=None, no_browsers=no_browsers)
             else:
-                _debug_auto_reload(ctx, archive=None, no_browsers=no_browsers)
+                _debug_auto_reload(archive=None, no_browsers=no_browsers)
         finally:
             kill_psynet_worker_processes()
             _cleanup_exp_directory()
@@ -1524,84 +1520,8 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
-def launch_app_without_browsers(port, auth=None, after=(), **kwargs):
-    """Launch the development app without opening browsers.
-
-    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload ``--no-browsers`` runs, printing the ``Ready.`` block (see
-    :func:`_launch_app_and_report`). The server log leaves the dashboard
-    password out. It must stay importable by module path because RQ workers
-    resolve it that way. ``auth`` is the ``(user, password)`` dashboard login
-    in the job; it defaults to the login in this worker's config. ``after``
-    is the command's own rows for the block, as ``(label, value)`` pairs.
-    """
-    _launch_app_and_report(port, auth=auth, after=after)
-
-
-def launch_app_and_open_browsers(port, auth=None, after=(), **kwargs):
-    """Launch the development app, print the ``Ready.`` block, then open the browsers.
-
-    Stands in for Dallinger's ``launch_app_and_open_browser`` RQ job in
-    auto-reload runs that open browsers, so that its ``Ready.`` block has
-    PsyNet's rows too. It must stay importable by module path because RQ
-    workers resolve it that way. ``auth`` and ``after`` are as for
-    :func:`launch_app_without_browsers`.
-    """
-    develop = importlib.import_module("dallinger.command_line.develop")
-
-    user, password = _launch_app_and_report(port, auth=auth, after=after)
-    login = {"dashboard_user": user, "dashboard_password": password}
-    _open_browser_async(develop.dashboard_url(login, port))
-    time.sleep(0.1)  # Keeps the two tabs opening in the same order.
-    _open_browser_async(develop.ad_url(login, port))
-
-
-def _open_browser_async(url):
-    """Open ``url`` in a thread, because opening a browser can be slow."""
-    develop = importlib.import_module("dallinger.command_line.develop")
-
-    threading.Thread(target=develop.open_browser, args=(url,)).start()
-
-
-def _launch_app_and_report(port, auth=None, after=()):
-    """Launch the development app, print the ``Ready.`` block and return the login used.
-
-    ``auth`` is the ``(user, password)`` login that Dallinger's ``develop
-    debug`` puts in the launch job; without it, Dallinger's ``launch_auth``
-    reads it from this process's config.
-
-    The block has the participant link (see Dallinger's
-    ``launch_message_rows``), the dashboard login, the location of the full
-    log and the rows in ``after`` (see :func:`_ready_rows`). Those come with
-    the job, because the worker that runs it can belong to another
-    experiment.
-    """
-    from dallinger.deployment import handle_launch_data, launch_auth
-
-    develop = importlib.import_module("dallinger.command_line.develop")
-    auth = tuple(auth or launch_auth())
-    launch_data = handle_launch_data(
-        develop.BASE_URL.format(port) + "launch",
-        error=log,
-        delay=1.0,
-        context="local",
-        auth=auth,
-    )
-    details = develop.launch_message_rows(launch_data.get("recruitment_msg"))
-    user, password = auth
-    details.append(
-        (
-            "Dashboard",
-            f"{develop.BASE_URL.format(port)}dashboard (user {user}, "
-            f"password {password})",
-        )
-    )
-    develop.echo_ready(details, after=[tuple(row) for row in after])
-    return auth
-
-
 def _ready_rows(warning):
-    """Return this command's rows for the launch job's ``Ready.`` block.
+    """Return this command's rows for Dallinger's ``Ready.`` block.
 
     They are the development server ``warning``, if there is one, since the
     copy printed at the start has scrolled away by then, and, in an isolated
@@ -1620,9 +1540,10 @@ def _ready_rows(warning):
 
 def _isolated_session_export_line(env):
     """Return the ``export`` command that points another terminal at an isolated session."""
+    from .testing.locks import ISOLATED_SESSION_VARIABLES
+
     return "export " + " ".join(
-        f"{key}={shlex.quote(env[key])}"
-        for key in ("DATABASE_URL", "REDIS_URL", "base_port")
+        f"{key}={shlex.quote(env[key])}" for key in ISOLATED_SESSION_VARIABLES
     )
 
 
@@ -1785,11 +1706,10 @@ def _exit_on_termination_signal():
             signal.signal(sig, previous_handler)
 
 
-def _debug_auto_reload(ctx, archive, no_browsers):
+def _debug_auto_reload(archive, no_browsers):
     from dallinger.deployment import DevelopmentDeployment
 
     develop_module = importlib.import_module("dallinger.command_line.develop")
-    launch_job = develop_module.launch_app_and_open_browser
     port = _local_base_port()
     # Dallinger's development server runs `flask run`, which reads these variables.
     os.environ["FLASK_RUN_PORT"] = str(port)
@@ -1803,26 +1723,20 @@ def _debug_auto_reload(ctx, archive, no_browsers):
     warning = _ticking_game_warning(deployment_info.read("mode"))
     if warning:
         click.echo(f"Warning: {warning}", err=True)
-    develop_module.launch_app_and_open_browser = (
-        launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
-    )
+
+    run_pre_auto_reload_checks()
+
+    DevelopmentDeployment.archive = archive
+    patch_dallinger_develop()
 
     try:
-        run_pre_auto_reload_checks()
-
-        DevelopmentDeployment.archive = archive
-        patch_dallinger_develop()
-
-        develop_module.header = ""
-
-        try:
-            with _stop_child_processes_on_signal():
-                develop_module.run_debug(port=port, ready_rows=_ready_rows(warning))
-        finally:
-            db.session.commit()
-            reset_console()
+        with _stop_child_processes_on_signal():
+            develop_module.run_debug(
+                port=port, no_browsers=no_browsers, ready_rows=_ready_rows(warning)
+            )
     finally:
-        develop_module.launch_app_and_open_browser = launch_job
+        db.session.commit()
+        reset_console()
 
 
 def patch_dallinger_develop():
@@ -5992,6 +5906,7 @@ def _rerun_in_isolated_environment(mode="test"):
     """
     from .isolated_environment import IsolatedEnvironment
     from .services import SERVICES_CHECKED_ENV_VAR, ensure_local_services
+    from .testing.locks import record_isolated_server
 
     _check_no_server_here()
     # Before creating the database and Redis, so that an experiment that isn't
@@ -6003,9 +5918,12 @@ def _rerun_in_isolated_environment(mode="test"):
     except RuntimeError as e:
         raise click.ClickException(str(e)) from e
     env = {**environment.env, SERVICES_CHECKED_ENV_VAR: "1"}
+    record = (
+        record_isolated_server(os.getcwd(), env) if mode == "debug" else nullcontext()
+    )
     exit_code = 130
     interrupted = None
-    with _exit_on_termination_signal(), environment:
+    with _exit_on_termination_signal(), environment, record:
         log(environment.describe())
         # On macOS framework builds, sys.orig_argv[0] is the framework's own
         # interpreter, which runs outside the virtual environment.

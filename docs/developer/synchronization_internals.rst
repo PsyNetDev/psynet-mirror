@@ -45,10 +45,20 @@ then applies ``max_wait_time`` to waiters whose deadline has
 passed, since nobody else would: their own request normally does it. This
 covers waiters at the default wait indicator and at explicit
 ``waiting_logic`` pages, whose link records its own deadline, even if they
-are still partway through a filler page. It then checks waiting visits,
-least recently checked first, with a 5-second head start for visits that
+are still partway through a filler page. It then checks waiting visits.
+Visits whose ``next_due_at`` has come go first: each check of a visit
+records there when a time-based rule (``late_after``, ``top_up_wait``,
+``start_short_after``, or a :class:`~psynet.sync.Regrouper` deadline or
+``every`` tick) next lets a check change something (see
+``Barrier._due_times``). A due visit goes first once per due time, so one
+whose check is deferred or fails then waits its turn. The other visits
+follow least recently checked
+first, with a 5-second head start for visits that
 are new or whose waiters or sync group changed since this process last
-checked them. A visit whose check is deferred or fails is retried at most
+checked them. This rotation also covers what ``next_due_at`` misses, such
+as a custom release rule that depends on time, or a group that falls below
+its quorum when a member returns without a barrier check; with many
+waiting visits such a release can take several sweeps. A visit whose check is deferred or fails is retried at most
 once in the same sweep and then queued like a checked one, and a waiter
 whose timeout fails goes behind the other overdue waiters, so a broken item
 cannot hold up the rest. Each of

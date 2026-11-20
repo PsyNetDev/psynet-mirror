@@ -22,16 +22,17 @@ opened, and this block is how you reach the experiment):
 
     Ready.
       Participant link: http://127.0.0.1:5000/ad?recruiter=hotair&generate_tokens=1&mode=debug
-      Dashboard:        http://127.0.0.1:5000/dashboard (user admin, password ...)
+      Dashboard:        http://127.0.0.1:5000/dashboard/develop (user admin, password ...)
       Full log:         /tmp/dallinger_develop/logs.jsonl
     Press Ctrl+C to stop.
 
 Press :kbd:`Ctrl+C` in the terminal to stop it.
 
 When a script or a coding agent starts ``psynet debug local`` in a
-background shell without a terminal, keep its standard input open, for
-example ``tail -f /dev/null | psynet debug local``. Otherwise the server can
-stop without a log message when standard input closes.
+background shell without a terminal, keep its standard input open and skip
+the browsers, for example
+``tail -f /dev/null | psynet debug local --no-browsers``. Otherwise the
+server can stop without a log message when standard input closes.
 
 Most code changes, such as editing a page, adding timeline elements or
 changing code block logic, take effect when you save the file and refresh the
@@ -56,7 +57,8 @@ PostgreSQL database, the Redis server on port 6379 and the
 ``/tmp/dallinger_develop`` folder, so only one can run at a time; a second
 refuses to start while another uses the same port or database. To run
 another alongside it, for example when several coding agents test
-different experiments on one machine, add ``--isolated``:
+different experiments on one machine, add ``--isolated`` (coding agents
+also add ``--no-browsers``):
 
 .. code-block:: console
 
@@ -69,13 +71,17 @@ different experiments on one machine, add ``--isolated``:
 
     Ready.
       Participant link: http://127.0.0.1:5100/ad?recruiter=hotair&generate_tokens=1&mode=debug
-      Dashboard:        http://127.0.0.1:5100/dashboard (user admin, password ...)
+      Dashboard:        http://127.0.0.1:5100/dashboard/develop (user admin, password ...)
       Full log:         /tmp/dallinger_develop_5100/logs.jsonl
       Other terminals:  export DATABASE_URL=... REDIS_URL=... base_port=5100
     Press Ctrl+C to stop.
 
-Run the ``Other terminals`` line in another terminal to use the server's data
-there, for example with ``psynet export local`` or ``psynet run-bot``.
+In the same experiment directory, ``psynet export local``, ``psynet run-bot``,
+``psynet db`` and ``psynet experiment-variables`` find the server by
+themselves and say which database they use. For other commands, or from
+another directory, run the ``Other terminals`` line in that terminal first.
+If you set ``DATABASE_URL``, ``REDIS_URL`` or ``base_port`` yourself, they
+don't look for the server and use your settings instead.
 
 Like a test session, the server then gets a free port from 5100 upwards, a
 fresh database and its own Redis server (or, without ``redis-server`` on
@@ -160,6 +166,12 @@ works), for example
 If the cause is still unclear, simplify the experiment until the error
 disappears, for example by commenting out parts of the timeline. Share the
 smallest version that still fails when you ask for help.
+
+When a new participant opens the experiment, the browser console shows
+``POST /load-participant 403 (Forbidden)``. This is expected: the start page
+first asks whether the participant already exists, Dallinger answers 403
+with ``participant_not_found`` for someone new, and PsyNet then creates the
+participant.
 
 See PsyNet's detailed log messages
 ----------------------------------

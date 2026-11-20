@@ -90,6 +90,10 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
         GroupPrompt(group=group, participant=first, names="hidden")
     with pytest.raises(ValueError, match="either progress or answers"):
         GroupPrompt(group=group, participant=first, answers={}, show_progress=True)
+    with pytest.raises(TypeError, match="integer participant IDs"):
+        GroupPrompt(group=group, participant=first, answers={str(first.id): "3"})
+    with pytest.raises(TypeError, match="integer participant IDs, not True"):
+        GroupPrompt(group=group, participant=first, highlight={True: "winner"})
 
     # Derived pseudonyms are only made distinct in a participant's first
     # group, and pseudonyms that were set are kept there too.

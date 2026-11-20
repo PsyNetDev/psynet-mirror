@@ -117,9 +117,8 @@ class GroupPrompt(Prompt):
     highlight
         Optional ``{participant_id: style}``. ``"winner"`` and
         ``"duplicate"`` have built-in styles; any other style becomes the
-        CSS class ``psynet-group-member--<style>``. In both dictionaries the
-        IDs may be strings, as in a dictionary read back from a participant
-        variable.
+        CSS class ``psynet-group-member--<style>``. Both dictionaries are
+        keyed by integer participant IDs.
     note
         Optional short text shown below the group, for example
         "1 was picked twice". Like the group, it is hidden when there is no
@@ -155,8 +154,8 @@ class GroupPrompt(Prompt):
         participant,
         group=_PARTICIPANTS_GROUP,
         group_type: Optional[str] = None,
-        answers: Optional[Dict[Union[int, str], Union[str, Markup, None]]] = None,
-        highlight: Optional[Dict[Union[int, str], str]] = None,
+        answers: Optional[Dict[int, Union[str, Markup, None]]] = None,
+        highlight: Optional[Dict[int, str]] = None,
         note: Optional[str] = None,
         show_progress: Optional[bool] = None,
         names: str = "on_hover",
@@ -175,6 +174,13 @@ class GroupPrompt(Prompt):
                 "GroupPrompt shows either progress or answers: "
                 "don't pass show_progress=True with answers."
             )
+        for name, ids in (("answers", answers or {}), ("highlight", highlight or {})):
+            wrong = [id_ for id_ in ids if type(id_) is not int]
+            if wrong:
+                raise TypeError(
+                    f"GroupPrompt's {name} must be keyed by integer participant "
+                    f"IDs, not {', '.join(map(repr, wrong))}."
+                )
         if group is not _PARTICIPANTS_GROUP and group_type is not None:
             raise ValueError(
                 "Pass either group or group_type to GroupPrompt, not both."
@@ -183,10 +189,8 @@ class GroupPrompt(Prompt):
             group = _participants_group(participant, group_type)
         self.group = group
         self.participant = participant
-        self.answers = (
-            None if answers is None else {int(k): v for k, v in answers.items()}
-        )
-        self.highlight = {int(k): v for k, v in (highlight or {}).items()}
+        self.answers = None if answers is None else dict(answers)
+        self.highlight = dict(highlight or {})
         self.note = note
         self.show_progress = show_progress
         self.live_ticks = show_progress

@@ -263,8 +263,7 @@ class PickTrial(Trial):
     @classmethod
     def score_room(cls, trials, group_round):
         # trial.answer holds each player's answer so far (None: timed out).
-        # String keys, since var is stored as JSON.
-        group_round.var.choices = {str(t.participant_id): t.answer for t in trials}
+        group_round.var.choices = {t.participant_id: t.answer for t in trials}
 
 # The Module gives the rounds a module_id to find them by when exporting.
 Module("game", for_loop(

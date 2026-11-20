@@ -2,9 +2,22 @@ Writing a timeline
 ==================
 
 The timeline is the ``timeline`` attribute of the experiment class. Most
-experiments build it in a ``get_timeline`` function:
+experiments build it in a ``get_timeline`` function. Put ``get_timeline``
+near the top of ``experiment.py``, after the constants, and the functions it
+uses below it, so that a reader sees the experiment's structure before its
+details. This works because Python looks up the names in a function when the
+function runs, which here is when the class at the end of the file is
+created:
 
 .. code-block:: python
+
+    N_ROUNDS = 3
+
+    def get_timeline():
+        return Timeline(instructions(), play_game(), debrief())
+
+    def play_game():
+        ...
 
     class Exp(psynet.experiment.Experiment):
         timeline = get_timeline()
@@ -215,13 +228,16 @@ full timeline:
 
 .. code-block:: python
 
-    instructions = join(
-        InfoPage("In this experiment you will rate sounds.", time_estimate=5),
-        InfoPage("Use headphones if you can.", time_estimate=5),
-    )
-
     def get_timeline():
-        return Timeline(consent, instructions, practice, main_task, questionnaire)
+        return Timeline(
+            consent(), instructions(), practice(), main_task(), questionnaire()
+        )
+
+    def instructions():
+        return join(
+            InfoPage("In this experiment you will rate sounds.", time_estimate=5),
+            InfoPage("Use headphones if you can.", time_estimate=5),
+        )
 
 .. _writing_a_timeline_ending_early:
 
