@@ -593,6 +593,8 @@ asv_regression:
         - asv.conf.json
         - pyproject.toml
         - Dockerfile
+        - ci/dallinger-dev-requirements.txt
+        - ci/install-psynet-deps.sh
         - .gitlab-ci.yml
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes: *asv_regression_changes

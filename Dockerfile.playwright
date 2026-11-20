@@ -6,7 +6,8 @@
 # provides Xvfb, which Firefox needs for screen capture.
 #
 # The Playwright image tag must match @playwright/test in package.json.
-# PsyNet itself is installed as in the main Dockerfile; keep the two in sync.
+# PsyNet's dependencies are installed by ci/install-psynet-deps.sh, as in the
+# main Dockerfile.
 ARG DOCKER_PLATFORM=linux/amd64
 FROM --platform=${DOCKER_PLATFORM} mcr.microsoft.com/playwright:v1.64.1-noble
 ARG PYTHON_VERSION=3.14
@@ -50,8 +51,5 @@ ENV PATH=/opt/venv/bin:$PATH
 
 COPY pyproject.toml pyproject.toml
 COPY ci/dallinger-dev-requirements.txt dallinger-dev-requirements.txt
-RUN uv pip compile --python-version ${PYTHON_VERSION} pyproject.toml \
-        --extra experiment --extra demos \
-        --constraint dallinger-dev-requirements.txt \
-        --output-file constraints.txt
-RUN uv pip install --no-cache --system -r constraints.txt
+COPY ci/install-psynet-deps.sh /usr/local/bin/install-psynet-deps
+RUN install-psynet-deps
