@@ -11,8 +11,8 @@ class LiveTrialGame(LiveGame):
     Play this game inside a StaticTrialMaker. PlayLiveGame loads each player's
     trial plan when the session starts. For LocalGame tests, pass the plans directly.
     Optionally set ``stop`` to an exclusive position in the full deck. The next
-    session resumes at the first unanswered trial. Define the response message,
-    participant interface, and outcome for your experiment.
+    session resumes at the first unanswered trial. Define the response message
+    and participant interface for your experiment.
 
     The default view exposes the player's deck, current definition, and progress.
     The game ends when everyone reaches their own segment boundary. If overriding
@@ -78,6 +78,10 @@ class LiveTrialGame(LiveGame):
             self.current_definition(state, i) is None
             for i in range(len(state["plans"]))
         )
+
+    def outcome(self, state, reason):
+        """Trial rows hold the responses. Override for a separate game result."""
+        return {}
 
     def view(self, state, player):
         plan = state["plans"][player]

@@ -1301,3 +1301,9 @@ check the incoming item against ``game.current_definition(state, player)``
 and then call ``game.answer_trial(state["plans"], player=player, answer=value)``.
 PsyNet opens the first response clock, advances it after each saved answer
 and ends the session when everyone reaches their boundary.
+
+Each player's native trials hold their definitions and answers. Query completed
+trials by ``module_state_id`` to read responses across sessions in the same
+trial-maker run. The default session outcome and page answer are both empty
+dictionaries. Override :meth:`~psynet.live_game.LiveGame.outcome` if the game
+also produces a joint result, such as a team payoff.
