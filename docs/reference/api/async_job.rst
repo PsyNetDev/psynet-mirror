@@ -50,8 +50,8 @@ interrupted. If every worker is busy with long low-priority jobs, a
 high-priority job still waits for one of them to finish, and its
 ``timeout`` does not count while it waits (see :ref:`async_job_timeout`).
 Priority has no effect on a :class:`~psynet.async_job.LocalAsyncJob`, which runs in a thread
-of the web process, nor, by default, on a CPU-heavy job (see
-:ref:`async_job_cpu_heavy`). The CPU table printed after ``psynet test local`` (see
+of the web process. A CPU-heavy job keeps its priority in the CPU workers
+(see :ref:`async_job_cpu_heavy`). The CPU table printed after ``psynet test local`` (see
 :doc:`/test/scalability`) has one row per job label, priority, place the
 job runs in and ``cpu_heavy`` declaration.
 
@@ -101,9 +101,10 @@ second of CPU, and notes a job declared ``cpu_heavy=True`` that mostly
 waited, if it ran for at least half a second on average. A job's CPU time in a worker process includes that of jobs running
 beside it, so check the warning against what the job does.
 
-CPU workers take CPU-heavy jobs in the order they were enqueued, whatever
-their priority. With ``cpu_processes_per_worker = 0``, CPU-heavy jobs run
-in the worker processes with the others and keep their priority.
+CPU-heavy jobs go to the ``cpu_high`` or ``cpu_low`` queue by priority, and
+CPU workers take ``cpu_high`` jobs first. With ``cpu_processes_per_worker =
+0``, CPU-heavy jobs run in the worker processes with the others, on their
+priority's queue.
 
 .. _async_job_timeout:
 

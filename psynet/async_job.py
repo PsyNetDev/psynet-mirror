@@ -24,8 +24,9 @@ pointing at the job.
 
 A :class:`WorkerAsyncJob` has a priority, ``"high"`` or ``"low"``, naming the
 RQ queue it is enqueued on; workers take jobs from the ``high`` queue first.
-A CPU-heavy job goes to Dallinger's ``cpu`` queue instead, when the
-``cpu_processes_per_worker`` setting starts CPU workers to run it.
+A CPU-heavy job goes to Dallinger's CPU queue of the same priority instead
+(``cpu_high`` or ``cpu_low``), when the ``cpu_processes_per_worker`` setting
+starts CPU workers to run it.
 """
 
 import datetime
@@ -106,13 +107,13 @@ def check_cpu_heavy(cpu_heavy, where, name="cpu_heavy"):
 def _queue_name(priority, cpu_heavy):
     """Return the RQ queue a :class:`WorkerAsyncJob` runs on.
 
-    Without CPU workers, ordinary workers take ``cpu`` jobs after all their
+    Without CPU workers, ordinary workers take CPU jobs after all their
     other queues, so a CPU-heavy job keeps its priority's queue then.
     """
     from psynet.utils import get_config
 
     if cpu_heavy and get_config().get("cpu_processes_per_worker", 0) > 0:
-        return "cpu"
+        return f"cpu_{priority}"
     return priority
 
 
@@ -966,9 +967,9 @@ class WorkerAsyncJob(AsyncJob):
         for a job that mostly waits, such as a web API call. A worker runs
         many jobs at once in one process, and a CPU-heavy job would stall all
         of them. If ``cpu_processes_per_worker`` is above 0 (PsyNet's default
-        is 1), a CPU-heavy job runs on the ``cpu`` queue, in a process that
-        runs one job at a time, whatever its priority; otherwise it runs on
-        its priority's queue. A job that waits without yielding to gevent,
+        is 1), a CPU-heavy job runs on the ``cpu_high`` or ``cpu_low`` queue,
+        in a process that runs one job at a time and takes ``cpu_high`` jobs
+        first; otherwise it runs on its priority's queue. A job that waits without yielding to gevent,
         such as a network call made by a C extension, stalls the worker too,
         so mark it ``True`` even though it uses little CPU. ``psynet test
         local`` warns when a job's measured CPU time contradicts its
@@ -1020,7 +1021,7 @@ class WorkerAsyncJob(AsyncJob):
 
     @classmethod
     def get_redis_queue(cls, name):
-        """Return the RQ queue with the given name, a priority or ``"cpu"``."""
+        """Return the RQ queue with the given name, such as ``"high"`` or ``"cpu_high"``."""
         return Queue(name, connection=redis_conn)
 
     @classmethod
