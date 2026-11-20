@@ -102,10 +102,10 @@ each trial's ``sync_group_round_id`` points to its row, whose
 Loading an export into a local database
 ---------------------------------------
 
-``psynet load export.zip`` replaces the local database with an export zip,
-such as the one the dashboard's **Export** tab downloads, so you can query it
-directly. It needs a zip file: ``psynet export`` writes an unpacked folder
-(``exports/latest/``), which you can zip first. Stop
+``psynet load exports/latest`` replaces the local database with an export,
+so you can query it directly. It takes the folder that ``psynet export``
+writes or a zip, such as the one the dashboard's **Export** tab downloads
+(``psynet load export.zip``). Stop
 ``psynet debug`` and any other client using the same database role first:
 PsyNet refuses to drop tables while another client using that role is
 connected.

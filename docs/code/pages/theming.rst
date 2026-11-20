@@ -163,8 +163,9 @@ lengthen lines of text.
 Color and stimuli
 -----------------
 
-When color is part of the measurement, set the accent and its hover and tint
-tokens to neutral grays so that no saturated color appears near the stimuli:
+When color is part of the measurement, set the accent, its hover and tint
+tokens, and the blue-tinted page and chrome backgrounds to neutral grays so
+that no saturated color appears near the stimuli:
 
 .. code-block:: python
 
@@ -173,6 +174,7 @@ tokens to neutral grays so that no saturated color appears near the stimuli:
         " --psynet-accent: #44556b; --psynet-accent-rgb: 68, 85, 107;"
         " --psynet-accent-hover: #333f50; --psynet-accent-hover-rgb: 51, 63, 80;"
         " --psynet-accent-soft: #eceef1;"
+        " --psynet-page-bg: #f0f1f2; --psynet-chrome-bg: #e0e1e3;"
         " }"
     )
 
