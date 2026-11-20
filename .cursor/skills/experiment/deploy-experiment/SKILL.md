@@ -98,7 +98,7 @@ Local debug:
 
 ```bash
 source .venv/bin/activate
-psynet debug local
+psynet debug local --no-browsers
 ```
 
 Provision (choose `worker_processes` with `plan-server-resources/SKILL.md`):
