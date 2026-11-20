@@ -51,9 +51,7 @@ class TestPublicGoods:
         demo.ContributionTrial.score_round(
             trials, group_round, left=[object()] * n_left
         )
-        assert group_round.var.contributions == {
-            str(i): a for i, a in enumerate(answers)
-        }
+        assert group_round.var.contributions == dict(enumerate(answers))
         assert (group_round.var.share, group_round.var.n_left) == (share, n_left)
         assert [t.var.payoff for t in trials] == payoffs
 
