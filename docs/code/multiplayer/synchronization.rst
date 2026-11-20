@@ -238,7 +238,8 @@ group's members. Two options change this:
 
 - ``avoid_repeats=True`` keeps players apart from their last group's
   members where it can. A player who has played more rounds still sits out
-  before one who has played fewer; among players with equal rounds, who sits
+  before one who has played fewer (with ``keep_roles``, one of the same
+  role); among players with equal rounds, who sits
   out may be chosen to avoid a repeat. It is a search heuristic: in
   simulations of pairs, trios and groups with roles, including pools where
   some players sit out, it found a grouping without repeats whenever one
@@ -249,7 +250,8 @@ group's members. Two options change this:
   have (without ``within``, the working participants the regrouper has
   grouped, including those who have played their last round). Players of a
   role with too few partners are left over, those who have played most
-  first. Use ``left_over="sit_out"`` if a role can run out: with
+  first, so a player of a scarce role still plays even if players of
+  another role with fewer rounds sit out. Use ``left_over="sit_out"`` if a role can run out: with
   ``"wait"``, players whose role has no partner wait until one comes, up to
   ``max_wait_time``.
 

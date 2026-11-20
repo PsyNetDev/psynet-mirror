@@ -4109,7 +4109,8 @@ class Regrouper(Grouper):
         who have played their last round but are still working), ties broken
         at random. Members of a role with too few partners are left over,
         those who have played the most rounds first, and follow
-        ``left_over``. A newcomer who is left over stays without a role and
+        ``left_over``; so a member of a scarce role still plays even if
+        members of another role who have played fewer rounds sit out. A newcomer who is left over stays without a role and
         is given one again at the next split. Read a member's role with
         :meth:`role`. If a role has nobody waiting, no group forms: with
         ``left_over="sit_out"`` the pool then sits the round out as usual,
@@ -4122,7 +4123,8 @@ class Regrouper(Grouper):
         were grouped with in their latest group from this regrouper, where it
         can. It never changes how many rounds decide who sits out, or the
         roles: a member who has played more rounds still sits out before one
-        who has played fewer, but among members with equal rounds, who sits
+        who has played fewer (with ``keep_roles``, one of the same role, see
+        above), but among members with equal rounds, who sits
         out may be chosen to avoid a repeat. It starts from a random grouping
         and swaps members while that removes repeats, between groups or with
         a left-over member of the same rounds (and role), restarting from new
@@ -4157,10 +4159,10 @@ class Regrouper(Grouper):
         regrouper. It is called once per group, before the group is created,
         with the members in the order ``form_groups`` listed them, replacing
         the default, which shuffles the roles across the group's members.
-        It can't be combined with ``keep_roles``.
         Subclasses can override :meth:`assign_roles` instead, for
         example to give each role to whoever has held it least often, so that
-        roles alternate, as the ``ultimatum_pairing`` demo does. The callable
+        roles alternate, as the ``ultimatum_pairing`` demo does. Neither can be
+        combined with ``keep_roles``. The callable
         must be a module-level function so it can be stored with the barrier.
 
     left_over
@@ -4269,6 +4271,11 @@ class Regrouper(Grouper):
         if keep_roles and assign_roles is not None:
             raise ValueError(
                 "keep_roles gives out the roles, so leave out assign_roles."
+            )
+        if keep_roles and type(self).assign_roles is not Regrouper.assign_roles:
+            raise ValueError(
+                f"keep_roles gives out the roles, so {type(self).__name__} must "
+                "not override assign_roles."
             )
         if avoid_repeats and form_groups is not None:
             raise ValueError(
@@ -4592,17 +4599,14 @@ class Regrouper(Grouper):
         """Return ``{participant: role}`` for one group's members, one member per role.
 
         ``members`` lists the group in the order :meth:`form_groups` returned
-        it. By default the roles are shuffled across the members. With
-        ``keep_roles``, members keep their roles and the members without one
-        take the remaining roles at random.
+        it. By default the roles are shuffled across the members. It isn't
+        used with ``keep_roles``, which gives out the roles itself.
         """
         if self.assign_roles_function is not None:
             return self.assign_roles_function(
                 members=members, within_group=within_group, barrier=self
             )
-        if not self.keep_roles:
-            return dict(zip(random.sample(members, len(members)), self.roles))
-        return self._give_kept_roles(members, self._kept_roles([m.id for m in members]))
+        return dict(zip(random.sample(members, len(members)), self.roles))
 
     def _give_kept_roles(self, members, kept) -> Dict[Participant, str]:
         """Give one group's members their ``kept`` roles, and the free roles to those without one."""
@@ -4623,9 +4627,8 @@ class Regrouper(Grouper):
         """Return each planned member's role by ID, given out before the groups exist."""
         if not self.roles:
             return {}
-        # The default kept-role rule reads every planned member's role at once.
         kept = None
-        if self.keep_roles and type(self).assign_roles is Regrouper.assign_roles:
+        if self.keep_roles:
             kept = self._kept_roles([m.id for group in plan for m in group])
         roles = {}
         for group_members in plan:

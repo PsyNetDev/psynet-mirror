@@ -554,6 +554,12 @@ def test_regrouper_checks_its_settings(kwargs, message):
         Regrouper("pair", **{"within": "cohort", **kwargs})
 
 
+def test_keep_roles_refuses_a_subclass_that_assigns_roles():
+    PairingRegrouper = _load_demo_pairing().PairingRegrouper
+    with pytest.raises(ValueError, match="must not override assign_roles"):
+        PairingRegrouper("pair", within="cohort", roles=["a", "b"], keep_roles=True)
+
+
 def test_regrouper_max_wait_time_outlasts_a_lone_wait():
     def pairs(**kwargs):
         return Regrouper(
