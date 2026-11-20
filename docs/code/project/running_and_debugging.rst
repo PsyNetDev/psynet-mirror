@@ -22,7 +22,7 @@ opened, and this block is how you reach the experiment):
 
     Ready.
       Participant link: http://127.0.0.1:5000/ad?recruiter=hotair&generate_tokens=1&mode=debug
-      Dashboard:        http://127.0.0.1:5000/dashboard (user admin, password ...)
+      Dashboard:        http://127.0.0.1:5000/dashboard/develop (user admin, password ...)
       Full log:         /tmp/dallinger_develop/logs.jsonl
     Press Ctrl+C to stop.
 
@@ -71,7 +71,7 @@ also add ``--no-browsers``):
 
     Ready.
       Participant link: http://127.0.0.1:5100/ad?recruiter=hotair&generate_tokens=1&mode=debug
-      Dashboard:        http://127.0.0.1:5100/dashboard (user admin, password ...)
+      Dashboard:        http://127.0.0.1:5100/dashboard/develop (user admin, password ...)
       Full log:         /tmp/dallinger_develop_5100/logs.jsonl
       Other terminals:  export DATABASE_URL=... REDIS_URL=... base_port=5100
     Press Ctrl+C to stop.
