@@ -327,9 +327,7 @@ def regroup_now(
     timeout : float, optional
         Passed to :func:`advance_past_wait_pages`.
     stop_at : str or sequence of str
-        Passed to :func:`advance_past_wait_pages`: IDs of barriers inside the
-        round to leave bots waiting at, such as responders waiting for the
-        proposer's offer in a game where turns follow each other.
+        Passed to :func:`advance_past_wait_pages`.
 
     Raises
     ------

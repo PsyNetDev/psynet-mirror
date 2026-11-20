@@ -1101,12 +1101,13 @@ def test_regroup_now_needs_a_timed_regrouper_and_a_waiting_bot(
 def test_regroup_now_leaves_bots_at_stop_at_barriers(
     in_experiment_directory, db_session
 ):
-    """A responder released into the round waits for the proposer's turn."""
+    """``regroup_now`` passes ``stop_at`` to ``advance_past_wait_pages``."""
+    exp = get_experiment()
     pairs = Regrouper("pair", group_size=2, deadline=30)
-    participant = _working_participants(get_experiment(), 1)[0]
+    participant = _working_participants(exp, 1)[0]
     responder = MagicMock(id=participant.id)
-    _arrive(get_experiment(), pairs, [participant])
     responder.status = {"page": {"is_timeline_hold": True, "barrier_id": "offer"}}
+    _arrive(exp, pairs, [participant])
     regroup_now([responder], pairs, stop_at="offer")
     responder.take_page.assert_not_called()
 
