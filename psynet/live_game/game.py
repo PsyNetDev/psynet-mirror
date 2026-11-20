@@ -38,9 +38,9 @@ from .method_wrappers import (
 from .psynet_entry import PlayerReady, _psynet_entry
 from .registry import _register_live_game
 from .reward import (
+    _PREPARED_TRIAL_EFFECT,
     _REWARD_EFFECT,
     _TRIAL_EFFECT,
-    _VISIT_EFFECT,
     _check_reward,
     _handles_ending,
     _handles_player_ending,
@@ -444,49 +444,41 @@ class LiveGame(RealtimeGame):
         """
         return super().handle_player_ending(session_row, player, ending)
 
-    def answer_trial(self, plans, *, player, answer, time_taken=None):
-        """Submit the next answer and advance that player's plan in game state.
+    def start_trials(self, plans):
+        """Open each player's current trial when this game starts."""
+        for player, plan in enumerate(plans):
+            position = len(plan["answers"])
+            ids = plan["_trial_ids"]
+            if position < len(ids):
+                super().queue_effect(
+                    _PREPARED_TRIAL_EFFECT,
+                    {"player": player, "trial_id": ids[position]},
+                )
 
-        Supply one plan from ``StaticTrialMaker.trial_plan`` per player, in seat
-        order. Call after checking that the message refers to the current item.
-        The durable acknowledgement is written in the live event transaction.
-        """
+    def answer_trial(self, plans, *, player, answer, time_taken=None):
+        """Answer the open trial and start the next one in the same event transaction."""
         if type(player) is not int or not 0 <= player < len(plans):
             raise ValueError("Unknown player for these trial plans.")
         plan = plans[player]
         position = len(plan["answers"])
-        if position >= len(plan["_assignment_ids"]):
-            raise ValueError("This player's trial plan is complete.")
-        self.record_visit(
-            player=player,
-            visit_id=plan["_assignment_ids"][position],
-            answer=answer,
-            time_taken=time_taken,
-        )
-        plan["answers"].append(answer)
-
-    def record_visit(self, *, player, visit_id, answer, time_taken=None):
-        """Complete a maker-assigned visit in the live event transaction."""
-        if (
-            type(player) is not int
-            or player < 0
-            or type(visit_id) is not int
-            or visit_id < 1
-        ):
-            raise ValueError("Expected a player number and a persisted visit ID.")
+        ids = plan["_trial_ids"]
+        if position >= len(ids):
+            raise ValueError("This player's trial segment is complete.")
         if time_taken is not None and (not is_number(time_taken) or time_taken < 0):
             raise ValueError("Invalid presentation duration.")
         super().queue_effect(
-            _VISIT_EFFECT,
+            _PREPARED_TRIAL_EFFECT,
             to_jsonable_python(
-                dict(
-                    player=player,
-                    visit_id=visit_id,
-                    answer=answer,
-                    time_taken=time_taken,
-                )
+                {
+                    "player": player,
+                    "trial_id": ids[position],
+                    "answer": answer,
+                    "time_taken": time_taken,
+                    "next_id": ids[position + 1] if position + 1 < len(ids) else None,
+                }
             ),
         )
+        plan["answers"].append(answer)
 
     def record_trial(self, *, player, slot, definition, answer, time_taken=None):
         """Save an accepted item in a cued game as a native LiveGameItemTrial.
@@ -557,7 +549,7 @@ class LiveGame(RealtimeGame):
             _STARTED_EFFECT,
             _MOMENT_EFFECT,
             _TRIAL_EFFECT,
-            _VISIT_EFFECT,
+            _PREPARED_TRIAL_EFFECT,
         ):
             raise ValueError(
                 f"The effect name {name!r} is reserved for PsyNet's "

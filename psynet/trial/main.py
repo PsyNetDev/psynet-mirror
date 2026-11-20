@@ -16,6 +16,7 @@ from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -506,6 +507,16 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     response_id = Column(Integer, ForeignKey("response.id"), index=True)
     repeat_trial_index = Column(Integer)
     n_repeat_trials = Column(Integer)
+    prepared_in_advance = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        doc="Whether the maker created this trial as part of a fixed deck before presentation.",
+    )
+    response_started_at = Column(
+        DateTime, doc="When the server began expecting this response."
+    )
     time_taken = Column(Float)
     time_limit_reached = Column(Boolean)
     _initial_assets = deferred(Column(PythonDict))
@@ -721,12 +732,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         definition=NoArgumentProvided,  # If provided, overrides make definition
         position=None,
         module_state=NoArgumentProvided,
+        prepared_in_advance=False,
     ):
         self.node = node
         self.network = node.network
         db.session.add(self)
 
         self.complete = False
+        self.prepared_in_advance = prepared_in_advance
         self.finalized = False
         self.participant = participant
         self.participant_id = participant.id
@@ -1702,6 +1715,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
 
     def _show_trial(self, experiment, participant):
+        if self.response_started_at is None:
+            self.response_started_at = datetime.datetime.now()
         logic = call_function_with_context(
             self.show_trial,
             experiment=experiment,
@@ -2822,7 +2837,24 @@ class TrialMaker(Module):
         )
         trials_to_fail = (
             self.trial_class.query.filter_by(complete=False, failed=False)
-            .filter(self.trial_class.creation_time < time_threshold)
+            .filter(
+                or_(
+                    and_(
+                        or_(
+                            self.trial_class.prepared_in_advance.is_(False),
+                            self.trial_class.trial_maker_id == self.id,
+                        ),
+                        self.trial_class.response_started_at < time_threshold,
+                    ),
+                    # Preserve the timeout for ordinary trials awaiting their first
+                    # page, and for historical rows without a response start.
+                    and_(
+                        self.trial_class.prepared_in_advance.is_(False),
+                        self.trial_class.response_started_at.is_(None),
+                        self.trial_class.creation_time < time_threshold,
+                    ),
+                )
+            )
             .order_by(self.trial_class.id)
             # A locked trial belongs to an in-flight request that may complete
             # it; the next check retries it if not.

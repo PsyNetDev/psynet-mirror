@@ -6,11 +6,11 @@ authors customize node eligibility with ``custom_node_filter`` and ranking with
 ``select_node``; network adaptation remains an implementation detail.
 """
 
-from copy import deepcopy
+import datetime
+import json
 from typing import Callable, List, Literal, Optional, Sequence, Union
 
 from dallinger import db
-from sqlalchemy import Column, ForeignKey, Integer, UniqueConstraint
 
 from psynet.trial.chain import (
     Candidate,
@@ -21,68 +21,12 @@ from psynet.trial.chain import (
     _reject_removed_balance_argument,
 )
 
-from ..data import SQLBase, SQLMixin, register_table
-from ..field import PythonObject
 from ..sync import LateAction
+from ..timeline import ModuleState
 from ..utils import NoArgumentProvided, get_logger, is_method_overridden
 from .main import Selection
 
 logger = get_logger()
-
-
-@register_table
-class TrialVisit(SQLBase, SQLMixin):
-    """An assigned visit survives page and game boundaries within a maker run."""
-
-    __tablename__ = "trial_visit"
-    __table_args__ = (UniqueConstraint("module_state_id", "position"),)
-    id = Column(Integer, primary_key=True)
-    module_state_id = Column(Integer, ForeignKey("module_state.id"), nullable=False)
-    block_position = Column(Integer, nullable=False)
-    position = Column(Integer, nullable=False)
-    node_id = Column(Integer, ForeignKey("node.id"), nullable=False)
-    definition = Column(PythonObject, nullable=False)
-    trial_id = Column(Integer, ForeignKey("trial.id"), unique=True)
-    raw_answer = Column(PythonObject)
-
-    def complete(self, participant, answer, time_taken=None):
-        """Caller holds the participant lock and owns the transaction."""
-        from ..experiment import get_experiment, get_trial_maker
-        from ..timeline import ModuleState
-        from .main import Trial
-
-        state = db.session.get(ModuleState, self.module_state_id)
-        if state.participant_id != participant.id:
-            raise ValueError("Visit belongs to another participant.")
-        if self.trial_id is not None:
-            trial = db.session.get(Trial, self.trial_id)
-            if self.raw_answer != answer or trial.time_taken != time_taken:
-                raise ValueError("Conflicting replay of a completed visit.")
-            return trial
-        if (
-            participant.module_state != state
-            or state.block_position != self.block_position
-        ):
-            raise ValueError("Assigned visit is outside the active maker run.")
-        if self.position != state.n_created_trials:
-            raise ValueError("Complete assigned visits in presentation order.")
-        maker = get_trial_maker(state.module_id)
-        node = db.session.get(StaticNode, self.node_id)
-        experiment = get_experiment()
-        if not maker._claim_node_capacity(node):
-            raise RuntimeError("Assigned node is unavailable.")
-        trial = maker._create_selected_trial(
-            Selection(node),
-            experiment,
-            participant,
-            definition=deepcopy(self.definition),
-        )
-        db.session.flush()
-        trial.time_taken = time_taken
-        trial._complete_with_answer(answer, experiment, maker)
-        self.raw_answer = answer
-        self.trial_id = trial.id
-        return trial
 
 
 class StaticTrial(ChainTrial):
@@ -129,6 +73,59 @@ class StaticTrial(ChainTrial):
 
     def show_trial(self, experiment, participant):
         raise NotImplementedError
+
+    def _check_prepared_position(self, participant):
+        state = participant.module_state
+        if self.participant_id != participant.id or not self.prepared_in_advance:
+            raise ValueError("Trial does not belong to this player's plan.")
+        if (
+            state is None
+            or self.module_state != state
+            or self.failed
+            or participant.failed
+            or self.block_position != state.block_position
+            or self.position != state.n_completed_trials
+        ):
+            raise ValueError("Trial is outside the participant's active sequence.")
+
+    def start_response(self, participant):
+        """Open the response clock once. The caller locks the participant and trial."""
+        if (
+            self.complete
+            and self.participant_id == participant.id
+            and self.prepared_in_advance
+        ):
+            return  # A redelivered start can follow the saved answer.
+        self._check_prepared_position(participant)
+        if self.response_started_at is None:
+            self.response_started_at = datetime.datetime.now()
+
+    def submit_response(self, participant, answer, time_taken=None):
+        """Record a JSON answer under the participant and trial locks.
+
+        Return True for a new answer, False for an exact redelivery.
+        """
+        from ..experiment import get_experiment, get_trial_maker
+
+        if self.participant_id != participant.id or not self.prepared_in_advance:
+            raise ValueError("Trial does not belong to this player's plan.")
+        if self.complete:
+            if (
+                json.dumps(self.var.prepared_raw_answer, sort_keys=True)
+                != json.dumps(answer, sort_keys=True)
+                or self.time_taken != time_taken
+            ):
+                raise ValueError("Conflicting replay of a completed trial.")
+            return False
+        self._check_prepared_position(participant)
+        if self.response_started_at is None:
+            raise ValueError("The trial is not open for a response.")
+        self.time_taken = time_taken
+        self.var.prepared_raw_answer = answer
+        self._complete_with_answer(
+            answer, get_experiment(), get_trial_maker(self.trial_maker_id)
+        )
+        return True
 
 
 class StaticTrialMaker(ChainTrialMaker):
@@ -496,40 +493,44 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
 
-    def trial_plan(self, participant):
-        """Return the participant's ordered definitions and submitted answer prefix.
+    def trial_plan(self, participant, *, stop=None):
+        """Prepare or reload a fixed deck for a live game.
 
-        Call under the participant lock, e.g. in a live game's settings factory.
-        Keep the whole plan in server-side game state for ``LiveGame.answer_trial``.
-        Send its definitions, or a subset of them, to the participant's browser.
-        The length of ``answers`` is the index of the next definition, even when
-        a previously submitted answer was ``False`` or ``None``.
+        Return every definition and the submitted prefix for the participant.
+        The exclusive, zero-based ``stop`` limits which trials this session can
+        open. Keep the plan in server-side state, call ``start_trials`` from
+        ``on_start``, then ``answer_trial`` for each accepted response.
         """
-        visits = self.assign_visits(participant)
+        trials = self.prepare_trials(participant)
+        if stop is not None and (type(stop) is not int or not 0 <= stop <= len(trials)):
+            raise ValueError("stop must be an exclusive position in the prepared deck.")
         return {
-            "definitions": [visit.definition for visit in visits],
+            "definitions": [trial.definition for trial in trials],
             "answers": [
-                visit.raw_answer for visit in visits if visit.trial_id is not None
+                trial.var.prepared_raw_answer for trial in trials if trial.complete
             ],
-            "_assignment_ids": [visit.id for visit in visits],
+            "_trial_ids": [trial.id for trial in trials[:stop]],
         }
 
-    def assign_visits(self, participant):
-        """Return this run's fixed visits for the current experimental block.
-
-        Call inside the maker timeline under the participant lock. Re-entering a
-        presenter reuses the assignments and their recorded trials.
-        """
+    def prepare_trials(self, participant):
+        """Create the fixed trials together, or reload the same rows on re-entry."""
         from ..experiment import get_experiment
 
         state = participant.module_state
         if state is None or state.module_id != self.id:
-            raise ValueError("Assign visits within the active trial maker.")
-        query = TrialVisit.query.filter_by(
-            module_state_id=state.id, block_position=state.block_position
+            raise ValueError("Prepare trials within the active trial maker.")
+        # Serialize concurrent attempts before deciding whether to allocate the deck.
+        db.session.query(ModuleState.id).filter_by(id=state.id).with_for_update().one()
+        existing = (
+            self.trial_class.query.filter_by(
+                module_state_id=state.id, block_position=state.block_position
+            )
+            .order_by(self.trial_class.position)
+            .all()
         )
-        existing = query.order_by(TrialVisit.position).all()
         if existing:
+            if not all(trial.prepared_in_advance for trial in existing):
+                raise ValueError("This block already contains ordinary trials.")
             return existing
         if (
             self.sync_group_type
@@ -538,19 +539,20 @@ class StaticTrialMaker(ChainTrialMaker):
             or self.recruit_mode == "n_trials"
         ):
             raise ValueError(
-                "Assigned visits require independent fixed trials without competitive quotas or per-trial checks."
+                "Preparing trials in advance requires independent fixed trials without competitive quotas or per-trial checks."
             )
         if (
             self.trial_class.make_definition != StaticTrial.make_definition
             or self.trial_class.finalize_definition != StaticTrial.finalize_definition
         ):
-            raise ValueError("Assigned visits require static node definitions.")
-        self._plan_block(participant, get_experiment())
+            raise ValueError(
+                "Preparing trials in advance requires static node definitions."
+            )
+        experiment = get_experiment()
+        self._plan_block(participant, experiment)
         planned = state.planned_network_ids
         if planned is None or state.plan_position:
-            raise ValueError(
-                "Start assigned visits with a listed or callable node order."
-            )
+            raise ValueError("Prepare trials with a listed or callable node order.")
         limit = len(planned)
         if self.max_trials_per_block is not None:
             limit = min(limit, self.max_trials_per_block)
@@ -563,19 +565,17 @@ class StaticTrialMaker(ChainTrialMaker):
                 self.node_class.network_id.in_(network_ids)
             ).all()
         }
-        visits = [
-            TrialVisit(
-                module_state_id=state.id,
-                block_position=state.block_position,
-                position=state.n_created_trials + i,
-                node_id=nodes[n].id,
-                definition=deepcopy(nodes[n].definition),
+        trials = [
+            self._create_selected_trial(
+                Selection(nodes[network_id]),
+                experiment,
+                participant,
+                prepared_in_advance=True,
             )
-            for i, n in enumerate(network_ids)
+            for network_id in network_ids
         ]
-        db.session.add_all(visits)
         db.session.flush()
-        return visits
+        return trials
 
     def _selection_hook_overrides(self):
         return [

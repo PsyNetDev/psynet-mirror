@@ -80,7 +80,7 @@ def _locked_players(session_row, participant_ids=None):
     )
 
 
-_VISIT_EFFECT = "psynet_assigned_visit"
+_PREPARED_TRIAL_EFFECT = "psynet_prepared_trial"
 _TRIAL_EFFECT = "psynet_item_trial"
 
 
@@ -133,23 +133,39 @@ def _record_item_trial(payload, session_row):
     item._complete_with_answer(payload["answer"], experiment)
 
 
+def _apply_prepared_trial(payload, session_row):
+    from ..trial.static import StaticTrial
+
+    member = _participant_ids(session_row)[payload["player"]]
+    participant = next(p for p in _locked_players(session_row) if p.id == member)
+
+    def locked_trial(id_):
+        return (
+            StaticTrial.query.filter_by(id=id_, participant_id=member)
+            .with_for_update()
+            .populate_existing()
+            .one()
+        )
+
+    trial = locked_trial(payload["trial_id"])
+    if "answer" not in payload:
+        trial.start_response(participant)
+        return
+    recorded = trial.submit_response(
+        participant, payload["answer"], payload["time_taken"]
+    )
+    if recorded and payload["next_id"] is not None:
+        locked_trial(payload["next_id"]).start_response(participant)
+
+
 def _handles_reward(method):
     @functools.wraps(method)
     def handle_effect(self, name, payload, session_row):
         if name in (_STARTED_EFFECT, _MOMENT_EFFECT):
             # Only recorded, for a game record's messages and moments.
             return None
-        if name == _VISIT_EFFECT:
-            from ..trial.static import TrialVisit
-
-            member = _participant_ids(session_row)[payload["player"]]
-            players = _locked_players(session_row)
-            participant = next(p for p in players if p.id == member)
-            visit = db.session.get(TrialVisit, payload["visit_id"])
-            if visit is None:
-                raise ValueError("Unknown assigned visit.")
-            visit.complete(participant, payload["answer"], payload["time_taken"])
-            return
+        if name == _PREPARED_TRIAL_EFFECT:
+            return _apply_prepared_trial(payload, session_row)
         if name == _TRIAL_EFFECT:
             return _record_item_trial(payload, session_row)
         if name != _REWARD_EFFECT:
