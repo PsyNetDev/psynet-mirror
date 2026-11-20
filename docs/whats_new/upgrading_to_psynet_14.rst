@@ -132,28 +132,40 @@ See :doc:`/code/pages/custom_front_ends` for ``activate(context)``
 examples and cleanup guidance.
 
 Page code that talks to the server also needs to identify the participant
-in new ways. Search your JavaScript for ``openExperimentSocket``,
-``openChatSocket``, ``joinRealtimeSession``, ``/worker_complete``,
-``/worker_failed``, ``participantId``, ``next-button-spinner`` and
-``next-button-text``:
+in new ways. Search your JavaScript for ``WebSocket(``, ``/chat?``,
+``openExperimentSocket``, ``openChatSocket``, ``joinRealtimeSession``,
+``/worker_complete``, ``/worker_failed``, ``participantId``,
+``disableButton``, ``enableButton``, ``onNextButton``,
+``next-button-spinner`` and ``next-button-text``:
 
 * A websocket that names a participant must send their scope token, or
-  PsyNet refuses the connection:
-  ``dallinger.openExperimentSocket({scope: psynetTemplateData.websocketScope})``.
-  Pass the same token as ``scope`` to ``openChatSocket``,
-  ``joinRealtimeSession`` and ``waitForRealtimeSession``. See
+  PsyNet refuses the connection. For a socket that the page opens by hand,
+  add it to the URL::
+
+      "/chat?channel=" + channel
+          + "&participant_id=" + dallinger.identity.participantId
+          + "&scope=" + encodeURIComponent(psynetTemplateData.websocketScope)
+
+  Dallinger's helpers take it as an option:
+  ``dallinger.openExperimentSocket({scope: psynetTemplateData.websocketScope})``,
+  and likewise ``openChatSocket``, ``joinRealtimeSession`` and
+  ``waitForRealtimeSession``. See
   :doc:`/code/multiplayer/realtime_interaction`.
-* Posts to ``/worker_complete`` and ``/worker_failed`` must send
-  ``unique_id: dallinger.identity.uniqueId`` as well as ``participant_id``;
-  without it they get a 403. An override of
+* Requests to ``/worker_complete`` and ``/worker_failed`` must send
+  ``unique_id`` (``dallinger.identity.uniqueId``) as well as
+  ``participant_id``; without it they get a 403. An override of
   ``Experiment.check_worker_status`` must return
   ``super().check_worker_status(participant)`` where it would otherwise
   return ``None``.
-* ``/timeline/progress_and_reward`` and ``/timeline/arrival_notice`` read
-  ``uniqueId`` instead of ``participantId``.
-* The ``#next-button-spinner`` and ``#next-button-text`` elements are gone;
-  target ``#next-button`` instead.
-  ``psynet.page.control.nextButton.disable()`` no longer shows a spinner.
+* ``/timeline/progress_and_reward`` reads ``uniqueId`` instead of
+  ``participantId``.
+* The global functions ``disableButton()``, ``enableButton()`` and
+  ``onNextButton()`` are gone. Use
+  ``psynet.page.control.nextButton.disable()``, ``.enable()`` and
+  ``.handleClick()``, which exist on pages with a Next button. The
+  ``#next-button-spinner`` and ``#next-button-text`` elements are gone too;
+  target ``#next-button`` instead. Disabling the button no longer shows a
+  spinner.
 * A function exposed with ``expose_to_api`` that returns a string now sends
   it as plain text, so HTML in it is no longer rendered. Return a Flask
   ``Response`` for another content type.
@@ -377,8 +389,9 @@ in ``~/.dallingerconfig``; see :ref:`lab-deployment-lab-recruiter`.
 
 A custom subclass of the Lucid recruiter must follow two signature
 changes: ``get_participant`` takes an ``assignment_id`` (the Lucid RID)
-instead of the request, and ``_terminate_participant`` is gone, so override
-``terminate_participant`` instead.
+instead of the request, and PsyNet calls ``terminate_participant`` with a
+new keyword-only argument, ``raise_on_error``, so an override must accept
+it and pass it on to ``super().terminate_participant``.
 
 11. Leave, ads, and error recovery
 ----------------------------------
@@ -394,7 +407,8 @@ Search for ``show_abort_button``, ``show_termination_button``,
   ``min_reward_for_paid_early_exit``. The old page arguments still work
   with a ``FutureWarning``, but the old config keys ``show_abort_button``
   and ``min_accumulated_reward_for_abort`` stop the experiment from
-  starting; rename them in ``config.txt``.
+  starting; rename them in ``config.txt``, and in ``Experiment.config`` if
+  you set them there.
 * DOM and routes: ``#early-exit-button``, ``/execute_early_exit_plan/``.
 * Participant field: ``Participant.early_exited``.
 * Remove ``Experiment.ad_requirements`` and
@@ -420,11 +434,13 @@ Search for ``show_abort_button``, ``show_termination_button``,
 * ``Experiment.check_unique_id`` and ``Experiment.UniqueIdError`` are
   removed; look the participant up with
   ``Experiment.get_participant_from_unique_id``.
-* ``Experiment.error_page`` no longer takes ``error_type`` or
-  ``request_data``; omit them.
+* ``Experiment.error_page`` no longer takes ``compensate``, ``error_type``
+  or ``request_data``; omit them.
 
-Stale overrides fail a pre-deployment check or fail when used, with
-migration instructions in the error.
+Stale overrides of the removed hooks fail a pre-deployment check or fail
+when used, with migration instructions in the error. Calls to removed
+methods or with removed arguments raise an ordinary ``AttributeError`` or
+``TypeError``.
 
 12. Changed defaults and option markup
 --------------------------------------
@@ -915,8 +931,8 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
   but warn, and ``asset(..., cache=...)`` no longer has an effect.
 * Remove ``personal=``; it now raises an error. Treat exported media as
   potentially identifying.
-* Remove ``obfuscate=`` too; it raises ``TypeError``. Asset URLs
-  (``/asset/<access_token>``) are already unguessable.
+* Remove ``obfuscate=`` too; it raises ``TypeError``. The URLs of locally
+  stored assets (``/asset/<access_token>``) are already unguessable.
 * HTML, SVG, XML and JavaScript assets at ``/asset/<access_token>`` are sent
   as downloads rather than opened in the browser. Serve such files that a
   page must display from ``static/`` instead.
@@ -945,10 +961,12 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
 
   Trial analysis such as ``analyze_recording`` and trial feedback already
   wait.
-* Uploaded recordings are limited to about one and a half times the
-  recording control's ``duration`` plus 5 seconds. A page that stops
-  recording on its own event should set ``duration`` to the longest
-  expected recording.
+* Uploaded recordings have a size limit, and a larger one fails its trial.
+  An audio recording may be as large as an uncompressed WAV lasting one and
+  a half times the control's ``duration`` plus 5 seconds, so a page that
+  stops recording on its own event should set ``duration`` to the longest
+  expected recording. Other recordings, such as video, may be up to
+  128 MiB.
 * A bot's ``bot_response_media`` must be a WAV file for audio and a WebM
   file for video.
 
@@ -1049,11 +1067,14 @@ in the test failure. Pages created by a ``PageMaker`` are checked when they
 are first rendered.
 
 Bots in parallel tests (``--parallel`` or ``test_mode = "parallel"``) and in
-``psynet performance-test`` now run as threads in one process and share one
-experiment instance. Bot code that keeps state at module level or on
-``self``, such as a global counter or ``random.seed()``, now affects every
-bot: store per-bot traits on ``bot.var`` in ``initialize_bot``, and use a
-``random.Random()`` instance. See :ref:`parallel_bot_tests`.
+``psynet performance-test`` now run as threads that share one experiment
+instance, instead of a process each. Large performance tests spread the
+bots over several such processes (see
+:ref:`performance_testing_bot_processes`). Bot code that keeps state at
+module level or on ``self``, such as a global counter or ``random.seed()``,
+now affects every bot in the same process: store per-bot traits on
+``bot.var`` in ``initialize_bot``, and use a ``random.Random()`` instance.
+See :ref:`parallel_bot_tests`.
 
 Other test commands changed too:
 
@@ -1064,7 +1085,8 @@ Other test commands changed too:
 * ``psynet performance-test ssh`` runs only on apps it deployed itself, so
   you no longer run ``psynet debug ssh`` first. In Python,
   ``PerformanceTester.run`` is replaced by
-  ``PerformanceSuite(tester).run(bot_counts)`` and ``find_capacity()``; see
+  ``PerformanceSuite(tester).run(bot_counts)`` and
+  ``PerformanceSuite(tester).find_capacity()``; see
   :doc:`/test/scalability`.
 
 Confirm the default in-place mode works (opt-out removed if possible), page

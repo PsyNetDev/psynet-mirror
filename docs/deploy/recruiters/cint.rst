@@ -322,8 +322,9 @@ survey's quota, and it sets the survey to **Complete** once nobody is still
 working; if some of them fail and more participants are needed, it reopens
 entry. Don't set the survey to **Complete** yourself while participants are
 still working: Lucid records anyone who returns after that as "Survey Closed"
-rather than as a complete. To stop early, wait until no participants are
-working, then set it to **Complete**.
+rather than as a complete. To stop early, first stop new entrants by lowering the
+survey's quota to the number of completes it already has, wait until no
+participants are working, then set it to **Complete**.
 
 Then export the data again before destroying the app (see
 :doc:`/deploy/running_a_study`).
