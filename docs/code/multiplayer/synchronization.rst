@@ -438,9 +438,7 @@ later:
 The outcome is written during the trial's pages (``show_trial``), while
 :attr:`~psynet.trial.main.Trial.complete` is ``False``, and only until a
 barrier there releases the group with the player in it: the barrier writes
-``"stayed"``, and a removal during those pages writes its reason. The one
-exception is a member removed before their cue, whose trial gets the
-reason when the cue creates it (see below). So ``"stayed"``
+``"stayed"``, and a removal during those pages writes its reason. So ``"stayed"``
 means the player took part in the round's first release, not that they
 stayed to the end of its pages: ``complete`` and
 ``participant.sync_group_removal_reason(group_type)`` say that. A player who
@@ -464,9 +462,9 @@ module stores nothing either, so put the barrier that decides the round in
         ...
 
 A member removed before their cue ran has no trial in the round when it is
-released; ``left`` still lists them. If they reach the cue later, it adds
-their trial to that round, with their removal reason as
-``sync_group_outcome``.
+released; ``left`` still lists them. If they reach the cue later, their
+trial joins that round with their removal reason as its outcome (see
+:ref:`members removed before their cue <rounds-removed-before-cue>`).
 
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
@@ -1691,11 +1689,11 @@ For the rest of the timeline:
   participant who is out of the group when the trial starts, unless the
   trial class sets ``sync_group_optional = True``: they then get an
   ungrouped trial, so ``show_trial`` can give them the solo version of the
-  round, with ``self.sync_group is None`` (not with
-  ``participant.in_sync_group(...)``). The exception is a participant
-  removed during a round that was still under way: their trial joins that
+  round, with ``self.sync_group is None``. A participant removed during a
+  round that was still under way is the exception: their trial joins that
   round (see :ref:`members removed before their cue
-  <rounds-removed-before-cue>`). In the ``crowd_estimate`` demo,
+  <rounds-removed-before-cue>`, which also explains why ``show_trial``
+  shouldn't check current membership). In the ``crowd_estimate`` demo,
   they give their estimate without the group's median:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py

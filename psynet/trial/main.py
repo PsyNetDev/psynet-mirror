@@ -317,9 +317,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         ungrouped trial on the module's default node. ``False`` (default)
         raises an error instead, which usually means the cue needs a
         :func:`~psynet.timeline.conditional` on
-        ``participant.in_sync_group(...)``. A member removed during a round,
-        before their trial in it was created, gets a trial in that round
-        either way (see :meth:`cue`).
+        ``participant.in_sync_group(...)``. A member removed during a round
+        gets a trial in it either way (see :meth:`cue`).
 
     live_game_class : type or None
         Set this class attribute to the :class:`~psynet.live_game.LiveGame`
@@ -850,11 +849,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         """
         The :class:`~psynet.sync.SyncGroup` that the trial was played in
         (``sync_group_id``), or ``None`` for an ungrouped trial. The group is
-        returned even if the participant has left it, including a member
-        removed before their cue whose trial :meth:`cue` put in the round
-        that was under way. So ``show_trial`` can branch on it, as it is
-        fixed when the trial is created. For current membership, use
-        ``participant.in_sync_group(...)``.
+        returned even if the participant has left it, so ``show_trial`` can
+        branch on it, as it is fixed when the trial is created. For current
+        membership, use ``participant.in_sync_group(...)``.
         """
         if self.sync_group_id is None:
             return None

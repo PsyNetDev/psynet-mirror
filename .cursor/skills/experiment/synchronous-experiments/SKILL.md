@@ -169,9 +169,6 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   with each question as a cued trial whose ungrouped version
   (`sync_group_optional = True` on the trial class) lets a player without a
   group answer alone; without it, a cue by a player without a group raises.
-  A player removed during a round still under way is the exception: their
-  cue joins that round (see the "removed during a round before their cue"
-  rule below).
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example
@@ -330,8 +327,7 @@ Module("game", for_loop(
   before that, why they left, such as `"late"`), a partner's from their
   trial in `self.group_round.trials`, rather than from current group
   membership. Put the scoring barrier in `show_trial`, because only
-  barriers and removals there write the outcome, apart from a removal
-  before the cue, written when the cue creates the trial. A barrier's `waiting_screen` can take
+  barriers there write `"stayed"`. A barrier's `waiting_screen` can take
   `trial` and `group_round` to show the round's state.
 
 ## Recruitment and platform design
