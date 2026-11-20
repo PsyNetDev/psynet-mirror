@@ -614,7 +614,8 @@ or to leave it out:
 
 By default the participant's last page stays on screen, greyed out, while
 they wait. To show something else instead, pass ``waiting_screen``; to give
-them something to do, such as filler trials, pass ``waiting_logic``
+them something to do, such as filler trials or
+:ref:`quiz questions <sync-waiting-quiz>`, pass ``waiting_logic``
 instead. A waiting screen can be text,
 a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
 button (``NullControl(show_next_button=False)``), or a module-level
@@ -1846,6 +1847,57 @@ when the grace period is over.
      document.getElementById("note").textContent =
        "Your partner is here. Finish your sentence!";
    });
+
+.. _sync-waiting-quiz:
+
+Quiz questions while waiting
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To give waiting participants quiz questions with feedback and points, make
+each question a node of a :class:`~psynet.trial.static.StaticTrialMaker` and
+cue one question per pass of ``waiting_logic``, as ``sync_quorum`` does with
+its filler trials. This is a recipe, not a dedicated API: everything below is
+existing trial and timeline API. The ``waiting_quiz`` test experiment
+(``tests/experiments/waiting_quiz``) runs it with bots:
+
+.. literalinclude:: ../../../tests/experiments/waiting_quiz/experiment.py
+   :start-at: QUESTIONS = [
+   :end-before: class Exp
+
+Wrap the grouper in the trial maker's
+:meth:`~psynet.trial.main.TrialMaker.custom`, so that the trial maker is set
+up for each participant before it cues their first question:
+
+.. literalinclude:: ../../../tests/experiments/waiting_quiz/experiment.py
+   :start-at: quiz.custom(
+   :end-before: InfoPage("Your group is ready."
+   :dedent: 8
+
+How the pieces fit:
+
+- **Scoring and feedback.** :meth:`~psynet.trial.main.Trial.score_answer`
+  scores each answer, and :meth:`~psynet.trial.main.Trial.show_feedback`
+  then shows a page with the trial's ``score`` already set.
+- **Points and bonus.** :meth:`~psynet.trial.main.Trial.compute_performance_reward`
+  adds each trial's reward to the participant's performance reward, which
+  is paid with the rest of their bonus. Count points from the participant's
+  finalized trials, as ``quiz_points`` does, rather than keeping a separate
+  total. Don't use ``check_performance_at_end``, since interrupted trials
+  count in performance checks (see above).
+- **No repeated questions.** A static trial maker gives each participant
+  each node at most once, unless you pass ``allow_repeated_nodes=True``.
+- **Running out of questions.** Once a participant has answered every
+  question, ``cue_trial`` finds no trial and shows nothing. A pass of
+  ``waiting_logic`` that shows no page keeps a server worker busy repeating
+  it until ``max_wait_time`` runs out, so give such a pass a page of its
+  own, such as the :class:`~psynet.page.WaitPage` above.
+- **When the group forms.** The participant whose arrival completes the
+  group skips the quiz. Anyone else who is on a question has
+  ``release_grace`` seconds (default 3) to answer it: their answer is then
+  scored and paid, and the feedback page is skipped. A question left
+  unanswered is failed with ``failed_reason="interrupted_by_release"``,
+  earns nothing, and isn't counted as answered. Raise ``release_grace`` for
+  questions that take longer to answer.
 
 Time credit
 ~~~~~~~~~~~
