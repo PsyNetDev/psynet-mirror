@@ -248,8 +248,8 @@ def test_only_ungrouped_trials_check_their_time_credit(
     monkeypatch.setattr(PairTrial, "sync_group_optional", True)
     cohort, _ = _paired(exp)
     pair = cohort[0].active_sync_groups["pair"]
-    PairTrial.cue({})[0].consume(exp, cohort[0])
     pair.remove_participant(cohort[1], reason="removed_by_experimenter")
+    PairTrial.cue({})[0].consume(exp, cohort[0])
     PairTrial.cue({})[0].consume(exp, cohort[1])
     with caplog.at_level(logging.INFO):
         for participant in cohort:
@@ -674,6 +674,33 @@ def test_a_grouped_cued_trial_needs_a_group_barrier(
     VoteTrial.cue({})[0].consume(exp, cohort[0])
     with pytest.raises(ValueError, match="needs a GroupBarrier to close each round"):
         cohort[0].current_trial._show_trial(exp, cohort[0])
+
+
+@in_consents_experiment
+def test_a_member_removed_before_their_cue_still_gets_a_trial_in_the_round(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    stayer, leaver = cohort
+    pair = stayer.active_sync_groups["pair"]
+    role = _pair_role(leaver)
+    VoteTrial.cue({})[0].consume(exp, stayer)
+    pair.remove_participant(leaver, reason="late")
+    _arrive(exp, GroupBarrier("voted", group_type="pair"), [stayer])
+
+    VoteTrial.cue({})[0].consume(exp, leaver)
+    trial = leaver.current_trial
+    assert (trial.sync_group_id, trial.sync_group_role) == (pair.id, role)
+    assert trial.sync_group_outcome == "late"
+    assert trial.group_round.trials == [stayer.current_trial, trial]
+    # They have left, so their pages need no barrier.
+    trial._show_trial(exp, leaver)
+
+    # The pair's next round started after they left.
+    VoteTrial.cue({})[0].consume(exp, stayer)
+    with pytest.raises(RuntimeError, match="sync_group_optional"):
+        VoteTrial.cue({})[0].consume(exp, leaver)
 
 
 class LateVoteTrial(VoteTrial):

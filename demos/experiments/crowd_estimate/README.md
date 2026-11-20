@@ -24,7 +24,10 @@ the revision page. Nothing runs when a group ends, so a
 round whose group ended at that barrier keeps only each player's estimate,
 in their trial's answer. With `accumulate_answers = True`, that answer holds
 both the estimate and the revised estimate, by page label. A player without a
-group gets an ungrouped trial that asks only for their estimate.
+group gets an ungrouped trial that asks only for their estimate. A member
+removed as late before their trial for a question started is also asked only
+for their estimate, but that trial is in the group's round, with `outcome`
+`"late"`.
 `get_basic_data` exports a row for every trial, including answers given alone
 and trials whose player left before answering, and one per group and question
 from the rounds.

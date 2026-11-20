@@ -59,6 +59,7 @@ from ..sync import (
     SyncGroupRound,
     _execute_advisory_xact_lock,
     _group_max_wait_time,
+    _latest_sync_group_link,
     _reject_release_candidate_options,
     _validate_group_timeouts,
     check_late_removal_policies,
@@ -312,10 +313,13 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     sync_group_optional : bool
         With :attr:`sync_group_type`, set this class attribute to ``True`` to
         let :meth:`cue` give a participant who is in no such group, for
-        example because they left it, an ungrouped trial on the module's
-        default node. ``False`` (default) raises an error instead, which
-        usually means the cue needs a :func:`~psynet.timeline.conditional`
-        on ``participant.in_sync_group(...)``.
+        example because none formed or they left it before the round, an
+        ungrouped trial on the module's default node. ``False`` (default)
+        raises an error instead, which usually means the cue needs a
+        :func:`~psynet.timeline.conditional` on
+        ``participant.in_sync_group(...)``. A member removed during a round,
+        before their trial in it was created, gets a trial in that round
+        either way (see :meth:`cue`).
 
     live_game_class : type or None
         Set this class attribute to the :class:`~psynet.live_game.LiveGame`
@@ -491,6 +495,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             "that no barrier in the trial's pages released: when the trial "
             'maker prepares the group\'s next trials, ``"stayed"`` is written '
             "on the complete trials of the members still in the group. "
+            "A member removed during a cued round before their trial in it "
+            "was created gets the reason when the trial is created (see "
+            ":meth:`cue`). "
             "``None`` while nothing has happened yet, and for ungrouped trials."
         ),
     )
@@ -1412,6 +1419,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           ``participant.in_sync_group(...)``.
           Once started, the trial runs to its end even if they leave the
           group, so :meth:`show_feedback` can explain every outcome.
+        - A member removed from the group before their cue, while the
+          group's round that the cue would have joined was under way (for
+          example by a barrier's ``late_after`` while their request had
+          not reached the cue yet), still gets a trial in that round, with
+          their role and their removal reason as :attr:`sync_group_outcome`,
+          as if they had left just after the trial started. Such a trial's
+          ``show_trial`` needs no ``GroupBarrier``, so it can branch on
+          ``participant.in_sync_group(...)`` to give the player a solo
+          version.
         - :attr:`sync_group_outcome` records how the round ended for the
           player: ``"stayed"`` once a barrier in the trial's pages releases
           the group with them in it, after which it doesn't change; before
@@ -1476,7 +1492,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             regrouper, whose groups mix players at different loop positions.
             For a participant without a group (with
             :attr:`sync_group_optional`), ``round`` doesn't select a
-            round: they get an ungrouped trial. See
+            round: they get an ungrouped trial, unless they were removed
+            from the group during that round. See
             :ref:`a fixed group's loop <rounds-fixed-group-loop>`.
 
         Examples
@@ -1602,9 +1619,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             return definition, None, definition.definition
 
         group = None
+        left_round = None
         if cls.sync_group_type is not None:
             group = participant.active_sync_groups.get(cls.sync_group_type)
-            if group is None and not cls.sync_group_optional:
+            if group is None:
+                left_round = _round_left_before_cue(participant, cls, round_number)
+            if group is None and left_round is None and not cls.sync_group_optional:
                 raise RuntimeError(
                     f"Participant {participant.id} cued {cls.__name__}, whose "
                     f"sync_group_type is '{cls.sync_group_type}', but is in no "
@@ -1635,16 +1655,20 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
 
         node = cls.get_default_parent_node(participant, experiment)
-        if group is None:
+        if left_round is not None:
+            group_round = left_round
+        elif group is None:
             return node, None, make_definition(round_number)
-        group_round = _cued_round(
-            group, round_number, participant, make_definition, cls
-        )
+        else:
+            group_round = _cued_round(
+                group, round_number, participant, make_definition, cls
+            )
         if not callable(definition) and definition != group_round.definition:
             raise ValueError(
                 f"{cls.__name__}.cue() got the definition {definition!r}, but "
                 f"round {group_round.number} of '{cls.sync_group_type}' group "
-                f"{group.id} already has the definition {group_round.definition!r}. "
+                f"{group_round.sync_group_id} already has the definition "
+                f"{group_round.definition!r}. "
                 "All trials in a group's round share the definition of its first "
                 "cue, whatever their class or role. A definition taken from the "
                 "player's own position in a loop differs for late joiners and in "
@@ -1740,6 +1764,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             self.group_round is not None
             and self.group_round.trial_maker_id is None
             and not barriers
+            and participant.in_sync_group(self.sync_group_type)
         ):
             raise ValueError(
                 f"{type(self).__name__} is played in groups (sync_group_type="
@@ -4608,15 +4633,25 @@ def _lock_until_commit(key):
 
 
 def _record_sync_group(trial, participant, group, group_round=None):
-    """Save ``group``, the participant's role in it and, if given, the group's round on ``trial``."""
+    """Save ``group``, the participant's role in it and, if given, the group's round on ``trial``.
+
+    For a participant who has left ``group``, this is their role when they
+    left, and ``sync_group_outcome`` records why they left.
+    """
     trial.sync_group_id = group.id
     if group_round is not None:
         trial.group_round = group_round
         trial.sync_group_round = group_round.number
-    link = ParticipantLinkSyncGroup.query.filter_by(
-        participant_id=participant.id, sync_group_id=group.id, active=True
-    ).one_or_none()
+    link = (
+        ParticipantLinkSyncGroup.query.filter_by(
+            participant_id=participant.id, sync_group_id=group.id
+        )
+        .order_by(ParticipantLinkSyncGroup.id.desc())
+        .first()
+    )
     trial.sync_group_role = None if link is None else link.role
+    if link is not None and not link.active:
+        trial.sync_group_outcome = link.removal_reason
 
 
 def _group_barriers(logic):
@@ -4749,6 +4784,41 @@ def _cued_round(group, round_number, participant, make_definition, trial_class):
         group_round.definition = make_definition(round_number)
     else:
         _check_named_round(group_round, group, participant, trial_class)
+    return group_round
+
+
+def _round_left_before_cue(participant, trial_class, round_number):
+    """Return the round that ``participant`` left their group in before cueing ``trial_class`` there, or ``None``.
+
+    That is the round that their cue would have joined as a member, the
+    newest cued round in the module (or the one numbered ``round_number``)
+    of their latest group of the class's ``sync_group_type``, if it started
+    before they left the group and they have no trial of ``trial_class`` in
+    it. A barrier's ``late_after`` can remove a member whose request hasn't
+    reached the cue yet, while the others play the round. Gives ``None``
+    for a participant still in the group, never admitted to it, or whom a
+    grouper let continue without one since.
+    """
+    group_type = trial_class.sync_group_type
+    if group_type in (participant.ungrouped_group_types or []):
+        return None
+    link = _latest_sync_group_link(participant, group_type)
+    if link is None or link.active or link.admitted_at is None:
+        return None
+    rounds = SyncGroupRound.query.filter_by(
+        module_id=participant.module_id,
+        sync_group_id=link.sync_group_id,
+        trial_maker_id=None,
+    )
+    if round_number is not None:
+        rounds = rounds.filter_by(number=round_number)
+    group_round = rounds.order_by(SyncGroupRound.number.desc()).first()
+    if (
+        group_round is None
+        or group_round.creation_time > link.removal_time
+        or _has_trial_in(group_round, participant, trial_class)
+    ):
+        return None
     return group_round
 
 

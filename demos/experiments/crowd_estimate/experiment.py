@@ -12,7 +12,8 @@ a ``SyncGroupRound``, which holds the group's estimates and median; each player'
 and revised estimate are their trial's answer, and ``trial.var.in_median``
 says whether the estimate counted towards the median. A player without a
 group, because none formed, their group ended or they were removed for being
-late, gets ungrouped trials, which ask only for the estimate. See
+late, is asked only for the estimate. Their trials are ungrouped, except for
+the question in whose round they were removed. See
 ``README.md`` for how the demo handles dropouts and time-outs.
 
 The timeouts are short so that the bot test runs quickly; ``README.md``
@@ -133,9 +134,13 @@ class EstimateTrial(Trial):
     accumulate_answers = True
 
     def show_trial(self, experiment, participant):
-        estimate = join(self.estimate_page(), CodeBlock(self.save_estimate_timed_out))
-        if self.sync_group is None:
-            # Alone, the estimate is the whole trial.
+        alone = left_group(participant)
+        estimate = join(
+            self.estimate_page(alone), CodeBlock(self.save_estimate_timed_out)
+        )
+        if alone:
+            # Alone, the estimate is the whole trial. A member removed before
+            # their trial started still has it in the group's round.
             return estimate
         return join(
             estimate,
@@ -155,9 +160,9 @@ class EstimateTrial(Trial):
     def question(self):
         return QUESTIONS[self.definition["question"]]
 
-    def estimate_page(self):
+    def estimate_page(self, alone):
         prompt = self.question
-        if self.sync_group is None:
+        if alone:
             # Also tells a member removed from the group partway through.
             prompt = f"You're answering on your own. {prompt}"
         return ModularPage(

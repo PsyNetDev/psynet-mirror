@@ -977,7 +977,23 @@ example after leaving and rejoining the group, also raises an error.
 A cue by a participant who isn't in a group of the trial class's
 ``sync_group_type``, for example because they left it, raises an error,
 unless the class sets ``sync_group_optional = True``; its trials are then
-played alone, with the same loop values. Rounds are ordered by when
+played alone, with the same loop values.
+
+.. _rounds-removed-before-cue:
+
+The exception is a member removed during a round before their own cue
+reached it, for example by a barrier's ``late_after`` while the others
+already play the round and the member's browser has stopped sending
+requests. Their cue still puts the trial in that round, the one it would
+have joined, with their role and their removal reason as
+``sync_group_outcome``, so ``group_round.trials`` and the export include
+them, whether the removal came just before or just after their trial
+started. Rounds that start after they left are not theirs. Such a trial's
+``show_trial`` needs no ``GroupBarrier``; branch on
+``participant.in_sync_group(...)`` rather than ``self.sync_group is None``
+to give a member who left the solo version.
+
+Rounds are ordered by when
 the group first plays them, so the loop values needn't increase. Don't
 pass ``round=`` with a
 regrouper: its groups mix players at different loop positions, whose trials
@@ -1658,8 +1674,11 @@ For the rest of the timeline:
   participant who is out of the group when the trial starts, unless the
   trial class sets ``sync_group_optional = True``: they then get an
   ungrouped trial, so ``show_trial`` can give them the solo version of the
-  round. In the ``crowd_estimate`` demo, they give their estimate without
-  the group's median:
+  round. A member removed during the round, before their trial started,
+  gets a trial in that round instead (see :ref:`members removed before their cue <rounds-removed-before-cue>`),
+  so ``show_trial`` checks ``participant.in_sync_group(...)``. In the
+  ``crowd_estimate`` demo, they give their estimate without the group's
+  median:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.show_trial
