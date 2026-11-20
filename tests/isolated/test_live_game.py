@@ -2393,7 +2393,7 @@ def test_a_game_that_has_ticked_ends_with_psynet_s_reason_when_a_finished_player
     ended = run_pass(game, started.saved, tapped, 16, CLOCK)
 
     assert json.loads(started.saved)["state"]["psynet"]["started_at"] == 10
-    assert ended.players_done[0]["reason"] == "tapped 0"
+    assert ended.players_done["1"]["reason"] == "tapped 0"
     assert ended.ended["reason"] == PLAYERS_LEFT
 
 
