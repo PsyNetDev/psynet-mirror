@@ -1626,23 +1626,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         if isinstance(definition, ChainNode):
             return definition, None, definition.definition
 
-        group = None
-        left_round = None
+        group = group_round = None
         if cls.sync_group_type is not None:
             group = participant.active_sync_groups.get(cls.sync_group_type)
             if group is None:
-                left_round = _round_left_before_cue(participant, cls, round_number)
-            if group is None and left_round is None and not cls.sync_group_optional:
-                raise RuntimeError(
-                    f"Participant {participant.id} cued {cls.__name__}, whose "
-                    f"sync_group_type is '{cls.sync_group_type}', but is in no "
-                    "such group, for example because they left it. Put the cue "
-                    "in a conditional on participant.in_sync_group("
-                    f"'{cls.sync_group_type}'), or set "
-                    f"{cls.__name__}.sync_group_optional = True to let them "
-                    "play it ungrouped."
-                )
-            if group is not None and group._is_pending(participant):
+                group_round = _round_left_before_cue(participant, cls, round_number)
+                if group_round is None and not cls.sync_group_optional:
+                    raise RuntimeError(
+                        f"Participant {participant.id} cued {cls.__name__}, whose "
+                        f"sync_group_type is '{cls.sync_group_type}', but is in no "
+                        "such group, for example because they left it. Put the cue "
+                        "in a conditional on participant.in_sync_group("
+                        f"'{cls.sync_group_type}'), or set "
+                        f"{cls.__name__}.sync_group_optional = True to let them "
+                        "play it ungrouped."
+                    )
+            elif group._is_pending(participant):
                 raise RuntimeError(
                     f"Participant {participant.id} reached a cue of {cls.__name__} "
                     "before an admission point: they are a pending member of "
@@ -1663,14 +1662,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
 
         node = cls.get_default_parent_node(participant, experiment)
-        if left_round is not None:
-            group_round = left_round
-        elif group is None:
-            return node, None, make_definition(round_number)
-        else:
+        if group is not None:
             group_round = _cued_round(
                 group, round_number, participant, make_definition, cls
             )
+        elif group_round is None:
+            return node, None, make_definition(round_number)
         if not callable(definition) and definition != group_round.definition:
             raise ValueError(
                 f"{cls.__name__}.cue() got the definition {definition!r}, but "
@@ -4643,11 +4640,9 @@ def _record_sync_group(trial, participant, group, group_round=None):
     """Save ``group``, the participant's role in it and, if given, the group's round on ``trial``.
 
     For a participant who has left ``group``, this is their role when they
-    left, and ``sync_group_outcome`` records why they left. The link is
-    reread, so that a removal committed since this session loaded it is
-    seen. Code removing another participant should still hold their row
-    lock, as late removal does, so that the removal can't commit during
-    their cue.
+    left, and ``sync_group_outcome`` records why they left. Code removing
+    another participant should hold their row lock, as late removal does,
+    so that the removal can't commit during their cue.
     """
     trial.sync_group_id = group.id
     if group_round is not None:
@@ -4789,7 +4784,7 @@ def _cued_round(group, round_number, participant, make_definition, trial_class):
     if created:
         group_round.definition = make_definition(round_number)
     else:
-        _check_named_round(group_round, group, participant, trial_class)
+        _check_named_round(group_round, participant, trial_class)
     return group_round
 
 
@@ -4810,21 +4805,13 @@ def _check_first_run(participant, group_type, group_id, round_number):
 
 
 def _round_left_before_cue(participant, trial_class, round_number):
-    """Return the round that ``participant`` left their group in before cueing ``trial_class`` there, or ``None``.
+    """Return the round a removed member's cue of ``trial_class`` joins, or ``None``.
 
-    That is the cued round in the module of their latest group of the
-    class's ``sync_group_type`` that was under way when they left, unless
-    it had already closed by then. As in :func:`_cued_round`, without
-    ``round_number`` it is the newest round that started before then, if
-    they have no trial in it; with ``round_number`` it is that round, if it
-    started before then, they have no trial of ``trial_class`` in it or in
-    a later round, and, if it closed before they left, they have another
-    trial in it (see :func:`_check_named_round`). Naming such a round when
-    they have run the module before raises a ``RuntimeError``, as for a
-    member. A barrier's ``late_after`` can remove a member whose request
-    hasn't reached the cue yet, while the others play the round. Gives
-    ``None`` for a participant still in the group, never admitted to it, or
-    whom a grouper let continue without one since.
+    This is the existing round that a member's cue would have joined when
+    they left (see :func:`_cued_round`): a barrier's ``late_after`` can
+    remove a member whose request hasn't reached the cue while the others
+    play the round. ``None`` for a participant still in the group, never
+    admitted to it, or let continue without a group since.
     """
     group_type = trial_class.sync_group_type
     if group_type in (participant.ungrouped_group_types or []):
@@ -4836,32 +4823,24 @@ def _round_left_before_cue(participant, trial_class, round_number):
         module_id=participant.module_id,
         sync_group_id=link.sync_group_id,
         trial_maker_id=None,
-    )
-    if round_number is None:
-        rounds = rounds.filter(SyncGroupRound.creation_time <= link.removal_time)
-    else:
+    ).filter(SyncGroupRound.creation_time <= link.removal_time)
+    if round_number is not None:
         rounds = rounds.filter_by(number=round_number)
     group_round = (
         rounds.order_by(SyncGroupRound.number.desc()).populate_existing().first()
     )
-    if group_round is None or group_round.creation_time > link.removal_time:
+    if group_round is None:
         return None
+    closed = (
+        group_round.closed_at is not None and group_round.closed_at < link.removal_time
+    )
     if round_number is None:
-        if _has_trial_in(group_round, participant):
+        if closed or _has_trial_in(group_round, participant):
             return None
-    elif _has_trial_in(
-        group_round, participant, trial_class
-    ) or _has_trial_in_later_round(group_round, participant):
+        return group_round
+    if _named_round_refusal(group_round, participant, trial_class, closed):
         return None
-    closed_at = group_round.closed_at
-    if (
-        closed_at is not None
-        and closed_at < link.removal_time
-        and not _has_trial_in(group_round, participant)
-    ):
-        return None
-    if round_number is not None:
-        _check_first_run(participant, group_type, link.sync_group_id, round_number)
+    _check_first_run(participant, group_type, link.sync_group_id, round_number)
     return group_round
 
 
@@ -4887,32 +4866,42 @@ def _has_trial_in_later_round(group_round, participant):
     return later.first() is not None
 
 
-def _check_named_round(group_round, group, participant, trial_class):
-    """Check that ``participant`` may cue ``group_round``, an existing round of ``group``.
+def _check_named_round(group_round, participant, trial_class):
+    """Raise a ``RuntimeError`` if ``participant`` may not cue ``group_round``, an existing round."""
+    refusal = _named_round_refusal(
+        group_round, participant, trial_class, group_round.closed_at is not None
+    )
+    if refusal is not None:
+        raise RuntimeError(refusal)
 
-    Raises a ``RuntimeError`` if they already have a trial of
-    ``trial_class`` in it, or one in a round of the group in the module that
-    started after it, or if a barrier closed the round before they had any
+
+def _named_round_refusal(group_round, participant, trial_class, closed):
+    """Return why ``participant`` may not cue ``group_round``, an existing round, or ``None``.
+
+    They may not if they already have a trial of ``trial_class`` in it, or
+    one in a round of the group in the module that started after it, or if
+    the round is ``closed`` (a barrier released the group) and they had no
     trial in it.
     """
+    group_type = trial_class.sync_group_type
+    group_id = group_round.sync_group_id
     if _has_trial_in_later_round(group_round, participant) or _has_trial_in(
         group_round, participant, trial_class
     ):
-        raise RuntimeError(
+        return (
             f"Participant {participant.id} cued {trial_class.__name__} for "
-            f"round {group_round.number} of '{group.group_type}' group "
-            f"{group.id} again in module '{group_round.module_id}', after it or a "
+            f"round {group_round.number} of '{group_type}' group "
+            f"{group_id} again in module '{group_round.module_id}', after it or a "
             "later round. A round takes one trial of each class, and "
             "can't be cued after a round played after it."
         )
-    if group_round.closed_at is not None and not _has_trial_in(
-        group_round, participant
-    ):
-        raise RuntimeError(
+    if closed and not _has_trial_in(group_round, participant):
+        return (
             f"Participant {participant.id} cued round {group_round.number} "
-            f"of '{group.group_type}' group {group.id} in module "
+            f"of '{group_type}' group {group_id} in module "
             f"'{group_round.module_id}', which the group already finished without "
             "them. Newcomers should join at an admission point before the "
             "round, such as GroupBarrier(admission_point=True) with a "
             "grouper using use_admission_points=True."
         )
+    return None
