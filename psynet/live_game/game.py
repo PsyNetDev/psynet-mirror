@@ -29,11 +29,18 @@ from .method_wrappers import (
     _saves_ready_messages,
     _sends_message,
     _shows_psynet_entry,
+    _skips_too_late_outcome,
     _stores_json,
     _waits_for_start,
 )
 from .psynet_entry import PlayerReady, _absences, _psynet_entry
-from .record import _MOMENT_EFFECT, _PSYNET_EFFECTS, _REWARD_EFFECT, _STARTED_EFFECT
+from .record import (
+    _CLOSED_EFFECT,
+    _MOMENT_EFFECT,
+    _PSYNET_EFFECTS,
+    _REWARD_EFFECT,
+    _STARTED_EFFECT,
+)
 from .registry import _register_live_game
 from .reward import (
     _check_reward,
@@ -69,7 +76,8 @@ class LiveGame(RealtimeGame):
 
     A game that players can join while it runs defines
     ``on_add(self, state, player, now)``, which makes room for a new
-    player, such as by appending to each list in the state. A game in which
+    player, such as by appending to each list in the state, and can
+    define :meth:`accepts_players` to stop taking players. A game in which
     each player can finish before the others defines
     ``is_done(self, state, player)``, which returns whether the player's game
     has ended, and can define :meth:`done_reason` to say why.
@@ -156,6 +164,7 @@ class LiveGame(RealtimeGame):
             ("handle_ending", _handles_ending),
             ("handle_player_ending", _handles_player_ending),
             ("is_done", _player_done),
+            ("outcome", _skips_too_late_outcome),
             ("done_reason", _player_done_reason),
         ]:
             method = getattr(cls, name)
@@ -233,6 +242,50 @@ class LiveGame(RealtimeGame):
         """
         return super().end_reason(state)
 
+    @_player_done
+    def is_done(self, state, player):
+        """Return whether a player's game has ended while the game carries
+        on, such as once they've had their turns, as in Dallinger's
+        ``is_done``. It's asked about each player still playing after every
+        change to the state, once the game has started, and should only
+        read ``state``. By default, a player's game ends with the game.
+        :ref:`live-games-join-and-finish` explains it.
+
+        Parameters
+        ----------
+
+        state
+            The game's state.
+
+        player
+            The player's number: 0 for the first player, 1 for the next,
+            and so on.
+        """
+        return False
+
+    def accepts_players(self, state):
+        """Return whether the game still takes new players, for a
+        :class:`PlayLiveGame` with ``join_running_game``, such as until its
+        last round starts. By default, it always does.
+
+        PsyNet asks after each change to the state. Once it returns
+        ``False``, the game takes no more players, even if it would return
+        ``True`` later, and PsyNet stops its group taking newcomers, as
+        :meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups` does, a few
+        seconds later. A newcomer added before then is never seen by the
+        game's methods, and their game ends at once, with the reason
+        :data:`~psynet.live_game.TOO_LATE` (see
+        :ref:`live-games-joining`). It should only read ``state``,
+        not change it.
+
+        Parameters
+        ----------
+
+        state
+            The game's state.
+        """
+        return True
+
     @_player_done_reason
     def done_reason(self, state, player):
         """Return why a player's game ended, a non-empty string such as
@@ -280,6 +333,9 @@ class LiveGame(RealtimeGame):
         - ``None`` for the others, including players whose game ended
           early, by ``is_done``.
 
+        It leaves out the players who came too late, after
+        :meth:`accepts_players` returned ``False``, whom the game never sees.
+
         A :class:`PlayLiveGame` with ``absent_action`` removes the same
         players from their groups, with these reasons
         (see :ref:`live-games-absent`).
@@ -287,17 +343,38 @@ class LiveGame(RealtimeGame):
         return _absences(self, state)
 
     def _players_done(self, state):
-        """Return the numbers of the players whose game has ended, by the
-        game's ``is_done``, which is asked only once the game has started."""
+        """Return the numbers of the players whose game has ended: those who
+        came too late, and, once the game has started, those whom the game's
+        ``is_done`` says are done."""
         entry = _psynet_entry(state)
-        if type(self).is_done is RealtimeGame.is_done or entry["started_at"] is None:
-            return []
+        too_late = entry["too_late"]
+        if entry["started_at"] is None:
+            return list(too_late)
         n_players = len(entry["participant_ids"])
         return _as_game_code(
             lambda: [
-                player for player in range(n_players) if self.is_done(state, player)
+                player
+                for player in range(n_players)
+                if player in too_late or self.is_done(state, player)
             ]
         )
+
+    def _close_unless_accepting(self, state):
+        """Close the game to new players once its ``accepts_players`` returns
+        ``False``, and queue the effect that stops its group's top-ups."""
+        if type(self).accepts_players is LiveGame.accepts_players:
+            return
+        entry = _psynet_entry(state)
+        if not entry["accepts_players"]:
+            return
+        if _as_game_code(self.accepts_players, state):
+            return
+        entry["accepts_players"] = False
+        if queued_effects.get(None) is not None:
+            # Past this class's queue_effect, which refuses PsyNet's names.
+            RealtimeGame.queue_effect(
+                self, _CLOSED_EFFECT, {"group_id": entry["group_id"]}
+            )
 
     @_stores_json
     def _end_ready_step(self, state, now):
@@ -559,7 +636,8 @@ class LiveGame(RealtimeGame):
         if name in _PSYNET_EFFECTS:
             raise ValueError(
                 f"The effect name {name!r} is reserved for PsyNet, which uses "
-                "it for add_performance_reward, record and the game's start. "
+                "it for add_performance_reward, record, the game's start and "
+                "accepts_players. "
                 "Give the effect another name."
             )
         try:

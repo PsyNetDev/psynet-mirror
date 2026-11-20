@@ -20,15 +20,17 @@ from ..sync import _removed_from_group_notice
 from ..timeline import ResponseNotReady
 from ..utils import get_translator
 from .play import _check_reached_game, _live_game_id, _set_live_game_answer
+from .psynet_entry import TOO_LATE
 from .record import (
     LiveGameFailed,
     LiveGameRecord,
     _computed_answer,
-    _player_ending,
+    _done_reason,
     _session_channel,
     _session_columns,
     _session_game_class,
     _session_participant_ids,
+    _too_late_players,
 )
 
 # Seconds a page waits before resending a response refused because the
@@ -56,9 +58,11 @@ class LiveGameControl(NullControl):
         show_result_for=0,
         player_left_message=_DEFAULT,
         no_game_message=_DEFAULT,
+        too_late_message=_DEFAULT,
         waiting_status=_DEFAULT,
         ended_status=_DEFAULT,
         names="shown",
+        player_info=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -66,6 +70,11 @@ class LiveGameControl(NullControl):
             raise ValueError(
                 f"A live game page's names must be one of "
                 f"{', '.join(map(repr, _NAMES))}, not {names!r}."
+            )
+        if player_info is not None and not callable(player_info):
+            raise TypeError(
+                "A live game page's player_info must be a function of the "
+                f"participant, not {player_info!r}."
             )
         if (
             isinstance(show_result_for, bool)
@@ -87,17 +96,20 @@ class LiveGameControl(NullControl):
         self.show_result_for = show_result_for
         self.player_left_message = player_left_message
         self.no_game_message = no_game_message
+        self.too_late_message = too_late_message
         self.waiting_status = waiting_status
         self.ended_status = ended_status
         self.names = names
+        self.player_info = player_info
 
     def check_ready_for_response(self, experiment, participant):
         _check_reached_game(participant, self._play_id())
         session_id = _live_game_id(participant, self._play_id())
         if session_id is None:
             return None
-        # A player whose own game ended before the game did has their result.
-        if _player_ending(session_id, participant.id) is not None:
+        # A player whose own game ended before the game did, or who came too
+        # late, has their result.
+        if _done_reason(session_id, participant.id) is not None:
             return None
         game = LiveGameRecord(session_id)
         if game.status == "failed":
@@ -116,7 +128,7 @@ class LiveGameControl(NullControl):
 
     def ends_by(self, experiment, participant):
         session_id = _live_game_id(participant, self._play_id())
-        if session_id is None:
+        if session_id is None or _done_reason(session_id, participant.id) == TOO_LATE:
             return None
         ends = _game_page_deadline(session_id)
         ended = _session_columns(session_id, "end_time").end_time
@@ -185,6 +197,17 @@ class LiveGameControl(NullControl):
         if session_id is None and _removed_from_group_notice(participant):
             # The page already shows why the participant's group left them.
             no_session = None
+        too_late = self.too_late_message
+        if too_late is _DEFAULT:
+            too_late = _p(
+                "live_game", "The game had already stopped taking new players."
+            )
+        if (
+            session_id is not None
+            and _done_reason(session_id, participant.id) == TOO_LATE
+        ):
+            # Known to have come too late, so the page shows no game.
+            session_id, no_session = None, too_late
         waiting = self.waiting_status
         if waiting is _DEFAULT:
             waiting = _p("live_game", "Waiting for the other players to open the game")
@@ -202,6 +225,7 @@ class LiveGameControl(NullControl):
                 "showResultFor": self.show_result_for,
                 "playerLeftMessage": player_left,
                 "noGameMessage": no_session,
+                "tooLateMessage": too_late,
                 "waitingStatus": waiting,
                 "endedStatus": ended,
                 "players": _players(participant, self._play_id()),
@@ -263,6 +287,13 @@ class LiveGamePage(ModularPage):
         start the game." Set it to ``None`` for no notice. It isn't shown
         when the page already says that the participant's group left them.
 
+    too_late_message
+        What a notice at the top of the page says to a participant who
+        joined a running game after its :meth:`~LiveGame.accepts_players`
+        returned ``False``, or as it ended, in place of the game, with the
+        Next button (see :ref:`live-games-joining`). By default it says "The game had already
+        stopped taking new players." Set it to ``None`` for no notice.
+
     waiting_status
         What ``psynet.liveGame.showStatus`` says before the game starts. By
         default it says "Waiting for the other players to open the game".
@@ -277,6 +308,14 @@ class LiveGamePage(ModularPage):
         pseudonym, such as "Pink koala", or ``"anonymous"``, all as the same
         neutral figure, without sending the page the others' pseudonyms
         (see :ref:`live-games-whos-who`).
+
+    player_info
+        Optional function of the participant that returns what the pages
+        show about them as a player, such as the avatar they chose, as any
+        value that can be saved as JSON. It's called when the participant
+        reaches the :class:`PlayLiveGame`, and each player's value is their
+        ``info`` in ``psynet.liveGame.players``. An anonymous page gets only
+        the participant's own.
 
     **kwargs
         Any other parameter of :class:`~psynet.modular_page.ModularPage`,
@@ -293,9 +332,11 @@ class LiveGamePage(ModularPage):
         show_result_for=0,
         player_left_message=_DEFAULT,
         no_game_message=_DEFAULT,
+        too_late_message=_DEFAULT,
         waiting_status=_DEFAULT,
         ended_status=_DEFAULT,
         names="shown",
+        player_info=None,
         **kwargs,
     ):
         super().__init__(
@@ -306,9 +347,11 @@ class LiveGamePage(ModularPage):
                 show_result_for=show_result_for,
                 player_left_message=player_left_message,
                 no_game_message=no_game_message,
+                too_late_message=too_late_message,
                 waiting_status=waiting_status,
                 ended_status=ended_status,
                 names=names,
+                player_info=player_info,
             ),
             **kwargs,
         )
@@ -354,18 +397,29 @@ def _check_session_can_still_end(session_id):
 def _players(participant, play_id):
     """Return how the participant's game page shows each player of their
     latest game at the PlayLiveGame ``play_id``, in player order: the
-    player's pseudonym, unless the page is anonymous, and whether it's the
-    participant. Pages read it as ``psynet.liveGame.players``."""
+    player's pseudonym and the ``info`` that the page's ``player_info``
+    gave, unless the page is anonymous, and whether it's the participant.
+    Pages read it as ``psynet.liveGame.players``."""
     from ..participant import Participant
     from ..pseudonym import anonymous_sticker_html
-    from .play import _live_game_data
+    from .play import _live_game_data, _player_info
 
     data = _live_game_data(participant).get(play_id) or {}
     game_id = data.get("id")
     if game_id is None:
         return []
+    if _done_reason(game_id, participant.id) == TOO_LATE:
+        # The game never saw them, so their page shows no game.
+        return []
     anonymous = data.get("names") == "anonymous"
-    participant_ids = _session_participant_ids(game_id)
+    # Those who came too late are numbered last, so leaving them out keeps
+    # the others' numbers.
+    too_late = _too_late_players(game_id)
+    participant_ids = [
+        participant_id
+        for participant_id in _session_participant_ids(game_id)
+        if participant_id not in too_late
+    ]
     if participant.id not in participant_ids:
         # Added to a running game, so not in its row until the addition is
         # written; the page asks again once its views show more players.
@@ -397,6 +451,10 @@ def _players(participant, play_id):
             label = player["name"]
         player["you"] = you
         player["label"] = _p("live_game", "You") if you else label
+        shows_info = (you or not anonymous) and participant_id in shown
+        player["info"] = (
+            _player_info(shown[participant_id], play_id) if shows_info else None
+        )
         players.append(player)
     return players
 
