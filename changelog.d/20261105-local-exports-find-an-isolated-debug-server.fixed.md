@@ -1,0 +1,1 @@
+`psynet export local`, `psynet run-bot`, `psynet db` and `psynet experiment-variables` now use a `psynet debug local --isolated` server running in the same experiment directory, and say which database they use, instead of silently reading the shared `dallinger` database. If you set `DATABASE_URL`, `REDIS_URL` or `base_port` yourself, they use your settings instead.
