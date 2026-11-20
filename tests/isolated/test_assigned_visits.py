@@ -80,7 +80,11 @@ def test_visits_survive_transactions_and_distinguish_repeated_nodes(
     assert first.complete(alice, False, 0.8).id == trial.id
     with pytest.raises(ValueError, match="Conflicting replay"):
         first.complete(alice, True, 0.8)
-    assert second.complete(alice, True).node_id == trial.node_id
+    plan = maker.trial_plan(alice)
+    assert plan["definitions"] == [{"art": "a"}, {"art": "a"}]
+    assert plan["answers"] == [False]
+    assert second.complete(alice, None).node_id == trial.node_id
+    assert maker.trial_plan(alice)["answers"] == [False, None]
     assert (
         alice.module_state.n_completed_trials
         == alice.module_state.n_created_trials

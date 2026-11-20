@@ -496,6 +496,24 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
 
+    def trial_plan(self, participant):
+        """Return the participant's ordered definitions and submitted answer prefix.
+
+        Call under the participant lock, e.g. in a live game's settings factory.
+        Keep the whole plan in server-side game state for ``LiveGame.answer_trial``.
+        Send its definitions, or a subset of them, to the participant's browser.
+        The length of ``answers`` is the index of the next definition, even when
+        a previously submitted answer was ``False`` or ``None``.
+        """
+        visits = self.assign_visits(participant)
+        return {
+            "definitions": [visit.definition for visit in visits],
+            "answers": [
+                visit.raw_answer for visit in visits if visit.trial_id is not None
+            ],
+            "_assignment_ids": [visit.id for visit in visits],
+        }
+
     def assign_visits(self, participant):
         """Return this run's fixed visits for the current experimental block.
 

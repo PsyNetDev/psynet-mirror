@@ -444,6 +444,27 @@ class LiveGame(RealtimeGame):
         """
         return super().handle_player_ending(session_row, player, ending)
 
+    def answer_trial(self, plans, *, player, answer, time_taken=None):
+        """Submit the next answer and advance that player's plan in game state.
+
+        Supply one plan from ``StaticTrialMaker.trial_plan`` per player, in seat
+        order. Call after checking that the message refers to the current item.
+        The durable acknowledgement is written in the live event transaction.
+        """
+        if type(player) is not int or not 0 <= player < len(plans):
+            raise ValueError("Unknown player for these trial plans.")
+        plan = plans[player]
+        position = len(plan["answers"])
+        if position >= len(plan["_assignment_ids"]):
+            raise ValueError("This player's trial plan is complete.")
+        self.record_visit(
+            player=player,
+            visit_id=plan["_assignment_ids"][position],
+            answer=answer,
+            time_taken=time_taken,
+        )
+        plan["answers"].append(answer)
+
     def record_visit(self, *, player, visit_id, answer, time_taken=None):
         """Complete a maker-assigned visit in the live event transaction."""
         if (
