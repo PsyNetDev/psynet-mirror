@@ -339,9 +339,11 @@ def test_cpu_heavy_jobs_use_the_cpu_queue_only_when_there_are_cpu_workers():
 
     config = get_config()
     heavy = WorkerAsyncJob(do_nothing, cpu_heavy=True, priority="low").enqueue()
+    urgent = WorkerAsyncJob(do_nothing, cpu_heavy=True, priority="high").enqueue()
     light = WorkerAsyncJob(do_nothing, priority="low", cpu_heavy=False).enqueue()
     db.session.commit()
     assert heavy.redis_job.origin == "cpu_low"
+    assert urgent.redis_job.origin == "cpu_high"
     assert light.redis_job.origin == "low"
 
     config.set("cpu_processes_per_worker", 0)

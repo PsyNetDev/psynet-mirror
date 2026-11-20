@@ -592,7 +592,8 @@ def count_rq_workers():
 
         workers, n_cpu = [], 0
         for w in Worker.all(connection=redis_conn):
-            if all(name.startswith("cpu") for name in w.queue_names()):
+            names = set(w.queue_names())
+            if names and names <= {"cpu_high", "cpu", "cpu_low"}:
                 n_cpu += 1
             else:
                 workers.append(w)
