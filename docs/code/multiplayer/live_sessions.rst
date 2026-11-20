@@ -10,6 +10,10 @@ The server keeps one state for the whole group, applies each player's
 messages to it in order, and sends each player's page its own view of the
 game. Each session, with its messages, is saved with the experiment's data.
 
+If you haven't built a live game before, start with the
+:doc:`tutorial <live_session_tutorial>`, which works through three demo
+games.
+
 A live session has three pieces:
 
 1. The game, a subclass of :class:`~psynet.live_session.LiveSession`, with a
@@ -445,8 +449,11 @@ The answer and bonuses
 The game page's answer is the session's outcome: what the game's ``outcome``
 method returned when the session ended. PsyNet sets it on the server and
 ignores what the page sends, so every player in a session gets the same
-answer, and a participant without a session gets ``None``. If you need each
-player's score, or why the session ended, include them in the outcome.
+answer, and a participant without a session gets ``None``. To save the
+outcome as a trial's answer, return the initializer and the game page from
+the trial's ``show_trial``, as the ``rock_paper_scissors_live`` demo does. If
+you need each player's score, or why the session ended, include them in the
+outcome.
 
 Because participants can't leave the game page until their session ends,
 every session needs a time limit. A session still running at the game's
@@ -494,6 +501,15 @@ For a bonus earned during the game, such as for each coin a player collects,
 call ``game.queue_bonus(player_id, amount)`` in a message's ``apply`` or in
 another method that changes the state. PsyNet adds it to the player's reward
 a few seconds later, so the player keeps it even if they leave early.
+
+Both kinds of bonus are added to the participant's reward only. When a trial
+shows the game, they don't appear in the trial's ``performance_reward``,
+which stays 0. To have each trial record what its game paid, let the trial
+pay, as the ``rock_paper_scissors_live`` demo does: the trial's
+``score_answer`` reads the player's score from the answer, which is the
+game's outcome, and its ``compute_performance_reward`` turns the score into
+the bonus. The game then defines no ``bonus``, so that the player isn't paid
+twice.
 
 A session can fail without an outcome: its record couldn't be saved, or the
 game's ``outcome`` raised an error as well. The answer is then ``None`` and
