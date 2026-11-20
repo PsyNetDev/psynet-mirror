@@ -1,28 +1,42 @@
 # README
 
-Pairs of participants play two games of rock, paper, scissors as live
-sessions, of five and then three rounds, each game on one page. The server
-keeps the game's state, scores each round once both players have chosen, and
+Pairs of participants play two live games of rock, paper, scissors, of five
+and then three throws, each game on one page. The server
+keeps the game's state, scores each throw once both players have chosen, and
 sends each player's page its own view of the game, so a page that reloads
 shows the game as it stands. If a player's partner leaves the page, the
 player's page says so.
 
 Each game is one cued trial per player. The trial's definition says how many
-rounds the game has and what a round won pays, which is more in the second
-game. The trial starts the pair's session, with the number of rounds as the
-session's settings, and shows the game page. The game's outcome is the
-trial's answer. The trial's score is the number of rounds the player won, and
-the trial pays the bonus for them, so each trial's `performance_reward` is
+throws the game has and what a throw won pays, which is more in the second
+game. The trial starts the pair's game, with the number of throws as the
+game's settings, along with what a throw won pays, and shows the game page.
+The trial's answer is the player's part of the game's outcome: their throws,
+with both choices and the result for them, the throws each player won, and
+whether the game was played to the end. The pair's whole outcome is
+on the trial's `group_round`. The trial's score is the number of throws the
+player won. The game's `performance_reward` pays the reward for them when
+the game's result is saved, whether or not the player is still on the page,
+and PsyNet records it on the trial, so each trial's `performance_reward` is
 what its game paid.
 
 ## When a partner leaves
 
 - A partner who closes the game page during a game: the other player's page
-  says so, and the game ends when the pair finishes it or at its five-minute
-  limit. Both players are paid for the rounds they won.
-- A partner who doesn't come back for the second game: the other player
-  waits five minutes for them at the start of the game, then leaves the pair.
-  Their game page has no session and shows no game, and their trial has no
+  says so. If the partner doesn't come back within 30 seconds, the game's
+  `away_timeout`, the game ends. Both players are paid for the throws they
+  won, including the partner who never comes back. The other player sees
+  their result and then waits for the partner at the start of the second
+  game, as in the next case, but only until 30 seconds after the game
+  ended: 10 seconds for a late answer to arrive and then `LATE_AFTER`,
+  20 seconds. The partner never opened their result page, so its time
+  doesn't count.
+- A partner who saw their result but doesn't come back for the second
+  game: the other player waits for them at the start of the game, for as
+  long as the partner's 30-second result page, 10 seconds for a late answer
+  to arrive and then `LATE_AFTER`, 20 seconds. The partner is
+  then late and leaves the pair, which breaks it up. The player who waited
+  goes on to a game page with no game to play, and their trial has no
   answer and pays nothing. A page after the games tells them there are no
   more, with their bonus.
 - The partner who was away, if they come back after that, is no longer in a

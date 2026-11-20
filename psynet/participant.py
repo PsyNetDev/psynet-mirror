@@ -13,7 +13,7 @@ import time
 import zipfile
 from contextlib import ExitStack
 from smtplib import SMTPAuthenticationError
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 import dallinger.models
 import requests
@@ -326,6 +326,7 @@ def _raise_for_status_with_server_details(response):
 
 
 if TYPE_CHECKING:
+    from .live_game import LiveGameRecord
     from .sync import ParticipantLinkSyncGroup, SyncGroup
     from .timeline import Module
 
@@ -391,15 +392,11 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         The number of pages that the participant has advanced through.
         Should not be modified directly.
 
-    live_sessions : dict or None
-        The ids of the participant's live sessions, keyed by the id of the
-        :class:`~psynet.live_session.LiveSessionInitializer` that started
-        each one. Read it with :func:`~psynet.live_session.live_session_id`.
-        Should not be modified directly.
-
-    live_session_bonuses_paid : list or None
-        The ids of the live sessions whose outcome bonus the participant has
-        been paid. Should not be modified directly.
+    live_game_data : dict or None
+        What PsyNet stores about the participant's live games, keyed by the
+        id of the :class:`~psynet.live_game.PlayLiveGame` that started each
+        one. Read it through :attr:`live_games` and
+        :attr:`live_game_history`. Should not be modified directly.
 
     complete : bool
         Whether the participant has successfully completed the experiment.
@@ -502,8 +499,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     #: or :attr:`psynet.timeline.Response.time_limit_reached` instead.
     timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)
-    live_sessions = Column(PythonDict)
-    live_session_bonuses_paid = Column(PythonList)
+    live_game_data = Column(PythonDict)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)
@@ -758,6 +754,37 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     def active_sync_groups(self) -> Dict[str, "SyncGroup"]:
         return {group.group_type: group for group in self.sync_groups if group.active}
 
+    @property
+    def live_games(self) -> Dict[str, "LiveGameRecord"]:
+        """``{play_id: game}``: the participant's latest game at each
+        :class:`~psynet.live_game.PlayLiveGame` they have reached, as a
+        :class:`~psynet.live_game.LiveGameRecord`, keyed by the step's
+        ``id_``, which is the game's ``name`` unless it was given one::
+
+            game = participant.live_games["rock_paper_scissors"]
+            game.answer, game.outcome, game.messages
+
+        If their group didn't start a game there, for example because it
+        broke up while it waited, the record's ``status`` is
+        ``"not_started"`` and its ``answer`` is ``None``. A step they never
+        reached isn't in it.
+        """
+        from .live_game.play import _participant_live_games
+
+        return _participant_live_games(self)
+
+    @property
+    def live_game_history(self) -> Dict[str, List["LiveGameRecord"]]:
+        """``{play_id: [game, ...]}``: every game the participant played at
+        each :class:`~psynet.live_game.PlayLiveGame`, oldest first, as
+        :class:`~psynet.live_game.LiveGameRecord` objects, such as a game
+        played in each round of a loop. Each has the participant's answer
+        in that game.
+        """
+        from .live_game.play import _participant_live_game_history
+
+        return _participant_live_game_history(self)
+
     def latest_sync_group(self, group_type: str) -> Optional["SyncGroup"]:
         """Return the participant's latest group of ``group_type``, or ``None`` if they had none.
 
@@ -794,7 +821,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         type before. Otherwise returns why they left their latest group of
         that type: ``"late"`` (removed by a barrier's
         ``late_after``, with any ``late_action``, from its group or a group
-        listed in its ``also_leave``), ``"waited_too_long"`` (waited at a
+        listed in its ``also_leave``), ``"no_show"`` or ``"left_game"``
+        (didn't play a :class:`~psynet.live_game.PlayLiveGame`'s game, or
+        left it for good, with its ``absent_action="leave_group"``),
+        ``"waited_too_long"`` (waited at a
         barrier for longer than its ``max_wait_time``, with any
         ``max_wait_action``), ``"group_dissolved"`` (still in the group when it was
         dissolved below its quorum, with any ``below_quorum``), ``"moved_on"`` (a

@@ -34,8 +34,8 @@ function isMoving(player) {
 // Does to a view what experiment.py's advance does to the state, in the same
 // order, so the prediction lands where the game does. rules is experiment.py's
 // RULES.
-export function advance(rules, view, dx, dy, seconds) {
-  let player = view.players[view.me];
+export function advance(rules, view, you, dx, dy, seconds) {
+  let player = view.players[you];
   let low = rules.player_radius;
   let high = rules.size - rules.player_radius;
   let scale = dx !== 0 && dy !== 0 ? rules.diagonal : 1;
@@ -75,15 +75,14 @@ export function advance(rules, view, dx, dy, seconds) {
 
 // Places each player between two tick views.
 function interpolate(a, b, fraction) {
-  let players = {};
-  for (let [id, to] of Object.entries(b.players)) {
-    let from = a.players[id] || to;
-    players[id] = {
+  let players = b.players.map((to, player) => {
+    let from = a.players[player];
+    return {
       ...to,
       x: from.x + (to.x - from.x) * fraction,
       y: from.y + (to.y - from.y) * fraction,
     };
-  }
+  });
   return { ...b, players: players };
 }
 
@@ -100,7 +99,7 @@ function drawCircle(context, x, y, radius, fill, stroke, lineWidth) {
 // Draws the coins and the player's own piece from mine, the player's
 // predicted view, and the other players from others, the interpolated view,
 // which is a little behind it.
-function draw(context, rules, mine, others) {
+function draw(context, rules, you, mine, others) {
   context.fillStyle = "#f8fbff";
   context.fillRect(0, 0, rules.size, rules.size);
   context.strokeStyle = "#d8e2ef";
@@ -116,21 +115,22 @@ function draw(context, rules, mine, others) {
   for (let coin of mine.coins) {
     drawCircle(context, coin.x, coin.y, rules.coin_radius, "#f4c430", "#a27400", 2);
   }
-  for (let [id, player] of Object.entries(others.players)) {
-    if (id !== mine.me) {
-      let color = rules.colors[player.number - 1];
+  others.players.forEach((player, number) => {
+    if (number !== you) {
+      let color = rules.colors[number];
       drawCircle(context, player.x, player.y, rules.player_radius, color, "#ffffff", 2);
     }
-  }
-  let me = mine.players[mine.me];
-  let color = rules.colors[me.number - 1];
-  drawCircle(context, me.x, me.y, rules.player_radius, color, "#111827", 4);
+  });
+  let me = mine.players[you];
+  drawCircle(context, me.x, me.y, rules.player_radius, rules.colors[you], "#111827", 4);
 }
 
 export function activate({ root, vars, psynet }) {
   let status = root.querySelector("#canvas-status");
-  let live = psynet.liveSession;
-  if (!live.hasSession) {
+  let live = psynet.liveGame;
+  if (!live.hasGame) {
+    // Without a game there's nothing to animate, so the page doesn't start
+    // its drawing loop.
     return;
   }
   let rules = vars.canvas_rules;
@@ -149,7 +149,7 @@ export function activate({ root, vars, psynet }) {
 
   live.predict((view, type, message) => {
     if (type === "move") {
-      advance(rules, view, message.dx, message.dy, message.seconds);
+      advance(rules, view, live.player, message.dx, message.dy, message.seconds);
     }
   });
   live.interpolate(interpolate);
@@ -196,12 +196,12 @@ export function activate({ root, vars, psynet }) {
       sendMove();
       direction = next;
     }
-    if (!live.started || live.ended || shown === null) {
+    if (!live.playing || shown === null) {
       pending = 0;
       return;
     }
     let keysHeld = direction[0] !== 0 || direction[1] !== 0;
-    if (keysHeld || isMoving(shown.players[shown.me])) {
+    if (keysHeld || isMoving(shown.players[live.player])) {
       pending = Math.min(rules.longest_move, pending + elapsed);
       if (pending >= SECONDS_PER_MOVE) {
         sendMove();
@@ -219,24 +219,24 @@ export function activate({ root, vars, psynet }) {
       return view;
     }
     view = structuredClone(view);
-    advance(rules, view, direction[0], direction[1], pending);
+    advance(rules, view, live.player, direction[0], direction[1], pending);
     return view;
   }
 
   function showScores(view) {
-    let players = Object.entries(view.players).sort(([, a], [, b]) => a.number - b.number);
-    let key = players.map(([, player]) => player.coins).join();
+    let key = view.players.map((player) => player.coins).join();
     if (key === shownScores) {
       return;
     }
     shownScores = key;
     scores.replaceChildren(
-      ...players.map(([id, player]) => {
+      ...view.players.map((player, number) => {
         let item = document.createElement("li");
         let swatch = document.createElement("span");
         swatch.className = "canvas-swatch";
-        swatch.style.background = rules.colors[player.number - 1];
-        let name = id === view.me ? "You" : `Player ${player.number}`;
+        swatch.style.background = rules.colors[number];
+        // "You", or the player's pseudonym, as the group's other pages show them.
+        let name = live.players[number]?.label ?? `Player ${number + 1}`;
         item.append(swatch, `${name}: ${player.coins}`);
         return item;
       })
@@ -251,19 +251,9 @@ export function activate({ root, vars, psynet }) {
     }
   }
 
-  function showStatus(view) {
-    if (live.ended) {
-      setText(status, "The game is over.");
-    } else if (!live.started) {
-      setText(status, "Waiting for the other players to open the game");
-    } else {
-      setText(status, "Collect the coins!");
-    }
-    let time = live.socket.sessionTime();
-    if (view !== null && view.ends_at !== null && time !== null) {
-      setText(timer, String(Math.ceil(Math.max(0, view.ends_at - time))));
-    }
-  }
+  live.showStatus(status, () => "Collect the coins!");
+
+  live.onTimeLeft((left) => setText(timer, String(Math.ceil(left))));
 
   function frame(now) {
     if (!running) {
@@ -273,13 +263,11 @@ export function activate({ root, vars, psynet }) {
     lastFrame = now;
     move(elapsed);
     shown = shownView();
-    // The view is null before the first view, and once a session that
-    // failed has ended.
+    // The view is null before the first view.
     if (shown !== null) {
-      draw(context, rules, shown, live.interpolatedView() || shown);
+      draw(context, rules, live.player, shown, live.interpolatedView() || shown);
       showScores(shown);
     }
-    showStatus(shown);
     if (live.ended) {
       running = false;
     } else {

@@ -16,7 +16,7 @@
   // Legacy globals remain available through configurable accessors while
   // experiments migrate, allowing accesses to warn or fail with useful errors.
   const LEGACY_JS_VAR_GLOBAL_MODES = new Set(["warn", "error", "off"]);
-  const RESERVED_JS_VAR_GLOBALS = new Set(["pageUuid", "liveSession"]);
+  const RESERVED_JS_VAR_GLOBALS = new Set(["pageUuid", "liveGame"]);
   let legacyJsVarGlobalStates = new Map();
   let warnedLegacyJsVarGlobalCollisionKeys = new Set();
   let warnedLegacyJsVarGlobalLockedKeys = new Set();
@@ -3996,6 +3996,7 @@
         return;
       }
       if (notice) {
+        notice.psynetText = text;
         if (notice.textContent !== text) notice.textContent = text;
         return;
       }
@@ -4013,11 +4014,13 @@
       notice.className = "alert alert-info";
       notice.setAttribute("role", "status");
       notice.style.cssText = "margin: 0;";
+      notice.psynetText = text;
       stack.appendChild(notice);
       // Screen readers announce a status region's text only if it changes
-      // after the region is in the page.
+      // after the region is in the page. A later call may change the text
+      // before then.
       setTimeout(() => {
-        notice.textContent = text;
+        notice.textContent = notice.psynetText;
       }, 0);
     };
 

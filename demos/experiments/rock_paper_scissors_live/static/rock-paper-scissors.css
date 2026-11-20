@@ -4,16 +4,6 @@
   text-align: center;
 }
 
-#rps-last {
-  border: 1px solid #dee2e6;
-  border-radius: 0.25rem;
-  padding: 0.5rem;
-}
-
-#rps-last:empty {
-  display: none;
-}
-
 #rps-status {
   min-height: 1.5rem;
   margin: 1rem 0;
@@ -28,4 +18,9 @@
 
 #rps-results {
   text-align: left;
+}
+
+/* The latest throw stands out, so a player sees its result at a glance. */
+#rps-results li:last-child {
+  font-weight: 600;
 }

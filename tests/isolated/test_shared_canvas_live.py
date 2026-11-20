@@ -9,10 +9,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from dallinger.realtime import Reject, Sent
 
 from psynet.experiment import import_local_experiment
-from psynet.live_session.testing import start_session
+from psynet.live_game import Reject
+from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
 
 DEMO = path_to_demo_experiment("shared_canvas_live")
@@ -26,11 +26,11 @@ const source = fs.readFileSync(script, "utf8");
 const { advance } = await import("data:text/javascript," + encodeURIComponent(source));
 const { rules, cases } = JSON.parse(fs.readFileSync(input, "utf8"));
 const results = cases.map((case_) => {
-  const view = { me: "1", players: { 1: case_.player }, coins: case_.coins };
+  const view = { players: [case_.player], coins: case_.coins };
   for (const [dx, dy, seconds] of case_.moves) {
-    advance(rules, view, dx, dy, seconds);
+    advance(rules, view, 0, dx, dy, seconds);
   }
-  return { player: view.players[1], coins: view.coins };
+  return { player: view.players[0], coins: view.coins };
 });
 process.stdout.write(JSON.stringify(results));
 """
@@ -65,30 +65,41 @@ class TestSharedCanvasLive:
         return import_local_experiment()["module"]
 
     def test_a_page_cannot_move_its_player_faster_than_the_game_clock(self, demo):
-        game = demo.SharedCanvas()
-        state = game.initial_state(["1", "2"])
-        start_session(game, state, now=10)
+        game = LocalGame(demo.SharedCanvas, players=2)
 
         def move(now):
-            message = {"type": "move", "message": {"dx": 1, "dy": 0, "seconds": 0.5}}
+            message = demo.Move(dx=1, dy=0, seconds=0.5)
             try:
-                game.apply(state, "1", message, now, Sent())
+                game.send(0, message, now=now)
             except Reject as rejection:
                 return rejection.reason
-            return state["players"]["1"]["moved_until"]
+            return game.state["players"][0]["moved_until"]
 
         used_up = "You've used up your movement time."
-        # The session starts at session time 10, and nobody could move before
-        # the start.
-        assert move(10) == used_up
+        # Nobody can move before the game starts, at 0.
+        assert move(0) == used_up
         # After 10 seconds standing still, the player can catch up on at most
         # SAVED_MOVEMENT of that time, so the first move is spent up to the
         # clock, and others sent at once get nothing.
-        assert move(20) == 20
-        assert move(20) == move(20) == used_up
+        assert move(10) == 10
+        assert move(10) == move(10) == used_up
         # By then the clock has moved on 0.2 seconds, so that's all the move
         # gets.
-        assert move(20.2) == pytest.approx(20.2)
+        assert move(10.2) == pytest.approx(10.2)
+
+    def test_a_player_whose_page_stops_sending_moves_coasts_to_a_stop(self, demo):
+        game = LocalGame(demo.SharedCanvas, players=2)
+        game.send(0, demo.Move(dx=1, dy=0, seconds=0.5), now=1)
+        moved = dict(game.state["players"][0])
+        assert moved["vx"] > 0
+
+        # Until COAST_AFTER has passed, the game waits for the page's moves.
+        game.tick(now=1 + demo.COAST_AFTER - 0.1)
+        assert game.state["players"][0]["x"] == moved["x"]
+        # Then its ticks carry the player on until they stop.
+        game.tick(now=10)
+        coasted = game.state["players"][0]
+        assert coasted["vx"] == 0 and coasted["x"] > moved["x"]
 
     def test_the_page_moves_players_exactly_as_the_game_does(self, demo, tmp_path):
         node = shutil.which("node")
@@ -100,13 +111,13 @@ class TestSharedCanvasLive:
         # The game changes its state in place, so it gets a copy of each case.
         for case in json.loads(json.dumps(cases)):
             state = {
-                "players": {"1": case["player"]},
+                "players": [case["player"]],
                 "coins": case["coins"],
                 "collected": [],
             }
             for dx, dy, seconds in case["moves"]:
-                demo.advance(state, "1", dx, dy, seconds, now=0)
-            by_game.append({"player": state["players"]["1"], "coins": state["coins"]})
+                demo.advance(state, 0, dx, dy, seconds, now=0)
+            by_game.append({"player": state["players"][0], "coins": state["coins"]})
 
         page_input = tmp_path / "cases.json"
         page_input.write_text(json.dumps({"rules": demo.RULES, "cases": cases}))

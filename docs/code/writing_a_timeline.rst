@@ -337,11 +337,15 @@ maker or code block can check the previous page with
 ``participant.response.time_limit_reached``.
 
 In a group experiment, a time limit covers only its page. A following
-:class:`~psynet.sync.GroupBarrier` with ``late_after`` waits for a member
-who has started a timed page since the group's previous barrier until the
-page's time limit has run out plus 10 seconds, which is enough for an answer
-sent at the deadline to arrive. This also holds once they have answered and
-moved on to untimed pages, so finishing early never makes a member late. So
+:class:`~psynet.sync.GroupBarrier` with ``late_after`` counts the late limit
+of a member who has started a timed page since the group's previous barrier
+from when the page's time limit has run out plus 10 seconds, which is enough
+for an answer sent at the deadline to arrive. This also holds once they have
+answered and moved on to untimed pages, so finishing early never makes a
+member late, and ``late_after`` needs to cover only the untimed pages. A
+page that ends by other means can say when it ends at the latest with
+:meth:`~psynet.timeline.Page.ends_by`, and the barrier counts from that in
+the same way; a :doc:`live game's <multiplayer/live_games>` page does this. So
 give decision pages a ``time_limit``, and the barrier after them
 ``late_after`` rather than a long ``max_wait_time``; see
 :ref:`rounds-slow-players` for a worked example.

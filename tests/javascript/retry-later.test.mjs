@@ -152,4 +152,19 @@ describe("showStatusNotice", () => {
     showStatusNotice("notice", null);
     assert.equal(elements.notice, undefined);
   });
+
+  it("shows the latest message when it changes before the first is shown", () => {
+    const { elements, document } = fakeDocument();
+    const pending = [];
+    const showStatusNotice = new Function(
+      "document",
+      "setTimeout",
+      `return ${extract("showStatusNotice")}`
+    )(document, (callback) => pending.push(callback));
+
+    showStatusNotice("notice", "Waiting for 2 players.");
+    showStatusNotice("notice", "Waiting for 1 player.");
+    pending.forEach((callback) => callback());
+    assert.equal(elements.notice.textContent, "Waiting for 1 player.");
+  });
 });

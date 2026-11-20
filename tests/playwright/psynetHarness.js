@@ -63,11 +63,13 @@ function extractRecruitmentUrlFromLine(line) {
   return null;
 }
 
-function getPsynetDebugArgs() {
+function getPsynetDebugArgs(options = {}) {
   const args = ["debug", "local", "--no-browsers"];
 
-  // Optional compatibility switch for local troubleshooting. We do not force legacy mode.
-  if (parseBoolEnv("PSYNET_USE_LEGACY_DEBUG")) {
+  // Gunicorn, as a deployed experiment uses, for a spec whose game ticks: the
+  // default development server can deliver its views late, in bursts. Also a
+  // compatibility switch for local troubleshooting.
+  if (options.legacy || parseBoolEnv("PSYNET_USE_LEGACY_DEBUG")) {
     args.push("--legacy");
   }
 
@@ -168,8 +170,8 @@ function resolvePsynetCommand() {
   return "psynet";
 }
 
-function resolvePsynetLaunch() {
-  const debugArgs = getPsynetDebugArgs();
+function resolvePsynetLaunch(options = {}) {
+  const debugArgs = getPsynetDebugArgs(options);
   const psynetCmd = resolvePsynetCommand();
 
   // In some environments, psynet debug local is only reliable when launched through uv.
@@ -189,7 +191,7 @@ function resolvePsynetLaunch() {
 
 // ---- Backend process lifecycle ---------------------------------------------
 function startExperiment(experimentDir, options = {}) {
-  const launch = resolvePsynetLaunch();
+  const launch = resolvePsynetLaunch(options);
   if (!launch || !launch.cmd) {
     throw new Error("Unable to resolve psynet command.");
   }
@@ -429,6 +431,15 @@ async function assertNoBackendError(page) {
       `Details: ${error.detailText || "<none>"}\n` +
       `Backend log: ${latestBackendLogPath || "<unknown>"}`
   );
+}
+
+// Checks that the page fits its layout, and saves a screenshot of it as
+// <name>.png in ARTIFACT_DIR, if set.
+async function checkLayoutAndScreenshot(page, name) {
+  expect(await page.evaluate(() => window.psynetLayout.check()), name).toEqual([]);
+  if (process.env.ARTIFACT_DIR) {
+    await page.screenshot({ path: `${process.env.ARTIFACT_DIR}/${name}.png`, fullPage: true });
+  }
 }
 
 async function getPageUuid(page) {
@@ -1746,6 +1757,7 @@ module.exports = {
   advanceUntilPromptContains,
   assertNoBackendError,
   beginExperiment,
+  checkLayoutAndScreenshot,
   captureFirstTimelineAfterGateway,
   enterTimelineAfterGateway,
   installTimelineHoldReleaseProbe,
