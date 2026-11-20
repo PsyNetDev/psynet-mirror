@@ -111,10 +111,10 @@ def _describe_workers(result):
     text = f"{n_workers} worker process{'es' if n_workers != 1 else ''}"
     n_slots = result.n_rq_job_slots
     if n_slots and n_slots != n_workers:
-        text += f", up to {n_slots} jobs at once"
+        text += f", up to {n_slots} jobs at once,"
     if n_cpu := result.n_cpu_workers:
-        text += f", and {n_cpu} CPU worker{'s' if n_cpu != 1 else ''}"
-    return text
+        text += f" and {n_cpu} CPU worker{'s' if n_cpu != 1 else ''}"
+    return text.rstrip(",")
 
 
 def format_test_results(result):
@@ -1003,14 +1003,22 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
     else:
         group = were(workers, "worker process")
     measured = [f"In {test}, the {group} busy {busy}."] if test else []
-    implied = f"would be about {advice.implied_utilization:.0%} busy"
+    if advice.cpu_bound:
+        implied = (
+            f"would keep their CPU workers about {advice.implied_utilization:.0%} busy"
+        )
+    else:
+        implied = f"would be about {advice.implied_utilization:.0%} busy"
     cores_left = (result.server_cores or 0) - CORES_FOR_OTHERS
     server = (
         f"{result.server_cores}-core server has only {cores_left} cores left "
         f"after {CORES_FOR_OTHERS} for the web server and database"
     )
-    if cores_left != processes:
-        server += f", room for {processes} worker processes with their CPU workers"
+    if result.n_cpu_workers and cores_left > processes:
+        server += (
+            f", room for {processes} worker process{'es' if processes != 1 else ''} "
+            "with their CPU workers"
+        )
     # Only the cores keep the count below the test's, so no larger server is needed yet.
     trimmed = advice.demand <= processes < workers
     if advice.demand > processes:

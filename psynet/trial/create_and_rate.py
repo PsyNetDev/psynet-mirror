@@ -447,6 +447,7 @@ class CreateAndRateTrialMakerMixin(object):
         self.n_raters = n_raters
         self.rate_mode = rate_mode
         self.creator_class = creator_class
+        rater_class._check_async_post_trial_cpu_heavy()
         self.rater_class = rater_class
         self.node_class = node_class
         self.include_previous_iteration = include_previous_iteration

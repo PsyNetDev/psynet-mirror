@@ -1425,6 +1425,14 @@ def _with_cpu_workers(result, n_cpu, busy):
             288,
             dict(processes=7, demand=10, reason="cores", cpu_bound=True),
         ),
+        # Unknown cores don't cap the advice.
+        (
+            _with_cpu_workers(
+                _tapping_result(96, 10, 0.1, server_cores=None), 10, 0.55
+            ),
+            96,
+            dict(processes=10, reason="current", cpu_bound=True),
+        ),
         # With CPU workers, busy ordinary jobs keep their greenlets.
         (
             _with_cpu_workers(_tapping_result(40, 2, 1.5, slots=20), 2, 0.3),
@@ -1529,6 +1537,12 @@ def test_recommend_workers(result, n, expected):
             ],
             "In the 96-bot test, the 10 CPU workers were busy 55% of the time.",
             "No estimate of worker_processes",
+        ),
+        # Without CPU workers, the cores message doesn't mention them.
+        (
+            [_tapping_result(96, 10, 0.55, server_cores=2)],
+            "after 2 for the web server and database; use a larger server",
+            "CPU workers",
         ),
         # Two CPU workers per process halve the worker processes the cores allow.
         (

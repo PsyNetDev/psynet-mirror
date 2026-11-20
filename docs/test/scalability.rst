@@ -252,7 +252,7 @@ crashes or that you interrupt keeps the tests that finished (see
 Async workers
 -------------
 
-Async jobs run in worker processes, separate from the web server. Two
+Async jobs run in worker processes, separate from the web server. Three
 config variables (see :doc:`/reference/configuration`) set how many run at
 once:
 

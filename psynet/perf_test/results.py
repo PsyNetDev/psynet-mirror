@@ -773,7 +773,8 @@ def recommend_workers(result, n_participants):
     if (cpu_demand := _cpu_worker_demand(result)) is not None:
         # Each worker process brings this many CPU workers, which need a core each.
         cpu_per_process = max(1, round(result.n_cpu_workers / workers))
-        cores_left = max(1, cores_left // cpu_per_process)
+        if math.isfinite(cores_left):
+            cores_left = max(1, cores_left // cpu_per_process)
         cpu_busy, cpu_per_worker = cpu_demand
         cpu_saturated = cpu_busy >= SATURATED_UTILIZATION
         cpu_per_participant_s = result.cpu_worker_load.get("per_participant_s")
