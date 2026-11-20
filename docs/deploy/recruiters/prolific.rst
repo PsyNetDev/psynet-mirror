@@ -187,10 +187,10 @@ participant under **Needs payment review** in the dashboard's
 
 To customize these behaviors, subclass
 :class:`~psynet.end.SuccessfulEndLogic` or
-:class:`~psynet.end.UnsuccessfulEndLogic`. For custom completion-code
-routing, override
-:meth:`~psynet.experiment.Experiment.recruiter_exit_info` and register
-extra codes with the ``prolific_completion_config`` configuration key.
+:class:`~psynet.end.UnsuccessfulEndLogic`.
+``prolific_completion_config`` registers extra completion codes on the
+study; PsyNet still completes submissions with its own researcher-actor
+codes.
 
 Qualifications
 --------------

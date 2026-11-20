@@ -454,10 +454,13 @@ General
     A boolean on whether recruitment should be automatic.
 
 ``debug_recruiter`` *str* |dlgr-icon|
-    The recruiter that ``psynet debug`` uses, by nickname or class name.
-    It applies unless ``recruiter`` names a Prolific recruiter (debug mode
-    then uses Dallinger's simulated ``devprolific`` recruiter) or a mock
-    recruiter, which is used as it is. Default: ``HotAirRecruiter``.
+    The recruiter that ``psynet debug local`` uses, by nickname or class
+    name, when that command runs with ``mode = debug``. A Prolific
+    ``recruiter`` is replaced by Dallinger's simulated ``devprolific``
+    recruiter, and a mock recruiter is used as configured. Any other
+    recruiter is replaced by this value. ``psynet debug ssh`` and
+    ``psynet debug heroku`` run with ``mode = sandbox`` and keep
+    ``recruiter``. Default: ``HotAirRecruiter``.
 
 ``description`` *str* |dlgr-icon|
     A description of the study used in deployment metadata. The default Lab
@@ -476,9 +479,12 @@ General
 
     .. note::
 
-        In debug mode, a Prolific recruiter is replaced by the simulated
-        ``devprolific`` recruiter, and other recruiters by
-        ``debug_recruiter`` (by default the HotAir recruiter, ``hotair``).
+        ``psynet debug local`` runs with ``mode = debug``. A Prolific
+        recruiter is replaced by the simulated ``devprolific`` recruiter,
+        a mock recruiter stays as configured, and any other recruiter is
+        replaced by ``debug_recruiter`` (by default the HotAir recruiter,
+        ``hotair``). ``psynet debug ssh`` and ``psynet debug heroku`` run
+        with ``mode = sandbox`` and keep the configured recruiter.
         PsyNet's testing commands may use Dallinger's BotRecruiter internally; this does not make ``recruiter = bots`` a
         supported deployment configuration.
 
@@ -684,12 +690,16 @@ Prolific
     The default (``v1``) is defined in *global_config_defaults.txt*.
 
 ``prolific_completion_config`` *str* |dlgr-icon|
-    A JSON object of extra Prolific completion codes, keyed by code type,
-    each with its Prolific ``actions`` and ``actor``. PsyNet generates the
-    codes themselves; route a participant to one by overriding
-    :meth:`~psynet.experiment.Experiment.recruiter_exit_info`. Like
-    ``prolific_recruitment_config``, it can be read from a file with
-    ``file:``. Default: ``{}``.
+    A JSON object of extra Prolific completion codes to register when the
+    study is created, keyed by code type, each with its Prolific
+    ``actions`` and ``actor``. PsyNet generates the code strings and
+    completes submissions with its own researcher-actor codes
+    (``DEFAULT_RESEARCHER``, and ``UNSUCCESSFUL`` when
+    ``prolific_pay_unsuccessful`` is on). While that option is ``True``,
+    leave Prolific's ``FIXED_SCREEN_OUT_PAYMENT`` action off these codes:
+    Prolific allows one such code per study, and PsyNet registers its own.
+    Like ``prolific_recruitment_config``, the value can be read from a
+    file with ``file:``. Default: ``{}``.
 
 ``prolific_estimated_completion_minutes`` *int* |dlgr-icon|
     Estimated duration in minutes of the experiment or survey.
@@ -911,8 +921,9 @@ General
 
 ``docker_ssh_idle_hibernate`` *bool* |dlgr-icon|
     If ``True``, an SSH deployment goes to sleep after
-    ``docker_ssh_idle_hibernate_minutes`` without participant activity,
-    unless ``auto_recruit`` is on or async jobs are pending; see
+    ``docker_ssh_idle_hibernate_minutes`` without participant activity.
+    It stays awake while participants are still working, while
+    ``auto_recruit`` is on, or while async jobs are pending; see
     :doc:`/deploy/reference/ssh_server`. Default: ``False``.
 
 ``docker_ssh_idle_hibernate_minutes`` *int* |dlgr-icon|
@@ -943,10 +954,11 @@ Web server
     URI of the Postgres database.
 
 ``num_dynos_web`` *int* |dlgr-icon|
-    Number of web processes started by the legacy local process manager
-    (``psynet test local`` and ``psynet debug local --legacy``). SSH Docker
-    deployments run a single web service, so this does not scale the
-    remote web container.
+    Number of web dynos on Heroku, and of web processes started by the
+    legacy local process manager (``psynet test local`` and
+    ``psynet debug local --legacy``). SSH Docker deployments run a single
+    web service, so this does not scale the remote web container.
+    Default: ``1``.
 
 ``worker_processes`` *int* |dlgr-icon|
     Number of worker processes for async jobs and other background
@@ -1005,7 +1017,8 @@ These apply to ``psynet debug heroku`` and ``psynet deploy heroku``.
 
 ``dyno_type_web`` and ``dyno_type_worker`` *str* |dlgr-icon|
     Dyno types for the web and worker processes, overriding ``dyno_type``.
-    ``psynet deploy heroku --docker`` uses ``dyno_type`` only.
+    ``psynet deploy heroku`` and ``psynet debug heroku`` use them with or
+    without ``--docker``.
 
 ``heroku_python_version`` *str* |dlgr-icon|
     The Python version Heroku runs, written to the app's ``runtime.txt``.
@@ -1024,7 +1037,8 @@ These apply to ``psynet debug heroku`` and ``psynet deploy heroku``.
     If ``True``, add the Sentry error-tracking add-on to the app. Default:
     ``False``.
 
-The number of worker dynos is set with ``num_dynos_worker``.
+The number of web dynos is set with ``num_dynos_web`` and the number of
+worker dynos with ``num_dynos_worker``.
 
 Docker
 ~~~~~~
@@ -1204,9 +1218,12 @@ Config variables not to be set manually
     The Prolific completion codes that the Prolific recruiter generated for
     the study.
 
-``heroku_app_id_root`` and ``heroku_auth_token`` *str* |dlgr-icon|
-    The Heroku app and the token that Heroku deployments use to change the
-    app's configuration, for example to turn off ``auto_recruit``.
+``heroku_app_id_root`` *str* |dlgr-icon|
+    The Heroku app that deployments record so they can change its
+    configuration later, for example to turn off ``auto_recruit``.
+
+``heroku_auth_token`` *str* |dlgr-icon| |sensitive-icon|
+    The token those configuration changes use.
 
 ``psynet_version``, ``dallinger_version``, ``python_version``,
 ``soft_max_experiment_payment_email_sent`` and

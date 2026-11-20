@@ -66,13 +66,14 @@ virtual environment active. ``psynet <command> --help`` lists every option.
      - The same commands for Heroku apps. They need the Heroku CLI (see
        :doc:`/install`); app sizes and the region are set with the
        :ref:`Heroku configuration variables <configuration_heroku>`.
-       ``deploy heroku`` and ``export heroku`` require ``--app``.
+       ``deploy heroku``, ``export heroku`` and ``destroy heroku`` require
+       ``--app``. ``debug heroku`` can omit it.
    * - ``psynet export local`` / ``ssh``
      - Export the data to ``exports/latest/``; see
        :doc:`/data/exporting_data`.
    * - ``psynet load PATH``
-     - Replace the local database with an export, for example to analyze
-       it in Python. Stop ``psynet debug`` first; see
+     - Replace the local database with an exported zip file, such as
+       ``export.zip``. Stop ``psynet debug`` first; see
        :doc:`/data/analyzing_data`.
    * - ``psynet db`` / ``psynet db heroku --app NAME``
      - Print the connection URI of the local database or of a Heroku app's
