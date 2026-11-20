@@ -41,22 +41,22 @@ class TestPublicGoodsLive:
         assert game.view(0)["contributions"] == [10, 2, 0]
 
     @pytest.mark.parametrize(
-        "outcome, player, answer, expected",
+        "outcome, player, expected",
         [
             # The player closed their page, so it saved no answer, but they
             # were paid from the game's outcome.
-            ({"contributions": [0, 10], "payoffs": [17.5, 7.5]}, 1, None, (10, 7.5)),
+            ({"contributions": [0, 10], "payoffs": [17.5, 7.5]}, 1, (10, 7.5)),
             # The round hasn't ended yet.
-            (None, 1, None, (None, None)),
+            (None, 1, (None, None)),
             # The game ended before it could add the player.
-            ({"contributions": [0], "payoffs": [10]}, None, None, (None, None)),
+            ({"contributions": [0], "payoffs": [10]}, None, (None, None)),
         ],
     )
     def test_the_export_has_each_players_round_from_the_outcome(
-        self, demo, outcome, player, answer, expected
+        self, demo, outcome, player, expected
     ):
         game = SimpleNamespace(outcome=outcome, player=player)
-        trial = SimpleNamespace(live_game=game, answer=answer)
+        trial = SimpleNamespace(live_game=game, answer=None)
         assert demo.round_result(trial) == expected
 
     def test_a_contribution_is_between_none_and_the_endowment(self, demo):

@@ -180,10 +180,12 @@ def round_result(trial):
     ended before it could add them. The outcome counts a player who closed
     their page, whose trial has no answer."""
     game = trial.live_game
-    if game is None or game.outcome is None or game.player is None:
+    if game is None:
         return None, None
-    outcome = game.outcome
-    return outcome["contributions"][game.player], outcome["payoffs"][game.player]
+    outcome, player = game.outcome, game.player
+    if outcome is None or player is None:
+        return None, None
+    return outcome["contributions"][player], outcome["payoffs"][player]
 
 
 def left_team(participant):

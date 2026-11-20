@@ -166,13 +166,7 @@ class Bargain(LiveGame):
         }
 
     def answer(self, outcome, reason, player):
-        deal = outcome["deal"]
-        return {
-            "deal": deal is not None,
-            "coins": 0 if deal is None else deal[player],
-            "arrived": player not in outcome["no_shows"],
-            "partner_arrived": 1 - player not in outcome["no_shows"],
-        }
+        return player_result(outcome, player)
 
     def performance_reward(self, outcome, reason, player):
         return self.answer(outcome, reason, player)["coins"] * COIN_VALUE
@@ -187,6 +181,45 @@ class Bargain(LiveGame):
         if view["mine"] is None and player == 0:
             return Propose(keep=view["stake"] - BOT_GIVES)
         return None
+
+
+def player_result(outcome, player):
+    """Return a player's part of a game's outcome: whether there was a deal,
+    their coins from it, and whether they and their partner arrived."""
+    deal = outcome["deal"]
+    return {
+        "deal": deal is not None,
+        "coins": 0 if deal is None else deal[player],
+        "arrived": player not in outcome["no_shows"],
+        "partner_arrived": 1 - player not in outcome["no_shows"],
+    }
+
+
+def _player_round_row(trial):
+    """Return a player's row of the export for one round. The game's columns
+    come from its outcome, which counts a player who closed their page and
+    so saved no answer, and are None if the player had no game, because
+    their partner didn't reach it."""
+    game = trial.live_game
+    outcome, player = game.outcome, game.player
+    result = (
+        dict.fromkeys(["deal", "coins", "arrived", "partner_arrived"])
+        if outcome is None or player is None
+        else player_result(outcome, player)
+    )
+    return {
+        "pair_id": trial.sync_group_id,
+        "participant_id": trial.participant_id,
+        "trial_id": trial.id,
+        "round": trial.position,
+        # How the game ended: DEAL, NO_SHOW, or PsyNet's PLAYERS_LEFT,
+        # "finished" when the time ran out or "not_joined" when neither
+        # player opened it. None without a game.
+        "end_reason": game.end_reason,
+        # For a game that a player didn't open in time, arrived and
+        # partner_arrived say who didn't.
+        **result,
+    }
 
 
 def _you_or_partner(player, players):
@@ -445,29 +478,7 @@ class Exp(psynet.experiment.Experiment):
             SyncGroupRound.id
         )
         return {
-            "player_round": [
-                {
-                    "pair_id": t.sync_group_id,
-                    "participant_id": t.participant_id,
-                    "trial_id": t.id,
-                    "round": t.position,
-                    # How the game ended: DEAL, NO_SHOW, or PsyNet's
-                    # PLAYERS_LEFT, "finished" when the time ran out or
-                    # "not_joined" when neither player opened it. None
-                    # without a game.
-                    "end_reason": t.live_game.end_reason,
-                    # All three are None for a player whose partner didn't
-                    # reach the game, so who had no game, or who didn't
-                    # submit the game page. For a game that a player didn't
-                    # open in time, arrived and partner_arrived say who
-                    # didn't.
-                    "deal": (t.answer or {}).get("deal"),
-                    "arrived": (t.answer or {}).get("arrived"),
-                    "partner_arrived": (t.answer or {}).get("partner_arrived"),
-                    "coins": t.coins(),
-                }
-                for t in trials
-            ],
+            "player_round": [_player_round_row(t) for t in trials],
             "pair": [_pair_row(r) for r in pairs],
         }
 
