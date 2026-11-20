@@ -2593,11 +2593,10 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     assert members[0].live_games["pick_numbers"].finished
     assert members[0].live_games["pick_numbers"].answer == outcome
     assert members[0].live_game_history["pick_numbers"][-1].answer == outcome
-    # Each player's answer, in player order, once their page has saved it.
+    # Each player's answer, in player order, including the one whose page
+    # saved none.
+    assert game.answers == [outcome, outcome]
     players = [game.participant_ids.index(member.id) for member in members]
-    answers = [None, None]
-    answers[players[0]] = outcome
-    assert game.answers == answers
     assert members[0].live_games["pick_numbers"].player == players[0]
     # A record that isn't one participant's has no single answer.
     with pytest.raises(AttributeError, match="has no single answer"):
@@ -2842,6 +2841,48 @@ def test_the_game_page_answer_can_be_the_player_s_part_of_the_outcome(
 
     assert _submit_on_the_game_page(first)["submission"] == "approved"
     assert _accepted_answers(first) == ["first player's"]
+
+
+def test_a_record_works_out_the_answer_of_a_player_whose_page_saved_none(
+    pair, monkeypatch
+):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    monkeypatch.setattr(
+        _played_pick_numbers(),
+        "answer",
+        lambda self, outcome, reason, player: (reason, outcome[player]),
+    )
+    early, other = sorted(members, key=lambda member: member.id)
+    game = LiveGameRecord(session_id)
+    players = [game.participant_ids.index(member.id) for member in (early, other)]
+
+    def answers():
+        own = [LiveGameRecord(session_id, member).answer for member in (early, other)]
+        assert [game.answers[player] for player in players] == own
+        return own
+
+    assert answers() == [None, None]
+    ending = [None, None]
+    ending[players[0]] = 2
+    db.session.add(
+        RealtimeEvent(
+            session_id=session_id,
+            sequence=1,
+            event_type="player_end",
+            participant_id=early.id,
+            reason="retired",
+            outcome=ending,
+        )
+    )
+    # The early finisher's comes from their own ending, while the game runs.
+    assert answers() == [("retired", 2), None]
+    outcome = [None, None]
+    outcome[players[0]], outcome[players[1]] = 3, 5
+    db.session.query(RealtimeSession).filter_by(id=session_id).update(
+        {"status": "ended", "end_reason": "finished", "outcome": outcome}
+    )
+    assert answers() == [("retired", 2), ("finished", 5)]
 
 
 @pytest.mark.parametrize("show_result_for", [0, 8])

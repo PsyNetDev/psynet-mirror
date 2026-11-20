@@ -178,16 +178,19 @@ class LiveGameRecord:
     @property
     def answer(self) -> Any:
         """The participant's answer on the game page, as the game's
-        ``answer`` gave it. It's ``None`` until the page has saved it, or if
-        no game started."""
+        ``answer`` gives it once their own game has ended, from the same
+        outcome and reason as their reward. A participant who closed the
+        page has one too. It's ``None`` until their game has ended, if no
+        game started, if they aren't among its players, or if the game
+        failed before their game ended."""
         participant_id = self._own_participant_id("answer")
-        return None if self._id is None else _stored_answer(participant_id, self._id)
+        return None if self._id is None else _answer(participant_id, self._id)
 
     @property
     def answers(self) -> List[Any]:
-        """Each player's answer, in player order, ``None`` for a player
-        whose page hasn't saved one."""
-        return [_stored_answer(pid, self._id) for pid in self.participant_ids]
+        """Each player's answer, in player order, as :attr:`answer` gives
+        it."""
+        return [_answer(pid, self._id) for pid in self.participant_ids]
 
     @property
     def messages(self):
@@ -262,6 +265,35 @@ def _record_from_row(row):
     record = LiveGameRecord(row.id)
     record._loaded_row = row
     return record
+
+
+def _answer(participant_id, game_id):
+    """Return the answer the participant's game page saved for the game
+    ``game_id``, or else the one their game's end gives them."""
+    stored = _stored_answer(participant_id, game_id)
+    return stored if stored is not None else _computed_answer(game_id, participant_id)
+
+
+def _computed_answer(session_id, participant_id):
+    """Return the game's ``answer`` for a player once their game has ended:
+    from their own ending if the game's ``is_done`` ended it early, and
+    otherwise from the game's outcome once the game has ended. Return None
+    before then, if they aren't among the game's players, or if the game
+    failed without ending theirs first."""
+    participant_ids = _session_participant_ids(session_id)
+    if participant_id not in participant_ids:
+        return None
+    ending = _player_ending(session_id, participant_id)
+    if ending is not None:
+        reason, outcome = ending
+    else:
+        game = _session_columns(session_id, "status", "end_reason", "outcome")
+        if game.status != "ended":
+            return None
+        outcome, reason = game.outcome, game.end_reason
+    return _session_game_class(session_id)().answer(
+        outcome, reason, participant_ids.index(participant_id)
+    )
 
 
 def _stored_answer(participant_id, game_id):

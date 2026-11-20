@@ -89,49 +89,38 @@ class TestMicrosocietyLive:
         # The newcomer joined later, so their time wasn't up.
         assert not game.is_done(2)
 
+    def test_a_member_s_answer_says_why_they_left_the_lake(self, demo, lake):
+        game = lake(2)
+        game.tick(20)
+        game.add(now=20)
+        game.tick(demo.STAY_SECONDS + demo.CATCH_SECONDS)
+        # The founder's own game has ended, while the newcomer fishes on.
+        assert game.answer(0, reason=demo.STAYED)["left"] == demo.STAYED
+        assert game.answer(2, reason="timeout")["left"] == "timeout"
+        game.tick(20 + demo.STAY_SECONDS + demo.CATCH_SECONDS)
+        assert game.is_over()
+        # The last member's stay ends on the step the lake closes, with the
+        # lake's reason.
+        assert game.answer(2)["left"] == demo.STAYED
+
     @pytest.mark.parametrize(
-        "outcome, player, answer, end_reason, expected",
+        "answer, left",
         [
-            # The member closed their page, so it saved no answer. The last
-            # member's stay ends on the tick the lake closes, so their record
-            # has the lake's end reason, but the outcome says they stayed.
-            (
-                {"fish": [33, 35], "left": ["retired", "stayed"]},
-                1,
-                None,
-                "finished",
-                (35, "stayed"),
-            ),
-            # The lake closed while they fished.
-            (
-                {"fish": [33, 35], "left": ["retired", None]},
-                1,
-                None,
-                "finished",
-                (35, "finished"),
-            ),
-            # They retired while the lake still runs.
-            (None, 1, {"fish": 12, "moves": 2}, "retired", (12, "retired")),
+            ({"fish": 35, "moves": 2, "left": "stayed"}, "stayed"),
+            ({"fish": 35, "moves": 2, "left": "timeout"}, "closed"),
             # A newcomer whom the lake closed before giving them a boat.
-            ({"fish": [33], "left": ["stayed"]}, None, None, "finished", (None, None)),
+            (None, "closed"),
         ],
     )
-    def test_the_export_has_each_members_fish_and_why_they_left(
-        self, demo, outcome, player, answer, end_reason, expected
-    ):
-        lake = SimpleNamespace(
-            id=1,
-            outcome=outcome,
-            player=player,
-            answer=answer,
-            player_end_reason=end_reason,
-        )
+    def test_the_export_and_tip_page_read_the_member_s_answer(self, demo, answer, left):
+        lake = SimpleNamespace(id=1, answer=answer)
         participant = SimpleNamespace(id=3, var={}, live_games={"fishing": lake})
         row = demo.member_row(participant, lake)
-        assert (row["fish"], row["left"]) == expected
-        assert demo.why_left(participant) == (
-            expected[1] if expected[1] in ("stayed", "retired") else "closed"
+        assert (row["fish"], row["left"]) == (
+            (answer or {}).get("fish"),
+            (answer or {}).get("left"),
         )
+        assert demo.why_left(participant) == left
 
     def test_a_newcomer_reads_the_tips_of_members_who_have_left(self, demo, db_session):
         from timeline_hold_helpers import new_participant

@@ -355,8 +355,13 @@ class LiveGame(RealtimeGame):
         trial's answer when the game is played as a trial. By default, it's
         the whole outcome. Return only the player's part, such as
         ``outcome["payoffs"][player]``, so the trial doesn't hold the other
-        players' data. It isn't called for a game that failed without an
-        outcome, whose answer is ``None``.
+        players' data. PsyNet works it out once the player's game has ended,
+        from the same outcome and reason as their :meth:`performance_reward`,
+        and also for a player who has left the game page, whose page saves
+        none. So it must work for any player in the outcome, and read only
+        its arguments, as it may be called later, for example during an
+        export. It isn't called for a game that failed without an outcome,
+        whose answer is ``None``.
 
         Parameters
         ----------

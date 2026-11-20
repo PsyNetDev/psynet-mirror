@@ -1072,24 +1072,15 @@ game has their answer (see `A game's record`_):
 
     answer = participant.live_games["snake"].answer  # None without one
 
-A player's answer is saved only when their own game page saves it, so a
-player who closed the page before the game ended has none, although their
-moves count in the outcome and they are paid from it (see `Rewards`_). For
-data that must cover every player, such as an export, read each player's
-part of the outcome by their player number, and decide there what a player
-who left contributed:
-
-.. code-block:: python
-
-    game = trial.live_game
-    if game.outcome is not None and game.player is not None:
-        contributed = game.outcome["contributions"][game.player]
-
-The ``public_goods_live`` demo exports its rows this way. In
-``microsociety_live``, whose members can finish before the lake closes (see
-`Finishing before the others`_), a member who finished has their own answer
-while the lake is still running, so its export uses that until the lake's
-outcome exists.
+PsyNet works out each player's answer once their game has ended, from the
+same outcome and reason as their ``performance_reward`` (see `Rewards`_).
+A player who closed the page before the game ended has an answer in the
+record too, although their page saved none, so an export can read
+``trial.live_game.answer`` for every player. A player who finished before
+the others (see `Finishing before the others`_) has theirs as soon as their
+own game ends. So a game's ``answer`` must work for any player in the
+outcome, and read only its arguments, as PsyNet may call it later, for
+example during an export.
 
 .. _live-games-rewards:
 
@@ -1192,11 +1183,14 @@ A record has:
   the reasons), rather than early, for example because players left;
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
   ended, both ``None`` until it has ended;
-- ``answer``, the participant's answer on the game page, ``player``,
+- ``answer``, the participant's answer on the game page, ``None`` until
+  their game has ended, and there for a participant who closed the page
+  too (see `The answer`_), ``player``,
   their player number, and ``player_end_reason``, why their own game
   ended: their ``done_reason`` if ``is_done`` ended it early (see
   `Finishing before the others`_), otherwise ``end_reason``;
-- ``answers``, each player's answer, in player order, and
+- ``answers``, each player's answer, in player order, worked out in the
+  same way, and
   ``participant_ids``, each player's participant id;
 - ``messages``, ``moments`` and ``checkpoints``, below;
 - ``id``, the game id, and ``record_complete``, which is ``False`` if saving

@@ -79,37 +79,26 @@ class TestBargainingLive:
         assert str(demo.end_of_game(player).content) == text
 
     @pytest.mark.parametrize(
-        "outcome, player, expected",
+        "answer",
         [
-            # The player closed their page after the deal, so it saved no
-            # answer, but they were paid from the game's outcome.
-            (
-                {"deal": [3, 7], "no_shows": []},
-                1,
-                {"deal": True, "coins": 7, "arrived": True, "partner_arrived": True},
-            ),
+            {"deal": True, "coins": 7, "arrived": True, "partner_arrived": True},
             # Their partner didn't reach the game, so they had none.
-            (
-                None,
-                None,
-                dict.fromkeys(["deal", "coins", "arrived", "partner_arrived"]),
-            ),
+            None,
         ],
     )
-    def test_the_export_has_each_players_round_from_the_outcome(
-        self, demo, outcome, player, expected
+    def test_the_export_has_each_players_round_from_their_game_s_answer(
+        self, demo, answer
     ):
-        game = SimpleNamespace(outcome=outcome, player=player, end_reason=None)
         trial = SimpleNamespace(
-            live_game=game,
-            answer=None,
+            live_game=SimpleNamespace(answer=answer, end_reason=None),
             sync_group_id=1,
             participant_id=2,
             id=3,
             position=0,
         )
         row = demo._player_round_row(trial)
-        assert {key: row[key] for key in expected} == expected
+        columns = ["deal", "coins", "arrived", "partner_arrived"]
+        assert [row[c] for c in columns] == [(answer or {}).get(c) for c in columns]
 
     def _feedback(self, demo, answer, end_reason=None, removal_reason=None):
         trial = SimpleNamespace(

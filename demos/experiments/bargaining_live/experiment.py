@@ -166,7 +166,13 @@ class Bargain(LiveGame):
         }
 
     def answer(self, outcome, reason, player):
-        return player_result(outcome, player)
+        deal = outcome["deal"]
+        return {
+            "deal": deal is not None,
+            "coins": 0 if deal is None else deal[player],
+            "arrived": player not in outcome["no_shows"],
+            "partner_arrived": 1 - player not in outcome["no_shows"],
+        }
 
     def performance_reward(self, outcome, reason, player):
         return self.answer(outcome, reason, player)["coins"] * COIN_VALUE
@@ -183,29 +189,14 @@ class Bargain(LiveGame):
         return None
 
 
-def player_result(outcome, player):
-    """Return a player's part of a game's outcome: whether there was a deal,
-    their coins from it, and whether they and their partner arrived."""
-    deal = outcome["deal"]
-    return {
-        "deal": deal is not None,
-        "coins": 0 if deal is None else deal[player],
-        "arrived": player not in outcome["no_shows"],
-        "partner_arrived": 1 - player not in outcome["no_shows"],
-    }
-
-
 def _player_round_row(trial):
     """Return a player's row of the export for one round. The game's columns
-    come from its outcome, which counts a player who closed their page and
-    so saved no answer, and are None if the player had no game, because
-    their partner didn't reach it."""
+    come from the player's answer in the game's record, which PsyNet works
+    out for a player who closed their page too, and are None if the player
+    had no game, because their partner didn't reach it."""
     game = trial.live_game
-    outcome, player = game.outcome, game.player
-    result = (
-        dict.fromkeys(["deal", "coins", "arrived", "partner_arrived"])
-        if outcome is None or player is None
-        else player_result(outcome, player)
+    result = game.answer or dict.fromkeys(
+        ["deal", "coins", "arrived", "partner_arrived"]
     )
     return {
         "pair_id": trial.sync_group_id,

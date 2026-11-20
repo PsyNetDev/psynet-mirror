@@ -23,6 +23,7 @@ from .play import _check_reached_game, _live_game_id, _set_live_game_answer
 from .record import (
     LiveGameFailed,
     LiveGameRecord,
+    _computed_answer,
     _player_ending,
     _session_channel,
     _session_columns,
@@ -133,22 +134,9 @@ class LiveGameControl(NullControl):
         if session_id is None:
             response.answer = None
             return None
-        ended_early = _player_ending(session_id, participant.id)
-        if ended_early is not None:
-            reason, outcome = ended_early
-        else:
-            # Not failed: check_ready_for_response raises for a failed game.
-            game = LiveGameRecord(session_id)
-            outcome, reason = game.outcome, game.end_reason
-        participant_ids = _session_participant_ids(session_id)
-        if participant.id not in participant_ids:
-            # Added to a game that ended before it could add them.
-            response.answer = None
-            return None
-        game = _session_game_class(session_id)()
-        response.answer = game.answer(
-            outcome, reason, participant_ids.index(participant.id)
-        )
+        # None for a player added to a game that ended before it could add
+        # them.
+        response.answer = _computed_answer(session_id, participant.id)
         _set_live_game_answer(participant, self._play_id(), response.answer)
         return None
 
