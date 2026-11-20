@@ -1296,11 +1296,14 @@ Set ``settings={"stop": 25}`` to play up to position 25 (exclusive).
 A second step with its own game ID can omit ``stop`` to finish the full deck.
 Each session starts at the first unanswered item. The default view supplies
 the player's current ``definition``, number ``completed``, ``total`` and
-``stop``. To preload stimuli, set ``preload_fields`` on the game to the
+``stop``. To send trial definitions up front, set ``preload_fields`` to the
 public keys of each definition. The view then includes a ``deck`` up to the
 segment boundary and applies the same field selection to the current item.
 Override ``StaticTrialMaker.live_trial_definition(trial)`` to present a
-different representation, such as the URL of a node's image asset.
+different representation, such as the URL of a node's image asset. Sending a URL
+does not fetch the image. Declare a small fixed set of page images using
+:class:`~psynet.timeline.MediaSpec`, or start fetching upcoming images from
+the deck in your browser module as VocabTest does.
 
 A response message can call
 ``game.answer_trial(state, player=player, answer=value, position=position)``.
