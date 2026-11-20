@@ -3874,7 +3874,13 @@ def _latest_tick(now: float, period: float) -> float:
 
 
 # Random starting groupings a Regrouper with avoid_repeats improves by
-# swapping members, keeping the one with the fewest repeats.
+# swapping members, between groups or with a left-over member of the same
+# rounds (and role), keeping the first without repeats or else the one with
+# the fewest. In simulations of small pools with left-over members (pairs and
+# trios without roles, and groups with 2 to 4 roles, from 3 to 9 players),
+# checked against every possible grouping, this found a grouping without
+# repeats whenever one existed, and it found one in each of 200 regroupings
+# of larger pools (up to 64 players in groups of up to 6).
 _REPEAT_AVOIDING_ATTEMPTS = 10
 # Most candidate swaps weighed in one split, so that a large pool whose
 # repeats can't all be avoided doesn't hold the regrouper's lock for long.
@@ -4110,18 +4116,17 @@ class Regrouper(Grouper):
     keep_roles
         If ``True`` (needs ``roles``), each participant keeps the role of the
         first group this regrouper puts them in for as long as they play, for
-        example a proposer who stays a proposer. A participant without a role
-        yet gets the role fewest of the waiting members have, so that as many
-        as possible can play, then the one fewest current members have (the
-        active members of the ``within`` group, or without ``within``, the
-        working participants this regrouper has grouped, including those
-        who have played their last round but are still working), ties broken
-        at random. Members of a role with too few partners are left over,
-        those who have played the most rounds first, and follow
-        ``left_over``; so a member of a scarce role still plays even if
-        members of another role who have played fewer rounds sit out. A newcomer who is left over stays without a role and
-        is given one again at the next split. Read a member's role with
-        :meth:`role`. If a role has nobody waiting, no group forms: with
+        example a proposer who stays a proposer; read it with :meth:`role`. A
+        participant without a role yet gets the role fewest of the waiting
+        members have, so that as many as possible can play, then the one
+        fewest current members have (the active members of the ``within``
+        group, or without ``within``, the working participants this regrouper
+        has grouped), ties broken at random; if they are left over, they get
+        a role again at the next split. Members of a role with too few
+        partners are left over, those who have played the most rounds first,
+        and follow ``left_over``; so a member of a scarce role still plays
+        even if members of another role who have played fewer rounds sit
+        out. If a role has nobody waiting, no group forms: with
         ``left_over="sit_out"`` the pool then sits the round out as usual,
         but with ``"wait"`` it keeps waiting for a member of that role, up to
         ``max_wait_time``. Use ``"sit_out"`` if a role can run out, for
@@ -4133,20 +4138,10 @@ class Regrouper(Grouper):
         can. It never changes how many rounds decide who sits out, or the
         roles: a member who has played more rounds still sits out before one
         who has played fewer (with ``keep_roles``, one of the same role, see
-        above), but among members with equal rounds, who sits
-        out may be chosen to avoid a repeat. It starts from a random grouping
-        and swaps members while that removes repeats, between groups or with
-        a left-over member of the same rounds (and role), restarting from new
-        random groupings up to 10 times. It keeps the first grouping without
-        repeats, or else the one with the fewest, and stops early after
-        weighing 200,000 candidate swaps, so a large pool doesn't hold the
-        lock for long. In simulations of small pools with left-over members
-        (pairs and trios without roles, and groups with 2 to 4 roles, from 3
-        to 9 players), checked against every possible grouping, it found a
-        grouping without repeats whenever one existed, and it found one in
-        each of 200 regroupings of larger pools (up to 64 players in groups
-        of up to 6). As a heuristic it isn't guaranteed to. The search is
-        part of the default :meth:`form_groups`: passing a ``form_groups``
+        above), but among members with equal rounds, who sits out may be
+        chosen to avoid a repeat. It is a bounded heuristic search, so it can
+        leave a repeat that another grouping would avoid. The search is part
+        of the default :meth:`form_groups`: passing a ``form_groups``
         callable with it raises an error, and a subclass that overrides
         :meth:`form_groups` runs the search only where it calls the default.
 
@@ -4454,11 +4449,7 @@ class Regrouper(Grouper):
     def _roles_with_newcomers(self, members, links, within_group) -> Dict[int, str]:
         """Return each member's kept role by ID, choosing one for members without one.
 
-        A newcomer takes the role fewest of the waiting members have, so that
-        as many as possible can play, then the role fewest current members
-        have: the active members of the ``within`` group, or without
-        ``within``, the working participants this regrouper has grouped.
-        Remaining ties are broken at random.
+        Newcomers' roles are chosen as ``keep_roles`` in :class:`Regrouper` describes.
         """
         roles = _first_roles(links)
         newcomers = [m for m in members if m.id not in roles]
