@@ -1004,13 +1004,13 @@ reason "Your game has ended.", and a bot stops playing. Their answer and
 reason, and their result is saved a few seconds later, so ``onResultSaved``
 runs and the page moves on as it would at the end of the game. They no
 longer count towards the game's ``min_players`` for its ``away_timeout``.
-The game's ``end_reason`` stays the whole game's, so a later page reads why
-the player's own game ended from their record's ``player_end_reason``
-(see `A game's record`_). If the game ends on the same step as a player's
-``is_done`` becomes true, for example because they were the last player
-left, no ending is written for that player alone, so their
-``player_end_reason`` is the game's ``end_reason``; read per-player results
-such as their ``done_reason`` from the game's ``outcome``.
+The game's ``end_reason`` stays the whole game's, so a later page reads
+whether and why the player left early from their record's ``left_early``
+and ``done_reason`` (see `A game's record`_). If the game ends on the same
+step as a player's ``is_done`` becomes true, for example because they were
+the last player left, they didn't leave early: their game ends with the
+game's ``end_reason``, so read per-player results such as why they left
+from the game's ``outcome``.
 
 The game itself still ends through its ``is_over``, ``duration`` or
 ``timeout``, and the players still playing then get their results from the
@@ -1180,16 +1180,19 @@ A record has:
   until the game's result is saved, then ``"ended"``, or ``"failed"`` if the
   game's code raised an error or its record couldn't be saved, with the
   error in ``error``;
-- ``finished``, whether ``end_reason`` is ``"finished"`` (see `Rewards`_ for
-  the reasons), rather than early, for example because players left;
+- ``finished``, whether the whole game's ``end_reason`` is ``"finished"``
+  (see `Rewards`_ for the reasons), rather than early, for example because
+  players left. It's ``False`` while the game runs, including for a player
+  who has left it early;
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
   ended, both ``None`` until it has ended;
 - ``answer``, the participant's answer on the game page, ``None`` until
   their game has ended, and there for a participant who closed the page
-  too (see `The answer`_), ``player``,
-  their player number, and ``player_end_reason``, why their own game
-  ended: their ``done_reason`` if ``is_done`` ended it early (see
-  `Finishing before the others`_), otherwise ``end_reason``;
+  too (see `The answer`_), and ``player``, their player number;
+- ``left_early``, whether the participant's own game ended before the
+  game did, through ``is_done`` (see `Finishing before the others`_), and
+  ``done_reason``, why: the game's ``done_reason`` for them, or ``None``
+  for a player whose game ended with the game's ``end_reason``;
 - ``answers``, each player's answer, in player order, worked out in the
   same way, and
   ``participant_ids``, each player's participant id;
@@ -1214,7 +1217,7 @@ Other records of the same games:
 - A group's :attr:`~psynet.sync.SyncGroup.running_live_games` gives the
   games it is playing now, keyed in the same way. These records are the
   group's, not one participant's, so they have ``answers`` but no
-  ``answer``, ``player`` or ``player_end_reason``.
+  ``answer``, ``player``, ``left_early`` or ``done_reason``.
 
 .. _live-games-saved-messages:
 

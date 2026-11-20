@@ -1,0 +1,1 @@
+Replaced `LiveGameRecord.player_end_reason` with `left_early`, which says whether a participant's own game ended before the game did, through the game's `is_done`, and `done_reason`, which says why, and is `None` for a player whose game ended with the game. Code that read `player_end_reason` reads `record.done_reason or record.end_reason` instead.

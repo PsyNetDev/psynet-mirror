@@ -43,8 +43,9 @@ class LiveGameRecord:
             game.messages     # every message, in order
 
     A record from a participant or a trial is that participant's, so it has
-    their :attr:`answer`, :attr:`player` number and
-    :attr:`player_end_reason`. A group's record is the whole group's, and has
+    their :attr:`answer`, :attr:`player` number, and whether and why they
+    left the game before it ended, :attr:`left_early` and
+    :attr:`done_reason`. A group's record is the whole group's, and has
     only :attr:`answers`, each player's.
 
     Each attribute reads the database when you use it, so it's up to date
@@ -104,8 +105,11 @@ class LiveGameRecord:
         """Whether the game ended with the reason ``"finished"``: through an
         ``is_over`` that returned ``True``, or at the end of its
         ``duration``. It's ``False`` for a game that ended early, such as
-        because players left or it reached its ``timeout``, and for one
-        whose ``end_reason`` gave a reason of its own, such as ``"deal"``."""
+        because players left or it reached its ``timeout``, for one
+        whose ``end_reason`` gave a reason of its own, such as ``"deal"``,
+        and for one still running. It's about the whole game, so check
+        :attr:`left_early` first for a participant whose own game may have
+        ended before it."""
         row = self._row()
         return (
             row is not None and row.status == "ended" and row.end_reason == "finished"
@@ -164,16 +168,24 @@ class LiveGameRecord:
         return ids.index(participant_id) if participant_id in ids else None
 
     @property
-    def player_end_reason(self) -> Optional[str]:
-        """Why the participant's own game ended: the game's ``done_reason``
-        for them, such as ``"retired"``, if the game's ``is_done`` ended it
-        before the game ended, and otherwise the game's :attr:`end_reason`.
-        It's ``None`` until then. A player whose ``is_done`` becomes true on
-        the step the game ends gets the game's :attr:`end_reason`, so read
-        per-player results from the game's :attr:`outcome`."""
-        participant_id = self._own_participant_id("player_end_reason")
-        ending = None if self._id is None else _player_ending(self._id, participant_id)
-        return self.end_reason if ending is None else ending.reason
+    def left_early(self) -> bool:
+        """Whether the participant's own game ended before the game did,
+        because the game's ``is_done`` ended it, such as when they retired.
+        :attr:`done_reason` says why. The game may still be running, so
+        :attr:`finished` and :attr:`end_reason`, which are the whole game's,
+        don't say anything about such a player."""
+        return self._player_ending("left_early") is not None
+
+    @property
+    def done_reason(self) -> Optional[str]:
+        """Why the participant left the game early, such as ``"retired"``:
+        the game's ``done_reason`` for them. It's ``None`` for a participant who didn't leave early
+        (see :attr:`left_early`), whose game ended with the game, for the
+        game's :attr:`end_reason`. A player whose ``is_done`` becomes true
+        on the step the game ends didn't leave early, so read per-player
+        results from the game's :attr:`outcome`."""
+        ending = self._player_ending("done_reason")
+        return None if ending is None else ending.reason
 
     @property
     def answer(self) -> Any:
@@ -254,6 +266,10 @@ class LiveGameRecord:
 
     def _own_participant_id(self, attribute):
         return self._own_participant(attribute).id
+
+    def _player_ending(self, attribute):
+        participant_id = self._own_participant_id(attribute)
+        return None if self._id is None else _player_ending(self._id, participant_id)
 
     def _row(self):
         if self._id is None:

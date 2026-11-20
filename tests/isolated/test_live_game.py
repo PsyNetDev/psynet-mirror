@@ -2601,8 +2601,8 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     # A record that isn't one participant's has no single answer.
     with pytest.raises(AttributeError, match="has no single answer"):
         game.answer
-    with pytest.raises(AttributeError, match="no single player_end_reason") as error:
-        game.player_end_reason
+    with pytest.raises(AttributeError, match="no single left_early") as error:
+        game.left_early
     assert "game.answers" not in str(error.value)
     # A trial's game is its participant's.
     group_round = SimpleNamespace(live_game_id=session_id)
@@ -2620,7 +2620,7 @@ def test_a_step_without_a_game_has_a_record_that_says_so(pair, monkeypatch):
     game = members[0].live_games[game_barrier.id]
     assert (game.id, game.status, game.finished) == (None, "not_started", False)
     assert (game.answer, game.outcome, game.end_reason, game.player) == (None,) * 4
-    assert game.player_end_reason is None
+    assert (game.left_early, game.done_reason) == (False, None)
     assert (game.messages, game.moments, game.participant_ids) == ([], [], [])
     assert not game.record_complete
     assert members[0].live_game_history[game_barrier.id] == []
@@ -2968,6 +2968,9 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
             reason="retired",
         )
     )
+    # Their record says so while the others play on.
+    still_running = LiveGameRecord(session_id, early)
+    assert (still_running.status, still_running.left_early) == ("running", True)
     # The deadline of a later timed page the early finisher has opened.
     later = other.sync_group_links[0].page_deadline + datetime.timedelta(hours=1)
     early.sync_group_links[0].page_deadline = later
@@ -2979,9 +2982,10 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
 
     assert early.sync_group_links[0].page_deadline == later
     assert other.sync_group_links[0].page_deadline == row.end_time
-    assert [
-        LiveGameRecord(session_id, member).player_end_reason for member in members
-    ] == ["retired" if member is early else "finished" for member in members]
+    records = {member: LiveGameRecord(session_id, member) for member in members}
+    assert (records[early].left_early, records[early].done_reason) == (True, "retired")
+    assert (records[other].left_early, records[other].done_reason) == (False, None)
+    assert records[other].finished
 
 
 def _save_ending(
