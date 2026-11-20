@@ -169,6 +169,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   with each question as a cued trial whose ungrouped version
   (`sync_group_optional = True` on the trial class) lets a player without a
   group answer alone; without it, a cue by a player without a group raises.
+  A player removed during a round still under way is the exception: their
+  cue joins that round (see the "removed during a round before their cue"
+  rule below).
 - Branch on `participant.in_sync_group(group_type)` wherever the timeline
   needs a group: stop a rounds loop with it in the `while_loop` condition,
   and give a synchronized trial maker a solo alternative, for example

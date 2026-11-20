@@ -1692,8 +1692,10 @@ For the rest of the timeline:
   trial class sets ``sync_group_optional = True``: they then get an
   ungrouped trial, so ``show_trial`` can give them the solo version of the
   round, with ``self.sync_group is None`` (not with
-  ``participant.in_sync_group(...)``, see :ref:`members removed before
-  their cue <rounds-removed-before-cue>`). In the ``crowd_estimate`` demo,
+  ``participant.in_sync_group(...)``). The exception is a participant
+  removed during a round that was still under way: their trial joins that
+  round (see :ref:`members removed before their cue
+  <rounds-removed-before-cue>`). In the ``crowd_estimate`` demo,
   they give their estimate without the group's median:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py

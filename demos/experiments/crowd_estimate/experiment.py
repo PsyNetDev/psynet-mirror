@@ -163,7 +163,8 @@ class EstimateTrial(Trial):
     def estimate_page(self):
         prompt = self.question
         if self.sync_group is None:
-            # Also tells a member removed from the group partway through.
+            # Only for an ungrouped trial: a member removed during this
+            # trial keeps the grouped prompt, and the revision page explains.
             prompt = f"You're answering on your own. {prompt}"
         return ModularPage(
             "estimate",
