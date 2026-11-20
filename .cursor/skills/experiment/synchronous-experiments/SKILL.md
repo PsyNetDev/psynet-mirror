@@ -130,7 +130,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   (given out at random by default) and read `self.sync_group_role` in the
   cued trial instead of assigning roles yourself. Pass `avoid_repeats=True`
   to avoid last round's partners where possible, and `keep_roles=True` for
-  players who keep their first role (read it with `regrouper.role(participant)`).
+  players who keep the role of their first group (read it with
+  `regrouper.role(participant)`); who sits out is then decided per role.
   To alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
   demo's `pairing.py`, which overrides `assign_roles`; override `form_groups`
   or `assign_roles` likewise for other rules. With `left_over="sit_out"`, odd

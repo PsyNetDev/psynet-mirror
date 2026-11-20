@@ -4136,8 +4136,10 @@ class Regrouper(Grouper):
         to 9 players), checked against every possible grouping, it found a
         grouping without repeats whenever one existed, and it found one in
         each of 200 regroupings of larger pools (up to 64 players in groups
-        of up to 6). As a heuristic it isn't guaranteed to. It can't be combined with
-        ``form_groups``.
+        of up to 6). As a heuristic it isn't guaranteed to. The search is
+        part of the default :meth:`form_groups`: passing a ``form_groups``
+        callable with it raises an error, and a subclass that overrides
+        :meth:`form_groups` runs the search only where it calls the default.
 
     form_groups
         Optional callable ``form_groups(members, within_group, barrier)``

@@ -746,7 +746,7 @@ def test_regrouper_alternates_roles_and_counts_rounds(
 
     _arrive(exp, pairs, cohort)
     for p in cohort:
-        assert _role(p) != first[p.id]
+        assert pairs.role(p) == _role(p) != first[p.id]
         assert pairs.rounds_played(p) == 2
         assert p.sync_group_removal_reason("pair") is None
     cohort[0].active_sync_groups["pair"].remove_participant(

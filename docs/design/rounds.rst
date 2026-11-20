@@ -94,10 +94,11 @@ often the same people every round: it collects players and splits them at a
 deadline, for example every 10 seconds (``every=10``). With
 ``avoid_repeats=True`` it keeps players apart from last round's partners
 when it can, and with ``keep_roles=True`` each player keeps the role of their
-first round, for example a proposer who stays a proposer.
+first group, for example a proposer who stays a proposer.
 
 If the players don't divide evenly into groups, the one who has played the
-most rounds *sits out* the round: they see a page saying so, and play again
+most rounds (with ``keep_roles``, of the same role) *sits out* the round:
+they see a page saying so, and play again
 in a later round. A player who is late for a split joins the next one. If no
 further split comes within the regrouper's maximum waiting time, for example
 after the last round, they are failed by default
