@@ -1020,7 +1020,8 @@ players need no gaps, and the other players' pages leave them out of
 game and shows the page's ``too_late_message``, "The game had already
 stopped taking new players." by default, with the Next button, so that
 the participant reads it and moves on. The page's JavaScript gets no
-views, and no ``onEnded`` or ``onResultSaved``: once PsyNet knows, as
+views, and no ``onEnded``, ``onResultSaved`` or ``onResultTimeLeft``:
+once PsyNet knows, as
 when the page is reloaded, ``psynet.liveGame.hasGame`` is ``false``, as
 on a page with no game. Their answer is ``None``, they get no
 ``performance_reward``, and their record's ``left_early`` is true, with
@@ -1030,8 +1031,15 @@ reaches the game just as it ends, before Dallinger could add them.
 By default, once a game from a ``PlayLiveGame`` ends, PsyNet stops the
 top-ups of the group that played it as well, a few seconds later, as it
 saves the game's ending, so no newcomer joins a group whose game is over.
-One who joins in those seconds comes too late, as above. Give the ``PlayLiveGame`` ``stop_top_ups_at_end=False``
-for a group that takes newcomers into its next game.
+One who joins in those seconds comes too late, as above. This is
+:meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups`, so it also turns away
+pending members, and dissolves a group that is already below its quorum,
+failing the members left if its ``below_quorum`` is ``"fail"``. Give the
+``PlayLiveGame`` ``stop_top_ups_at_end=False`` for a group that takes
+newcomers into its next game, or that should keep waiting for newcomers
+while it's short, or give its grouper
+``below_quorum="continue_without_group"``, so that its members carry on
+without the group instead of failing.
 
 A game played in a trial can't take newcomers, since its round is already
 under way, so a ``PlayLiveGame`` with ``join_running_game`` in a trial's
@@ -1263,7 +1271,10 @@ A record has:
   early with the ``done_reason`` ``"too_late"`` (see :ref:`live-games-joining`);
 - ``answers``, each player's answer, in player order, worked out in the
   same way, and
-  ``participant_ids``, each player's participant id;
+  ``participant_ids``, each player's participant id. Both include players
+  added after the game stopped taking players, numbered after everyone the
+  game saw, with the answer ``None``, but not participants Dallinger never
+  added, whose ``player`` is ``None``;
 - ``messages``, ``moments`` and ``checkpoints``, below;
 - ``id``, the game id, and ``record_complete``, which is ``False`` if saving
   the record failed.

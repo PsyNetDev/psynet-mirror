@@ -28,6 +28,7 @@ for a game played outside a trial, which has no round.
 
 import inspect
 import json
+import time
 from typing import Optional
 
 from dallinger import db
@@ -55,6 +56,10 @@ from .psynet_entry import _new_session
 from .record import LiveGameRecord, _player_ending
 
 logger = get_logger()
+
+# Tries at stopping a game's group's top-ups, which a deadlock or a lock
+# timeout can make fail.
+_STOP_TOP_UPS_ATTEMPTS = 3
 
 
 class PlayLiveGame(EltCollection):
@@ -142,8 +147,12 @@ class PlayLiveGame(EltCollection):
         :meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups` does, once each
         game it plays here has ended, so nobody joins a group whose game is
         over. It only affects a group whose grouper has
-        ``join_existing_groups=True``. Set it to ``False`` for a group that
-        takes newcomers for the next game it plays. Default: ``True``.
+        ``join_existing_groups=True``. As ``stop_top_ups`` does, it also
+        turns away pending members, and dissolves a group already below its
+        quorum, which fails the members left with
+        ``below_quorum="fail"``. Set it to ``False`` for a group that takes
+        newcomers for the next game it plays, or should keep waiting for
+        them. Default: ``True``.
 
     id_
         A name for this step, the game's ``name`` unless given, which
@@ -734,30 +743,64 @@ def _remove_absent_players(game, session_row, players):
         group.dissolve_if_below_quorum()
 
 
-def _stop_top_ups_soon(group_id):
-    """Stop the group of id ``group_id``, a game's, taking newcomers, in a
-    job of its own once the current transaction commits. A game's record is
-    written in one transaction, which locks its players' rows, and a group's
-    row has to be locked after its members' rows, never before."""
+def _stop_top_ups_soon(group_id, session_id):
+    """Stop the group of id ``group_id``, game ``session_id``'s, taking
+    newcomers, in a job of its own once the current transaction commits. A
+    game's record is written in one transaction, which locks its players'
+    rows, and a group's row has to be locked after its members' rows, never
+    before."""
     from ..async_job import WorkerAsyncJob
 
     if group_id is not None:
         WorkerAsyncJob(
             _stop_top_ups,
-            arguments={"group_id": group_id},
+            arguments={"group_id": group_id, "session_id": session_id},
             label="stop_live_game_top_ups",
         ).enqueue()
 
 
-def _stop_top_ups(group_id):
-    """Stop the group of id ``group_id``, a game's, taking newcomers, as
-    SimpleSyncGroup.stop_top_ups does, if it still does. ``group_id`` is
-    None for a game that a PlayLiveGame didn't start."""
-    if group_id is None:
+def _stop_top_ups(group_id, session_id=None):
+    """Stop the group of id ``group_id``, game ``session_id``'s, taking
+    newcomers, as SimpleSyncGroup.stop_top_ups does, if it still does, and
+    commit. Run by the job that :func:`_stop_top_ups_soon` enqueues, trying
+    again after a deadlock or a lock timeout. Stopping them twice does
+    nothing more."""
+    from sqlalchemy.exc import DBAPIError
+
+    from ..db import is_transient_transaction_error
+
+    for attempt in range(1, _STOP_TOP_UPS_ATTEMPTS + 1):
+        try:
+            group = _lock_sync_group_and_links(group_id)
+            if group is None or not group.active:
+                outcome = "the group is gone or no longer active"
+            elif not group.accepts_top_ups:
+                outcome = "they were already stopped"
+            else:
+                group.stop_top_ups()
+                outcome = "stopped them"
+            db.session.commit()
+        except DBAPIError as error:
+            db.session.rollback()
+            if attempt < _STOP_TOP_UPS_ATTEMPTS and is_transient_transaction_error(
+                error
+            ):
+                time.sleep(attempt)
+                continue
+            logger.warning(
+                "Couldn't stop the top-ups of sync group %s after live game %s.",
+                group_id,
+                session_id,
+                exc_info=True,
+            )
+            raise
+        logger.info(
+            "Stopping the top-ups of sync group %s after live game %s: %s.",
+            group_id,
+            session_id,
+            outcome,
+        )
         return
-    group = _lock_sync_group_and_links(group_id)
-    if group is not None and group.active and group.accepts_top_ups:
-        group.stop_top_ups()
 
 
 def _lock_sync_group_and_links(group_id):

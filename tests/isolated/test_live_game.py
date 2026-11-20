@@ -3838,6 +3838,32 @@ def test_only_a_game_that_ended_says_whom_it_never_added_came_too_late(
     assert LiveGameRecord(session_id, outsider).left_early is too_late
 
 
+def test_stopping_a_game_s_group_s_top_ups_tries_again_after_a_deadlock(
+    db_session, monkeypatch
+):
+    from sqlalchemy.exc import OperationalError
+
+    from psynet.live_game import play
+
+    group, _ = _open_group(db_session, 3)
+    group_id = group.id
+    stop = SimpleSyncGroup.stop_top_ups
+    tries = []
+
+    def deadlocks_once(self):
+        tries.append(self.id)
+        if len(tries) == 1:
+            raise OperationalError("", {}, SimpleNamespace(pgcode="40P01"))
+        stop(self)
+
+    monkeypatch.setattr(SimpleSyncGroup, "stop_top_ups", deadlocks_once)
+    monkeypatch.setattr(play.time, "sleep", lambda seconds: None)
+    play._stop_top_ups(group_id, session_id=1)
+
+    assert tries == [group_id, group_id]
+    assert not db.session.get(SimpleSyncGroup, group_id).accepts_top_ups
+
+
 @pytest.mark.parametrize("stop_top_ups_at_end", [True, False])
 def test_a_group_stops_taking_newcomers_once_its_game_ends(
     db_session, stop_top_ups_at_end
