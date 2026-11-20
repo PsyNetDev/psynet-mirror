@@ -1,5 +1,6 @@
 import datetime
 import enum
+import functools
 import importlib.util
 import json
 import sys
@@ -34,6 +35,7 @@ from psynet.live_game import (
     TIMEOUT,
     TOO_LATE,
     LiveGame,
+    LiveGameFailed,
     LiveGamePage,
     LiveGameRecord,
     LiveMessage,
@@ -60,7 +62,7 @@ from psynet.sync import (
     _take_pending_barrier_checks,
     check_group_dropout_policies,
 )
-from psynet.timeline import Response, Timeline
+from psynet.timeline import Response, ResponseNotReady, Timeline
 from psynet.trial.main import Trial
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -3756,9 +3758,18 @@ def test_a_game_that_stops_taking_players_closes_its_group_to_newcomers(db_sessi
     assert [p["you"] for p in _players(members[0], "takes_three")] == [1, 0, 0]
 
 
+@pytest.mark.parametrize("fails", [False, True])
 def test_a_newcomer_to_a_game_that_ended_before_adding_them_came_too_late(
-    db_session, monkeypatch
+    db_session, monkeypatch, fails
 ):
+    if fails:
+
+        def is_over(self, state):
+            if any(pick is not None for pick in state["picks"]):
+                raise RuntimeError("The game broke.")
+            return False
+
+        monkeypatch.setattr(_growing_picks(), "is_over", is_over)
     group, members = _open_group(db_session, 3)
     page = LiveGamePage("growing", "Play.", time_estimate=5)
     barrier = _play(
@@ -3783,16 +3794,30 @@ def test_a_newcomer_to_a_game_that_ended_before_adding_them_came_too_late(
     assert _game_id(members[2], "growing") == session_id
 
     # Before and after the game's row says it ended, the page shows no game,
-    # but the too-late notice.
-    for write in (lambda: None, _write_records):
-        write()
+    # but the too-late notice. Of a game that failed, it shows the failure,
+    # once the row says so.
+    for written in (False, True):
+        if written:
+            _write_records()
         newcomer = db.session.get(Participant, int(ids[2]))
         js_vars = _rendered_js_vars(page, newcomer, monkeypatch)["liveGame"]
-        assert (js_vars["liveGameId"], js_vars["players"]) == (None, [])
-        assert js_vars["noGameMessage"] == js_vars["tooLateMessage"]
         late = newcomer.live_games["growing"]
-        assert (late.left_early, late.done_reason) == (True, TOO_LATE)
-        assert page.control.check_ready_for_response(get_experiment(), newcomer) is None
+        ready = functools.partial(
+            page.control.check_ready_for_response, get_experiment(), newcomer
+        )
+        if not fails:
+            assert (js_vars["liveGameId"], js_vars["players"]) == (None, [])
+            assert js_vars["noGameMessage"] == js_vars["tooLateMessage"]
+            assert (late.left_early, late.done_reason) == (True, TOO_LATE)
+            assert ready() is None
+            continue
+        assert js_vars["liveGameId"] == session_id
+        assert (late.left_early, late.done_reason) == (False, None)
+        if written:
+            with pytest.raises(LiveGameFailed):
+                ready()
+        else:
+            assert isinstance(ready(), ResponseNotReady)
     assert late.answer is None
     assert _reward(newcomer) == 0
 

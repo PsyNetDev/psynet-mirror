@@ -389,14 +389,14 @@ def _done_reason(session_id, participant_id, row=None):
     That's the reason saved with their own ending, or
     :data:`~psynet.live_game.TOO_LATE` for a participant whom PsyNet pointed
     at the game but whom Dallinger never added, because the game had
-    already ended when it got to them. Dallinger adds a player once the
-    request that adds them commits, so by the time their page loads they're
-    among the members in redis, or never will be. And it writes a game's
-    records in order, so a game whose ending is saved lists every player it
-    added. A failed game may not have written them, so it says nothing
-    about them. ``row`` has the game's ``status`` and ``members``, if the
-    caller has read them."""
+    already ended when it got to them. Dallinger writes a game's records in
+    order, so a game whose ending is saved lists every player it added.
+    Before then, the game's ending is in redis, without the player among
+    its members. A failed game may not have written its players, so it says
+    nothing about them. ``row`` has the game's ``status`` and ``members``,
+    if the caller has read them."""
     from dallinger.realtime import store
+    from dallinger.realtime.game import FAILED
 
     from .psynet_entry import TOO_LATE
 
@@ -407,12 +407,16 @@ def _done_reason(session_id, participant_id, row=None):
         row = _session_columns(session_id, "status", "members")
     if participant_id in _player_ids(row.members):
         return None
-    if row.status == "ended" or (
-        row.status == "running"
-        and str(participant_id) not in store.session_members(session_id)
-    ):
+    if row.status == "ended":
         return TOO_LATE
-    return None
+    if row.status != "running" or str(participant_id) in store.session_members(
+        session_id
+    ):
+        return None
+    ending = store.load_ending(session_id)
+    if ending is None or ending["reason"] == FAILED:
+        return None
+    return TOO_LATE
 
 
 def _too_late_players(session_id):
