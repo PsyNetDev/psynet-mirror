@@ -909,10 +909,11 @@ _EMPTY_WAITING_PASS_SECONDS = 2.0
 # Participant.__dict__ key: page_count when each barrier's current pass of
 # waiting_logic began. A pass that shows no page starts and ends within one
 # Timeline.advance_page call, which stops at the first page, so the value
-# never needs to outlive the request. A participant object reused across
-# requests (expire_all keeps unmapped keys) may still hold the count from a
-# pass that showed a page; Page.consume raised page_count since, so the
-# comparison rejects it, and the next pass overwrites it.
+# never needs to outlive the request. A pass that began in an earlier request
+# showed a page: a freshly loaded participant object has no entry for it, and
+# a reused one (expire_all keeps unmapped keys) holds a count from before
+# Page.consume raised page_count, so the comparison rejects it, and the next
+# pass overwrites it.
 _WAITING_PASS_PAGE_COUNTS = "_psynet_waiting_pass_page_counts"
 
 
@@ -1300,10 +1301,6 @@ class Barrier(EltCollection):
 
         Without a page, the waiting loop would repeat on the server until
         ``max_wait_time``; a short wait page lets the next poll try again.
-        A pass that began in an earlier request showed a page, so it has no
-        entry on a freshly loaded participant object, and on a reused object
-        its entry predates that page, so its count is lower than
-        ``page_count``.
         """
         counts = participant.__dict__.get(_WAITING_PASS_PAGE_COUNTS, {})
         if counts.pop(self.id, None) != participant.page_count:
@@ -6864,13 +6861,14 @@ def waiting_page_config(page, participant):
     if _is_timeline_hold(page):
         return None
     barrier = _interruptible_waiting_barrier(page, participant)
-    if isinstance(page, _EmptyWaitingPassPage) and barrier is not None:
-        return {"barrier_id": barrier.id, "release_grace_ms": 0, "release_notice": None}
     if barrier is not None:
+        empty_pass = isinstance(page, _EmptyWaitingPassPage)
         return {
             "barrier_id": barrier.id,
-            "release_grace_ms": round(barrier.release_grace * 1000),
-            "release_notice": _release_notice(barrier),
+            "release_grace_ms": (
+                0 if empty_pass else round(barrier.release_grace * 1000)
+            ),
+            "release_notice": None if empty_pass else _release_notice(barrier),
         }
     barrier_id = participant.waiting_barrier_id
     if (
