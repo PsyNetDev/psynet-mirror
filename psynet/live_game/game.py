@@ -22,7 +22,8 @@ from .method_wrappers import (
     _as_game_code,
     _ends_when_time_is_up,
     _gives_psynet_end_reason,
-    _reads_state,
+    _player_done,
+    _player_done_reason,
     _returns_json,
     _runs_game_code,
     _saves_ready_messages,
@@ -154,8 +155,8 @@ class LiveGame(RealtimeGame):
             ("handle_effect", _handles_reward),
             ("handle_ending", _handles_ending),
             ("handle_player_ending", _handles_player_ending),
-            ("is_done", functools.partial(_reads_state, name="is_done")),
-            ("done_reason", functools.partial(_reads_state, name="done_reason")),
+            ("is_done", _player_done),
+            ("done_reason", _player_done_reason),
         ]:
             method = getattr(cls, name)
             if method is not getattr(RealtimeGame, name, None) and not getattr(
@@ -232,12 +233,13 @@ class LiveGame(RealtimeGame):
         """
         return super().end_reason(state)
 
-    @functools.partial(_reads_state, name="done_reason")
+    @_player_done_reason
     def done_reason(self, state, player):
         """Return why a player's game ended, a non-empty string such as
         ``"retired"``, once the game's ``is_done`` has returned ``True`` for
-        them. It becomes the ``reason`` that :meth:`answer` and
-        :meth:`performance_reward` receive for that player. By default, it's
+        them. It becomes the ``reason`` that :meth:`outcome`, :meth:`answer`
+        and :meth:`performance_reward` receive for that player, and the
+        ``reason`` in :meth:`handle_player_ending`'s ``ending``. By default, it's
         ``"done"``. Any other value than a non-empty string fails the game.
         It should only read ``state``, not change it.
 
@@ -439,6 +441,10 @@ class LiveGame(RealtimeGame):
         """Do the work of an effect the game queued with :meth:`queue_effect`,
         as in Dallinger's ``handle_effect``. PsyNet handles the rewards from
         :meth:`add_performance_reward` itself, so they never reach this method.
+        A game handles its own effects here without calling ``super()`` for
+        them: this base method raises an error for any effect it gets, which
+        fails the game. A subclass can pass on the effects that a base game
+        handles, with ``super().handle_effect(name, payload, game)``.
 
         Parameters
         ----------
@@ -452,7 +458,11 @@ class LiveGame(RealtimeGame):
             :attr:`~LiveGameRecord.participant_ids` say which game and
             players it's for.
         """
-        return super().handle_effect(name, payload, game)
+        raise NotImplementedError(
+            f"{type(self).__name__} queued the effect {name!r}, but no "
+            "handle_effect handles it. The game's own handle_effect must handle "
+            "it, without calling super().handle_effect for it."
+        )
 
     @_handles_ending
     def handle_ending(self, game):

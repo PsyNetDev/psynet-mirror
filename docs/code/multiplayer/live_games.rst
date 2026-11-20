@@ -1004,6 +1004,9 @@ reason "Your game has ended.", and a bot stops playing. Their answer and
 reason, and their result is saved a few seconds later, so ``onResultSaved``
 runs and the page moves on as it would at the end of the game. They no
 longer count towards the game's ``min_players`` for its ``away_timeout``.
+The game's ``end_reason`` stays the whole game's, so a later page reads why
+the player's own game ended from their record's ``player_end_reason``
+(see `A game's record`_).
 
 The game itself still ends through its ``is_over``, ``duration`` or
 ``timeout``, and the players still playing then get their results from the
@@ -1166,8 +1169,10 @@ A record has:
   the reasons), rather than early, for example because players left;
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
   ended, both ``None`` until it has ended;
-- ``answer``, the participant's answer on the game page, and ``player``,
-  their player number;
+- ``answer``, the participant's answer on the game page, ``player``,
+  their player number, and ``player_end_reason``, why their own game
+  ended: their ``done_reason`` if ``is_done`` ended it early (see
+  `Finishing before the others`_), otherwise ``end_reason``;
 - ``answers``, each player's answer, in player order, and
   ``participant_ids``, each player's participant id;
 - ``messages``, ``moments`` and ``checkpoints``, below;

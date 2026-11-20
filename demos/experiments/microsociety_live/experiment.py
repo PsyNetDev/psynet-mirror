@@ -16,7 +16,8 @@ and the game's ``on_add`` gives them a boat. Each member fishes for
 ``SOCIETY_SIZE``, the longest-serving member retires. The game's ``is_done``
 ends each member's game then, so they move on and leave a tip while the
 others carry on, and its ``done_reason`` says whether they retired or stayed
-their time. The lake closes once nobody is left on it.
+their time, which later pages read from the member's record of the lake as
+``player_end_reason``. The lake closes once nobody is left on it.
 
 The game records each catch with ``record``, so the newcomer's page and the
 export read the society's history from the lake's ``moments``.
@@ -198,12 +199,7 @@ class Fishing(LiveGame):
         }
 
     def answer(self, outcome, reason, player):
-        return {
-            "fish": outcome["fish"][player],
-            "moves": outcome["moves"][player],
-            # A member still fishing when the lake closed left with it.
-            "left": outcome["left"][player] or reason,
-        }
+        return {"fish": outcome["fish"][player], "moves": outcome["moves"][player]}
 
     def performance_reward(self, outcome, reason, player):
         return outcome["fish"][player] * FISH_VALUE
@@ -395,14 +391,9 @@ def get_timeline():
 
 def why_left(participant: Participant) -> str:
     """Return why the member left the lake, or ``"closed"`` if it closed while they fished."""
-    left = lake_answer(participant).get("left")
-    return left if left in (RETIRED, STAYED) else "closed"
-
-
-def lake_answer(participant: Participant) -> dict:
-    """Return the member's answer from their lake, or ``{}`` without one."""
     lake = participant.live_games.get("fishing")
-    return (lake and lake.answer) or {}
+    left = lake and lake.player_end_reason
+    return left if left in (RETIRED, STAYED) else "closed"
 
 
 def in_society(participant: Participant) -> bool:
@@ -489,6 +480,22 @@ def final_page(participant: Participant):
     )
 
 
+def member_row(participant: Participant, lake) -> dict:
+    """Return a member's row of the export. It comes from the lake's outcome
+    and record rather than the member's answer, which is missing if they
+    closed their page while they fished."""
+    ended = lake is not None and lake.outcome is not None
+    return {
+        "participant_id": participant.id,
+        "lake_id": lake.id if lake else None,
+        "fish": lake.outcome["fish"][lake.player] if ended else None,
+        # RETIRED or STAYED, or the lake's end reason, such as "finished",
+        # for a member still fishing when it closed.
+        "left": lake.player_end_reason if lake else None,
+        "tip": participant.var.get("tip"),
+    }
+
+
 class Exp(psynet.experiment.Experiment):
     label = "Live microsociety demo"
 
@@ -502,16 +509,7 @@ class Exp(psynet.experiment.Experiment):
         # One record of each lake, for its catches.
         by_id = {lake.id: lake for lake in lakes.values() if lake and lake.id}
         return {
-            "member": [
-                {
-                    "participant_id": p.id,
-                    "lake_id": lakes[p.id].id if lakes[p.id] else None,
-                    "fish": lake_answer(p).get("fish"),
-                    "left": lake_answer(p).get("left"),
-                    "tip": p.var.get("tip"),
-                }
-                for p in members
-            ],
+            "member": [member_row(p, lakes[p.id]) for p in members],
             "catch": [
                 {
                     "lake_id": lake_id,

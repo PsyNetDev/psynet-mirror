@@ -78,9 +78,17 @@ class TestBargainingLive:
         leave_group("cohort").consume(experiment, player)
         assert str(demo.end_of_game(player).content) == text
 
-    def _feedback(self, demo, answer):
-        trial = SimpleNamespace(answer=answer)
-        return str(demo.BargainTrial.show_feedback(trial, None, None).content)
+    def _feedback(self, demo, answer, end_reason=None, removal_reason=None):
+        trial = SimpleNamespace(
+            answer=answer,
+            live_game=SimpleNamespace(end_reason=end_reason),
+            definition={"stake": 10},
+        )
+        trial.coins = lambda: demo.BargainTrial.coins(trial)
+        participant = SimpleNamespace(
+            sync_group_removal_reason=lambda _: removal_reason
+        )
+        return str(demo.BargainTrial.show_feedback(trial, None, participant).content)
 
     def test_a_partner_who_never_opens_the_game_ends_it_at_the_start(self, demo):
         game = LocalGame(demo.Bargain, players=2, settings={"stake": 10}, start=False)
@@ -127,12 +135,18 @@ class TestBargainingLive:
 
         assert game.is_over() and game.end_reason() == PLAYERS_LEFT
         assert [game.view(player)["left"] for player in (0, 1)] == ["partner", "you"]
+        assert self._feedback(demo, game.answer(0), PLAYERS_LEFT) == (
+            "Your partner left the game, so there was no deal."
+        )
+        assert self._feedback(demo, game.answer(1), PLAYERS_LEFT, "left_game") == (
+            "You left the game, so there was no deal."
+        )
 
     def test_accepting_a_proposal_makes_the_deal_it_offered(self, demo, game):
         game.send(0, demo.Propose(keep=7))
         game.send(1, demo.Accept(keep=7), now=12.5)
 
-        assert game.is_over()
+        assert game.is_over() and game.end_reason() == demo.DEAL
         assert game.outcome() == {
             "deal": [7, 3],
             "deal_at": 12.5,
@@ -140,6 +154,9 @@ class TestBargainingLive:
             "no_shows": [],
         }
         assert [game.answer(player)["coins"] for player in (0, 1)] == [7, 3]
+        assert self._feedback(demo, game.answer(1), demo.DEAL) == (
+            "You made a deal: you get 3 coins and your partner gets 7."
+        )
 
     def test_a_proposal_that_changed_can_t_be_accepted(self, demo, game):
         game.send(0, demo.Propose(keep=6))
@@ -156,9 +173,10 @@ class TestBargainingLive:
 
     def test_without_a_deal_nobody_is_paid(self, demo, game):
         game.send(0, demo.Propose(keep=9))
-        trial = SimpleNamespace(answer=game.answer(1))
+        game.tick(demo.Bargain.duration)
 
+        assert game.is_over() and game.end_reason() == "finished"
         assert game.game.performance_reward(game.outcome(), "finished", 1) == 0
-        assert str(demo.BargainTrial.show_feedback(trial, None, None).content) == (
+        assert self._feedback(demo, game.answer(1), "finished") == (
             "You didn't reach a deal in time, so nobody was paid."
         )

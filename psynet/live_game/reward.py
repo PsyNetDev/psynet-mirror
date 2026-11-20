@@ -9,13 +9,11 @@ the game was played in, if any. All run in the job that writes the game's
 record, so each runs once, whether or not the players are still on the game
 page."""
 
-import functools
-
 from dallinger import db
 from dallinger.models import timenow
 from dallinger.realtime.utils import is_number
 
-from .method_wrappers import _as_game_code, _in_game_code
+from .method_wrappers import _outermost
 from .record import (
     _PSYNET_EFFECTS,
     _REWARD_EFFECT,
@@ -87,88 +85,62 @@ def _locked_players(session_row, participant_ids=None):
     )
 
 
-def _handles_reward(method):
-    @functools.wraps(method)
-    def handle_effect(self, name, payload, session_row):
-        # A super() call from a subclass's override already has the record.
-        if _in_game_code.get():
-            return method(self, name, payload, session_row)
-        if name not in _PSYNET_EFFECTS:
-            return _as_game_code(
-                method, self, name, payload, _record_from_row(session_row)
-            )
-        if name != _REWARD_EFFECT:
-            # Only recorded, for a game record's messages and moments.
-            return None
-        player = payload["player"]
-        participant_ids = _player_ids(session_row.members)
-        if player >= len(participant_ids):
-            raise ValueError(
-                f"{type(self).__name__}.add_performance_reward gave a reward to "
-                f"player {player}, but game {session_row.id} has only "
-                f"{len(participant_ids)} players, numbered from 0."
-            )
-        (participant,) = _locked_players(session_row, [participant_ids[player]])
-        _add_reward(participant, payload["amount"], session_row)
-
-    handle_effect._psynet_wrapper = True
-    return handle_effect
-
-
-def _handles_ending(method):
-    @functools.wraps(method)
-    def handle_ending(self, session_row):
-        # A super() call from a subclass's override passes straight through,
-        # rather than paying the players again.
-        if _in_game_code.get():
-            return method(self, session_row)
-        # Players whose own game ended early were paid then, and may be on
-        # a later page whose deadline isn't the game's. They aren't locked,
-        # as one back at a PlayLiveGame holds their row while waiting for
-        # this game's.
-        ended_early = _players_ended_early(session_row.id)
-        remaining = [
-            participant_id
-            for participant_id in session_row.members
-            if participant_id not in ended_early
-        ]
-        players = _locked_players(session_row, remaining) if remaining else []
-        from .play import _remove_absent_players
-
-        if _has_outcome(session_row.status, session_row.outcome):
-            _pay_outcome_rewards(self, session_row, players)
-            _record_outcome_on_round(session_row)
-        _end_game_page_deadlines(session_row, players, session_row.end_time)
-        if session_row.status != "failed":
-            _remove_absent_players(self, session_row, players)
-        return _as_game_code(method, self, _record_from_row(session_row))
-
-    handle_ending._psynet_wrapper = True
-    return handle_ending
-
-
-def _handles_player_ending(method):
-    @functools.wraps(method)
-    def handle_player_ending(self, session_row, player_id, ending):
-        if _in_game_code.get():
-            # Already converted to the player's number by the outermost call.
-            return method(self, session_row, player_id, ending)
-        (participant,) = _locked_players(session_row, [int(player_id)])
-        player = _player_ids(session_row.members).index(participant.id)
-        amount = self.performance_reward(ending["outcome"], ending["reason"], player)
-        what = f"{type(self).__name__}.performance_reward"
-        _add_reward(participant, _check_reward(amount, what), session_row)
-        _end_game_page_deadlines(session_row, [participant], timenow())
-        ending = {
-            **ending,
-            "time": _game_time(_game_started_at(session_row.id), ending["time"]),
-        }
-        return _as_game_code(
-            method, self, _record_from_row(session_row), player, ending
+@_outermost
+def _handles_reward(self, game_code, name, payload, session_row):
+    if name not in _PSYNET_EFFECTS:
+        return game_code(name, payload, _record_from_row(session_row))
+    if name != _REWARD_EFFECT:
+        # Only recorded, for a game record's messages and moments.
+        return None
+    player = payload["player"]
+    participant_ids = _player_ids(session_row.members)
+    if player >= len(participant_ids):
+        raise ValueError(
+            f"{type(self).__name__}.add_performance_reward gave a reward to "
+            f"player {player}, but game {session_row.id} has only "
+            f"{len(participant_ids)} players, numbered from 0."
         )
+    (participant,) = _locked_players(session_row, [participant_ids[player]])
+    _add_reward(participant, payload["amount"], session_row)
 
-    handle_player_ending._psynet_wrapper = True
-    return handle_player_ending
+
+@_outermost
+def _handles_ending(self, game_code, session_row):
+    # Players whose own game ended early were paid then, and may be on
+    # a later page whose deadline isn't the game's. They aren't locked,
+    # as one back at a PlayLiveGame holds their row while waiting for
+    # this game's.
+    ended_early = _players_ended_early(session_row.id)
+    remaining = [
+        participant_id
+        for participant_id in session_row.members
+        if participant_id not in ended_early
+    ]
+    players = _locked_players(session_row, remaining) if remaining else []
+    from .play import _remove_absent_players
+
+    if _has_outcome(session_row.status, session_row.outcome):
+        _pay_outcome_rewards(self, session_row, players)
+        _record_outcome_on_round(session_row)
+    _end_game_page_deadlines(session_row, players, session_row.end_time)
+    if session_row.status != "failed":
+        _remove_absent_players(self, session_row, players)
+    return game_code(_record_from_row(session_row))
+
+
+@_outermost
+def _handles_player_ending(self, game_code, session_row, player_id, ending):
+    (participant,) = _locked_players(session_row, [int(player_id)])
+    player = _player_ids(session_row.members).index(participant.id)
+    amount = self.performance_reward(ending["outcome"], ending["reason"], player)
+    what = f"{type(self).__name__}.performance_reward"
+    _add_reward(participant, _check_reward(amount, what), session_row)
+    _end_game_page_deadlines(session_row, [participant], timenow())
+    ending = {
+        **ending,
+        "time": _game_time(_game_started_at(session_row.id), ending["time"]),
+    }
+    return game_code(_record_from_row(session_row), player, ending)
 
 
 def _pay_outcome_rewards(game, session_row, players):

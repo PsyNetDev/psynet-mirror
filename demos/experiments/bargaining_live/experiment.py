@@ -6,7 +6,9 @@ pair bargains live over a stake of coins, chosen at random from ``STAKES``,
 for up to ``BARGAIN_SECONDS`` seconds. Either player can propose a split at
 any time, and change it, and either can accept their partner's current
 proposal. Accepting ends the round with a deal; if the time runs out first,
-nobody is paid.
+nobody is paid. The game's ``end_reason`` says how the round ended, so the
+feedback and the export can tell a deal, a time-out and a partner who left
+apart.
 
 Each player's round is one cued ``BargainTrial``. The trial class has
 ``sync_group_type = "pair"``, so the two trials of a pair share the trial's
@@ -26,6 +28,7 @@ from dominate import tags
 import psynet.experiment
 from psynet.bot import Bot
 from psynet.live_game import (
+    PLAYERS_LEFT,
     LiveGame,
     LiveGamePage,
     LiveMessage,
@@ -56,6 +59,10 @@ COIN_VALUE = 0.05
 # Bots open with a proposal that gives their partner this many coins, and
 # accept any proposal that gives them at least as many.
 BOT_GIVES = 4
+# The game's own end reasons. PsyNet's, such as "finished" when the time runs
+# out and PLAYERS_LEFT, come first.
+DEAL = "deal"
+NO_SHOW = "no_show"
 
 
 class Propose(LiveMessage):
@@ -144,6 +151,9 @@ class Bargain(LiveGame):
 
     def is_over(self, state):
         return state["deal"] is not None or bool(state["no_shows"])
+
+    def end_reason(self, state):
+        return DEAL if state["deal"] is not None else NO_SHOW
 
     def outcome(self, state, reason):
         return {
@@ -296,18 +306,25 @@ class BargainTrial(Trial):
         return (self.answer or {}).get("coins", 0)
 
     def show_feedback(self, experiment, participant):
+        reason = self.live_game.end_reason
         if self.answer is not None and not self.answer["arrived"]:
             text = "You didn't arrive in time, so there was no game this round."
         elif self.answer is None or not self.answer["partner_arrived"]:
             text = "Your partner didn't arrive, so there was no game this round."
-        elif not self.answer["deal"]:
-            text = "You didn't reach a deal in time, so nobody was paid."
-        else:
+        elif reason == DEAL:
             mine = self.coins()
             text = (
                 f"You made a deal: you get {coins_text(mine)} and your partner "
                 f"gets {self.definition['stake'] - mine}."
             )
+        elif reason == PLAYERS_LEFT:
+            # absent_action took the player who left out of the cohort.
+            if participant.sync_group_removal_reason("cohort") == "left_game":
+                text = "You left the game, so there was no deal."
+            else:
+                text = "Your partner left the game, so there was no deal."
+        else:
+            text = "You didn't reach a deal in time, so nobody was paid."
         return InfoPage(text, time_estimate=5)
 
 
@@ -434,12 +451,16 @@ class Exp(psynet.experiment.Experiment):
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     "round": t.position,
+                    # How the game ended: DEAL, NO_SHOW, or PsyNet's
+                    # PLAYERS_LEFT, "finished" when the time ran out or
+                    # "not_joined" when neither player opened it. None
+                    # without a game.
+                    "end_reason": t.live_game.end_reason,
                     # All three are None for a player whose partner didn't
                     # reach the game, so who had no game, or who didn't
-                    # submit the game page. A game that a player didn't open
-                    # in time has no deal, and arrived and partner_arrived
-                    # say who didn't; one that a player left mid-game looks
-                    # like one without a deal.
+                    # submit the game page. For a game that a player didn't
+                    # open in time, arrived and partner_arrived say who
+                    # didn't.
                     "deal": (t.answer or {}).get("deal"),
                     "arrived": (t.answer or {}).get("arrived"),
                     "partner_arrived": (t.answer or {}).get("partner_arrived"),
@@ -463,6 +484,7 @@ class Exp(psynet.experiment.Experiment):
             assert trial.performance_reward == pytest.approx(trial.coins() * COIN_VALUE)
             outcome = trial.live_game.outcome
             assert sorted(outcome["deal"]) == [BOT_GIVES, stake - BOT_GIVES]
+            assert trial.live_game.end_reason == DEAL
         expected = sum(t.coins() for t in trials) * COIN_VALUE
         assert bot.performance_reward == pytest.approx(expected)
         for pair in self.get_basic_data()["pair"]:

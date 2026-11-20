@@ -2,6 +2,7 @@
 what a boat catches, tested by playing the game in Python."""
 
 import random
+from types import SimpleNamespace
 
 import pytest
 from dallinger.realtime import Reject
@@ -78,17 +79,23 @@ class TestMicrosocietyLive:
             game.send(0, demo.Move(spot=3), now=1)
         assert game.state["moves"] == [1]
 
-    def test_a_member_still_fishing_when_the_lake_closes_leaves_with_it(
-        self, demo, lake
-    ):
+    def test_a_newcomer_fishes_on_after_the_founders_time_is_up(self, demo, lake):
         game = lake(2)
         game.tick(20)
         game.add(now=20)
         game.tick(demo.STAY_SECONDS + demo.CATCH_SECONDS)
 
-        assert game.answer(0, reason="timeout")["left"] == demo.STAYED
+        assert game.is_done(0) and game.done_reason(0) == demo.STAYED
         # The newcomer joined later, so their time wasn't up.
-        assert game.answer(2, reason="timeout")["left"] == "timeout"
+        assert not game.is_done(2)
+
+    def test_the_export_has_the_fish_of_a_member_who_closed_their_page(self, demo):
+        # Their page saved no answer, but the lake's outcome and record have them.
+        lake = SimpleNamespace(
+            id=1, outcome={"fish": [33, 35]}, player=1, player_end_reason=demo.STAYED
+        )
+        row = demo.member_row(SimpleNamespace(id=3, var={}), lake)
+        assert (row["fish"], row["left"]) == (35, demo.STAYED)
 
     def test_a_newcomer_reads_the_tips_of_members_who_have_left(self, demo, db_session):
         from timeline_hold_helpers import new_participant

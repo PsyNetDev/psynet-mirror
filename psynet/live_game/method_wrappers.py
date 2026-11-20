@@ -123,15 +123,6 @@ def _stores_json(method, name=None):
     return _converts_outermost_call(method, name, convert_in_place)
 
 
-def _reads_state(method, name):
-    """Wrap a method that only reads the state, such as ``is_done`` or
-    ``done_reason``, so that its outermost call goes through its entry in
-    ``_SESSION_BOOKKEEPING``."""
-    return _converts_outermost_call(
-        method, name, lambda self, result, args, kwargs: result
-    )
-
-
 def _returns_json(method, name):
     def convert_returned(self, state, args, kwargs):
         return _to_json(state, f"{type(self).__name__}.{name}")
@@ -163,6 +154,19 @@ def _waits_for_start(self, game_code, state):
     if not entry["time_up"]:
         deadlines.append(entry["ends_at"])
     return min((d for d in deadlines if d is not None), default=None)
+
+
+@_outermost
+def _player_done(self, game_code, state, player_id):
+    entry = _psynet_entry(state)
+    if entry["started_at"] is None:
+        return False
+    return game_code(state, _player(entry, player_id))
+
+
+@_outermost
+def _player_done_reason(self, game_code, state, player_id):
+    return game_code(state, _player(_psynet_entry(state), player_id))
 
 
 def _psynet_end_reason(self, state):

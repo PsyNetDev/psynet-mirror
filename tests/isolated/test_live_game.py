@@ -2081,9 +2081,10 @@ def test_a_local_game_gives_the_game_s_reasons_or_the_defaults_and_refuses_an_em
             return True
 
         def is_done(self, state, player):
-            return True
+            return self.done_reason(state, player=player) == "done"
 
     game = LocalGame(OverWithoutReasons, players=2)
+    assert game.is_done(1)
     assert (game.end_reason(), game.done_reason(1)) == ("finished", "done")
 
 
@@ -2788,11 +2789,11 @@ def test_an_ending_handler_that_calls_super_pays_each_player_once(pair):
 
         def handle_ending(self, game):
             games_ended.append(game)
-            return super().handle_ending(game)
+            return super().handle_ending(game=game)
 
         def handle_player_ending(self, game, player, ending):
             players_ended.append((game, player, ending))
-            return super().handle_player_ending(game, player, ending)
+            return super().handle_player_ending(game=game, player=player, ending=ending)
 
     first = min(members, key=lambda member: member.id)
     ending = {"outcome": [1, None], "reason": "done", "time": 10.0}
@@ -2885,6 +2886,7 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
             sequence=1,
             event_type="player_end",
             participant_id=early.id,
+            reason="retired",
         )
     )
     # The deadline of a later timed page the early finisher has opened.
@@ -2898,6 +2900,9 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
 
     assert early.sync_group_links[0].page_deadline == later
     assert other.sync_group_links[0].page_deadline == row.end_time
+    assert [
+        LiveGameRecord(session_id, member).player_end_reason for member in members
+    ] == ["retired" if member is early else "finished" for member in members]
 
 
 def _save_ending(
@@ -3220,6 +3225,20 @@ def test_a_game_s_own_handle_effect_gets_its_effects_but_not_its_rewards(pair):
     first = min(members, key=lambda member: member.id)
     assert handled == [("scored", sorted(member.id for member in members))]
     assert _reward(first) == pytest.approx(1.5)
+
+    class PassesOn(Scored):
+        def handle_effect(self, name, payload, game):
+            return super().handle_effect(name=name, payload=payload, game=game)
+
+    PassesOn().handle_effect("scored", {}, row)
+    assert len(handled) == 2
+
+    class CallsLiveGame(_Game):
+        def handle_effect(self, name, payload, game):
+            return super().handle_effect(name, payload, game)
+
+    with pytest.raises(NotImplementedError, match="effect 'own', but no handle_effect"):
+        CallsLiveGame().handle_effect("own", {}, row)
     with pytest.raises(ValueError, match="player 2, but game .* has only 2"):
         Scored().handle_effect(
             "psynet_performance_reward", {"player": 2, "amount": 1}, row

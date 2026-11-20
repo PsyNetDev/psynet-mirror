@@ -84,7 +84,11 @@ class LiveGameRecord:
     def game_class(self):
         """The :class:`~psynet.live_game.LiveGame` subclass that was played,
         or ``None`` if no game started."""
-        return None if self._id is None else _session_game_class(self._id)
+        if self._id is None:
+            return None
+        if self._loaded_row is not None:
+            return _game_class_named(self._loaded_row.game_type, self._id)
+        return _session_game_class(self._id)
 
     @property
     def status(self) -> str:
@@ -155,6 +159,16 @@ class LiveGameRecord:
         participant_id = self._own_participant_id("player")
         ids = self.participant_ids
         return ids.index(participant_id) if participant_id in ids else None
+
+    @property
+    def player_end_reason(self) -> Optional[str]:
+        """Why the participant's own game ended: the game's ``done_reason``
+        for them, such as ``"retired"``, if the game's ``is_done`` ended it
+        before the game ended, and otherwise the game's :attr:`end_reason`.
+        It's ``None`` until then."""
+        participant_id = self._own_participant_id("player_end_reason")
+        ending = None if self._id is None else _player_ending(self._id, participant_id)
+        return self.end_reason if ending is None else ending.reason
 
     @property
     def answer(self) -> Any:
@@ -340,7 +354,10 @@ def _session_channel(session_id):
 
 
 def _session_game_class(session_id):
-    channel = _session_channel(session_id)
+    return _game_class_named(_session_channel(session_id), session_id)
+
+
+def _game_class_named(channel, session_id):
     game_class = _live_game_class(channel)
     if game_class is None:
         raise ValueError(
