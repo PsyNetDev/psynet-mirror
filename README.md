@@ -2,7 +2,7 @@
 
 [![Pipeline](https://gitlab.com/PsyNetDev/PsyNet/badges/master/pipeline.svg?ignore_skipped=true)](https://gitlab.com/PsyNetDev/PsyNet/-/pipelines)
 [![Latest release](https://gitlab.com/PsyNetDev/PsyNet/-/badges/release.svg)](https://gitlab.com/PsyNetDev/PsyNet/-/releases)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PsyNetDev/psynet-mirror)
+[![Ask DeepWiki](https://gitlab.com/PsyNetDev/PsyNet/-/raw/master/docs/_static/images/deepwiki-badge.svg)](https://deepwiki.com/PsyNetDev/psynet-mirror)
 
 PsyNet is a Python framework for behavioral experiments that are difficult to
 run on conventional platforms: procedures that adapt to each response, chains
