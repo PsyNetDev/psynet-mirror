@@ -8,7 +8,9 @@ Participants in a group see each other by pseudonym, such as "Blue fox",
 with a small picture of the animal in that colour, never by participant ID.
 Chat rooms (:doc:`chatroom`) and :class:`~psynet.group_prompt.GroupPrompt`
 (:doc:`synchronization`) label members this way, and a participant's own
-messages and seat are labelled "You".
+messages and seat are labelled "You". A live game's page can label its
+players the same way, through ``psynet.liveGame.players`` (see
+:ref:`live-games-whos-who`).
 
 How pseudonyms are chosen
 -------------------------
@@ -33,8 +35,9 @@ seen them; in a later group, two members can therefore share a pseudonym.
 When partners must not recognise each other across groups, for example
 because a player could build a reputation in a game, show them anonymously
 instead: pass ``names="anonymous"`` to
-:class:`~psynet.group_prompt.GroupPrompt` and to
-:class:`~psynet.chatroom.ChatRoom`. Both then draw every other member as the
+:class:`~psynet.group_prompt.GroupPrompt`, to
+:class:`~psynet.chatroom.ChatRoom` and to a
+:class:`~psynet.live_game.LiveGamePage`. Each then draws every other member as the
 same grey figure, labelled "Your partner" in a pair and "Another player" in
 a larger group. On a page whose group is a pair they agree; the chat
 counts the members who have appeared in the room, so after someone leaves

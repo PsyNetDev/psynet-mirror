@@ -3,33 +3,49 @@ const { test, expect } = require("../fixtures");
 
 const {
   assertNoBackendError,
+  checkLayoutAndScreenshot,
   startExperiment,
   startParticipantsTogether,
   stopExperiment
 } = require("../psynetHarness");
 
 const STEP_TIMEOUT_MS = 120000;
-// The game's ROUND_SECONDS. Every step until the player who leaves has
-// stopped has to happen within it.
-const ROUND_SECONDS = 30;
+
 const SIZE = 640;
+// The game seconds the leaving player's check needs: AWAY_DELAY_MS in
+// live-game.js, the game's COAST_AFTER and time for the views to arrive.
+const SECONDS_TO_LEAVE = 12;
 const DRAG = 4;
 
 // The player's own piece as the page predicts it.
 function ownPlayer(page) {
   return page.evaluate(() => {
-    const view = psynet.liveSession.predictedView();
-    return { id: view.me, ...view.players[view.me] };
+    const view = psynet.liveGame.predictedView();
+    return { id: view.psynet.you, ...view.players[view.psynet.you] };
   });
 }
 
-// Another player's piece as the page draws it.
+// Another player's piece as the page draws it, or null before the page has
+// tick views to draw from, as just after it loads.
 function drawnPlayer(page, id) {
-  return page.evaluate((id) => psynet.liveSession.interpolatedView().players[id], id);
+  return page.evaluate((id) => psynet.liveGame.interpolatedView()?.players[id] ?? null, id);
 }
 
 function towardCenter(player) {
   return player.x < SIZE / 2 ? "ArrowRight" : "ArrowLeft";
+}
+
+// Records the x of each player in every view the page receives, so that a
+// drawn position can be told apart from one the game sent.
+function recordViewPositions(page) {
+  return page.evaluate(() => {
+    window.viewXs = {};
+    psynet.liveGame.onReceive((view) => {
+      view.players.forEach((player, id) => {
+        (window.viewXs[id] ??= new Set()).add(player.x);
+      });
+    });
+  });
 }
 
 // Records, each frame after the page has sent its moves, where the page
@@ -41,15 +57,15 @@ function checkPredictions(page) {
     const check = (window.predictionCheck = { checks: 0, largestError: 0 });
     let before = null;
     const own = () => {
-      const view = psynet.liveSession.predictedView();
-      return view && view.players[view.me];
+      const view = psynet.liveGame.predictedView();
+      return view && view.players[view.psynet.you];
     };
     const record = () => {
       before = own();
       requestAnimationFrame(record);
     };
     requestAnimationFrame(record);
-    psynet.liveSession.onView(() => {
+    psynet.liveGame.onReceive(() => {
       const after = own();
       if (before && after) {
         check.checks += 1;
@@ -77,8 +93,8 @@ async function collectACoin(page) {
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) {
     const { me, coins } = await page.evaluate(() => {
-      const view = psynet.liveSession.predictedView();
-      return { me: view.players[view.me], coins: view.coins };
+      const view = psynet.liveGame.predictedView();
+      return { me: view.players[view.psynet.you], coins: view.coins };
     });
     if (me.coins > 0) {
       break;
@@ -111,7 +127,8 @@ async function waitUntilStill(page) {
 test("players move around shared_canvas_live with prediction and interpolation, collect a coin, coast after leaving, and finish the round", { tag: "@both" }, async ({
   browser
 }) => {
-  const experiment = startExperiment(path.resolve("demos/experiments/shared_canvas_live"));
+  // The game ticks, so it runs on gunicorn, as a deployed experiment does.
+  const experiment = startExperiment(path.resolve("demos/experiments/shared_canvas_live"), { legacy: true });
   const contexts = [await browser.newContext(), await browser.newContext()];
   // While this is set, the first player's moves are held back from the
   // server, to be sent later.
@@ -141,8 +158,8 @@ test("players move around shared_canvas_live with prediction and interpolation, 
         });
       })
     );
-    const roundStart = Date.now();
     const [first, second] = participants;
+    await recordViewPositions(second);
     // The page moves on by itself when the game ends, so its Next button is hidden.
     await expect(first.locator("#next-button")).toBeHidden();
 
@@ -163,33 +180,39 @@ test("players move around shared_canvas_live with prediction and interpolation, 
     holdMoves = false;
     heldMoves.splice(0).forEach((send) => send());
 
-    // The other player's page draws the first player in many small steps
-    // between the game's 20 ticks a second. Without interpolation, 30 frames
-    // at 60 a second would show about 10 positions. A tick view that arrives
-    // late holds the drawing for a few frames, so the check leaves room for
-    // one.
+    // The other player's page draws the first player between the game's
+    // tick views, at positions no view had, rather than jumping from one to
+    // the next. The frames are counted for at most a second, so the player
+    // is still well away from the wall, however slowly frames come. A tick
+    // view that arrives late holds the drawing at its position for a few
+    // frames, so the check leaves room for that.
     await expect
       .poll(async () => Math.abs((await drawnPlayer(second, start.id)).x - start.x), {
+        intervals: [20],
         timeout: STEP_TIMEOUT_MS
       })
       .toBeGreaterThan(0);
     const drawn = await second.evaluate(
       (id) =>
         new Promise((resolve) => {
-          const xs = [];
+          const counts = { frames: 0, between: 0 };
+          const end = performance.now() + 1000;
           const frame = () => {
-            xs.push(psynet.liveSession.interpolatedView().players[id].x);
-            if (xs.length < 30) {
+            const x = psynet.liveGame.interpolatedView().players[id].x;
+            counts.frames += 1;
+            counts.between += window.viewXs[id].has(x) ? 0 : 1;
+            if (counts.frames < 30 && performance.now() < end) {
               requestAnimationFrame(frame);
             } else {
-              resolve(xs);
+              resolve(counts);
             }
           };
           requestAnimationFrame(frame);
         }),
       start.id
     );
-    expect(new Set(drawn).size).toBeGreaterThan(15);
+    expect(drawn.frames).toBeGreaterThan(2);
+    expect(drawn.between, JSON.stringify(drawn)).toBeGreaterThan(drawn.frames / 3);
 
     // Once the key is released, the player slows down and stops, and the
     // other page draws them where they stopped.
@@ -211,16 +234,28 @@ test("players move around shared_canvas_live with prediction and interpolation, 
       }, { timeout: STEP_TIMEOUT_MS })
       .toEqual([0, 0, 0, 0]);
 
+    // A move is cut short if it would take the player past the game's clock.
+    // Standing still for the game's SAVED_MOVEMENT, 0.5 seconds, and more,
+    // saves up enough movement time that uneven delivery of the moves below
+    // never does that, so the page's predictions should be exact.
+    await first.waitForTimeout(1000);
     await checkPredictions(first);
     await collectACoin(first);
     await waitUntilStill(first);
     const collector = await ownPlayer(first);
     expect(collector.coins).toBeGreaterThan(0);
     await expect(first.locator("#canvas-scores")).toContainText(`You: ${collector.coins}`);
+    // The other page shows the collector by their pseudonym.
+    const label = await second.evaluate(
+      (player) => psynet.liveGame.players[player].label,
+      collector.id
+    );
+    expect(label).not.toBe("You");
     await expect(second.locator("#canvas-scores")).toContainText(
-      `Player ${collector.number}: ${collector.coins}`,
+      `${label}: ${collector.coins}`,
       { timeout: STEP_TIMEOUT_MS }
     );
+    await checkLayoutAndScreenshot(second, "shared_canvas_live_board");
 
     // The views that arrived while the first player went for the coin and
     // coasted never moved their piece from where the page predicted it.
@@ -241,26 +276,36 @@ test("players move around shared_canvas_live with prediction and interpolation, 
     ]);
 
     // A player whose page closes while they're moving coasts to a stop.
-    const leaver = await ownPlayer(second);
-    const leaverKey = towardCenter(leaver);
-    await second.keyboard.down(leaverKey);
-    await expect
-      .poll(async () => Math.abs((await ownPlayer(second)).vx), { timeout: STEP_TIMEOUT_MS })
-      .toBeGreaterThan(100);
-    await second.close();
-    await expect(first.locator("#psynet-player-away-notice")).toHaveText(
-      "Another player has left the game.",
-      { timeout: STEP_TIMEOUT_MS }
-    );
-    await expect
-      .poll(async () => {
-        const seen = await drawnPlayer(first, leaver.id);
-        return [seen.vx, seen.vy];
-      }, { timeout: STEP_TIMEOUT_MS })
-      .toEqual([0, 0]);
-    expect(Date.now() - roundStart, "the steps ran past the end of the round").toBeLessThan(
-      ROUND_SECONDS * 1000
-    );
+    // This needs a few seconds of the round, which a slow machine may
+    // already have used up; tests/isolated/test_shared_canvas_live.py
+    // checks the coasting itself.
+    const secondsLeft = await first.evaluate(() => psynet.liveGame.secondsLeft());
+    if (secondsLeft < SECONDS_TO_LEAVE) {
+      test.info().annotations.push({
+        type: "skipped check",
+        description: `Only ${secondsLeft} s of the round were left for the leaving player.`
+      });
+    } else {
+      const leaver = await ownPlayer(second);
+      await second.keyboard.down(towardCenter(leaver));
+      // The game, and not only the leaver's own page, has them moving.
+      await expect
+        .poll(async () => Math.abs((await drawnPlayer(first, leaver.id))?.vx ?? 0), {
+          timeout: STEP_TIMEOUT_MS
+        })
+        .toBeGreaterThan(100);
+      await second.close();
+      await expect(first.locator("#psynet-player-away-notice")).toHaveText(
+        "Another player has left the game.",
+        { timeout: STEP_TIMEOUT_MS }
+      );
+      await expect
+        .poll(async () => {
+          const seen = await drawnPlayer(first, leaver.id);
+          return [seen.vx, seen.vy];
+        }, { timeout: STEP_TIMEOUT_MS })
+        .toEqual([0, 0]);
+    }
 
 
     // The page moves on by itself once the round is over and the result is
@@ -269,6 +314,7 @@ test("players move around shared_canvas_live with prediction and interpolation, 
       `You collected ${collector.coins} ${collector.coins === 1 ? "coin" : "coins"}`,
       { timeout: STEP_TIMEOUT_MS }
     );
+    await checkLayoutAndScreenshot(first, "shared_canvas_live_result");
     await assertNoBackendError(first);
   } finally {
     for (const context of contexts) {

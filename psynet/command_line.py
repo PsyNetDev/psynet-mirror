@@ -700,7 +700,7 @@ def sandbox(*args, **kwargs):
 
 def _ticking_game_warning(mode):
     """The warning ``psynet debug local`` and ``psynet deploy local`` give when
-    they run the development server for an experiment with a live session that
+    they run the development server for an experiment with a live game that
     ticks, or ``None``. ``mode`` is the deployment's mode, ``"debug"`` or
     ``"live"``."""
     from .experiment import import_local_experiment
@@ -710,7 +710,7 @@ def _ticking_game_warning(mode):
         return None
     command = "psynet debug local" if mode == "debug" else "psynet deploy local"
     return (
-        "This experiment has a live session with ticks. The development server "
+        "This experiment has a live game with ticks. The development server "
         "sometimes delivers the game's views late, in bursts, so other players' "
         f"movement stalls or jumps. Run {command} --legacy instead, which uses "
         "gunicorn, like a deployed experiment."

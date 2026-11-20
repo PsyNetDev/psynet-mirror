@@ -130,6 +130,7 @@ from datetime import timedelta
 from functools import partial
 from math import ceil, floor
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -164,7 +165,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy.dialects.postgresql import aggregate_order_by
+from sqlalchemy.dialects.postgresql import JSONB, aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import (
     Session,
@@ -229,6 +230,9 @@ from psynet.utils import (
     get_translator,
     warn_from_caller,
 )
+
+if TYPE_CHECKING:
+    from psynet.live_game import LiveGameRecord
 
 logger = get_logger()
 
@@ -1655,10 +1659,12 @@ _JOIN_LOCK_WAIT_SECONDS = 1
 def _lock_sync_group(
     group_id, *, session=None, skip_locked=False, nowait=False, wait_seconds=None
 ) -> Optional["SyncGroup"]:
-    """Lock a sync group's row ``FOR NO KEY UPDATE`` and reload it, with its member links.
+    """Lock a sync group's row ``FOR NO KEY UPDATE`` and reload it.
 
-    ``populate_existing`` also reloads the member links this session has
-    loaded, so they include members who joined or left in other requests.
+    ``populate_existing`` refreshes the group's row and which links it has,
+    but link objects this session has already loaded keep their old
+    ``active`` and ``admitted_at``. Read the members after the lock, or
+    reload the links, to see members who joined or left in other requests.
     See the lock order in :doc:`/developer/synchronization_internals`.
 
     Parameters
@@ -1864,6 +1870,8 @@ RemovalReason = Literal[
     "removed_by_experimenter",
     "left_experiment",
     "late",
+    "no_show",
+    "left_game",
     "waited_too_long",
     "group_dissolved",
     "moved_on",
@@ -2003,9 +2011,12 @@ class GroupBarrier(Barrier):
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
         counted from the group's previous barrier pass or from when the group admitted them, whichever is later,
         before ``late_action`` is applied to them; pending members are never late, and nobody is late while
-        only pending members wait here. ``None`` (default) never treats anyone as late. A member on a
-        page with a ``time_limit`` is never late before that limit has run out plus 10 seconds, so that an
-        answer sent at the deadline can arrive; this timeout therefore need not cover the pages' time limits.
+        only pending members wait here. ``None`` (default) never treats anyone as late. For a member who
+        has started a page with a ``time_limit`` since then, the time counts from when that limit runs out
+        plus 10 seconds, so that an answer sent at the deadline can arrive, if that is later; this timeout
+        therefore needs to cover only the pages without a time limit. The same holds for a page whose
+        :meth:`~psynet.timeline.Page.ends_by` says when it ends at the latest, such as a live game's
+        page.
         Requires ``late_action``, and the grouper of ``group_type`` (and of each type in ``also_leave``)
         must then be given ``below_quorum``, which is checked when the experiment loads.
 
@@ -2857,10 +2868,10 @@ class GroupBarrier(Barrier):
         Each admitted member is timed from the group's last barrier pass or
         from when they were admitted, whichever is later, so newcomers are
         not late as soon as they take part; pending members are never late. A
-        member who has started a page with a time limit since then, outside
-        waiting logic, is not late until that limit has run out and an answer
-        sent at the deadline has had time to arrive, even if they have
-        already left the page.
+        member who has started a page with a time limit (or an ``ends_by``) since then, outside
+        waiting logic, is timed from when that limit runs out and an answer
+        sent at the deadline has had time to arrive instead, if that is
+        later, even if they have already left the page.
         """
         now = timenow()
         return [
@@ -2887,9 +2898,9 @@ class GroupBarrier(Barrier):
             starts = [t for t in (group.last_barrier_pass_time, link.admitted_at) if t]
             if not starts:
                 continue
-            late_at = max(starts) + timedelta(seconds=self.late_after)
             if link.page_deadline is not None:
-                late_at = max(late_at, link.page_deadline + answer_arrival)
+                starts.append(link.page_deadline + answer_arrival)
+            late_at = max(starts) + timedelta(seconds=self.late_after)
             times.append((link, late_at))
         return times
 
@@ -4725,6 +4736,13 @@ def check_group_dropout_policies(barriers):
                 )
         if barrier.stop_top_ups:
             top_ups_stopped.add(barrier.group_type)
+        for group_type in getattr(barrier, "absent_leave", []):
+            for grouper in groupers.get(group_type, []):
+                _check_absent_leave(
+                    barrier,
+                    grouper.below_quorum or "fail",
+                    f"SimpleGrouper '{grouper.id}'",
+                )
         if barrier.late_after is None:
             continue
         for group_type in [barrier.group_type, *barrier.also_leave]:
@@ -4767,10 +4785,21 @@ def check_late_removal_policies(barriers, participant):
     """
     groups = None
     for barrier in barriers:
-        if not isinstance(barrier, GroupBarrier) or barrier.late_after is None:
+        if not isinstance(barrier, GroupBarrier):
+            continue
+        absent_leave = getattr(barrier, "absent_leave", [])
+        if barrier.late_after is None and not absent_leave:
             continue
         if groups is None:
             groups = participant.active_sync_groups
+        for group_type in absent_leave:
+            group = groups.get(group_type)
+            if isinstance(group, SimpleSyncGroup):
+                _check_absent_leave(
+                    barrier, group.below_quorum or "fail", f"the '{group_type}' grouper"
+                )
+        if barrier.late_after is None:
+            continue
         group = groups.get(barrier.group_type)
         if isinstance(group, SimpleSyncGroup):
             _check_top_up_wait(
@@ -4817,6 +4846,17 @@ def _check_late_action(barrier, below_quorum, grouper_label):
             f"{grouper_label} has below_quorum='fail', so a late member would "
             "carry on alone while the members who were on time are failed. "
             "Pass below_quorum='continue_without_group', or late_action='fail'."
+        )
+
+
+def _check_absent_leave(barrier, below_quorum, grouper_label):
+    """Reject a PlayLiveGame's ``absent_action="leave_group"`` on a group whose ``below_quorum`` is ``"fail"``."""
+    if below_quorum == "fail":
+        raise ValueError(
+            f"The PlayLiveGame '{barrier.id}' has absent_action='leave_group', "
+            f"but {grouper_label} has below_quorum='fail', so a player who "
+            "didn't play its game could leave the group below its quorum and "
+            "fail the players who did. Pass below_quorum='continue_without_group'."
         )
 
 
@@ -4877,24 +4917,6 @@ def check_admission_points(barriers):
             UserWarning,
             stacklevel=2,
         )
-
-
-def group_seats(group) -> Dict[int, int]:
-    """Return ``{participant_id: seat}`` for everyone who has been admitted to ``group``.
-
-    Seats number members in the order they were first admitted. Links are
-    kept when members leave, so seats never change while the group exists,
-    and pages can refer to members without their IDs. Pending members get a
-    seat once admitted, and members turned away never get one.
-    """
-    seats = {}
-    links = sorted(
-        (link for link in group.participant_links if link.admitted_at is not None),
-        key=lambda link: (link.admitted_at, link.id is None, link.id or 0),
-    )
-    for link in links:
-        seats.setdefault(link.participant_id, len(seats))
-    return seats
 
 
 def leave_group(group_type: str, reason: RemovalReason = "finished"):
@@ -5078,6 +5100,50 @@ class SyncGroup(SQLBase, SQLMixin):
         """
         return [link.participant for link in self._working_links(admitted=False)]
 
+    @property
+    def seats(self) -> Dict[int, int]:
+        """``{participant_id: seat}`` for everyone who has been admitted to the group.
+
+        Seats number members in the order they were first admitted. Links are
+        kept when members leave, so seats never change while the group exists,
+        and pages can refer to members without their IDs. Pending members get a
+        seat once admitted, and members turned away never get one.
+        """
+        seats = {}
+        links = sorted(
+            (link for link in self.participant_links if link.admitted_at is not None),
+            key=lambda link: (link.admitted_at, link.id is None, link.id or 0),
+        )
+        for link in links:
+            seats.setdefault(link.participant_id, len(seats))
+        return seats
+
+    @property
+    def running_live_games(self) -> Dict[str, "LiveGameRecord"]:
+        """``{play_id: game}`` for each live game the group is playing now,
+        as a :class:`~psynet.live_game.LiveGameRecord`.
+
+        Keyed by the ``id_`` of the :class:`~psynet.live_game.PlayLiveGame`
+        that started the game, as :attr:`Participant.live_games
+        <psynet.participant.Participant.live_games>` is. A step whose game
+        has ended isn't in it. Read it again rather than keep it, since games
+        start and end.
+        """
+        from .live_game.play import _running_live_games
+
+        return _running_live_games(self)
+
+    def reached_barrier_after_time_limit(self, participant: Participant) -> bool:
+        """Return whether ``participant`` reached the group's barrier they wait at because a time limit ran out.
+
+        That is, they are waiting at a barrier of the group that they reached
+        after the time limit of their latest timed page ran out; untimed pages in
+        between, and a trial's feedback pages even if timed, don't count.
+        """
+        return any(
+            link.ran_out_of_time for _, link in _waiting_links(participant, self)
+        )
+
     def _active_link(self, participant) -> Optional["ParticipantLinkSyncGroup"]:
         """Return ``participant``'s active link to the group, or ``None``."""
         return next(
@@ -5249,6 +5315,9 @@ class SyncGroup(SQLBase, SQLMixin):
               ``"group_dissolved"``: they dropped out.
             - ``"late"``: a barrier removed them for being late (with any
               ``late_action``).
+            - ``"no_show"`` or ``"left_game"``: they didn't play a
+              :class:`~psynet.live_game.PlayLiveGame`'s game, or left it for
+              good, and its ``absent_action="leave_group"`` removed them.
             - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
               for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
               formed isn't dissolved, failing the partner, when the first
@@ -5379,7 +5448,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 return []
             rounds = _open_rounds(self, removed)
             _mark_rounds_dissolved(rounds)
-            group_size = len(group_seats(self))
+            group_size = len(self.seats)
             fail = (self.below_quorum or "fail") == "fail"
             self._turn_away_pending()
             for participant in removed:
@@ -5526,6 +5595,16 @@ class SyncGroupRound(SQLBase, SQLMixin):
         a page after the barrier, and so does a round whose remaining
         members' trials had all ended before the group dissolved. Written
         under the members' row locks, so it is never set on a closed round.
+    live_game_id : int or None
+        The id of the live game that a
+        :class:`~psynet.live_game.PlayLiveGame` in the round's trials
+        started, or ``None``, for the export. In code, read a trial's
+        :attr:`~psynet.trial.main.Trial.live_game` instead.
+    live_game_outcome : object or None
+        What the ``outcome`` method of that game returned, copied here when
+        the game's result is saved, a few seconds after the game ends.
+        ``None`` before then, without a live game, or for a game that failed
+        without an outcome.
     trials : list of Trial
         The members' trials in the round, including failed ones.
     """
@@ -5548,6 +5627,8 @@ class SyncGroupRound(SQLBase, SQLMixin):
     definition = Column(PythonObject)
     closed_at = Column(DateTime)
     dissolved_at = Column(DateTime)
+    live_game_id = Column(Integer, index=True)
+    live_game_outcome = Column(JSONB)
 
     trials = relationship(
         "psynet.trial.main.Trial",
@@ -6278,7 +6359,8 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     removed_on_page = Column(String)
     # The member's role in the group (see ``Regrouper(roles=...)``).
     role = Column(String)
-    # The deadline of the latest timed page the member started outside
+    # The deadline of the latest page with a deadline, a timed page or one
+    # whose ``Page.ends_by`` gives one, that the member started outside
     # waiting logic since the group's last barrier pass; see
     # ``GroupBarrier.late_after``.
     page_deadline = Column(DateTime)
@@ -6554,7 +6636,7 @@ def arrival_notice_payload(unique_id):
 def _ready_seats_for(participant):
     """Return ``{group_id, seats, ran_out_of_time, members}`` for each of the participant's groups.
 
-    ``seats`` (see :func:`group_seats`) are those of the members waiting at
+    ``seats`` (see :attr:`SyncGroup.seats`) are those of the members waiting at
     a barrier of the group, as :class:`~psynet.group_prompt.GroupPrompt`
     ticks them, ``ran_out_of_time`` those of the waiting members who came
     after their latest timed page ran out of time, and ``members`` those of all
@@ -6563,7 +6645,7 @@ def _ready_seats_for(participant):
     """
     ready = []
     for group in participant.active_sync_groups.values():
-        seats = group_seats(group)
+        seats = group.seats
         members = group.active_participants
         waiting, timed_out = [], []
         for member in members:
@@ -6609,16 +6691,6 @@ def _is_waiting_at_barrier(participant, group) -> bool:
     who has answered.
     """
     return bool(_waiting_links(participant, group))
-
-
-def reached_barrier_after_time_limit(participant, group) -> bool:
-    """Return whether ``participant`` reached the barrier of ``group`` they wait at because a time limit ran out.
-
-    That is, they are waiting at a barrier of ``group`` that they reached
-    after the time limit of their latest timed page ran out; untimed pages in
-    between, and a trial's feedback pages even if timed, don't count.
-    """
-    return any(link.ran_out_of_time for _, link in _waiting_links(participant, group))
 
 
 def _interruptible_waiting_barrier(page, participant):
@@ -7391,8 +7463,8 @@ class GroupCloser(GroupBarrier):
         if "id_" not in kwargs:
             kwargs["id_"] = f"closer_{group_type}"
 
-        super().__init__(group_type=group_type, on_release=close_sync_group, **kwargs)
+        super().__init__(group_type=group_type, on_release=_close_sync_group, **kwargs)
 
 
-def close_sync_group(group):
+def _close_sync_group(group):
     group.close()

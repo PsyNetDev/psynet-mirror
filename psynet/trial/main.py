@@ -317,6 +317,20 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         usually means the cue needs a :func:`~psynet.timeline.conditional`
         on ``participant.in_sync_group(...)``.
 
+    live_game_class : type or None
+        Set this class attribute to the :class:`~psynet.live_game.LiveGame`
+        subclass that :meth:`show_trial` plays with a
+        :class:`~psynet.live_game.PlayLiveGame`, so that PsyNet checks the
+        two together when the experiment loads, rather than when it first
+        builds the trial's pages: a game that pays through its
+        ``performance_reward`` in a trial class that also defines
+        :meth:`compute_performance_reward`, which would pay each player
+        twice, raises an error, as does a game that can't be played, such
+        as one without a ``name``. A trial whose ``show_trial`` then plays
+        another game raises an error too, when the trial's pages are
+        built. ``None`` (default) leaves these
+        checks to when the pages are built.
+
     time_credit_before_trial: float
         Reports the amount of time credit that the participant had before they started the trial (in seconds).
 
@@ -612,6 +626,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     accumulate_answers = False
     sync_group_type = None
     sync_group_optional = False
+    live_game_class = None
+
+    def __init_subclass__(cls, **kwargs):
+        if cls.live_game_class is not None:
+            from ..live_game.play import _check_trial_class
+
+            _check_trial_class(cls)
+        super().__init_subclass__(**kwargs)
 
     # Back-compat alias: older code referred to the creating node as ``origin``.
     @property
@@ -621,6 +643,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @property
     def var(self):
         return VarStore(self)
+
+    @property
+    def live_game(self):
+        """The live game played in this trial, by the
+        :class:`~psynet.live_game.PlayLiveGame` that its ``show_trial``
+        returned, as the participant's
+        :class:`~psynet.live_game.LiveGameRecord`, with their ``answer``.
+        Its ``status`` is ``"not_started"`` if the group started no game in
+        the trial's round, and it's ``None`` for a trial that wasn't played
+        in a group's round.
+        """
+        from ..live_game.record import LiveGameRecord
+
+        if self.group_round is None:
+            return None
+        return LiveGameRecord(self.group_round.live_game_id, self.participant)
 
     @classmethod
     def get_for_participant(cls, participant_id: int, trial_maker_id: int = None):
@@ -816,8 +854,23 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         reward = self.compute_performance_reward(score=self.score)
         assert isinstance(reward, (float, int))
         self._log_performance_reward(reward)
-        self.performance_reward = reward
+        # A live game played in the trial, which needs a group round, may have
+        # recorded its rewards since this trial was loaded, so add to the
+        # stored value, under the row lock that the game's record job also
+        # takes.
+        if self.sync_group_round_id is not None and inspect(self).persistent:
+            db.session.refresh(
+                self, attribute_names=["performance_reward"], with_for_update=True
+            )
+        self._record_performance_reward(reward)
         self.participant.inc_performance_reward(reward)
+
+    def _record_performance_reward(self, amount):
+        """Add ``amount`` to the trial's ``performance_reward``, without paying
+        it. It adds rather than sets, because a live game played in the trial
+        records its rewards on the trial as well, before or after the trial's
+        own."""
+        self.performance_reward = (self.performance_reward or 0) + amount
 
     def _log_performance_reward(self, reward):
         logger.debug(
@@ -1680,6 +1733,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             participant=participant,
             trial_maker=self.trial_maker,
         )
+        # Resolves collections such as a PlayLiveGame, so their barriers count.
+        logic = join(logic)
         barriers = list(_group_barriers(logic))
         if (
             self.group_round is not None
@@ -1692,6 +1747,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 "to close each round."
             )
         check_late_removal_policies(barriers, participant)
+        for barrier in barriers:
+            # Such as a PlayLiveGame's, which checks that its game and the
+            # trial don't both pay for the game.
+            check_trial = getattr(barrier, "_check_trial", None)
+            if check_trial is not None:
+                check_trial(self)
         return logic
 
     @classmethod

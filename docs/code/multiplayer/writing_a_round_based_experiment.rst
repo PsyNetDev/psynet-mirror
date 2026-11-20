@@ -162,18 +162,18 @@ Moving slow players on
 
 The barrier after the decision page waits for
 both partners. A player who hasn't reached it within ``late_after`` seconds
-of the round's start is late. A late player has usually closed their page,
+(``LATE_AFTER``, 20) of the round's start is late. A late player has usually closed their page,
 so with ``late_action="leave_group"`` and ``also_leave=[COHORT]`` they are
 removed from the pair and from the cohort: their partner carries on alone,
 and the next split doesn't wait for them. Without ``also_leave`` they leave
 the pair only, so the next split would wait for them until its deadline
 (see :class:`~psynet.sync.GroupBarrier` and :ref:`sync-leaving-a-group`).
-A player on a page
-with a time limit is not late before that limit has run out and an answer
-sent at the deadline has had 10 seconds to arrive, so the late limit need
-not be longer than the page's time limit.
+Once a player has opened a page with a time limit, ``late_after`` counts
+instead from when that limit has run out and an answer sent at the deadline
+has had 10 seconds to arrive, so the late limit doesn't need to cover the
+page's time limit.
 For example, with a 30-second decision page and
-``late_after=30``:
+``late_after=20``:
 
 - A player who answers after 12 seconds waits at the barrier for their
   partner.
@@ -181,16 +181,19 @@ For example, with a 30-second decision page and
   seconds, when the time limit runs out. The pair continues together, and
   nobody is paid.
 - A partner who closes their tab partway through the page is removed from
-  the pair about 40 seconds into the round: 10 seconds after the page's time
-  limit.
-- A partner whose tab never opened the page is removed from the pair 30
+  the pair about 60 seconds into the round: the page's 30 seconds, 10
+  seconds for a late answer to arrive, and then ``late_after``'s 20 seconds.
+- A partner whose tab never opened the page is removed from the pair 20
   seconds after the round started.
 
-30 seconds is long enough for a tab in the background to notice that a
-round has started. ``late_after`` counts from the previous barrier, so pages
-without a time limit before the decision page, such as the last round's
-results, count towards it: give them a time limit too, or make
-``late_after`` long enough for a slow reader. A player who was removed from the pair sees "Your
+20 seconds gives a tab in the background time to notice that a round has
+started. Until a player opens the decision page, ``late_after`` counts from
+the previous barrier, so pages without a time limit before the decision
+page, such as the last round's results, count towards it: give them a time
+limit too, or make ``late_after`` long enough for a slow reader. The
+regrouper's ``deadline`` (``ROUND_DEADLINE_SECONDS``) is longer than a round
+in which a player is removed, so the partner who was left alone is back in
+time for the next split. A player who was removed from the pair sees "Your
 partner went on without you. Please continue." on the progress bar (pass
 ``on_arrival_message`` to the barrier to change it).
 
@@ -438,7 +441,7 @@ writes a story one sentence at a time. Each turn is one cued round in the
 group's loop, ``StoryTurn.cue(turn_definition, round=turn)`` (see
 :ref:`a fixed group's loop <rounds-fixed-group-loop>`). The definition
 function runs only at the turn's first cue, so it chooses the writer once,
-by seat with :func:`~psynet.sync.group_seats`, and the round's definition
+by seat with :attr:`~psynet.sync.SyncGroup.seats`, and the round's definition
 stores their ID for every member's trial and for the export:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py

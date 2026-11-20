@@ -45,6 +45,7 @@ def _render(case):
     group = SimpleNamespace(
         id=1,
         active_participants=members,
+        seats={m.id: seat for seat, m in enumerate(members)},
         participant_links=[
             SimpleNamespace(
                 id=m.id,

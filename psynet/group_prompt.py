@@ -9,14 +9,14 @@ Design constraints:
 
 - Members are shown by pseudonym (:mod:`psynet.pseudonym`), or all as the
   same figure with ``names="anonymous"``, never by participant ID. The page
-  refers to members by seat (:func:`psynet.sync.group_seats`), which is also
+  refers to members by seat (:attr:`psynet.sync.SyncGroup.seats`), which is also
   how :class:`~psynet.sync.GroupBarrier` reports live ticks.
 - By default a member has answered once they are waiting at a barrier of
   the group (``psynet.sync._is_waiting_at_barrier``), typically the barrier after
   the decision page. Live ticks come from that barrier's arrival updates, so
   they don't work with ``on_arrival_message=None``. A member who reached the
   barrier because their page's time limit ran out gets a dash instead of a
-  tick (:func:`psynet.sync.reached_barrier_after_time_limit`).
+  tick (:meth:`~psynet.sync.SyncGroup.reached_barrier_after_time_limit`).
 - Live redraws re-create the prompt on the server from a signed token, so
   only options that can be serialized take part in them; functions and
   ``answers`` fix the display when the page loads.
@@ -248,7 +248,7 @@ class GroupPrompt(Prompt):
         if serializer is None:
             return None
         # Readable by the page, so refer to other members by seat, not ID.
-        seats = _group_seats(self.group)
+        seats = self.group.seats
         return serializer.dumps(
             {
                 "group": self.group.id,
@@ -284,7 +284,7 @@ class GroupPrompt(Prompt):
         """HTML for the group display, or nothing without a group."""
         if self.group is None:
             return Markup("")
-        body = self._members_html(self._members(), _group_seats(self.group))
+        body = self._members_html(self._members(), self.group.seats)
         note = (
             Markup('<p class="psynet-group-note">{}</p>').format(self.note)
             if self.note
@@ -330,7 +330,7 @@ class GroupPrompt(Prompt):
 
     def _members(self):
         """Return the active members and, with ``answers``, everyone in them, the viewer first and then by seat."""
-        seats = _group_seats(self.group)
+        seats = self.group.seats
         members = {p.id: p for p in self.group.active_participants}
         for link in self.group.participant_links:
             if self.answers is not None and link.participant_id in self.answers:
@@ -355,9 +355,9 @@ class GroupPrompt(Prompt):
 
     def _progress(self, member):
         """Return ``(answered, timed_out)`` for a member still in the group."""
-        from .sync import _is_waiting_at_barrier, reached_barrier_after_time_limit
+        from .sync import _is_waiting_at_barrier
 
-        if reached_barrier_after_time_limit(member, self.group):
+        if self.group.reached_barrier_after_time_limit(member):
             return False, True
         return bool(_is_waiting_at_barrier(member, self.group)), False
 
@@ -443,12 +443,6 @@ class GroupPrompt(Prompt):
         )
 
 
-def _group_seats(group):
-    from .sync import group_seats
-
-    return group_seats(group)
-
-
 def redrawn_group_html(unique_id, token):
     """Return ``{"html": ...}``, the group display a live page shows, drawn again now.
 
@@ -490,7 +484,7 @@ def redrawn_group_html(unique_id, token):
         show_progress=options["show_progress"],
         highlight={
             pid: options["highlight"][str(seat)]
-            for pid, seat in _group_seats(group).items()
+            for pid, seat in group.seats.items()
             if str(seat) in options["highlight"]
         },
         note=None if options["note"] is None else Markup(options["note"]),

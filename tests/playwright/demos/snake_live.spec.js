@@ -3,12 +3,14 @@ const { test, expect } = require("../fixtures");
 
 const {
   assertNoBackendError,
+  checkLayoutAndScreenshot,
   startExperiment,
   startParticipantsTogether,
   stopExperiment
 } = require("../psynetHarness");
 
 const STEP_TIMEOUT_MS = 120000;
+
 // The game's SIZE.
 const SIZE = 30;
 const KEYS = { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" };
@@ -21,7 +23,7 @@ function watchViews(page) {
   return page.evaluate(
     () =>
       new Promise((resolve) => {
-        psynet.liveSession.onView((view) => {
+        psynet.liveGame.onChange((view) => {
           window.latestView = view;
           resolve();
         });
@@ -35,7 +37,7 @@ function latestView(page) {
 
 async function snakeOf(page, id) {
   const view = await latestView(page);
-  return view.players[id ?? view.me];
+  return view.snakes[id ?? view.psynet.you];
 }
 
 // Steers the player's snake toward the nearest food, onto empty squares
@@ -45,14 +47,14 @@ async function eatAPiece(page) {
   let pressed = null;
   while (Date.now() < deadline) {
     const view = await latestView(page);
-    const me = view.players[view.me];
+    const me = view.snakes[view.psynet.you];
     if (me.food > 0) {
       return;
     }
     const head = me.body[0];
     if (head && view.food.length) {
       const taken = new Set(
-        Object.values(view.players).flatMap((player) => player.body.map((square) => square.join()))
+        view.snakes.flatMap((snake) => snake.body.map((square) => square.join()))
       );
       const food = view.food.reduce((a, b) =>
         Math.abs(a[0] - head[0]) + Math.abs(a[1] - head[1]) <=
@@ -86,7 +88,8 @@ async function eatAPiece(page) {
 test("players steer snakes in snake_live, eat food, crash and come back, and finish the round", { tag: "@both" }, async ({
   browser
 }) => {
-  const experiment = startExperiment(path.resolve("demos/experiments/snake_live"));
+  // The game ticks, so it runs on gunicorn, as a deployed experiment does.
+  const experiment = startExperiment(path.resolve("demos/experiments/snake_live"), { legacy: true });
   const contexts = [await browser.newContext(), await browser.newContext()];
 
   try {
@@ -105,7 +108,7 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
     );
     const [first, second] = participants;
     await expect(first.locator("#next-button")).toBeHidden();
-    const id = (await latestView(first)).me;
+    const id = (await latestView(first)).psynet.you;
 
     // A turn on one page shows on the other, since the game moves every
     // snake and sends both pages the board.
@@ -122,13 +125,20 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
       )
       .toBe("down");
 
+    // The snake keeps moving, so it may eat another piece before the pages
+    // show the first, and the scores are checked for at least one.
     await eatAPiece(first);
     const eater = await snakeOf(first);
-    await expect(first.locator("#snake-scores")).toContainText(`You: ${eater.food} food`);
+    await expect(first.locator("#snake-scores")).toContainText(/You: [1-9]\d* food/);
+    // The other page shows the eater by their pseudonym.
+    const label = await second.evaluate((player) => psynet.liveGame.players[player].label, id);
+    expect(label).not.toBe("You");
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     await expect(second.locator("#snake-scores")).toContainText(
-      `Player ${eater.number}: ${eater.food} food`,
+      new RegExp(`${escaped}: [1-9]\\d* food`),
       { timeout: STEP_TIMEOUT_MS }
     );
+    await checkLayoutAndScreenshot(second, "snake_live_board");
 
     // A reloaded page draws the game as it stands.
     await first.reload();
@@ -151,6 +161,7 @@ test("players steer snakes in snake_live, eat food, crash and come back, and fin
     await expect(first.locator("#main-body")).toContainText("Your snake ate", {
       timeout: STEP_TIMEOUT_MS
     });
+    await checkLayoutAndScreenshot(first, "snake_live_result");
     await assertNoBackendError(first);
   } finally {
     for (const context of contexts) {

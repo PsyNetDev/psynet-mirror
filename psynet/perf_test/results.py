@@ -28,6 +28,8 @@ from urllib.parse import urlparse
 
 DEFAULT_MAX_P95_S = 0.5
 DEFAULT_MAX_QUEUE_P95_S = 5.0
+# Players notice a live game lagging at about a tenth of a second.
+DEFAULT_MAX_LIVE_DELAY_P95_S = 0.1
 CAPACITY_SEARCH_START = 10
 CAPACITY_SEARCH_MAX = 2000
 # The search stops once the gap between the largest passing and smallest
@@ -264,6 +266,13 @@ class PerformanceTestResult:
     startup_phase: dict = field(default_factory=dict)
     #: The same metrics from first_completion_s to the end of the test.
     steady_state_phase: dict = field(default_factory=dict)
+    #: How the live game runners kept up, if the experiment played live games
+    #: (see measure.live_game_stats), with the ``delay_bounds`` of the ranges
+    #: that the delays are counted in, ``None`` for the last, unbounded one.
+    live_games: dict = field(default_factory=dict)
+    #: Participants in the database at the end that PsyNet bots didn't
+    #: create, such as people testing in a browser with ``--force``.
+    non_bot_participants: int = 0
 
     @property
     def steady_state_s(self):
@@ -404,10 +413,17 @@ def plural(count, noun):
     return f"{count:,} {noun}{'' if count == 1 else 's'}"
 
 
-def describe_bot_errors(result):
-    """Describe a result's bot errors, naming the most common causes."""
-    text = plural(result.bot_errors, "bot error")
+def describe_bot_errors(result, count=None):
+    """Describe a result's bot errors, naming the most common causes.
+
+    ``count`` replaces the result's number of bot errors, e.g. without those
+    that failed live games caused.
+    """
+    text = plural(result.bot_errors if count is None else count, "bot error")
     kinds = result.bot_error_kinds or {}
+    if count is not None and count != result.bot_errors and len(kinds) > 1:
+        # The kinds' counts would add up to more than the count.
+        return f"{text} ({', '.join(list(kinds)[:3])})"
     if len(kinds) == 1:
         return f"{text} ({next(iter(kinds))})"
     return f"{text} ({top_counts(kinds)})" if kinds else text
@@ -457,7 +473,7 @@ class CapacityLimits:
         requests a test makes, for the occasional contention at timeline holds
         and synchronized groups.
     max_bot_error_rate : float
-        Largest acceptable share of bots that fail.
+        Largest acceptable share of bots that fail, and of live games.
     max_wait_timeout_rate : float
         Largest acceptable share of bots whose participants the experiment
         failed for waiting too long, for example at a timeline hold that
@@ -474,6 +490,10 @@ class CapacityLimits:
     allowed_busy_early_finishes : int
         Number of such bots per trial maker that is acceptable however few
         bots a test starts, so that one unlucky bot doesn't fail a small test.
+    max_live_delay_p95_s : float
+        Largest acceptable 95th-percentile delay of each live game's ticks,
+        and of the players' messages it applies, measured by
+        :func:`live_delay_p95`.
     """
 
     max_p95_s: float = DEFAULT_MAX_P95_S
@@ -486,6 +506,7 @@ class CapacityLimits:
     max_wait_timeout_rate: float = 0.01
     max_busy_early_finish_rate: float = 0.01
     allowed_busy_early_finishes: int = 1
+    max_live_delay_p95_s: float = DEFAULT_MAX_LIVE_DELAY_P95_S
 
     @classmethod
     def from_options(cls, max_p95_s=None, max_queue_p95_s=None):
@@ -514,7 +535,8 @@ class CapacityLimits:
             f"({self.allowed_request_errors} always allowed), "
             f"{self.max_busy_response_rate:.0%} of requests answered busy or stale "
             f"({self.allowed_busy_responses} always allowed), "
-            f"{self.max_bot_error_rate:.0%} of bots failing, "
+            f"{self.max_bot_error_rate:.0%} of bots, and of any live games, "
+            "failing, "
             f"{self.max_wait_timeout_rate:.0%} of participants failed by the "
             "experiment for waiting too long and "
             f"{self.max_busy_early_finish_rate * 100:g}% getting fewer trials "
@@ -523,8 +545,58 @@ class CapacityLimits:
         )
         return (
             f"{response}, p95 high-priority async queue wait under "
-            f"{self.max_queue_p95_s:g} s and {errors}"
+            f"{self.max_queue_p95_s:g} s, p95 delay of any live games at most "
+            f"{self.max_live_delay_p95_s * 1000:.0f} ms and {errors}"
         )
+
+
+_DELAY_NOUNS = {"tick_delays": "tick", "message_delays": "message"}
+
+
+def live_delay_p95(result, game, kind):
+    """Return the range of the 95th-percentile delay of a live game's ticks or messages, or ``None``.
+
+    Runners count delays in ranges, so this is ``(low, high)`` in seconds:
+    the p95 delay was more than ``low`` and at most ``high``, which is
+    ``math.inf`` for the last range.
+
+    Parameters
+    ----------
+    result : PerformanceTestResult
+    game : str
+        The game's channel.
+    kind : str
+        ``"tick_delays"`` or ``"message_delays"``.
+    """
+    live = result.live_games or {}
+    counts = live["games"][game][kind]
+    total = sum(counts)
+    if not total:
+        return None
+    bounds = [math.inf if b is None else b for b in live["delay_bounds"]]
+    seen = 0
+    for i, n in enumerate(counts):
+        seen += n
+        if seen >= 0.95 * total:
+            return (bounds[i - 1] if i else 0, bounds[i])
+
+
+def runner_utilization(result):
+    """Return the share of the test that the live game runners were busy, or ``None`` without live games."""
+    live = result.live_games or {}
+    if not (live.get("runners") and result.actual_duration):
+        return None
+    return min(1.0, live["busy_s"] / (live["runners"] * result.actual_duration))
+
+
+def describe_delay(delay_range):
+    """Describe a delay range from :func:`live_delay_p95`, e.g. ``20-50 ms`` or ``over 5 s``."""
+    low, high = delay_range
+    if high == math.inf:
+        return f"over {low:g} s"
+    if high < 1:
+        return f"{low * 1000:.0f}-{high * 1000:.0f} ms"
+    return f"{low:g}-{high:g} s"
 
 
 def queue_wait_p95(result, priority="high"):
@@ -895,14 +967,17 @@ def busy_early_finish_cause(result, limits):
     return " and ".join(over) or None
 
 
-def phase_limit_reasons(phase, limits):
+def phase_limit_reasons(phase, limits, errored_players=0):
     """Return the response-time, request-error and queue limits that one phase exceeded.
 
     ``phase`` is :attr:`PerformanceTestResult.startup_phase` or
     :attr:`~PerformanceTestResult.steady_state_phase`, whose keys are the
-    result's field names for those measures.
+    result's field names for those measures. ``errored_players`` are the
+    bots that live games failed in the phase, whose errors count only
+    against the live game limit, as in :func:`limit_breaches`.
     """
     phase_result = PerformanceTestResult.from_dict(phase)
+    phase_result.live_games = {"errored_players": errored_players}
     return [breach.reason for breach in limit_breaches(phase_result, limits)]
 
 
@@ -910,8 +985,10 @@ def phase_limit_reasons(phase, limits):
 class LimitBreach:
     """A measure of a test that exceeded its limit; see :func:`limit_breaches`.
 
-    ``measure`` is one of :data:`_ERROR_MEASURES`, ``"wait_timeouts"``,
-    ``"busy_chains"``, ``"p95"``, ``"endpoint_p95"`` or ``"queue"``.
+    ``measure`` is one of :data:`_ERROR_MEASURES` (``"live_failures"`` is
+    live games that failed), ``"wait_timeouts"``,
+    ``"busy_chains"``, ``"p95"``, ``"endpoint_p95"``, ``"queue"`` or
+    ``"live_delay"``.
     ``reason`` describes the value, e.g. ``p95 response time 900 ms``,
     ``limit`` the limit, e.g. ``500 ms``, and ``clause`` both, e.g. ``the p95
     response time was 900 ms, over the 500 ms limit``. ``value`` and
@@ -928,8 +1005,8 @@ class LimitBreach:
     server_limit: bool = True
 
 
-_ERROR_MEASURES = ("request_errors", "busy_responses", "bot_errors")
-_LOAD_MEASURES = ("p95", "endpoint_p95", "queue", "busy_chains")
+_ERROR_MEASURES = ("request_errors", "busy_responses", "bot_errors", "live_failures")
+_LOAD_MEASURES = ("p95", "endpoint_p95", "queue", "busy_chains", "live_delay")
 
 
 def percent(share):
@@ -957,18 +1034,24 @@ def limit_breaches(result, limits):
     """
     breaches = []
 
-    def breach(measure, reason, limit, value, limit_value, what=None, **kwargs):
-        clause = f"{what or reason}, over the {limit} limit"
+    def breach(
+        measure, reason, limit, value, limit_value, what=None, then="", **kwargs
+    ):
+        clause = f"{what or reason}, over the {limit} limit{then}"
         breaches.append(
             LimitBreach(measure, reason, limit, value, limit_value, clause, **kwargs)
         )
 
+    _live_game_breaches(result, limits, breach)
+    # A failed live game fails its players, whose bots then get an error
+    # page, so those errors only count against the live game limit.
+    game_errors = (result.live_games or {}).get("errored_players", 0)
     requests = result.key_requests or 0
     started = result.total_bots_started or 0
     for measure, n, rate, allowed, noun, verb in [
         (
             "request_errors",
-            result.request_errors or 0,
+            max((result.request_errors or 0) - game_errors, 0),
             limits.max_request_error_rate,
             limits.allowed_request_errors,
             "request error",
@@ -987,14 +1070,14 @@ def limit_breaches(result, limits):
         if n > allowed:
             what = _of(n, requests, "requests", verb) if requests else None
             breach(measure, plural(n, noun), f"{rate * 100:g}%", n, allowed, what)
-    bot_errors = result.bot_errors or 0
+    bot_errors = max((result.bot_errors or 0) - game_errors, 0)
     max_bot_errors = limits.max_bot_error_rate * started
     if bot_errors > max_bot_errors:
         kinds = result.bot_error_kinds or {}
         connection_errors = kinds.get(POSTGRES_FULL, 0)
         breach(
             "bot_errors",
-            describe_bot_errors(result),
+            describe_bot_errors(result, bot_errors),
             f"{limits.max_bot_error_rate * 100:g}%",
             bot_errors,
             max_bot_errors,
@@ -1055,6 +1138,59 @@ def limit_breaches(result, limits):
     return breaches
 
 
+def _live_game_breaches(result, limits, breach):
+    """Call ``breach`` for each live game limit that ``result`` exceeded, as in :func:`limit_breaches`.
+
+    Delays come first, since a runner that falls far behind fails games.
+    """
+    live = result.live_games or {}
+    max_delay = limits.max_live_delay_p95_s
+    for game in sorted(live.get("games", {})):
+        for kind, noun in _DELAY_NOUNS.items():
+            delay = live_delay_p95(result, game, kind)
+            if delay is None or delay[1] <= max_delay:
+                continue
+            breach(
+                "live_delay",
+                f"p95 {noun} delay {describe_delay(delay)} in {game}",
+                f"{max_delay * 1000:.0f} ms",
+                # The top of the range, so that overshoot sees how far over
+                # the limit the delay may have been.
+                delay[1] if delay[1] < math.inf else delay[0],
+                max_delay,
+                f"the p95 {noun} delay in the live game {game} was "
+                f"{describe_delay(delay)}",
+            )
+    games = live.get("games", {}).values()
+    started_games = sum(g["games"] for g in games)
+    failed_games = sum(g["failed"] for g in games)
+    if failed_games > limits.max_bot_error_rate * started_games:
+        players = live.get("errored_players", 0)
+        breach(
+            "live_failures",
+            plural(failed_games, "failed live game"),
+            f"{limits.max_bot_error_rate * 100:g}%",
+            failed_games,
+            limits.max_bot_error_rate * started_games,
+            _of(failed_games, started_games, "live games", "failed"),
+            then=f", and {plural(players, 'bot')} in them failed too"
+            if players
+            else "",
+        )
+
+
+def ran_out_of_time(result, game):
+    """Return whether all of a live game's failed games ran past its ``time_limit``.
+
+    That is Dallinger's ``TimeLimitExceeded``. It usually means that the
+    runner fell far behind, so that a game's overdue ticks didn't fit in the
+    limit, but very slow game code does it too. A game that failed for other
+    reasons as well reports its errors instead.
+    """
+    errors = result.live_games["games"][game].get("errors", {})
+    return bool(errors) and all("TimeLimitExceeded" in error for error in errors)
+
+
 def _busy_early_finish_max(result):
     """Return the most bots that got fewer trials in any one trial maker because every chain was busy."""
     return max(
@@ -1085,7 +1221,7 @@ def capacity_failure_causes(result, limits):
 
 
 def exceeded_error_limits(result, limits=CapacityLimits()):
-    """Return whether ``result`` had too many request errors, busy responses or bot errors."""
+    """Return whether ``result`` had too many request errors, busy responses, bot errors or failed live games."""
     return any(b.measure in _ERROR_MEASURES for b in limit_breaches(result, limits))
 
 
@@ -1171,10 +1307,10 @@ _MIN_CONFIRMATION_RETRY_SHARE = 0.5
 def overshoot(result, limits):
     """Return how many times its limit the worst load-dependent measure of ``result`` reached.
 
-    The measures are response times, the high-priority async queue wait
-    and, for each trial maker, the share of bots that got fewer trials
-    because every chain was busy. Returns ``None`` if none exceeded its limit, e.g. when only
-    errors did.
+    The measures are response times, the high-priority async queue wait,
+    for each trial maker, the share of bots that got fewer trials because
+    every chain was busy, and live games' p95 delays. Returns ``None`` if
+    none exceeded its limit, e.g. when only errors did.
     """
     ratios = [
         b.value / b.limit_value

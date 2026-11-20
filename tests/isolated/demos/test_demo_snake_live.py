@@ -1,4 +1,4 @@
-"""Bots play a round of snake as a live session, through ``psynet test local``."""
+"""Bots play a round of snake as a live game, through ``psynet test local``."""
 
 import pytest
 from click import Context
