@@ -25,6 +25,7 @@ class Exp(psynet.experiment.Experiment):
             wait=True,
             expected_wait=2,
             check_interval=5,
+            cpu_heavy=False,
         ),
         InfoPage("The reload-required hold finished.", time_estimate=1),
     )

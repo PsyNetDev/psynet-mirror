@@ -27,6 +27,7 @@ class Exp(psynet.experiment.Experiment):
             wait=True,
             expected_wait=0.1,
             check_interval=0.05,
+            cpu_heavy=False,
         ),
         ModularPage(
             "finish",

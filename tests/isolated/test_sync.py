@@ -7140,8 +7140,10 @@ def test_async_job_events_wake_timeline_holds(
     db_session.flush()
     # Saved without enqueue() so that the test runs the jobs itself.
     finished = LocalAsyncJob(async_job_noop, participant=participant)
-    timed_out = WorkerAsyncJob(async_job_noop, participant=participant, timeout=30)
-    cancelled = WorkerAsyncJob(async_job_noop, participant=participant)
+    timed_out = WorkerAsyncJob(
+        async_job_noop, participant=participant, timeout=30, cpu_heavy=False
+    )
+    cancelled = WorkerAsyncJob(async_job_noop, participant=participant, cpu_heavy=False)
     db_session.add_all([finished, timed_out, cancelled])
     timed_out.timeout_scheduled_for = datetime.now() - timedelta(seconds=1)
     db_session.flush()

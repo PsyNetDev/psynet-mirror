@@ -18,6 +18,8 @@ class FeedbackTrial(StaticTrial):
             time_estimate=1,
         )
 
+    async_post_trial_cpu_heavy = False
+
     def async_post_trial(self):
         time.sleep(3)
 

@@ -772,7 +772,8 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
 --------------
 
 Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
-``LocalAsyncProcess``, ``async_processes`` and ``process_id``.
+``LocalAsyncProcess``, ``async_processes``, ``process_id``,
+``AsyncCodeBlock(``, ``WorkerAsyncJob(`` and ``def async_post_trial``.
 
 * Async processes are now called async jobs, and live in
   ``psynet.async_job``: ``AsyncJob``, ``WorkerAsyncJob`` and
@@ -782,9 +783,25 @@ Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
 
       from psynet.async_job import WorkerAsyncJob
 
-      WorkerAsyncJob(function=analyse, arguments={"trial": trial}).enqueue()
+      WorkerAsyncJob(
+          function=analyse, arguments={"trial": trial}, cpu_heavy=True
+      ).enqueue()
 
   PsyNet logs a warning when a job is created but never enqueued.
+* Say whether each job of yours is CPU-heavy, i.e. computes for long, as an
+  audio analysis or model fit does, rather than mostly waiting, as a web API
+  call does. CPU-heavy jobs run in CPU workers, one at a time, so that they
+  don't stall the other jobs of a worker process. Without the declaration,
+  PsyNet raises an error:
+
+  * pass ``cpu_heavy=True`` or ``cpu_heavy=False`` to each
+    ``WorkerAsyncJob`` and ``AsyncCodeBlock``;
+  * set ``async_post_trial_cpu_heavy = True`` or ``False`` on each trial
+    class that defines ``async_post_trial``, unless it inherits it from a
+    recording trial such as ``AudioRecordTrial``, which declares ``True``.
+
+  ``psynet test local`` warns when a job's measured CPU time contradicts
+  its declaration. See :ref:`async_job_cpu_heavy`.
 * The old names still work but warn. ``WorkerAsyncProcess(...)`` and
   ``LocalAsyncProcess(...)`` create and enqueue the job, and
   ``AsyncJob.get_process`` calls ``get_async_job``. A subclass of

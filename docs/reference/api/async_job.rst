@@ -38,12 +38,12 @@ To override the choice:
 
 .. code-block:: python
 
-    AsyncCodeBlock(save_summary, wait=False, priority="high")
+    AsyncCodeBlock(save_summary, wait=False, priority="high", cpu_heavy=False)
 
     class MyTrial(StaticTrial):
         async_post_trial_priority = "low"
 
-    WorkerAsyncJob(refit_model, priority="low").enqueue()
+    WorkerAsyncJob(refit_model, priority="low", cpu_heavy=True).enqueue()
 
 Priority only decides which waiting job starts next; a running job is never
 interrupted. If every worker is busy with long low-priority jobs, a
@@ -53,6 +53,49 @@ Priority has no effect on a :class:`~psynet.async_job.LocalAsyncJob`, which runs
 of the web process. The CPU table printed after ``psynet test local`` (see
 :doc:`/test/scalability`) has one row per job label, priority and place the
 job runs in.
+
+.. _async_job_cpu_heavy:
+
+CPU-heavy jobs
+--------------
+
+A worker process runs up to ``worker_greenlets_per_process`` jobs at once
+(20 by default), which take turns whenever one waits, for example on a web
+API or the database. A job that computes for long, such as an audio
+analysis or model fit, doesn't wait, so it stalls the others in its process
+until it finishes, including jobs that hold database locks participants'
+requests need. Such jobs run in CPU workers instead: each worker process
+starts ``cpu_processes_per_worker`` of them (1 by default), and they run
+one job at a time.
+
+Every job of yours says which kind it is; PsyNet raises an error otherwise:
+
+.. code-block:: python
+
+    AsyncCodeBlock(call_language_model, wait=True, expected_wait=5, cpu_heavy=False)
+
+    class SingingTrial(StaticTrial):
+        async_post_trial_cpu_heavy = True
+
+        def async_post_trial(self):
+            ...
+
+    WorkerAsyncJob(refit_model, cpu_heavy=True).enqueue()
+
+Recording trials such as :class:`~psynet.trial.audio.AudioRecordTrial`
+declare their analysis CPU-heavy already. A job that waits without letting
+other jobs run, such as a network call made by a C extension, stalls the
+worker too, so declare it CPU-heavy even though it uses little CPU.
+
+The CPU table printed after ``psynet test local`` warns about a job declared
+``cpu_heavy=False`` that used most of its run time and at least half a
+second of CPU, and notes a job declared ``cpu_heavy=True`` that mostly
+waited. A job's CPU time in a worker process includes that of jobs running
+beside it, so check the warning against what the job does.
+
+CPU workers take CPU-heavy jobs in the order they were enqueued, whatever
+their priority. With ``cpu_processes_per_worker = 0``, CPU-heavy jobs run
+in the worker processes with the others and keep their priority.
 
 .. _async_job_timeout:
 
@@ -71,7 +114,7 @@ thread, but the job is already marked failed.
 
 .. code-block:: python
 
-    WorkerAsyncJob(refit_model, timeout=4 * 3600).enqueue()
+    WorkerAsyncJob(refit_model, timeout=4 * 3600, cpu_heavy=True).enqueue()
 
 A job that has not started within an hour of being enqueued
 (:attr:`~psynet.async_job.AsyncJob.max_queue_wait_sec`) is failed as

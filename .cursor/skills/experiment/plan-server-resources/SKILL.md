@@ -47,16 +47,17 @@ For per-job values, export the data (`psynet export local`) and read the
 
 A **CPU-heavy** job, such as audio analysis or model fitting, keeps a CPU core
 busy while it runs, and would stall the other jobs of a worker process, which
-runs up to `worker_greenlets_per_process` jobs at once. Mark such jobs
-CPU-heavy (`async_post_trial_cpu_heavy = True` on the trial class, or
-`cpu_heavy=True` on a `WorkerAsyncJob`; recording trials already are), so that
-they run in CPU workers. Each worker process starts `cpu_processes_per_worker`
-of them (default 1), which run one job at a time, so CPU-heavy jobs queue
-behind each other unless there are more worker processes. Set the number of
-worker processes with `worker_processes` in `config.txt`; on an SSH deployment
-each worker process is a separate worker container, with its CPU workers.
-A row with "yes" under CPU-heavy that isn't marked CPU-heavy still runs in
-the worker processes. Before a performance
+runs up to `worker_greenlets_per_process` jobs at once. Every job declares
+whether it is CPU-heavy (`cpu_heavy=` on `WorkerAsyncJob` and `AsyncCodeBlock`,
+`async_post_trial_cpu_heavy` on a trial class that defines `async_post_trial`;
+recording trials declare `True`), and CPU-heavy jobs run in CPU workers. Each
+worker process starts `cpu_processes_per_worker` of them (default 1), which run
+one job at a time, so CPU-heavy jobs queue behind each other unless there are
+more worker processes. Set the number of worker processes with
+`worker_processes` in `config.txt`; on an SSH deployment each worker process is
+a separate worker container, with its CPU workers. If the log warns that a job
+declared `cpu_heavy=False` looks CPU-heavy, check what the job does and fix the
+declaration. Before a performance
 test, make a first estimate of `worker_processes`, aiming for workers 70%
 busy. The performance test summary uses the same formula when the workers
 were busy the whole time:

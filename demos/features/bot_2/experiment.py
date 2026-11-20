@@ -123,7 +123,9 @@ class Exp(psynet.experiment.Experiment):
 
         if is_experiment_launched():
             WorkerAsyncJob(
-                function=get_experiment().run_bot, arguments={"time_factor": 0.2}
+                function=get_experiment().run_bot,
+                arguments={"time_factor": 0.2},
+                cpu_heavy=False,
             ).enqueue()
             db.session.commit()
 

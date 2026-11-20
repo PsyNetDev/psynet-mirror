@@ -36,6 +36,7 @@ def worker_async_job_error(error_code):
             worker_function,
             arguments={"error_code": error_code},
             participant=participant,
+            cpu_heavy=False,
         ).enqueue()
     )
 

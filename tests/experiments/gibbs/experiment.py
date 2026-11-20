@@ -99,6 +99,7 @@ class CustomTrial(GibbsTrial):
     # If True, then the starting value for the free parameter is resampled
     # on each trial.
     run_async_post_trial = True
+    async_post_trial_cpu_heavy = False
     resample_free_parameter = True
     time_estimate = 5
 

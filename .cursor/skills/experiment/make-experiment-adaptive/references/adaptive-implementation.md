@@ -146,7 +146,8 @@ snapshot = (
 Keep `state` to what selection needs, such as item estimates and their
 uncertainty. Store a larger fit as a `FileAsset` and save its ID on the
 snapshot. Run the refit off the participant's request, in an `AsyncCodeBlock`
-with `wait=False` or in a `scheduled_task` method on the experiment class, as
+with `wait=False` and `cpu_heavy=True` (a model fit computes rather than
+waits) or in a `scheduled_task` method on the experiment class, as
 `demos/features/bot_2` does. Async code blocks from different participants can
 run at the same time, which is why the claim goes through the database.
 

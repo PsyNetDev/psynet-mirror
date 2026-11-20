@@ -135,6 +135,7 @@ class CustomTrial(GibbsTrial):
 
     # Minimal example of an async_post_trial function
     run_async_post_trial = True
+    async_post_trial_cpu_heavy = False
 
     def async_post_trial(self):
         logger.info("Running custom async post trial (id = %i)", self.id)
@@ -228,6 +229,7 @@ class Exp(psynet.experiment.Experiment):
                     arguments={
                         "seed": random.randint(0, 10),
                     },
+                    cpu_heavy=False,
                 ).enqueue()
 
     def test_check_bot(self, bot: Bot, **kwargs):

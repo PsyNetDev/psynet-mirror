@@ -40,7 +40,12 @@ from sqlalchemy.orm.collections import attribute_mapped_collection
 from psynet import field
 
 from ..asset import Asset, AssetNetwork, AssetNode, AssetTrial
-from ..async_job import WorkerAsyncJob, _deprecated_async_processes, check_priority
+from ..async_job import (
+    WorkerAsyncJob,
+    _deprecated_async_processes,
+    check_cpu_heavy,
+    check_priority,
+)
 from ..data import SQLBase, SQLMixin, SQLMixinDallinger, register_table
 from ..db import forbid_commits
 from ..error import (  # noqa  # Importing the error module is important to ensure sqlalchemy is happy
@@ -292,13 +297,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         :meth:`~psynet.trial.main.Trial.gives_feedback` with
         ``wait_for_feedback`` set; it is ``"low"`` otherwise.
 
-    async_post_trial_cpu_heavy : bool
-        Set this to ``True`` if :meth:`~psynet.trial.main.Trial.async_post_trial`
-        computes for long, as an audio analysis does, so that it runs in a
-        worker process of its own; see the ``cpu_heavy`` parameter of
-        :class:`~psynet.async_job.WorkerAsyncJob`. ``False`` by default, and
-        ``True`` for recording trials such as
-        :class:`~psynet.trial.audio.AudioRecordTrial`.
+    async_post_trial_cpu_heavy : bool or None
+        Whether :meth:`~psynet.trial.main.Trial.async_post_trial` computes for
+        long, as an audio analysis does, so that it runs in a CPU worker; see
+        the ``cpu_heavy`` parameter of :class:`~psynet.async_job.WorkerAsyncJob`.
+        A trial class that defines ``async_post_trial`` must set it to
+        ``True`` or ``False``, or creating its trial maker fails. Recording
+        trials such as :class:`~psynet.trial.audio.AudioRecordTrial` set it
+        to ``True``.
 
     accumulate_answers : bool
         Set this class attribute to ``True`` if the trial contains multiple pages and you want
@@ -987,7 +993,20 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
     run_async_post_trial = None
     async_post_trial_priority = None
-    async_post_trial_cpu_heavy = False
+    async_post_trial_cpu_heavy = None
+
+    @classmethod
+    def _check_async_post_trial_cpu_heavy(cls):
+        """Raise ``TypeError`` if this class runs its own ``async_post_trial`` without :attr:`async_post_trial_cpu_heavy`."""
+        if cls.run_async_post_trial is False or (
+            cls.async_post_trial is Trial.async_post_trial
+        ):
+            return
+        check_cpu_heavy(
+            cls.async_post_trial_cpu_heavy,
+            f"Trial class {cls.__name__}, which defines async_post_trial,",
+            name="async_post_trial_cpu_heavy",
+        )
 
     @classmethod
     def _get_async_post_trial_priority(cls, trial_maker):
@@ -1303,6 +1322,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         self.queue_async_post_trial()
 
     def queue_async_post_trial(self):
+        self._check_async_post_trial_cpu_heavy()
         self.async_post_trial_requested = True
         WorkerAsyncJob(
             self.call_async_post_trial,
@@ -2263,6 +2283,8 @@ class TrialMaker(Module):
                 f"Please rename compute_bonus to compute_performance_reward in trial maker '{id_}'."
             )
 
+        if trial_class is not None:
+            trial_class._check_async_post_trial_cpu_heavy()
         self.trial_class = trial_class
         self.id = id_
         self.expected_trials_per_participant = expected_trials_per_participant
@@ -3983,6 +4005,7 @@ class NetworkTrialMaker(TrialMaker):
             network=network,
             # Participants may wait for the network's next node.
             priority="high",
+            cpu_heavy=False,
         ).enqueue()
 
     @property
@@ -4498,6 +4521,7 @@ class TrialNode(SQLMixinDallinger, dallinger.models.Node, AssetParentMixin):
             unique=True,
             # Participants may wait for this node to be deployed.
             priority="high",
+            cpu_heavy=False,
         ).enqueue()
         self.async_on_deploy_requested = True
 

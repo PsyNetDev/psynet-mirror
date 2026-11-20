@@ -895,12 +895,9 @@ Web server
 
 ``cpu_processes_per_worker`` *int* |dlgr-icon|
     Number of CPU workers that each worker process starts beside it. They
-    run CPU-heavy async jobs, such as recording analyses, one at a time:
-    jobs created with ``cpu_heavy=True`` (see
-    :class:`~psynet.async_job.WorkerAsyncJob`) and the
-    ``async_post_trial`` of trial classes with
-    ``async_post_trial_cpu_heavy = True``, which includes recording trials.
-    With ``0``, those jobs run in the worker processes with the others.
+    run the async jobs declared CPU-heavy, such as recording analyses, one at
+    a time (see :ref:`async_job_cpu_heavy`). With ``0``, those jobs run in
+    the worker processes with the others.
     Default in PsyNet: ``1``.
 
 Dallinger still accepts ``worker_multiplier`` and ``docker_worker_cpu_shares``

@@ -297,7 +297,7 @@ def test_cancel_cancels_the_queued_worker_job(monkeypatch):
         WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
     )
 
-    job = WorkerAsyncJob(do_nothing).enqueue()
+    job = WorkerAsyncJob(do_nothing, cpu_heavy=False).enqueue()
     db.session.commit()
     with forbid_commits("CodeBlock 'cancel_analysis'"):
         job.cancel()
@@ -310,13 +310,13 @@ def test_cancel_cancels_the_queued_worker_job(monkeypatch):
     WorkerAsyncJob.call_function(async_job_id)
     assert not WorkerAsyncJob.query.get(async_job_id).finished
 
-    cancelled_before_launch = WorkerAsyncJob(do_nothing).enqueue()
+    cancelled_before_launch = WorkerAsyncJob(do_nothing, cpu_heavy=False).enqueue()
     cancelled_before_launch.cancel()
     db.session.commit()
     with pytest.raises(NoSuchJobError):
         cancelled_before_launch.redis_job
 
-    cancel_rolled_back = WorkerAsyncJob(do_nothing).enqueue()
+    cancel_rolled_back = WorkerAsyncJob(do_nothing, cpu_heavy=False).enqueue()
     savepoint = db.session.begin_nested()
     cancel_rolled_back.cancel()
     savepoint.rollback()
@@ -338,7 +338,7 @@ def test_cpu_heavy_jobs_use_the_cpu_queue_only_when_there_are_cpu_workers():
 
     config = get_config()
     heavy = WorkerAsyncJob(do_nothing, cpu_heavy=True, priority="low").enqueue()
-    light = WorkerAsyncJob(do_nothing, priority="low").enqueue()
+    light = WorkerAsyncJob(do_nothing, priority="low", cpu_heavy=False).enqueue()
     db.session.commit()
     assert heavy.redis_job.origin == "cpu"
     assert light.redis_job.origin == "low"
@@ -425,12 +425,12 @@ def test_timeout_counts_from_start_not_enqueue(monkeypatch):
     monkeypatch.setattr(
         WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
     )
-    queued = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
-    stalled = WorkerAsyncJob(do_nothing, timeout=0.01).enqueue()
+    queued = WorkerAsyncJob(do_nothing, timeout=0.01, cpu_heavy=False).enqueue()
+    stalled = WorkerAsyncJob(do_nothing, timeout=0.01, cpu_heavy=False).enqueue()
     stalled.log_time_started()
-    backlog = WorkerAsyncJob(do_nothing).enqueue()
-    lost = WorkerAsyncJob(do_nothing).enqueue()
-    finished_in_rq = WorkerAsyncJob(do_nothing).enqueue()
+    backlog = WorkerAsyncJob(do_nothing, cpu_heavy=False).enqueue()
+    lost = WorkerAsyncJob(do_nothing, cpu_heavy=False).enqueue()
+    finished_in_rq = WorkerAsyncJob(do_nothing, cpu_heavy=False).enqueue()
     local_lost = LocalAsyncJob(do_nothing)
     db.session.add(local_lost)
     for job in [backlog, lost, finished_in_rq, local_lost]:
@@ -494,7 +494,7 @@ def test_job_failing_after_the_clock_timed_it_out_keeps_the_timeout(monkeypatch)
         WorkerAsyncJob, "get_redis_queue", classmethod(lambda cls, p: unworked_queue)
     )
     job = WorkerAsyncJob(
-        time_out_own_job_then_raise, label="times_out_while_running"
+        time_out_own_job_then_raise, label="times_out_while_running", cpu_heavy=False
     ).enqueue()
     db.session.commit()
     job_id = job.id
@@ -522,8 +522,8 @@ def test_enqueue_enforces_unique():
 )
 @pytest.mark.usefixtures("launched_experiment")
 def test_worker_job_runs_on_the_queue_named_by_its_priority():
-    default = WorkerAsyncJob(do_nothing).enqueue()
-    low = WorkerAsyncJob(do_nothing, priority="low").enqueue()
+    default = WorkerAsyncJob(do_nothing, cpu_heavy=False).enqueue()
+    low = WorkerAsyncJob(do_nothing, priority="low", cpu_heavy=False).enqueue()
     db.session.commit()
 
     assert default.priority == "high"
@@ -533,15 +533,22 @@ def test_worker_job_runs_on_the_queue_named_by_its_priority():
 
 def test_invalid_priority_raises():
     with pytest.raises(ValueError, match="priority"):
-        WorkerAsyncJob(do_nothing, priority="urgent")
+        WorkerAsyncJob(do_nothing, priority="urgent", cpu_heavy=False)
     with pytest.raises(ValueError, match="priority"):
-        AsyncCodeBlock(do_nothing, wait=False, priority="default")
+        AsyncCodeBlock(do_nothing, wait=False, priority="default", cpu_heavy=False)
 
 
 def test_async_code_block_priority_follows_wait():
-    assert AsyncCodeBlock(do_nothing, expected_wait=1).priority == "high"
-    assert AsyncCodeBlock(do_nothing, wait=False).priority == "low"
-    assert AsyncCodeBlock(do_nothing, wait=False, priority="high").priority == "high"
+    assert (
+        AsyncCodeBlock(do_nothing, expected_wait=1, cpu_heavy=False).priority == "high"
+    )
+    assert AsyncCodeBlock(do_nothing, wait=False, cpu_heavy=False).priority == "low"
+    assert (
+        AsyncCodeBlock(
+            do_nothing, wait=False, priority="high", cpu_heavy=False
+        ).priority
+        == "high"
+    )
 
 
 class _FeedbackTrial(Trial):
@@ -603,17 +610,22 @@ def test_invalid_async_post_trial_priority_raises():
 def test_cpu_time_summary_says_where_jobs_run():
     from psynet.async_job import _get_cpu_time_summary
 
-    for cls, cpu_time in [(LocalAsyncJob, 0.1), (WorkerAsyncJob, 0.3)]:
-        job = cls(do_nothing, label="summary_test")
+    for job, cpu_time in [
+        (LocalAsyncJob(do_nothing, label="summary_test"), 0.1),
+        (WorkerAsyncJob(do_nothing, label="summary_test", cpu_heavy=False), 0.3),
+    ]:
         job.finished, job.cpu_time, job.time_taken = True, cpu_time, 0.5
         db.session.add(job)
 
     summary = _get_cpu_time_summary()
     db.session.rollback()
     rows = [row for row in summary if row["label"] == "summary_test"]
-    assert [(row["runs_in"], row["priority"], row["mean_cpu"]) for row in rows] == [
-        ("web", None, 0.1),
-        ("worker", "high", 0.3),
+    assert [
+        (row["runs_in"], row["priority"], row["cpu_heavy"], row["mean_cpu"])
+        for row in rows
+    ] == [
+        ("web", None, None, 0.1),
+        ("worker", "high", False, 0.3),
     ]
 
 
@@ -634,15 +646,17 @@ def test_pending_jobs_keep_the_app_awake(tmp_path):
     }
     assert experiment.reason_to_stay_awake() is None
 
-    WorkerAsyncJob(do_nothing).enqueue()
-    WorkerAsyncJob(do_nothing, priority="low").enqueue()
-    WorkerAsyncJob(do_nothing, priority="low").enqueue()
+    WorkerAsyncJob(do_nothing, cpu_heavy=False).enqueue()
+    WorkerAsyncJob(do_nothing, priority="low", cpu_heavy=False).enqueue()
+    WorkerAsyncJob(do_nothing, priority="low", cpu_heavy=False).enqueue()
     LocalAsyncJob(do_nothing).enqueue()
-    WorkerAsyncJob(do_nothing).enqueue().cancel()
-    WorkerAsyncJob(do_nothing, timeout=1).enqueue().fail("Async job timed out")
-    finished = WorkerAsyncJob(do_nothing).enqueue()
+    WorkerAsyncJob(do_nothing, cpu_heavy=False).enqueue().cancel()
+    WorkerAsyncJob(do_nothing, timeout=1, cpu_heavy=False).enqueue().fail(
+        "Async job timed out"
+    )
+    finished = WorkerAsyncJob(do_nothing, cpu_heavy=False).enqueue()
     finished.pending, finished.finished = False, True
-    db.session.add(WorkerAsyncJob(do_nothing, label="never_enqueued"))
+    db.session.add(WorkerAsyncJob(do_nothing, label="never_enqueued", cpu_heavy=False))
     db.session.flush()
 
     summary = _get_pending_job_summary()
@@ -751,3 +765,42 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
     assert rows["upload"][-1] == "no"
 
     assert _format_cpu_time_summary([]) == "No async jobs finished."
+
+
+@pytest.mark.parametrize(
+    "declared, cpu, wall, note",
+    [
+        (False, 0.9, 1.0, "Warning: worker job 'job' looks CPU-heavy"),
+        (True, 0.1, 1.0, "Note: worker job 'job' is declared cpu_heavy=True"),
+        (True, 0.9, 1.0, None),
+        (False, 0.1, 1.0, None),
+        # 40 ms of CPU stalls other jobs too briefly to matter.
+        (False, 0.04, 0.06, None),
+    ],
+)
+def test_cpu_time_summary_flags_jobs_that_contradict_their_declaration(
+    declared, cpu, wall, note
+):
+    from psynet.async_job import _format_cpu_time_summary
+
+    row = dict(runs_in="worker", label="job", priority="high", cpu_heavy=declared)
+    row.update(count=3, mean_cpu=cpu, max_cpu=cpu, mean_wall=wall)
+    lines = _format_cpu_time_summary([row]).splitlines()
+
+    notes = [line for line in lines if line.startswith(("Warning", "Note"))]
+    assert [n[: len(note)] for n in notes] == ([note] if note else [])
+
+
+class _UndeclaredAnalysisTrial(Trial):
+    def async_post_trial(self):
+        pass
+
+
+def test_async_jobs_must_say_whether_they_are_cpu_heavy():
+    with pytest.raises(TypeError, match="WorkerAsyncJob needs cpu_heavy"):
+        WorkerAsyncJob(do_nothing)
+    with pytest.raises(TypeError, match="AsyncCodeBlock needs cpu_heavy"):
+        AsyncCodeBlock(do_nothing, wait=False)
+    with pytest.raises(TypeError, match="_UndeclaredAnalysisTrial, which defines"):
+        _UndeclaredAnalysisTrial._check_async_post_trial_cpu_heavy()
+    Trial._check_async_post_trial_cpu_heavy()

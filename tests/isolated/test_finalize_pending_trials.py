@@ -676,6 +676,7 @@ def test_failed_async_blocks_finalization_even_if_not_pending(db_session, partic
 
 class FailingAsyncTrial(FinalizeBackstopTrial):
     run_async_post_trial = True
+    async_post_trial_cpu_heavy = False
 
     def async_post_trial(self):
         raise RuntimeError("intentional async_post_trial failure")
@@ -716,6 +717,7 @@ def test_call_async_post_trial_failure_fails_trial(db_session, participant):
 
 class ConcurrentResponseAsyncTrial(FinalizeBackstopTrial):
     run_async_post_trial = True
+    async_post_trial_cpu_heavy = False
 
     def async_post_trial(self):
         # Simulate the participant's response committing from another process
@@ -750,7 +752,7 @@ def test_async_post_trial_finalizes_trial_completed_concurrently(
     db.session.add(trial)
     db.session.flush()
     # Saved without enqueue() so that the test runs the job itself.
-    job = WorkerAsyncJob(trial.call_async_post_trial, trial=trial)
+    job = WorkerAsyncJob(trial.call_async_post_trial, trial=trial, cpu_heavy=False)
     db.session.add(job)
     db.session.flush()
     async_job_id, trial_id = job.id, trial.id
@@ -773,6 +775,7 @@ class CommittingFinalizeTrial(FinalizeBackstopTrial):
 
 class CommittingFinalizeAsyncTrial(CommittingFinalizeTrial):
     run_async_post_trial = True
+    async_post_trial_cpu_heavy = False
 
     def async_post_trial(self):
         pass
@@ -816,7 +819,7 @@ def test_on_finalized_commit_after_a_worker_is_forbidden_and_fails_the_trial(
     db.session.flush()
     if path == "async_post_trial":
         trial.async_post_trial_requested = True
-        job = WorkerAsyncJob(trial.call_async_post_trial, trial=trial)
+        job = WorkerAsyncJob(trial.call_async_post_trial, trial=trial, cpu_heavy=False)
     else:
         asset_path = tmp_path / "recording.txt"
         asset_path.write_text("recording")
@@ -1045,7 +1048,7 @@ def test_recheck_finalization_leaves_failing_trial_to_backstop(
     trial.finalized = False
     db.session.add(trial)
     db.session.flush()
-    job = WorkerAsyncJob(_do_nothing, trial=trial)
+    job = WorkerAsyncJob(_do_nothing, trial=trial, cpu_heavy=False)
     db.session.add(job)
     db.session.flush()
     async_job_id, trial_id = job.id, trial.id
@@ -1143,6 +1146,7 @@ def test_finalize_skips_or_waits_for_a_locked_participant(db_session, participan
 
 class AnalyzedRecordingTrial(FinalizeBackstopTrial):
     run_async_post_trial = True
+    async_post_trial_cpu_heavy = False
 
     def async_post_trial(self):
         pass
@@ -1232,7 +1236,9 @@ def test_deposit_callbacks_in_a_worker_never_expose_a_finalizable_trial(
         raise RuntimeError("intentional deposit callback failure")
 
     monkeypatch.setattr(Recording, "after_deposit", flaky_after_deposit)
-    job = WorkerAsyncJob(_process_recording, arguments={"recording_id": recording_id})
+    job = WorkerAsyncJob(
+        _process_recording, arguments={"recording_id": recording_id}, cpu_heavy=False
+    )
     db.session.add(job)
     db.session.flush()
     job_id = job.id
@@ -1259,6 +1265,7 @@ def test_deposit_callbacks_in_a_worker_never_expose_a_finalizable_trial(
 
 class CountingAnalysisTrial(FinalizeBackstopTrial):
     run_async_post_trial = True
+    async_post_trial_cpu_heavy = False
     queued = []
 
     def async_post_trial(self):

@@ -896,6 +896,7 @@ def _queue_received_recordings():
             label="media_upload",
             unique=True,
             timeout=_PROCESSING_JOB_TIMEOUT,
+            cpu_heavy=False,
         ).enqueue()
 
 

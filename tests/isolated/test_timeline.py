@@ -1765,7 +1765,7 @@ def test_join_accepts_list_input_with_collections():
         return None
 
     page = InfoPage("Test")
-    async_block = AsyncCodeBlock(background_task, wait=False)
+    async_block = AsyncCodeBlock(background_task, wait=False, cpu_heavy=False)
     joined = join([page, async_block, background_task, None])
     assert isinstance(joined, list)
     assert all(isinstance(elt, Elt) for elt in joined)
@@ -1938,7 +1938,7 @@ def _new_job():
 
 
 def test_async_code_block_initiate__no_stale_job():
-    block = AsyncCodeBlock(_async_target, wait=False)
+    block = AsyncCodeBlock(_async_target, wait=False, cpu_heavy=False)
     code_block = MagicMock(id=["main", 3])
     participant = _make_participant(stale_job=None)
     new_job = _new_job()
@@ -1953,7 +1953,7 @@ def test_async_code_block_initiate__no_stale_job():
 
 
 def test_async_code_block_initiate__stores_generated_code_block_id_from_timeline():
-    timeline = Timeline(AsyncCodeBlock(_async_target, wait=False))
+    timeline = Timeline(AsyncCodeBlock(_async_target, wait=False, cpu_heavy=False))
     code_block = next(
         elt for elt in timeline.elts["main"] if isinstance(elt, CodeBlock)
     )
@@ -1972,7 +1972,7 @@ def test_async_code_block_initiate__stores_generated_code_block_id_from_timeline
 
 
 def test_async_code_block_initiate__raises_when_previous_job_still_pending():
-    block = AsyncCodeBlock(_async_target, wait=False)
+    block = AsyncCodeBlock(_async_target, wait=False, cpu_heavy=False)
     code_block = MagicMock(id=["main", 3])
     stale = MagicMock(name="stale_job")
     stale.pending = True
@@ -1989,7 +1989,7 @@ def test_async_code_block_initiate__raises_when_previous_job_still_pending():
 
 
 def test_async_code_block_initiate__waits_for_pending_job_when_waiting(caplog):
-    block = AsyncCodeBlock(_async_target, wait=True, expected_wait=1)
+    block = AsyncCodeBlock(_async_target, wait=True, expected_wait=1, cpu_heavy=False)
     code_block = MagicMock(id=["main", 3])
     stale = MagicMock(name="stale_job")
     stale.id = 99
@@ -2014,7 +2014,7 @@ def test_async_code_block_initiate__waits_for_pending_job_when_waiting(caplog):
 
 
 def test_async_code_block_initiate__raises_for_different_pending_waited_job():
-    block = AsyncCodeBlock(_async_target, wait=True, expected_wait=1)
+    block = AsyncCodeBlock(_async_target, wait=True, expected_wait=1, cpu_heavy=False)
     code_block = MagicMock(id=["main", 3])
     stale = MagicMock(name="stale_job")
     stale.pending = True
@@ -2035,7 +2035,7 @@ def test_async_code_block_initiate__raises_for_different_pending_waited_job():
 
 
 def test_async_code_block_initiate__raises_for_same_function_different_waited_job():
-    block = AsyncCodeBlock(_async_target, wait=True, expected_wait=1)
+    block = AsyncCodeBlock(_async_target, wait=True, expected_wait=1, cpu_heavy=False)
     code_block = MagicMock(id=["main", 3])
     stale = MagicMock(name="stale_job")
     stale.pending = True
@@ -2066,7 +2066,7 @@ def test_async_code_block_initiate__raises_for_same_function_different_waited_jo
 def test_async_code_block_initiate__clears_stale_finished_or_failed_job(
     stale_state, caplog
 ):
-    block = AsyncCodeBlock(_async_target, wait=False)
+    block = AsyncCodeBlock(_async_target, wait=False, cpu_heavy=False)
     code_block = MagicMock(id=["main", 3])
     stale = MagicMock(name="stale_job", id=99, **stale_state)
     participant = _make_participant(stale_job=stale)

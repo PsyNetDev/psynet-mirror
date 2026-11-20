@@ -16,7 +16,7 @@ def run_bot():
 
 def run_bot_group(experiment: Experiment):
     for _ in range(3):
-        WorkerAsyncJob(function=experiment.run_bot).enqueue()
+        WorkerAsyncJob(function=experiment.run_bot, cpu_heavy=False).enqueue()
         db.session.commit()
 
     wait_until(

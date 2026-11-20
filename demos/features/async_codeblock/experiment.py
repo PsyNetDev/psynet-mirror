@@ -26,11 +26,13 @@ class Exp(psynet.experiment.Experiment):
             set_participant_var1,
             wait=True,
             expected_wait=1.0,
+            cpu_heavy=False,
         ),
         CodeBlock(lambda participant: participant.var.set("t2", time.time())),
         AsyncCodeBlock(
             set_participant_var2,
             wait=False,
+            cpu_heavy=False,
         ),
         CodeBlock(lambda participant: participant.var.set("t3", time.time())),
     )

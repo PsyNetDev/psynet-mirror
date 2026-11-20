@@ -804,7 +804,7 @@ def test_handle_error_rollback_and_record(db_session, launched_experiment, trial
 )
 @pytest.mark.usefixtures("launched_experiment")
 def test_handle_error_async_job(db_session, launched_experiment, trial):
-    job = WorkerAsyncJob(function=task, trial=trial).enqueue()
+    job = WorkerAsyncJob(function=task, trial=trial, cpu_heavy=False).enqueue()
     db.session.commit()
 
     time.sleep(1)

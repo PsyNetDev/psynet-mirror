@@ -875,7 +875,7 @@ _POSTGRES_ADVICE = (
 )
 _WORKER_ADVICE = (
     "Raise worker_processes in config.txt (worker dynos on Heroku), or make "
-    "the jobs faster. Mark CPU-heavy jobs, such as audio analysis, with "
+    "the jobs faster. Declare CPU-heavy jobs, such as audio analysis, with "
     "cpu_heavy=True, so that they run in CPU workers, and plan on a CPU core "
     "for each; see 'Async workers' in the PsyNet docs on testing scalability."
 )

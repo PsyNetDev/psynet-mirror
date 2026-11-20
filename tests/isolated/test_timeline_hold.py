@@ -254,6 +254,7 @@ def test_async_code_block_passes_waiting_message_to_hold():
         wait=True,
         expected_wait=1,
         waiting_message="Working…",
+        cpu_heavy=False,
     )
     hold = next(
         elt for elt in block.resolve() if getattr(elt, "is_timeline_hold", False)
@@ -273,6 +274,7 @@ def test_async_code_block_calls_on_timeout_unless_its_function_finished(
         wait=True,
         expected_wait=1,
         on_timeout=lambda participant: timed_out.append(participant),
+        cpu_heavy=False,
     )
     hold = next(
         elt for elt in block.resolve() if getattr(elt, "is_timeline_hold", False)

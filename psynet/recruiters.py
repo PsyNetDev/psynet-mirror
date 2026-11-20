@@ -1988,6 +1988,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                         wait=True,
                         expected_wait=5.0,
                         check_interval=1.0,
+                        cpu_heavy=False,
                     ),
                     conditional(
                         label="assignment_return_result",
@@ -2002,6 +2003,7 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                                 check_interval=1.0,
                                 max_wait_time=RETURN_FOR_BONUS_PAYMENT_MAX_WAIT,
                                 on_timeout=self._notify_return_for_bonus_payment_timeout,
+                                cpu_heavy=False,
                             ),
                             conditional(
                                 "return_for_bonus_credited",

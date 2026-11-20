@@ -48,6 +48,7 @@ class Exp(psynet.experiment.Experiment):
             wait=True,
             expected_wait=2,
             check_interval=5,
+            cpu_heavy=False,
         ),
         InfoPage(
             Markup("<p id='hold-session-marker'>Second session page</p>"),

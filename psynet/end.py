@@ -455,7 +455,7 @@ class RejectedConsentLogic(UnsuccessfulEndLogic):
         return conditional(
             "report_rejected_consent",
             self.has_rejected_consent_to_report,
-            AsyncCodeBlock(self.report_rejected_consent, wait=False),
+            AsyncCodeBlock(self.report_rejected_consent, wait=False, cpu_heavy=False),
             log_chosen_branch=False,
         )
 

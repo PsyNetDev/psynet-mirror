@@ -53,6 +53,7 @@ from sqlalchemy import (
     and_,
     func,
     inspect,
+    literal,
     or_,
 )
 from sqlalchemy.exc import NoResultFound
@@ -83,6 +84,22 @@ def check_priority(priority):
     if priority not in PRIORITIES:
         raise ValueError(
             f"Invalid async job priority {priority!r}; expected one of {PRIORITIES}."
+        )
+
+
+def check_cpu_heavy(cpu_heavy, where, name="cpu_heavy"):
+    """Raise ``TypeError`` unless ``cpu_heavy`` is ``True`` or ``False``.
+
+    ``where`` names what needs the declaration, such as ``"WorkerAsyncJob"``,
+    and ``name`` the argument or attribute that declares it.
+    """
+    if not isinstance(cpu_heavy, bool):
+        raise TypeError(
+            f"{where} needs {name} = True or False. Say True if the "
+            "job computes for long, such as an audio analysis or model fit, so "
+            "that it runs in a CPU worker and doesn't stall other async jobs; "
+            "say False if it mostly waits, for example on a web API or the "
+            "database. See WorkerAsyncJob's cpu_heavy parameter."
         )
 
 
@@ -673,31 +690,45 @@ def _launch_unless_cancelled(spec):
 
 
 _CPU_HEAVY_RATIO = 0.5
+# Shorter stalls of a worker's other jobs are harmless, so CPU-heavy jobs
+# declared otherwise are only flagged if one run used this much CPU.
+_STALL_WARNING_S = 0.5
 
 
 def _get_cpu_time_summary():
     """Return CPU and wall times of finished async jobs.
 
-    Jobs are grouped by where they run, label and priority. ``runs_in`` is
-    ``"worker"`` for :class:`WorkerAsyncJob` and ``"web"`` for
-    :class:`LocalAsyncJob`, which runs in a thread of the process that
-    enqueued it, usually the web process, and has no priority.
+    Jobs are grouped by where they run, label, priority and, for worker jobs,
+    their ``cpu_heavy`` declaration. ``runs_in`` is ``"worker"`` for
+    :class:`WorkerAsyncJob` and ``"web"`` for :class:`LocalAsyncJob`, which
+    runs in a thread of the process that enqueued it, usually the web
+    process, and has no priority or ``cpu_heavy``.
     """
     keys = [
         "runs_in",
         "label",
         "priority",
+        "cpu_heavy",
         "count",
         "mean_cpu",
         "max_cpu",
         "mean_wall",
     ]
     summary = []
-    for cls, runs_in in [(LocalAsyncJob, "web"), (WorkerAsyncJob, "worker")]:
+    for cls, runs_in, cpu_heavy, group_by in [
+        (LocalAsyncJob, "web", literal(None), []),
+        (
+            WorkerAsyncJob,
+            "worker",
+            WorkerAsyncJob.cpu_heavy,
+            [WorkerAsyncJob.cpu_heavy],
+        ),
+    ]:
         rows = (
             db.session.query(
                 cls.label,
                 cls.priority,
+                cpu_heavy,
                 func.count(cls.id),
                 func.avg(cls.cpu_time),
                 func.max(cls.cpu_time),
@@ -708,7 +739,7 @@ def _get_cpu_time_summary():
                 cls.cpu_time != None,  # noqa: E711
                 cls.time_taken != None,  # noqa: E711
             )
-            .group_by(cls.label, cls.priority)
+            .group_by(cls.label, cls.priority, *group_by)
             .order_by(cls.label, cls.priority)
             .all()
         )
@@ -723,7 +754,11 @@ def _format_cpu_time_summary(rows):
     ``_CPU_HEAVY_RATIO`` of its mean wall time; such jobs need a CPU core
     each while they run, whereas I/O-bound jobs mostly wait. The "Runs in"
     column says whether that core is in a worker or the web process. Web
-    jobs have no priority and show ``-``.
+    jobs have no priority and show ``-``. Notes after the table point out
+    worker jobs whose measurements contradict their ``cpu_heavy``
+    declaration: CPU-heavy ones declared ``False`` that ran for at least
+    ``_STALL_WARNING_S`` of CPU once, and ones declared ``True`` that are
+    not CPU-heavy.
     """
     if not rows:
         return "No async jobs finished."
@@ -738,8 +773,23 @@ def _format_cpu_time_summary(rows):
         "CPU-heavy",
     ]
     table = [header]
+    notes = []
     for row in rows:
         cpu_heavy = row["mean_cpu"] >= _CPU_HEAVY_RATIO * row["mean_wall"]
+        declared = row.get("cpu_heavy")
+        if declared is False and cpu_heavy and row["max_cpu"] >= _STALL_WARNING_S:
+            notes.append(
+                f"Warning: worker job {row['label']!r} looks CPU-heavy but is "
+                "declared cpu_heavy=False, so it can stall the other async "
+                "jobs in its worker process. Declare it CPU-heavy unless its "
+                "measured CPU time includes other jobs running beside it."
+            )
+        elif declared is True and not cpu_heavy:
+            notes.append(
+                f"Note: worker job {row['label']!r} is declared cpu_heavy=True "
+                "but mostly waits; with cpu_heavy=False it could run beside "
+                "other jobs instead of queueing for a CPU worker."
+            )
         table.append(
             [
                 row["runs_in"],
@@ -761,7 +811,7 @@ def _format_cpu_time_summary(rows):
         cells = [cell.ljust(width) for cell, width in zip(line[:3], widths[:3])]
         cells += [cell.rjust(width) for cell, width in zip(line[3:], widths[3:])]
         lines.append("  " + "  ".join(cells))
-    return "\n".join(lines)
+    return "\n".join(lines + notes)
 
 
 def _get_pending_job_summary():
@@ -902,14 +952,19 @@ class WorkerAsyncJob(AsyncJob):
         jobs from the ``high`` queue before the ``low`` queue, but do not
         interrupt a running job: a high-priority job still waits for a free
         worker if every worker is busy.
-    cpu_heavy : bool, default ``False``
-        Set this for a job that computes for long without waiting on the
-        network or the database, such as an audio analysis. A worker runs
-        many jobs at once in one process, and such a job would stall all of
-        them. If ``cpu_processes_per_worker`` is above 0 (PsyNet's default
-        is 1), the job runs on the ``cpu`` queue, in a process that runs one
-        job at a time, whatever its priority; otherwise it runs on its
-        priority's queue.
+    cpu_heavy : bool
+        Required. ``True`` for a job that computes for long without waiting
+        on the network or the database, such as an audio analysis; ``False``
+        for a job that mostly waits, such as a web API call. A worker runs
+        many jobs at once in one process, and a CPU-heavy job would stall all
+        of them. If ``cpu_processes_per_worker`` is above 0 (PsyNet's default
+        is 1), a CPU-heavy job runs on the ``cpu`` queue, in a process that
+        runs one job at a time, whatever its priority; otherwise it runs on
+        its priority's queue. A job that waits without yielding to gevent,
+        such as a network call made by a C extension, stalls the worker too,
+        so mark it ``True`` even though it uses little CPU. ``psynet test
+        local`` warns when a job's measured CPU time contradicts its
+        declaration.
     """
 
     cancelled = Column(Boolean, default=False)
@@ -935,9 +990,10 @@ class WorkerAsyncJob(AsyncJob):
         unique=False,
         timeout=None,
         priority="high",
-        cpu_heavy=False,
+        cpu_heavy=None,
     ):
         check_priority(priority)
+        check_cpu_heavy(cpu_heavy, "WorkerAsyncJob")
         self.cpu_heavy = cpu_heavy
         super().__init__(
             function,
