@@ -72,8 +72,8 @@ virtual environment active. ``psynet <command> --help`` lists every option.
      - Export the data to ``exports/latest/``; see
        :doc:`/data/exporting_data`.
    * - ``psynet load PATH``
-     - Replace the local database with an exported zip file, such as
-       ``export.zip``. Stop ``psynet debug`` first; see
+     - Replace the local database with an export folder, such as
+       ``exports/latest``, or a zip file. Stop ``psynet debug`` first; see
        :doc:`/data/analyzing_data`.
    * - ``psynet db`` / ``psynet db heroku --app NAME``
      - Print the connection URI of the local database or of a Heroku app's
