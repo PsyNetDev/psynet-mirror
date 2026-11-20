@@ -1,5 +1,6 @@
 import datetime
 import enum
+import functools
 import importlib.util
 import json
 import sys
@@ -32,7 +33,9 @@ from psynet.live_game import (
     NOT_STARTED,
     PLAYERS_LEFT,
     TIMEOUT,
+    TOO_LATE,
     LiveGame,
+    LiveGameFailed,
     LiveGamePage,
     LiveGameRecord,
     LiveMessage,
@@ -41,7 +44,8 @@ from psynet.live_game import (
     live_game_classes,
 )
 from psynet.live_game import registry as game_registry
-from psynet.live_game.control import LiveGameControl
+from psynet.live_game.control import LiveGameControl, _players
+from psynet.live_game.method_wrappers import _NOT_IN_VIEWS
 from psynet.live_game.record import _session_participant_ids
 from psynet.live_game.testing import LocalGame, start_game
 from psynet.modular_page import ModularPage
@@ -58,7 +62,7 @@ from psynet.sync import (
     _take_pending_barrier_checks,
     check_group_dropout_policies,
 )
-from psynet.timeline import Response, Timeline
+from psynet.timeline import Response, ResponseNotReady, Timeline
 from psynet.trial.main import Trial
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
@@ -458,6 +462,7 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         "showResultFor": 0,
         "playerLeftMessage": "Another player has left the game.",
         "noGameMessage": "Your group couldn't start the game.",
+        "tooLateMessage": "The game had already stopped taking new players.",
         "waitingStatus": "Waiting for the other players to open the game",
         "endedStatus": "The game is over.",
         "players": [],
@@ -478,6 +483,7 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         "showResultFor": 0,
         "playerLeftMessage": "Another player has left the game.",
         "noGameMessage": "Your group couldn't start the game.",
+        "tooLateMessage": "The game had already stopped taking new players.",
         "waitingStatus": "Waiting for the other players to open the game",
         "endedStatus": "The game is over.",
     }
@@ -665,6 +671,10 @@ def _psynet(**fields):
         "time_up": False,
         "last_tick": None,
         "last_event": None,
+        "accepts_players": True,
+        "too_late": [],
+        "group_id": None,
+        "stop_top_ups_at_end": False,
         **fields,
     }
     entry.setdefault("away_since", [None] * len(entry["participant_ids"]))
@@ -681,7 +691,8 @@ def _started_view(**view):
     """The view of player 0, participant 1, in a game they play alone, which
     has started, as Dallinger gives it to a bot."""
     entry = _psynet(ready=[0], started_at=0)
-    del entry["participant_ids"], entry["last_tick"], entry["last_event"]
+    for key in _NOT_IN_VIEWS:
+        del entry[key]
     return {**view, "psynet": {**entry, "you": 0}}
 
 
@@ -779,9 +790,53 @@ def test_an_anonymous_game_page_never_gets_the_players_pseudonyms(db_session):
         LiveGamePage("anonymous", "Play.", names="hidden", time_estimate=5)
 
 
-def _play_to_the_end(session_id, messages):
+@pytest.mark.parametrize("names", ["shown", "anonymous"])
+def test_a_game_page_shows_each_player_s_info(db_session, names):
+    from psynet.live_game.control import _players, _players_payload
+
+    experiment = get_experiment()
+    members, _ = _pair(db_session, [new_participant(experiment) for _ in range(2)])
+    for member in members:
+        member.var.avatar = f"avatar-{member.id}"
+    page = LiveGamePage(
+        "avatars",
+        "Play.",
+        names=names,
+        player_info=lambda participant: {"avatar": participant.var.avatar},
+        time_estimate=5,
+    )
+    play = _play("avatars", page=page)
+    for member in members:
+        save_info, *_ = play.resolve()
+        save_info.consume(experiment, member)
+        _arrive(play.barrier, member)
+    # Read when the participant reaches the game, so a later change isn't shown.
+    members[0].var.avatar = "changed"
+
+    players = _players(members[0], "avatars")
+    by_you = {player["you"]: player["info"] for player in players}
+    assert by_you[True] == {"avatar": f"avatar-{members[0].id}"}
+    # An anonymous page doesn't get the others' info.
+    assert by_you[False] == (
+        None if names == "anonymous" else {"avatar": f"avatar-{members[1].id}"}
+    )
+    assert _players_payload(members[0].unique_id, "avatars") == {"players": players}
+    bad = LiveGamePage("bad", "Play.", player_info=lambda p: {1, 2}, time_estimate=5)
+    with pytest.raises(TypeError, match="can't be saved as JSON"):
+        _play("bad", page=bad).resolve()[0].consume(experiment, members[0])
+    with pytest.raises(TypeError, match="must be a function"):
+        LiveGamePage("bad", "Play.", player_info={"avatar": 1}, time_estimate=5)
+    # A later visit with a page without player_info shows none.
+    plain = LiveGamePage("avatars", "Play.", time_estimate=5)
+    _play("avatars", page=plain).resolve()[0].consume(experiment, members[0])
+    (you,) = [player for player in _players(members[0], "avatars") if player["you"]]
+    assert you["info"] is None
+
+
+def _play_to_the_end(session_id, messages, write_record=True):
     """Play the session, sending each ``(player_id, number, payload)`` as a
-    page would, a little apart, until it ends, and write its record."""
+    page would, a little apart, until it ends, and write its record unless
+    ``write_record`` is false (see :func:`_write_records`)."""
     runner = Runner(store.experiment_games(), name="test-runner")
     playing = threading.Thread(target=runner.run)
     playing.start()
@@ -812,6 +867,12 @@ def _play_to_the_end(session_id, messages):
         playing.join(5)
     assert not playing.is_alive()
     assert store.running_sessions() == []
+    if write_record:
+        _write_records()
+
+
+def _write_records():
+    """Run the queued jobs, which write the sessions' records."""
     queues = [Queue(name, connection=redis_conn) for name in ("high", "default")]
     SimpleWorker(queues, connection=redis_conn).work(burst=True)
 
@@ -1914,7 +1975,8 @@ def test_each_view_shows_who_is_ready_and_which_player_it_is_for(relay):
 
     # Without the participant ids, so a page can't tell who it plays with.
     entry = _psynet(participant_ids=[1, 2], ready=[1])
-    del entry["participant_ids"], entry["last_tick"], entry["last_event"]
+    for key in _NOT_IN_VIEWS:
+        del entry[key]
     assert relay.view(state, "1") == {"taps": 0, "psynet": {**entry, "you": 0}}
     assert relay.view(state, "2")["psynet"]["you"] == 1
 
@@ -2601,8 +2663,8 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     # A record that isn't one participant's has no single answer.
     with pytest.raises(AttributeError, match="has no single answer"):
         game.answer
-    with pytest.raises(AttributeError, match="no single player_end_reason") as error:
-        game.player_end_reason
+    with pytest.raises(AttributeError, match="no single left_early") as error:
+        game.left_early
     assert "game.answers" not in str(error.value)
     # A trial's game is its participant's.
     group_round = SimpleNamespace(live_game_id=session_id)
@@ -2620,7 +2682,7 @@ def test_a_step_without_a_game_has_a_record_that_says_so(pair, monkeypatch):
     game = members[0].live_games[game_barrier.id]
     assert (game.id, game.status, game.finished) == (None, "not_started", False)
     assert (game.answer, game.outcome, game.end_reason, game.player) == (None,) * 4
-    assert game.player_end_reason is None
+    assert (game.left_early, game.done_reason) == (False, None)
     assert (game.messages, game.moments, game.participant_ids) == ([], [], [])
     assert not game.record_complete
     assert members[0].live_game_history[game_barrier.id] == []
@@ -2968,6 +3030,9 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
             reason="retired",
         )
     )
+    # Their record says so while the others play on.
+    still_running = LiveGameRecord(session_id, early)
+    assert (still_running.status, still_running.left_early) == ("running", True)
     # The deadline of a later timed page the early finisher has opened.
     later = other.sync_group_links[0].page_deadline + datetime.timedelta(hours=1)
     early.sync_group_links[0].page_deadline = later
@@ -2979,9 +3044,10 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
 
     assert early.sync_group_links[0].page_deadline == later
     assert other.sync_group_links[0].page_deadline == row.end_time
-    assert [
-        LiveGameRecord(session_id, member).player_end_reason for member in members
-    ] == ["retired" if member is early else "finished" for member in members]
+    records = {member: LiveGameRecord(session_id, member) for member in members}
+    assert (records[early].left_early, records[early].done_reason) == (True, "retired")
+    assert (records[other].left_early, records[other].done_reason) == (False, None)
+    assert records[other].finished
 
 
 def _save_ending(
@@ -3475,6 +3541,40 @@ def test_a_player_added_to_a_game_gets_the_next_number_and_can_finish_first():
     assert game.answer(2) == [None, None, 4]
 
 
+def test_a_game_that_stops_accepting_players_turns_newcomers_away():
+    class Close(LiveMessage):
+        type = "close"
+
+        def apply(self, game, state, player, now):
+            state["open"] = False
+
+    class Club(_Game):
+        messages = [Close]
+        min_players = 1
+
+        def initial_state(self, players):
+            return {"open": True, "members": list(players)}
+
+        def on_add(self, state, player, now):
+            state["members"].append(player)
+
+        def accepts_players(self, state):
+            return state["open"]
+
+    game = LocalGame(Club, players=1)
+    assert game.add() == 1
+    game.send(0, Close())
+    late = game.add()
+
+    # The game never sees the newcomer, whose game ends at once.
+    assert game.state["members"] == [0, 1]
+    assert (game.is_done(late), game.done_reason(late)) == (True, TOO_LATE)
+    assert not game.is_done(1)
+    assert list(game.view(late)) == ["psynet"]
+    assert game.game.absences(game.state) == [None, None]
+    assert game.state["psynet"]["accepts_players"] is False
+
+
 def test_a_local_game_keeps_its_state_when_it_rejects_a_message():
     class Spend(LiveMessage):
         type = "spend"
@@ -3596,6 +3696,219 @@ def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
         "picks": [3, 5, 4],
         "pick_reward": 0,
     }
+
+
+def _open_group(db_session, n_members, n_founders=2):
+    """A group that takes newcomers, with its founders in it, and the
+    newcomers to add."""
+    experiment = get_experiment()
+    members = [new_participant(experiment) for _ in range(n_members)]
+    group = SimpleSyncGroup(
+        group_type="pair",
+        initial_group_size=n_founders,
+        max_group_size=n_members,
+        quorum=1,
+        n_active_participants=n_founders,
+        accepts_top_ups=True,
+        below_quorum="continue_without_group",
+    )
+    db_session.add(group)
+    for member in members[:n_founders]:
+        member.status = "working"
+        group.add_participant(member)
+    group.leader = members[0]
+    db_session.commit()
+    return group, members
+
+
+def test_a_game_that_stops_taking_players_closes_its_group_to_newcomers(db_session):
+    group, members = _open_group(db_session, 4)
+    page = LiveGamePage("takes_three", "Play.", time_estimate=5)
+    barrier = _play(
+        "takes_three",
+        page,
+        game_class=sys.modules[type(get_experiment()).__module__].TakesThree,
+        join_running_game=True,
+        stop_top_ups_at_end=False,
+    ).barrier
+    for member in members[:2]:
+        _arrive(barrier, member)
+    session_id = _game_id(members[0], "takes_three")
+    # The third fills the game, and the fourth joins the group before
+    # PsyNet has closed it.
+    for member in members[2:]:
+        member.status = "working"
+        group.add_participant(member)
+        _reach(barrier, member)
+        db.session.commit()
+    group_id = group.id
+    ids = [str(member.id) for member in members]
+    _play_to_the_end(
+        session_id,
+        [(pid, 1, READY) for pid in ids[:3]]
+        + [(pid, 2, {"type": "pick", "message": {"number": 5}}) for pid in ids[:3]],
+    )
+
+    assert not db.session.get(SimpleSyncGroup, group_id).accepts_top_ups
+    members = [db.session.get(Participant, int(pid)) for pid in ids]
+    late = members[3].live_games["takes_three"]
+    assert (late.left_early, late.done_reason, late.answer) == (True, TOO_LATE, None)
+    assert members[2].live_games["takes_three"].answer == [5, 5, 5]
+    assert _reward(members[3]) == 0
+    assert [p["you"] for p in _players(members[0], "takes_three")] == [1, 0, 0]
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_a_newcomer_to_a_game_that_ended_before_adding_them_came_too_late(
+    db_session, monkeypatch, fails
+):
+    if fails:
+
+        def is_over(self, state):
+            if any(pick is not None for pick in state["picks"]):
+                raise RuntimeError("The game broke.")
+            return False
+
+        monkeypatch.setattr(_growing_picks(), "is_over", is_over)
+    group, members = _open_group(db_session, 3)
+    page = LiveGamePage("growing", "Play.", time_estimate=5)
+    barrier = _play(
+        "growing", page, game_class=_growing_picks(), join_running_game=True
+    ).barrier
+    for member in members[:2]:
+        _arrive(barrier, member)
+    session_id = _game_id(members[0], "growing")
+    ids = [str(member.id) for member in members]
+    _play_to_the_end(
+        session_id,
+        [(pid, 1, READY) for pid in ids[:2]]
+        + [(pid, 2, {"type": "pick", "message": {"number": 5}}) for pid in ids[:2]],
+        write_record=False,
+    )
+    # The game's row still says it's running, so the newcomer is pointed at
+    # it, but Dallinger drops their addition.
+    members[2].status = "working"
+    group.add_participant(members[2])
+    _reach(barrier, members[2])
+    db.session.commit()
+    assert _game_id(members[2], "growing") == session_id
+
+    # Before and after the game's row says it ended, the page shows no game,
+    # but the too-late notice. Of a game that failed, it shows the failure,
+    # once the row says so.
+    for written in (False, True):
+        if written:
+            _write_records()
+        newcomer = db.session.get(Participant, int(ids[2]))
+        js_vars = _rendered_js_vars(page, newcomer, monkeypatch)["liveGame"]
+        late = newcomer.live_games["growing"]
+        ready = functools.partial(
+            page.control.check_ready_for_response, get_experiment(), newcomer
+        )
+        if not fails:
+            assert (js_vars["liveGameId"], js_vars["players"]) == (None, [])
+            assert js_vars["noGameMessage"] == js_vars["tooLateMessage"]
+            assert (late.left_early, late.done_reason) == (True, TOO_LATE)
+            assert ready() is None
+            continue
+        assert js_vars["liveGameId"] == session_id
+        assert (late.left_early, late.done_reason) == (False, None)
+        if written:
+            with pytest.raises(LiveGameFailed):
+                ready()
+        else:
+            assert isinstance(ready(), ResponseNotReady)
+    assert late.answer is None
+    assert _reward(newcomer) == 0
+
+
+@pytest.mark.parametrize("status, too_late", [("ended", True), ("failed", False)])
+def test_only_a_game_that_ended_says_whom_it_never_added_came_too_late(
+    pair, status, too_late
+):
+    # A failed game may not have written every player it added.
+    members, game_barrier = pair
+    for member in members:
+        _arrive(game_barrier, member)
+    session_id = _game_id(members[0], game_barrier.id)
+    outsider = new_participant(get_experiment())
+    db.session.commit()
+    _save_ending(session_id, status=status)
+
+    assert LiveGameRecord(session_id, outsider).left_early is too_late
+
+
+def test_stopping_a_game_s_group_s_top_ups_tries_again_after_a_deadlock(
+    db_session, monkeypatch
+):
+    from sqlalchemy.exc import OperationalError
+
+    from psynet.live_game import play
+
+    group, _ = _open_group(db_session, 3)
+    group_id = group.id
+    stop = SimpleSyncGroup.stop_top_ups
+    tries = []
+
+    def deadlocks_once(self):
+        tries.append(self.id)
+        if len(tries) == 1:
+            raise OperationalError("", {}, SimpleNamespace(pgcode="40P01"))
+        stop(self)
+
+    monkeypatch.setattr(SimpleSyncGroup, "stop_top_ups", deadlocks_once)
+    monkeypatch.setattr(play.time, "sleep", lambda seconds: None)
+    play._stop_top_ups(group_id, session_id=1)
+
+    assert tries == [group_id, group_id]
+    assert not db.session.get(SimpleSyncGroup, group_id).accepts_top_ups
+
+
+@pytest.mark.parametrize("stop_top_ups_at_end", [True, False])
+def test_a_group_stops_taking_newcomers_once_its_game_ends(
+    db_session, stop_top_ups_at_end
+):
+    group, members = _open_group(db_session, 3)
+    barrier = _play(stop_top_ups_at_end=stop_top_ups_at_end).barrier
+    for member in members[:2]:
+        _arrive(barrier, member)
+    group_id = group.id
+    _play_to_the_end(
+        _game_id(members[0], barrier.id),
+        [(str(m.id), 1, READY) for m in members[:2]]
+        + [
+            (str(m.id), 2, {"type": "pick", "message": {"number": 3}})
+            for m in members[:2]
+        ],
+    )
+
+    group = db.session.get(SimpleSyncGroup, group_id)
+    assert (group.active, group.accepts_top_ups) == (True, not stop_top_ups_at_end)
+
+
+@pytest.mark.parametrize("accepts_top_ups", [False, True])
+def test_a_game_s_end_queues_stopping_top_ups_only_if_its_group_takes_them(
+    pair, accepts_top_ups
+):
+    from psynet.async_job import AsyncJob
+
+    members, game_barrier = pair
+    for member in members:
+        _arrive(game_barrier, member)
+    group = members[0].active_sync_groups["pair"]
+    group.accepts_top_ups = accepts_top_ups
+    db.session.commit()
+    entry = _psynet(
+        ready=[0, 1],
+        away_since=[None, None],
+        started_at=0,
+        group_id=group.id,
+        stop_top_ups_at_end=True,
+    )
+    _save_ending(_game_id(members[0], game_barrier.id), entry=entry)
+
+    jobs = AsyncJob.query.filter_by(label="stop_live_game_top_ups").count()
+    assert jobs == int(accepts_top_ups)
 
 
 @pytest.mark.parametrize("third_player", ["loaded_before_joining", "failed"])

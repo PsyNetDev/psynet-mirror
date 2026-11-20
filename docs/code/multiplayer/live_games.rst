@@ -526,7 +526,8 @@ At the end, and when players leave:
   `The end`_).
 - ``onResultSaved(callback)`` calls ``callback`` once the player's result is
   saved, and ``onRefused(callback)`` if the server refuses the page's
-  connection. Either way, the page then moves on by itself.
+  connection. Either way, the page then moves on by itself, unless it has
+  ``auto_advance=False``: its callback then calls ``psynet.nextPage()``.
 - ``onResultTimeLeft(callback)`` calls ``callback`` with the seconds left
   before the page moves on, a few times a second, for a countdown while the
   page shows the result (see `The end`_).
@@ -580,6 +581,30 @@ player who joins while the game runs is added a moment after the views first
 show them, and ``onChange`` then runs again, so a page that labels players in
 ``onChange`` shows the newcomer's name. A game's colours for its pieces, such
 as each snake's, are the game's own, and needn't match the pseudonyms'.
+
+To show something else about each player that the game's rules don't
+need, such as an avatar they chose in the lobby, give the page a
+``player_info`` function of the participant. PsyNet calls it when the
+participant reaches the ``PlayLiveGame``, and each player's ``info`` is
+what it returned, any value that can be saved as JSON, so the game's state
+and views needn't carry it:
+
+.. code-block:: python
+
+    LiveGamePage(
+        "ultimatum_game",
+        ...,
+        player_info=lambda participant: {"avatar": participant.var.avatar},
+    )
+
+.. code-block:: javascript
+
+    let avatar = psynet.liveGame.players[player]?.info?.avatar;
+
+``info`` is ``null`` without a ``player_info``, and an anonymous page gets
+only the participant's own, so the page can show their own choice, but not
+the others'. Settings that are the same for every player, such as a
+game's rules, go in the page's ``js_vars`` instead.
 
 PsyNet translates its own texts on the page, such as the notices and the
 status line's defaults, and the labels above. Text that the game puts in its
@@ -914,6 +939,8 @@ society fishing on a shared lake, can take new players while it runs, and
 let each player finish before the others. The ``microsociety_live`` demo
 does both.
 
+.. _live-games-joining:
+
 Joining a running game
 ~~~~~~~~~~~~~~~~~~~~~~
 
@@ -967,6 +994,54 @@ it waits at the barrier for the group's next game. Write the page so that
 it allows for views with more players than before, and give each new
 player what they need, such as a colour no other player on the board has.
 
+A game that takes newcomers only for a while, such as until its first
+round starts, defines ``accepts_players(self, state)``, which returns
+whether it still takes new players:
+
+.. code-block:: python
+
+    class Ultimatum(LiveGame):
+        ...
+
+        def accepts_players(self, state):
+            return state["round"] == 0
+
+PsyNet asks it after each change to the state, and once it returns
+``False`` the game takes no more players, even if it would later return
+``True``. A few seconds later, PsyNet stops the group's top-ups (see
+:meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups`), so the group takes no
+more newcomers either. A newcomer the group admitted before then still
+reaches the game, but doesn't play it: the game never sees them, so its
+``on_add``, ``view``, ``is_done``, ``outcome``, ``answer`` and rewards
+aren't called for them, and they don't count as away. They take the next
+numbers after every player the game has had, so the game's lists of
+players need no gaps, and the other players' pages leave them out of
+``psynet.liveGame.players``. Their own game ends at once with the reason
+:data:`~psynet.live_game.TOO_LATE`, ``"too_late"``. Their page hides the
+game and shows the page's ``too_late_message``, "The game had already
+stopped taking new players." by default, with the Next button, so that
+the participant reads it and moves on. The page's JavaScript gets no
+views, and no ``onEnded``, ``onResultSaved`` or ``onResultTimeLeft``:
+once PsyNet knows, as
+when the page is reloaded, ``psynet.liveGame.hasGame`` is ``false``, as
+on a page with no game. Their answer is ``None``, they get no
+``performance_reward``, and their record's ``left_early`` is true, with
+the ``done_reason`` ``"too_late"``. The same goes for a newcomer who
+reaches the game just as it ends, before Dallinger could add them.
+
+By default, once a game from a ``PlayLiveGame`` ends, PsyNet stops the
+top-ups of the group that played it as well, a few seconds later, as it
+saves the game's ending, so no newcomer joins a group whose game is over.
+One who joins in those seconds comes too late, as above. This is
+:meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups`, so it also turns away
+pending members, and dissolves a group that is already below its quorum,
+failing the members left if its ``below_quorum`` is ``"fail"``. Give the
+``PlayLiveGame`` ``stop_top_ups_at_end=False`` for a group that takes
+newcomers into its next game, or that should keep waiting for newcomers
+while it's short, or give its grouper
+``below_quorum="continue_without_group"``, so that its members carry on
+without the group instead of failing.
+
 A game played in a trial can't take newcomers, since its round is already
 under way, so a ``PlayLiveGame`` with ``join_running_game`` in a trial's
 ``show_trial`` raises an error.
@@ -1004,13 +1079,13 @@ reason "Your game has ended.", and a bot stops playing. Their answer and
 reason, and their result is saved a few seconds later, so ``onResultSaved``
 runs and the page moves on as it would at the end of the game. They no
 longer count towards the game's ``min_players`` for its ``away_timeout``.
-The game's ``end_reason`` stays the whole game's, so a later page reads why
-the player's own game ended from their record's ``player_end_reason``
-(see `A game's record`_). If the game ends on the same step as a player's
-``is_done`` becomes true, for example because they were the last player
-left, no ending is written for that player alone, so their
-``player_end_reason`` is the game's ``end_reason``; read per-player results
-such as their ``done_reason`` from the game's ``outcome``.
+The game's ``end_reason`` stays the whole game's, so a later page reads
+whether and why the player left early from their record's ``left_early``
+and ``done_reason`` (see `A game's record`_). If the game ends on the same
+step as a player's ``is_done`` becomes true, for example because they were
+the last player left, they didn't leave early: their game ends with the
+game's ``end_reason``, so read per-player results such as why they left
+from the game's ``outcome``.
 
 The game itself still ends through its ``is_over``, ``duration`` or
 ``timeout``, and the players still playing then get their results from the
@@ -1180,19 +1255,27 @@ A record has:
   until the game's result is saved, then ``"ended"``, or ``"failed"`` if the
   game's code raised an error or its record couldn't be saved, with the
   error in ``error``;
-- ``finished``, whether ``end_reason`` is ``"finished"`` (see `Rewards`_ for
-  the reasons), rather than early, for example because players left;
+- ``finished``, whether the whole game's ``end_reason`` is ``"finished"``
+  (see `Rewards`_ for the reasons), rather than early, for example because
+  players left. It's ``False`` while the game runs, including for a player
+  who has left it early;
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
   ended, both ``None`` until it has ended;
 - ``answer``, the participant's answer on the game page, ``None`` until
   their game has ended, and there for a participant who closed the page
-  too (see `The answer`_), ``player``,
-  their player number, and ``player_end_reason``, why their own game
-  ended: their ``done_reason`` if ``is_done`` ended it early (see
-  `Finishing before the others`_), otherwise ``end_reason``;
+  too (see `The answer`_), and ``player``, their player number;
+- ``left_early``, whether the participant's own game ended before the
+  game did, through ``is_done`` (see `Finishing before the others`_), and
+  ``done_reason``, why: the game's ``done_reason`` for them, or ``None``
+  for a player whose game ended with the game's ``end_reason``. A player
+  who joined after the game stopped taking players, or as it ended, left
+  early with the ``done_reason`` ``"too_late"`` (see :ref:`live-games-joining`);
 - ``answers``, each player's answer, in player order, worked out in the
   same way, and
-  ``participant_ids``, each player's participant id;
+  ``participant_ids``, each player's participant id. Both include players
+  added after the game stopped taking players, numbered after everyone the
+  game saw, with the answer ``None``, but not participants Dallinger never
+  added, whose ``player`` is ``None``;
 - ``messages``, ``moments`` and ``checkpoints``, below;
 - ``id``, the game id, and ``record_complete``, which is ``False`` if saving
   the record failed.
@@ -1214,7 +1297,7 @@ Other records of the same games:
 - A group's :attr:`~psynet.sync.SyncGroup.running_live_games` gives the
   games it is playing now, keyed in the same way. These records are the
   group's, not one participant's, so they have ``answers`` but no
-  ``answer``, ``player`` or ``player_end_reason``.
+  ``answer``, ``player``, ``left_early`` or ``done_reason``.
 
 .. _live-games-saved-messages:
 
@@ -1405,6 +1488,9 @@ in the state or a view. The parts a game can use are:
 - ``away``, the numbers of the players who have left the game page and not
   come back. One of the game's first players who hasn't opened it yet isn't
   in it, but a player added while the game runs is, until their page opens.
+- ``accepts_players``, ``False`` once the game's ``accepts_players`` has
+  returned ``False``, and ``too_late``, the numbers of the players added
+  after that, who don't play (see :ref:`live-games-joining`)
 - in a view, ``you``, the number of the player it's for, which the page
   reads as ``psynet.liveGame.player``
 
