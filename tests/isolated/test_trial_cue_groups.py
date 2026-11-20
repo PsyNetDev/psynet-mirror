@@ -703,6 +703,65 @@ def test_a_member_removed_before_their_cue_still_gets_a_trial_in_the_round(
         VoteTrial.cue({})[0].consume(exp, leaver)
 
 
+@in_consents_experiment
+def test_a_member_removed_before_their_cue_joins_the_named_round(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    stayer, leaver = cohort
+    pair = stayer.active_sync_groups["pair"]
+    role = _pair_role(leaver)
+    stayed = _cue_round(exp, stayer, 4)
+    pair.remove_participant(leaver, reason="late")
+
+    left = _cue_round(exp, leaver, 4)
+    assert left.group_round is stayed.group_round
+    assert (left.sync_group_role, left.sync_group_outcome) == (role, "late")
+
+    _cue_round(exp, stayer, 5)
+    with pytest.raises(RuntimeError, match="sync_group_optional"):
+        _cue_round(exp, leaver, 5)
+    monkeypatch.setattr(PairTrial, "sync_group_optional", True)
+    assert _cue_round(exp, leaver, 5).group_round is None
+
+
+_voted = GroupBarrier("voted", group_type="pair", on_release=PairTrial.record_release)
+
+
+class BarrierVoteTrial(VoteTrial):
+    def show_trial(self, experiment, participant):
+        return _voted
+
+
+@in_consents_experiment
+def test_a_member_removed_before_their_cue_passes_the_trial_s_barrier(
+    in_experiment_directory, db_session
+):
+    exp = get_experiment()
+    cohort, _ = _paired(exp)
+    stayer, leaver = cohort
+    pair = stayer.active_sync_groups["pair"]
+    BarrierVoteTrial.cue({})[0].consume(exp, stayer)
+    pair.remove_participant(leaver, reason="late")
+    BarrierVoteTrial.cue({})[0].consume(exp, leaver)
+    trial = leaver.current_trial
+    trial._show_trial(exp, leaver)
+
+    _released.clear()
+    in_group, *_ = _voted.resolve()
+    in_group.consume(exp, leaver)
+    db.session.commit()
+    assert not _voted._participant_is_waiting(leaver) and not _released
+    _arrive(exp, _voted, [stayer])
+
+    ((participants, trials, group_round),) = _released
+    assert participants == [stayer] and trials == [stayer.current_trial]
+    assert group_round is trial.group_round and group_round.closed_at is not None
+    assert group_round.trials == [stayer.current_trial, trial]
+    assert [t.sync_group_outcome for t in group_round.trials] == ["stayed", "late"]
+
+
 class LateVoteTrial(VoteTrial):
     def show_trial(self, experiment, participant):
         return GroupBarrier(
