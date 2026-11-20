@@ -195,7 +195,8 @@ Each game's record is saved with the experiment's data:
 - its **outcome**, worked out from the state when it ends, such as each
   player's score. Each player's **answer** is their part of it, which their
   game page saves, so a game played as a trial gives the trial an answer
-  like any other.
+  like any other. The record works it out the same way for a player who
+  closed the page, so an export has every player's answer.
 - its **messages**: every message a page sent, in order, with when it arrived
   and whether the game accepted it. This is the complete record of what each
   player did and when. A fast game can send many messages a second, so it can

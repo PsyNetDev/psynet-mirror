@@ -178,11 +178,11 @@ class LiveGameRecord:
     @property
     def answer(self) -> Any:
         """The participant's answer on the game page, as the game's
-        ``answer`` gives it once their own game has ended, from the same
-        outcome and reason as their reward. A participant who closed the
-        page has one too. It's ``None`` until their game has ended, if no
-        game started, if they aren't among its players, or if the game
-        failed before their game ended."""
+        ``answer`` gives it: from their own ending if ``is_done`` ended
+        their game early, otherwise from the game's outcome once it has
+        ended. A participant who closed the page has one too. It's ``None``
+        until their game has ended, if no game started, if they aren't
+        among its players, or if the game failed before their game ended."""
         participant_id = self._own_participant_id("answer")
         if self._id is None:
             return None
