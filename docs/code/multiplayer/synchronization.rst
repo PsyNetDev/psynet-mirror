@@ -460,8 +460,10 @@ module stores nothing either, so put the barrier that decides the round in
         )
         ...
 
-A member removed before their cue ran has no trial in the round; ``left``
-still lists them.
+A member removed before their cue ran has no trial in the round when it is
+released; ``left`` still lists them. If they reach the cue later, it adds
+their trial to that round, with their removal reason as
+``sync_group_outcome``.
 
 ``on_release`` runs only when the barrier releases the group. A member who
 leaves the group before then, or whose group is dissolved, doesn't get
