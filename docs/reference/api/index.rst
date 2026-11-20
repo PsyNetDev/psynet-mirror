@@ -55,6 +55,7 @@ They are generated from the source code and grouped like the
    :maxdepth: 1
 
    participant
+   exit
    prescreen
    demography
    recruiters
