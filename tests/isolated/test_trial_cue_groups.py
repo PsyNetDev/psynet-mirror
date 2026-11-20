@@ -698,8 +698,6 @@ def test_a_member_removed_before_their_cue_still_gets_a_trial_in_the_round(
     assert (trial.sync_group_id, trial.sync_group_role) == (pair.id, role)
     assert trial.sync_group_outcome == "late"
     assert trial.group_round.trials == [stayed, trial]
-    # They have left, so their pages need no barrier.
-    trial._show_trial(exp, leaver)
 
     with pytest.raises(RuntimeError, match="sync_group_optional"):
         VoteTrial.cue({})[0].consume(exp, leaver)

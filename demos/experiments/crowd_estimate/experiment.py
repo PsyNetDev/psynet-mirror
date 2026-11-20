@@ -12,8 +12,10 @@ a ``SyncGroupRound``, which holds the group's estimates and median; each player'
 and revised estimate are their trial's answer, and ``trial.var.in_median``
 says whether the estimate counted towards the median. A player without a
 group, because none formed, their group ended or they were removed for being
-late, is asked only for the estimate. Their trials are ungrouped, except for
-the question in whose round they were removed. See
+late, gets ungrouped trials, which ask only for the estimate. A member
+removed during a question's round before their trial for it started still
+plays that trial in the group's round, like a member removed just after it
+started. See
 ``README.md`` for how the demo handles dropouts and time-outs.
 
 The timeouts are short so that the bot test runs quickly; ``README.md``
@@ -134,13 +136,11 @@ class EstimateTrial(Trial):
     accumulate_answers = True
 
     def show_trial(self, experiment, participant):
-        alone = left_group(participant)
-        estimate = join(
-            self.estimate_page(alone), CodeBlock(self.save_estimate_timed_out)
-        )
-        if alone:
-            # Alone, the estimate is the whole trial. A member removed before
-            # their trial started still has it in the group's round.
+        estimate = join(self.estimate_page(), CodeBlock(self.save_estimate_timed_out))
+        # show_trial is called again on later requests, so it checks the
+        # trial's group, which is fixed, not left_group(participant).
+        if self.sync_group is None:
+            # Alone, the estimate is the whole trial.
             return estimate
         return join(
             estimate,
@@ -160,9 +160,9 @@ class EstimateTrial(Trial):
     def question(self):
         return QUESTIONS[self.definition["question"]]
 
-    def estimate_page(self, alone):
+    def estimate_page(self):
         prompt = self.question
-        if alone:
+        if self.sync_group is None:
             # Also tells a member removed from the group partway through.
             prompt = f"You're answering on your own. {prompt}"
         return ModularPage(
@@ -260,14 +260,15 @@ class Exp(psynet.experiment.Experiment):
         return {
             "player_round": [
                 {
-                    # None for an answer given alone.
+                    # None for an ungrouped trial.
                     "crowd_id": t.sync_group_id,
                     "question": t.definition["question"],
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     # "stayed" if the player was in the group when the
                     # median was shared, otherwise why they left before
-                    # that, such as "late" or "group_dissolved"; None alone.
+                    # that, such as "late" or "group_dissolved"; None when
+                    # ungrouped.
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or left first.
                     "estimate": t.answer.get("estimate"),

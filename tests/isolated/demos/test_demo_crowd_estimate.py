@@ -5,13 +5,14 @@ import uuid
 
 import pytest
 from dallinger import db
+from flask import Flask
 
 from psynet.experiment import get_experiment
 from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_demo_experiment
 from psynet.sync import SimpleSyncGroup
-from psynet.timeline import Module, Response
+from psynet.timeline import Module, Response, Timeline
 
 pytestmark = pytest.mark.parametrize(
     "experiment_directory", [path_to_demo_experiment("crowd_estimate")], indirect=True
@@ -21,6 +22,14 @@ pytestmark = pytest.mark.parametrize(
 def _crowd(n_members):
     """Return the demo module and a group's trials for the first question, in member order."""
     exp = get_experiment()
+    demo, members, _ = _members(exp, n_members)
+    for participant in members:
+        demo.EstimateTrial.cue({"question": 0}, round=0)[0].consume(exp, participant)
+    return demo, [participant.current_trial for participant in members]
+
+
+def _members(exp, n_members):
+    """Return the demo module, a group's members in module ``game``, and the group."""
     demo = sys.modules[type(exp).__module__]
     members = [
         Participant(
@@ -39,6 +48,7 @@ def _crowd(n_members):
         quorum=2,
         n_active_participants=n_members,
         accepts_top_ups=False,
+        below_quorum="continue_without_group",
     )
     db.session.add_all([*members, group])
     for participant in members:
@@ -46,9 +56,42 @@ def _crowd(n_members):
         group.add_participant(participant)
         participant.start_module(Module("game", []))
     db.session.commit()
-    for participant in members:
-        demo.EstimateTrial.cue({"question": 0}, round=0)[0].consume(exp, participant)
-    return demo, [participant.current_trial for participant in members]
+    return demo, members, group
+
+
+def _submit(exp, participant, answer):
+    with Flask(__name__).test_request_context("/response"):
+        exp.process_response(
+            participant.id, answer, {}, {}, participant.page_uuid, "127.0.0.1"
+        )
+    return exp.timeline.get_current_elt(exp, participant)
+
+
+def test_members_who_leave_before_or_during_a_question_reach_the_revision_page(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    demo, members, group = _members(exp, 4)
+    timeline = Timeline(
+        demo.EstimateTrial.cue({"question": 0}, round=0),
+        InfoPage("Done", time_estimate=0),
+    )
+    monkeypatch.setattr(exp, "timeline", timeline)
+
+    def start(participant):
+        participant.elt_id = ["main", -1]
+        timeline.advance_page(exp, participant)
+
+    *stayers, during, before = members
+    for participant in [*stayers, during]:
+        start(participant)
+    group.remove_participant(during, reason="late")
+    group.remove_participant(before, reason="late")
+    start(before)
+    for participant in [during, before]:
+        assert participant.current_trial.sync_group_outcome == "late"
+        page = _submit(exp, participant, 5)
+        assert "didn't reach your group in time" in str(page.prompt.text)
 
 
 @pytest.mark.parametrize(

@@ -852,7 +852,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         (``sync_group_id``), or ``None`` for an ungrouped trial. The group is
         returned even if the participant has left it, including a member
         removed before their cue whose trial :meth:`cue` put in the round
-        that was under way. For current membership, use
+        that was under way. So ``show_trial`` can branch on it, as it is
+        fixed when the trial is created. For current membership, use
         ``participant.in_sync_group(...)``.
         """
         if self.sync_group_id is None:
@@ -1426,10 +1427,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
           example by a barrier's ``late_after`` while their request had
           not reached the cue yet), still gets a trial in that round, with
           their role and their removal reason as :attr:`sync_group_outcome`,
-          as if they had left just after the trial started. Such a trial's
-          ``show_trial`` needs no ``GroupBarrier``, so it can branch on
-          ``participant.in_sync_group(...)`` to give the player a solo
-          version.
+          as if they had left just after the trial started. Its
+          ``show_trial`` gives them the grouped pages, whose barriers let
+          them through without waiting.
+        - ``show_trial`` is called again on later requests during the
+          trial, so it must return the same pages each time. Choose a solo
+          version with ``self.sync_group is None``, which is fixed when the
+          trial is created, not with ``participant.in_sync_group(...)`` or
+          :attr:`sync_group_outcome`, which change when the player leaves
+          the group during the trial.
         - :attr:`sync_group_outcome` records how the round ended for the
           player: ``"stayed"`` once a barrier in the trial's pages releases
           the group with them in it, after which it doesn't change; before
@@ -1766,7 +1772,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             self.group_round is not None
             and self.group_round.trial_maker_id is None
             and not barriers
-            and participant.in_sync_group(self.sync_group_type)
         ):
             raise ValueError(
                 f"{type(self).__name__} is played in groups (sync_group_type="

@@ -996,10 +996,19 @@ them, whether the removal came just before or just after their trial
 started. Rounds that started after they left, or had already closed by
 then, are not theirs, except that, as for a member, a ``round=`` cue still
 joins a round that closed before they left if they already have a trial
-of another class in it. Such a trial's
-``show_trial`` needs no ``GroupBarrier``; branch on
-``participant.in_sync_group(...)`` rather than ``self.sync_group is None``
-to give a member who left the solo version.
+of another class in it. Their trial runs the grouped ``show_trial``,
+whose barriers let them through without waiting, as for a member who left
+just after their trial started.
+
+.. warning::
+
+   ``show_trial`` is called again on later requests during the trial (it
+   runs in a ``PageMaker``), so it must return the same pages each time.
+   Choose a solo version with ``self.sync_group is None``, which is fixed
+   when the trial is created. Don't branch on state that can change during
+   the trial, such as ``participant.in_sync_group(...)`` or
+   ``self.sync_group_outcome``: a member who leaves the group mid-trial
+   would then get a shorter list of pages, and the timeline fails.
 
 Rounds are ordered by when
 the group first plays them, so the loop values needn't increase. Don't
@@ -1682,11 +1691,10 @@ For the rest of the timeline:
   participant who is out of the group when the trial starts, unless the
   trial class sets ``sync_group_optional = True``: they then get an
   ungrouped trial, so ``show_trial`` can give them the solo version of the
-  round. A member removed during the round, before their trial started,
-  gets a trial in that round instead (see :ref:`members removed before their cue <rounds-removed-before-cue>`),
-  so ``show_trial`` checks ``participant.in_sync_group(...)``. In the
-  ``crowd_estimate`` demo, they give their estimate without the group's
-  median:
+  round, with ``self.sync_group is None`` (not with
+  ``participant.in_sync_group(...)``, see :ref:`members removed before
+  their cue <rounds-removed-before-cue>`). In the ``crowd_estimate`` demo,
+  they give their estimate without the group's median:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.show_trial

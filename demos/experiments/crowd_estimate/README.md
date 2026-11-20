@@ -26,9 +26,11 @@ in their trial's answer. With `accumulate_answers = True`, that answer holds
 both the estimate and the revised estimate, by page label. A player without a
 group gets an ungrouped trial that asks only for their estimate. A member
 removed as late during a question's round, before their trial for it
-started, is also asked only for their estimate, but that trial is in the
-group's round, with `outcome` `"late"`. A removal before that round, such as
-at `game_starts`, gives ungrouped trials.
+started, still gets that trial in the group's round, with `outcome`
+`"late"`, and plays it like a member removed just after it started: the
+barrier lets them through and the revision page says why there is nothing
+to revise. A removal before that round, such as at `game_starts`, gives
+ungrouped trials.
 `get_basic_data` exports a row for every trial, including answers given alone
 and trials whose player left before answering, and one per group and question
 from the rounds.

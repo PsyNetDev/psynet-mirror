@@ -313,10 +313,13 @@ Module("game", for_loop(
   trial. With a cohort (`within=`), use the three-way `switch` on
   `round_status` instead, as described above. Where players without a
   group play on alone, as in an open lobby, leave the cue unwrapped and
-  branch in `show_trial` on `participant.in_sync_group(...)`, as
-  `crowd_estimate` does: a member removed during a round before their cue
-  still gets a trial in that round, with their removal reason as
-  `sync_group_outcome`, so `group_round.trials` lists them. A started trial runs to its
+  branch in `show_trial` on `self.sync_group is None`, as `crowd_estimate`
+  does. Never branch `show_trial` on `participant.in_sync_group(...)` or
+  `self.sync_group_outcome`: it is called again on later requests, and a
+  member who leaves mid-trial would get a shorter page list and crash the
+  timeline. A member removed during a round before their cue still gets a
+  grouped trial in that round, with their removal reason as
+  `sync_group_outcome`, and its barriers let them through. A started trial runs to its
   end even if the player leaves the group, so its `show_feedback` explains every outcome, including being
   removed for lateness. Read how the round ended for each player from
   `trial.sync_group_outcome` (`"stayed"` once a barrier in the trial's

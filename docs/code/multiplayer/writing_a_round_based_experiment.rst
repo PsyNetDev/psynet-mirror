@@ -404,11 +404,12 @@ group and round, when the first member's cue creates the round, so the
 whole group plays the same draw. A player who is in no group of that type
 when the trial starts gets an ungrouped trial if the trial class sets
 ``sync_group_optional = True``, with ``sync_group_id`` set to ``None``
-(otherwise the cue raises an error). A member removed during the round,
-before their trial started, still gets a trial in it (see
-:ref:`members removed before their cue <rounds-removed-before-cue>`), so ``show_trial`` should check
-``participant.in_sync_group(...)`` to give a player without a group a solo
-version. The ``crowd_estimate`` demo does this in a fixed group's
+(otherwise the cue raises an error); ``show_trial`` can check
+``self.sync_group is None`` to give them a solo version. Check that rather
+than ``participant.in_sync_group(...)``, because ``show_trial`` must return
+the same pages for the whole trial; a member removed during the round,
+before their trial started, still gets a grouped trial in it (see
+:ref:`members removed before their cue <rounds-removed-before-cue>`). The ``crowd_estimate`` demo does this in a fixed group's
 loop of questions, cued with ``round=question``, and exports each round's
 ``sync_group_outcome`` for each player.
 
