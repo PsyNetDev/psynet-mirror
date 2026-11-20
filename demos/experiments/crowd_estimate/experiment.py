@@ -12,7 +12,8 @@ a ``SyncGroupRound``, which holds the group's estimates and median; each player'
 and revised estimate are their trial's answer, and ``trial.var.in_median``
 says whether the estimate counted towards the median. A player without a
 group, because none formed, their group ended or they were removed for being
-late, gets ungrouped trials, which ask only for the estimate. See
+late in an earlier question, gets ungrouped trials, which ask only for the
+estimate. See
 ``README.md`` for how the demo handles dropouts and time-outs.
 
 The timeouts are short so that the bot test runs quickly; ``README.md``

@@ -438,7 +438,10 @@ later:
 The outcome is written during the trial's pages (``show_trial``), while
 :attr:`~psynet.trial.main.Trial.complete` is ``False``, and only until a
 barrier there releases the group with the player in it: the barrier writes
-``"stayed"``, and a removal during those pages writes its reason. So ``"stayed"``
+``"stayed"``, and a removal during those pages writes its reason. For a
+member removed before their cue, the cue writes the reason when it creates
+the trial (see :ref:`members removed before their cue
+<rounds-removed-before-cue>`). So ``"stayed"``
 means the player took part in the round's first release, not that they
 stayed to the end of its pages: ``complete`` and
 ``participant.sync_group_removal_reason(group_type)`` say that. A player who
