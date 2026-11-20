@@ -779,6 +779,42 @@ def test_an_anonymous_game_page_never_gets_the_players_pseudonyms(db_session):
         LiveGamePage("anonymous", "Play.", names="hidden", time_estimate=5)
 
 
+@pytest.mark.parametrize("names", ["shown", "anonymous"])
+def test_a_game_page_shows_each_player_s_info(db_session, names):
+    from psynet.live_game.control import _players, _players_payload
+
+    experiment = get_experiment()
+    members, _ = _pair(db_session, [new_participant(experiment) for _ in range(2)])
+    for member in members:
+        member.var.avatar = f"avatar-{member.id}"
+    page = LiveGamePage(
+        "avatars",
+        "Play.",
+        names=names,
+        player_info=lambda participant: {"avatar": participant.var.avatar},
+        time_estimate=5,
+    )
+    play = _play("avatars", page=page)
+    for member in members:
+        save_info, *_ = play.resolve()
+        save_info.consume(experiment, member)
+        _arrive(play.barrier, member)
+    # Read when the participant reaches the game, so a later change isn't shown.
+    members[0].var.avatar = "changed"
+
+    players = _players(members[0], "avatars")
+    by_you = {player["you"]: player["info"] for player in players}
+    assert by_you[True] == {"avatar": f"avatar-{members[0].id}"}
+    # An anonymous page doesn't get the others' info.
+    assert by_you[False] == (
+        None if names == "anonymous" else {"avatar": f"avatar-{members[1].id}"}
+    )
+    assert _players_payload(members[0].unique_id, "avatars") == {"players": players}
+    bad = LiveGamePage("bad", "Play.", player_info=lambda p: {1, 2}, time_estimate=5)
+    with pytest.raises(TypeError, match="can't be saved as JSON"):
+        _play("bad", page=bad).resolve()[0].consume(experiment, members[0])
+
+
 def _play_to_the_end(session_id, messages):
     """Play the session, sending each ``(player_id, number, payload)`` as a
     page would, a little apart, until it ends, and write its record."""

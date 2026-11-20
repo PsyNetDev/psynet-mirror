@@ -581,6 +581,30 @@ show them, and ``onChange`` then runs again, so a page that labels players in
 ``onChange`` shows the newcomer's name. A game's colours for its pieces, such
 as each snake's, are the game's own, and needn't match the pseudonyms'.
 
+To show something else about each player that the game's rules don't
+need, such as an avatar they chose in the lobby, give the page a
+``player_info`` function of the participant. PsyNet calls it when the
+participant reaches the ``PlayLiveGame``, and each player's ``info`` is
+what it returned, any value that can be saved as JSON, so the game's state
+and views needn't carry it:
+
+.. code-block:: python
+
+    LiveGamePage(
+        "ultimatum_game",
+        ...,
+        player_info=lambda participant: {"avatar": participant.var.avatar},
+    )
+
+.. code-block:: javascript
+
+    let avatar = psynet.liveGame.players[player]?.info?.avatar;
+
+``info`` is ``null`` without a ``player_info``, and an anonymous page gets
+only the participant's own, so the page can show their own choice, but not
+the others'. Settings that are the same for every player, such as a
+game's rules, go in the page's ``js_vars`` instead.
+
 PsyNet translates its own texts on the page, such as the notices and the
 status line's defaults, and the labels above. Text that the game puts in its
 views or its JavaScript is the experiment's, so translate it as the

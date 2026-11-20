@@ -59,6 +59,7 @@ class LiveGameControl(NullControl):
         waiting_status=_DEFAULT,
         ended_status=_DEFAULT,
         names="shown",
+        player_info=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -66,6 +67,11 @@ class LiveGameControl(NullControl):
             raise ValueError(
                 f"A live game page's names must be one of "
                 f"{', '.join(map(repr, _NAMES))}, not {names!r}."
+            )
+        if player_info is not None and not callable(player_info):
+            raise TypeError(
+                "A live game page's player_info must be a function of the "
+                f"participant, not {player_info!r}."
             )
         if (
             isinstance(show_result_for, bool)
@@ -90,6 +96,7 @@ class LiveGameControl(NullControl):
         self.waiting_status = waiting_status
         self.ended_status = ended_status
         self.names = names
+        self.player_info = player_info
 
     def check_ready_for_response(self, experiment, participant):
         _check_reached_game(participant, self._play_id())
@@ -278,6 +285,14 @@ class LiveGamePage(ModularPage):
         neutral figure, without sending the page the others' pseudonyms
         (see :ref:`live-games-whos-who`).
 
+    player_info
+        Optional function of the participant that returns what the pages
+        show about them as a player, such as the avatar they chose, as any
+        value that can be saved as JSON. It's called when the participant
+        reaches the :class:`PlayLiveGame`, and each player's value is their
+        ``info`` in ``psynet.liveGame.players``. An anonymous page gets only
+        the participant's own.
+
     **kwargs
         Any other parameter of :class:`~psynet.modular_page.ModularPage`,
         such as ``js_page_modules``, ``css_links``, ``js_vars`` and
@@ -296,6 +311,7 @@ class LiveGamePage(ModularPage):
         waiting_status=_DEFAULT,
         ended_status=_DEFAULT,
         names="shown",
+        player_info=None,
         **kwargs,
     ):
         super().__init__(
@@ -309,6 +325,7 @@ class LiveGamePage(ModularPage):
                 waiting_status=waiting_status,
                 ended_status=ended_status,
                 names=names,
+                player_info=player_info,
             ),
             **kwargs,
         )
@@ -354,11 +371,12 @@ def _check_session_can_still_end(session_id):
 def _players(participant, play_id):
     """Return how the participant's game page shows each player of their
     latest game at the PlayLiveGame ``play_id``, in player order: the
-    player's pseudonym, unless the page is anonymous, and whether it's the
-    participant. Pages read it as ``psynet.liveGame.players``."""
+    player's pseudonym and the ``info`` that the page's ``player_info``
+    gave, unless the page is anonymous, and whether it's the participant.
+    Pages read it as ``psynet.liveGame.players``."""
     from ..participant import Participant
     from ..pseudonym import anonymous_sticker_html
-    from .play import _live_game_data
+    from .play import _live_game_data, _player_info
 
     data = _live_game_data(participant).get(play_id) or {}
     game_id = data.get("id")
@@ -397,6 +415,10 @@ def _players(participant, play_id):
             label = player["name"]
         player["you"] = you
         player["label"] = _p("live_game", "You") if you else label
+        shows_info = (you or not anonymous) and participant_id in shown
+        player["info"] = (
+            _player_info(shown[participant_id], play_id) if shows_info else None
+        )
         players.append(player)
     return players
 

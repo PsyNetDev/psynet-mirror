@@ -225,7 +225,21 @@ class PlayLiveGame(EltCollection):
         self.page = page
 
     def resolve(self):
-        return join(self.barrier, self.page)
+        if self.page.control.player_info is None:
+            return join(self.barrier, self.page)
+        return join(CodeBlock(self._save_player_info), self.barrier, self.page)
+
+    def _save_player_info(self, participant):
+        info = self.page.control.player_info(participant)
+        try:
+            info = json.loads(json.dumps(info, allow_nan=False))
+        except (TypeError, ValueError) as error:
+            raise TypeError(
+                f"The player_info of the PlayLiveGame {self.barrier.id!r}'s "
+                f"page returned {info!r}, which can't be saved as JSON: {error}"
+            ) from None
+        data = _live_game_data(participant).get(self.barrier.id, {})
+        _set_data(participant, self.barrier.id, {**data, "info": info})
 
 
 class _LiveGameBarrier(GroupBarrier):
@@ -530,8 +544,9 @@ def _live_game_data(participant):
     reached, keyed by its id: the ``id`` of their latest game there, or None
     if their group didn't start one, the ``history`` of every game they
     played there, as ``{"id": game_id, "answer": answer}``, oldest first, its
-    game page's ``names``, ``"shown"`` or ``"anonymous"``, and the group types
-    a player who doesn't play leaves, its ``absent_leave``."""
+    game page's ``names``, ``"shown"`` or ``"anonymous"``, the group types
+    a player who doesn't play leaves, its ``absent_leave``, and what its
+    page's ``player_info`` gave, its ``info``."""
     return participant.live_game_data or {}
 
 
@@ -551,8 +566,15 @@ def _set_live_game_id(participant, play_id, game_id, names=None, absent_leave=No
             "history": history,
             "names": names,
             "absent_leave": absent_leave,
+            "info": data.get("info"),
         },
     )
+
+
+def _player_info(participant, play_id):
+    """Return what the participant's game page's ``player_info`` gave when
+    they last reached the PlayLiveGame ``play_id``, or None."""
+    return _live_game_data(participant).get(play_id, {}).get("info")
 
 
 def _set_live_game_answer(participant, play_id, answer):
