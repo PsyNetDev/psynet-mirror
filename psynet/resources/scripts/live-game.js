@@ -660,14 +660,6 @@
       return tick;
     }
 
-    /**
-     * Call ``callback`` with the seconds left of the page's
-     * ``show_result_for``, a few times a second, from when this player's
-     * result is saved. Without ``show_result_for``, it never runs.
-     *
-     * @param {function} callback - Called with the seconds left
-     * @returns {Object} ``psynet.liveGame``
-     */
     // Passed on, except for a player who came too late, whose page shows
     // the too-late notice until they move on.
     function onResultSaved(callback) {
@@ -680,6 +672,14 @@
       return api;
     }
 
+    /**
+     * Call ``callback`` with the seconds left of the page's
+     * ``show_result_for``, a few times a second, from when this player's
+     * result is saved. Without ``show_result_for``, it never runs.
+     *
+     * @param {function} callback - Called with the seconds left
+     * @returns {Object} ``psynet.liveGame``
+     */
     function onResultTimeLeft(callback) {
       let socket = pageSocket();
       let state = pageState();

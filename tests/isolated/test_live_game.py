@@ -3886,6 +3886,31 @@ def test_a_group_stops_taking_newcomers_once_its_game_ends(
     assert (group.active, group.accepts_top_ups) == (True, not stop_top_ups_at_end)
 
 
+@pytest.mark.parametrize("accepts_top_ups", [False, True])
+def test_a_game_s_end_queues_stopping_top_ups_only_if_its_group_takes_them(
+    pair, accepts_top_ups
+):
+    from psynet.async_job import AsyncJob
+
+    members, game_barrier = pair
+    for member in members:
+        _arrive(game_barrier, member)
+    group = members[0].active_sync_groups["pair"]
+    group.accepts_top_ups = accepts_top_ups
+    db.session.commit()
+    entry = _psynet(
+        ready=[0, 1],
+        away_since=[None, None],
+        started_at=0,
+        group_id=group.id,
+        stop_top_ups_at_end=True,
+    )
+    _save_ending(_game_id(members[0], game_barrier.id), entry=entry)
+
+    jobs = AsyncJob.query.filter_by(label="stop_live_game_top_ups").count()
+    assert jobs == int(accepts_top_ups)
+
+
 @pytest.mark.parametrize("third_player", ["loaded_before_joining", "failed"])
 def test_a_newcomer_waits_at_the_barrier_once_the_running_game_is_full(
     db_session, monkeypatch, third_player

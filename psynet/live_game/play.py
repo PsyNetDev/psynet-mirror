@@ -45,6 +45,7 @@ from ..sync import (
     BarrierBehaviorMismatch,
     GroupBarrier,
     ParticipantLinkSyncGroup,
+    SimpleSyncGroup,
     _lock_sync_group,
     _round_trial,
     _validate_group_timeouts,
@@ -748,10 +749,16 @@ def _stop_top_ups_soon(group_id, session_id):
     newcomers, in a job of its own once the current transaction commits. A
     game's record is written in one transaction, which locks its players'
     rows, and a group's row has to be locked after its members' rows, never
-    before."""
+    before, so whether the group still takes newcomers is read unlocked."""
     from ..async_job import WorkerAsyncJob
 
-    if group_id is not None:
+    accepts_top_ups = (
+        group_id is not None
+        and db.session.query(SimpleSyncGroup.accepts_top_ups)
+        .filter_by(id=group_id, active=True)
+        .scalar()
+    )
+    if accepts_top_ups:
         WorkerAsyncJob(
             _stop_top_ups,
             arguments={"group_id": group_id, "session_id": session_id},
