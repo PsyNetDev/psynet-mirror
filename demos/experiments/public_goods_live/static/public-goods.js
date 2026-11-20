@@ -56,9 +56,12 @@ export function activate({root, vars, psynet}) {
     let total = contributions.reduce((a, b) => a + b, 0);
     let share = (rules.multiplier * total) / contributions.length;
     pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
-    earn.textContent =
-      `If the round ended now, each player would get ${+share.toFixed(2)} tokens ` +
-      `from the pot, and you would earn ${+(rules.endowment - mine + share).toFixed(2)} tokens.`;
+    let shareText = +share.toFixed(2);
+    let earned = +(rules.endowment - mine + share).toFixed(2);
+    earn.textContent = live.ended
+      ? `Each player gets ${shareText} tokens from the pot, and you earn ${earned} tokens.`
+      : `If the round ended now, each player would get ${shareText} tokens ` +
+        `from the pot, and you would earn ${earned} tokens.`;
   }
 
   live.onTimeLeft((left) => {

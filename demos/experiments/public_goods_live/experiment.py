@@ -10,7 +10,8 @@ and each token a member earns pays ``TOKEN_VALUE``.
 Each round is one cued ``ContributionTrial`` per player, whose ``show_trial``
 starts a live game for the team and shows the game page. The trial's answer
 holds what the player put in and earned; the results page reads the team's
-pot from the trial's ``live_game``.
+pot from the trial's ``live_game``. The export reads each player's round
+from the game's outcome, as a player who closed their page saved no answer.
 """
 
 import pytest
@@ -173,6 +174,24 @@ class ContributionTrial(Trial):
         )
 
 
+def round_result(trial):
+    """Return what the player put in and earned in the trial's round, or
+    ``(None, None)`` if the game ended before it could add them.
+
+    Once the round has ended, both come from the game's outcome rather than
+    the trial's answer, which is missing if the player closed their page
+    while they played. Until then they come from the answer."""
+    game = trial.live_game
+    player = None if game is None else game.player
+    if player is None:
+        return None, None
+    outcome = game.outcome
+    if outcome is None:
+        answer = trial.answer or {}
+        return answer.get("contributed"), answer.get("earned")
+    return outcome["contributions"][player], outcome["payoffs"][player]
+
+
 def left_team(participant):
     return not participant.in_sync_group("team")
 
@@ -251,6 +270,7 @@ class Exp(psynet.experiment.Experiment):
         rows = []
         for t in trials:
             team = (t.group_round and t.group_round.live_game_outcome) or {}
+            contributed, earned = round_result(t)
             rows.append(
                 {
                     "team_id": t.sync_group_id,
@@ -258,12 +278,12 @@ class Exp(psynet.experiment.Experiment):
                     "trial_id": t.id,
                     # Counted from 0, as in the other demos' exports.
                     "round": t.sync_group_round,
-                    "contributed": (t.answer or {}).get("contributed"),
+                    "contributed": contributed,
                     # What the team put in the pot, before it was multiplied.
                     "pot": team.get("pot"),
                     # Each player's part of the multiplied pot.
                     "share": team.get("share"),
-                    "earned": (t.answer or {}).get("earned"),
+                    "earned": earned,
                 }
             )
         return {"player_round": rows}

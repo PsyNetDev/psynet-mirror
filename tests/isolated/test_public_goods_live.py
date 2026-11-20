@@ -1,6 +1,8 @@
 """The public goods demo's rules: contributions and each player's
 payoff."""
 
+from types import SimpleNamespace
+
 import pytest
 from dallinger.realtime import Reject
 
@@ -37,6 +39,25 @@ class TestPublicGoodsLive:
         ]
         assert game.answer(2) == {"contributed": 0, "earned": demo.ENDOWMENT + share}
         assert game.view(0)["contributions"] == [10, 2, 0]
+
+    @pytest.mark.parametrize(
+        "outcome, player, answer, expected",
+        [
+            # The player closed their page, so it saved no answer, but they
+            # were paid from the game's outcome.
+            ({"contributions": [0, 10], "payoffs": [17.5, 7.5]}, 1, None, (10, 7.5)),
+            # Without an outcome, the row comes from the player's answer.
+            (None, 1, {"contributed": 5, "earned": 12.5}, (5, 12.5)),
+            # The game ended before it could add the player.
+            ({"contributions": [0], "payoffs": [10]}, None, None, (None, None)),
+        ],
+    )
+    def test_the_export_has_each_players_round_from_the_outcome(
+        self, demo, outcome, player, answer, expected
+    ):
+        game = SimpleNamespace(outcome=outcome, player=player)
+        trial = SimpleNamespace(live_game=game, answer=answer)
+        assert demo.round_result(trial) == expected
 
     def test_a_contribution_is_between_none_and_the_endowment(self, demo):
         game = LocalGame(demo.PublicGoods, players=3)
