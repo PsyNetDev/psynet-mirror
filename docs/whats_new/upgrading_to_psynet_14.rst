@@ -963,10 +963,10 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
   wait.
 * Uploaded recordings have a size limit, and a larger one fails its trial.
   An audio recording may be as large as an uncompressed WAV lasting one and
-  a half times the control's ``duration`` plus 5 seconds, so a page that
-  stops recording on its own event should set ``duration`` to the longest
-  expected recording. Other recordings, such as video, may be up to
-  128 MiB.
+  a half times the control's ``duration`` plus 5 seconds, up to 128 MiB,
+  so a page that stops recording on its own event should set ``duration``
+  to the longest expected recording. Other recordings, such as video, may
+  be up to 128 MiB.
 * A bot's ``bot_response_media`` must be a WAV file for audio and a WebM
   file for video.
 
