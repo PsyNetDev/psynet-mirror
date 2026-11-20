@@ -215,6 +215,10 @@ Trials
     An eight-trial arrow flanker task on one page, with prepared static trials,
     keyboard response times and feedback from the saved scores.
 
+`features/live_trial_game_images <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game_images>`__
+    A keyboard task using six bird photographs. The page preloads the fixed image
+    set with ``MediaSpec`` before the first bird appears.
+
 Chains
 ------
 

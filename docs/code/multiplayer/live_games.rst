@@ -1302,7 +1302,8 @@ segment boundary and applies the same field selection to the current item.
 Override ``StaticTrialMaker.live_trial_definition(trial)`` to present a
 different representation, such as the URL of a node's image asset. Sending a URL
 does not fetch the image. Declare a small fixed set of page images using
-:class:`~psynet.timeline.MediaSpec`, or start fetching upcoming images from
+:class:`~psynet.timeline.MediaSpec` as in the ``features/live_trial_game_images``
+bird direction demo, or start fetching upcoming images from
 the deck in your browser module as VocabTest does.
 
 A response message can call
