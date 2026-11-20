@@ -80,6 +80,7 @@ def _locked_players(session_row, participant_ids=None):
     )
 
 
+_VISIT_EFFECT = "psynet_assigned_visit"
 _TRIAL_EFFECT = "psynet_item_trial"
 
 
@@ -138,6 +139,17 @@ def _handles_reward(method):
         if name in (_STARTED_EFFECT, _MOMENT_EFFECT):
             # Only recorded, for a game record's messages and moments.
             return None
+        if name == _VISIT_EFFECT:
+            from ..trial.static import TrialVisit
+
+            member = _participant_ids(session_row)[payload["player"]]
+            players = _locked_players(session_row)
+            participant = next(p for p in players if p.id == member)
+            visit = db.session.get(TrialVisit, payload["visit_id"])
+            if visit is None:
+                raise ValueError("Unknown assigned visit.")
+            visit.complete(participant, payload["answer"], payload["time_taken"])
+            return
         if name == _TRIAL_EFFECT:
             return _record_item_trial(payload, session_row)
         if name != _REWARD_EFFECT:

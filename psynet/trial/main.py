@@ -2432,7 +2432,7 @@ class TrialMaker(Module):
             conditional(
                 "not_left_before_any_trial",
                 lambda participant: not self._left_before_any_trial(participant),
-                join(self.introduction, self._trial_loop()),
+                join(self.introduction, self.present_trials()),
                 log_chosen_branch=False,
             ),
             conditional(
@@ -3249,6 +3249,10 @@ class TrialMaker(Module):
             ),
         )
 
+    def present_trials(self):
+        """Build the presentation timeline inside this maker's normal setup and wrap-up."""
+        return self._trial_loop()
+
     def _trial_loop(self):
         return join(
             self._wait_for_trial(),
@@ -3808,10 +3812,14 @@ class NetworkTrialMaker(TrialMaker):
             node.network_id,
             participant.id,
         )
+        return self._create_selected_trial(
+            selection, experiment, participant
+        ), "available"
+
+    def _create_selected_trial(self, selection, experiment, participant, **kwargs):
+        node = selection.value
         trial = self._create_trial(
-            node=node,
-            participant=participant,
-            experiment=experiment,
+            node=node, participant=participant, experiment=experiment, **kwargs
         )
         self._on_node_claimed(node, participant)
         self.on_trial_created(
@@ -3820,7 +3828,7 @@ class NetworkTrialMaker(TrialMaker):
             participant=participant,
             selection_context=selection.context,
         )
-        return trial, "available"
+        return trial
 
     def on_trial_created(
         self,
@@ -3973,6 +3981,7 @@ class NetworkTrialMaker(TrialMaker):
         participant,
         experiment,
         trial_class=None,
+        **trial_kwargs,
     ):
         if trial_class is None:
             trial_class = self.get_trial_class(node, participant, experiment)
@@ -3988,6 +3997,7 @@ class NetworkTrialMaker(TrialMaker):
             participant=participant,
             propagate_failure=self.propagate_failure,
             is_repeat_trial=False,
+            **trial_kwargs,
         )
         self._finalize_created_trial(trial)
         db.session.add(trial)

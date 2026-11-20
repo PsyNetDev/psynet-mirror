@@ -40,6 +40,7 @@ from .registry import _register_live_game
 from .reward import (
     _REWARD_EFFECT,
     _TRIAL_EFFECT,
+    _VISIT_EFFECT,
     _check_reward,
     _handles_ending,
     _handles_player_ending,
@@ -443,6 +444,29 @@ class LiveGame(RealtimeGame):
         """
         return super().handle_player_ending(session_row, player, ending)
 
+    def record_visit(self, *, player, visit_id, answer, time_taken=None):
+        """Complete a maker-assigned visit in the live event transaction."""
+        if (
+            type(player) is not int
+            or player < 0
+            or type(visit_id) is not int
+            or visit_id < 1
+        ):
+            raise ValueError("Expected a player number and a persisted visit ID.")
+        if time_taken is not None and (not is_number(time_taken) or time_taken < 0):
+            raise ValueError("Invalid presentation duration.")
+        super().queue_effect(
+            _VISIT_EFFECT,
+            to_jsonable_python(
+                dict(
+                    player=player,
+                    visit_id=visit_id,
+                    answer=answer,
+                    time_taken=time_taken,
+                )
+            ),
+        )
+
     def record_trial(self, *, player, slot, definition, answer, time_taken=None):
         """Save an accepted item in a cued game as a native LiveGameItemTrial.
 
@@ -507,7 +531,13 @@ class LiveGame(RealtimeGame):
         payload converted to plain data in the same way as the state. A
         message's fields can go in the payload as they are.
         """
-        if name in (_REWARD_EFFECT, _STARTED_EFFECT, _MOMENT_EFFECT, _TRIAL_EFFECT):
+        if name in (
+            _REWARD_EFFECT,
+            _STARTED_EFFECT,
+            _MOMENT_EFFECT,
+            _TRIAL_EFFECT,
+            _VISIT_EFFECT,
+        ):
             raise ValueError(
                 f"The effect name {name!r} is reserved for PsyNet's "
                 "add_performance_reward. Give the effect another name."

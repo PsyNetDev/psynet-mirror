@@ -98,7 +98,9 @@ class PlayLiveGame(EltCollection):
         game with that trial's settings. The members of a group must all
         arrive with the same settings, so give the trial class, or its trial
         maker, the group's ``sync_group_type``, which gives them the same
-        trial.
+        trial. Alternatively supply a function accepting ``participants`` in seat
+        order and returning JSON settings. It runs once during session creation
+        and can load each player's assignments and prior answers.
 
     on_release
         Optional function called when the wait ends and the group's game
@@ -216,7 +218,9 @@ class _LiveGameBarrier(GroupBarrier):
         names="shown",
         **kwargs,
     ):
-        settings = _checked_settings(game_class, settings)
+        settings = (
+            settings if callable(settings) else _checked_settings(game_class, settings)
+        )
         super().__init__(
             id_=id_,
             group_type=group_type,
@@ -376,7 +380,12 @@ class _LiveGameBarrier(GroupBarrier):
         # pages do.
         seats = group.seats
         participants = sorted(participants, key=lambda member: seats[member.id])
-        token = _new_session_settings.set(self.settings)
+        settings = self.settings
+        if callable(settings):
+            settings = _checked_settings(
+                game_class, settings(participants=participants)
+            )
+        token = _new_session_settings.set(settings)
         try:
             session_id = create_realtime_session(
                 game_class,

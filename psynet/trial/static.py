@@ -6,7 +6,11 @@ authors customize node eligibility with ``custom_node_filter`` and ranking with
 ``select_node``; network adaptation remains an implementation detail.
 """
 
+from copy import deepcopy
 from typing import Callable, List, Literal, Optional, Sequence, Union
+
+from dallinger import db
+from sqlalchemy import Column, ForeignKey, Integer, UniqueConstraint
 
 from psynet.trial.chain import (
     Candidate,
@@ -17,10 +21,68 @@ from psynet.trial.chain import (
     _reject_removed_balance_argument,
 )
 
+from ..data import SQLBase, SQLMixin, register_table
+from ..field import PythonObject
 from ..sync import LateAction
 from ..utils import NoArgumentProvided, get_logger, is_method_overridden
+from .main import Selection
 
 logger = get_logger()
+
+
+@register_table
+class TrialVisit(SQLBase, SQLMixin):
+    """An assigned visit survives page and game boundaries within a maker run."""
+
+    __tablename__ = "trial_visit"
+    __table_args__ = (UniqueConstraint("module_state_id", "position"),)
+    id = Column(Integer, primary_key=True)
+    module_state_id = Column(Integer, ForeignKey("module_state.id"), nullable=False)
+    block_position = Column(Integer, nullable=False)
+    position = Column(Integer, nullable=False)
+    node_id = Column(Integer, ForeignKey("node.id"), nullable=False)
+    definition = Column(PythonObject, nullable=False)
+    trial_id = Column(Integer, ForeignKey("trial.id"), unique=True)
+    raw_answer = Column(PythonObject)
+
+    def complete(self, participant, answer, time_taken=None):
+        """Caller holds the participant lock and owns the transaction."""
+        from ..experiment import get_experiment, get_trial_maker
+        from ..timeline import ModuleState
+        from .main import Trial
+
+        state = db.session.get(ModuleState, self.module_state_id)
+        if state.participant_id != participant.id:
+            raise ValueError("Visit belongs to another participant.")
+        if self.trial_id is not None:
+            trial = db.session.get(Trial, self.trial_id)
+            if self.raw_answer != answer or trial.time_taken != time_taken:
+                raise ValueError("Conflicting replay of a completed visit.")
+            return trial
+        if (
+            participant.module_state != state
+            or state.block_position != self.block_position
+        ):
+            raise ValueError("Assigned visit is outside the active maker run.")
+        if self.position != state.n_created_trials:
+            raise ValueError("Complete assigned visits in presentation order.")
+        maker = get_trial_maker(state.module_id)
+        node = db.session.get(StaticNode, self.node_id)
+        experiment = get_experiment()
+        if not maker._claim_node_capacity(node):
+            raise RuntimeError("Assigned node is unavailable.")
+        trial = maker._create_selected_trial(
+            Selection(node),
+            experiment,
+            participant,
+            definition=deepcopy(self.definition),
+        )
+        db.session.flush()
+        trial.time_taken = time_taken
+        trial._complete_with_answer(answer, experiment, maker)
+        self.raw_answer = answer
+        self.trial_id = trial.id
+        return trial
 
 
 class StaticTrial(ChainTrial):
@@ -433,6 +495,69 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_waiting_message=sync_group_waiting_message,
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
+
+    def assign_visits(self, participant):
+        """Return this run's fixed visits for the current experimental block.
+
+        Call inside the maker timeline under the participant lock. Re-entering a
+        presenter reuses the assignments and their recorded trials.
+        """
+        from ..experiment import get_experiment
+
+        state = participant.module_state
+        if state is None or state.module_id != self.id:
+            raise ValueError("Assign visits within the active trial maker.")
+        query = TrialVisit.query.filter_by(
+            module_state_id=state.id, block_position=state.block_position
+        )
+        existing = query.order_by(TrialVisit.position).all()
+        if existing:
+            return existing
+        if (
+            self.sync_group_type
+            or self.n_repeat_trials
+            or self.check_performance_every_trial
+            or self.recruit_mode == "n_trials"
+        ):
+            raise ValueError(
+                "Assigned visits require independent fixed trials without competitive quotas or per-trial checks."
+            )
+        if (
+            self.trial_class.make_definition != StaticTrial.make_definition
+            or self.trial_class.finalize_definition != StaticTrial.finalize_definition
+        ):
+            raise ValueError("Assigned visits require static node definitions.")
+        self._plan_block(participant, get_experiment())
+        planned = state.planned_network_ids
+        if planned is None or state.plan_position:
+            raise ValueError(
+                "Start assigned visits with a listed or callable node order."
+            )
+        limit = len(planned)
+        if self.max_trials_per_block is not None:
+            limit = min(limit, self.max_trials_per_block)
+        if self.max_trials_per_participant is not None:
+            limit = min(limit, self.max_trials_per_participant - state.n_created_trials)
+        network_ids = planned[: max(0, limit)]
+        nodes = {
+            node.network_id: node
+            for node in self.node_class.query.filter(
+                self.node_class.network_id.in_(network_ids)
+            ).all()
+        }
+        visits = [
+            TrialVisit(
+                module_state_id=state.id,
+                block_position=state.block_position,
+                position=state.n_created_trials + i,
+                node_id=nodes[n].id,
+                definition=deepcopy(nodes[n].definition),
+            )
+            for i, n in enumerate(network_ids)
+        ]
+        db.session.add_all(visits)
+        db.session.flush()
+        return visits
 
     def _selection_hook_overrides(self):
         return [
