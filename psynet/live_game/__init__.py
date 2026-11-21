@@ -20,10 +20,11 @@ from .play import PlayLiveGame
 from .psynet_entry import NOT_STARTED, PLAYERS_LEFT, TIMEOUT, PlayerReady
 from .record import LiveGameFailed, LiveGameRecord
 from .registry import live_game_classes
-from .trials import LiveTrialGame
+from .trials import LiveTrialGame, TrialAnswer
 
 __all__ = [
     "LiveTrialGame",
+    "TrialAnswer",
     "LiveMessage",
     "LiveGame",
     "LiveGameCheckpoint",

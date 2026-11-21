@@ -2,7 +2,31 @@
 
 from copy import deepcopy
 
+from pydantic import Field, JsonValue
+
 from .game import LiveGame
+from .messages import LiveMessage
+
+
+class TrialAnswer(LiveMessage):
+    """Answer the current occurrence. Narrow ``answer`` in a subclass and
+    register it in the game's ``messages``. The optional duration is measured
+    by the participant's browser from the experiment-defined display onset.
+    """
+
+    type = "trial_answer"
+    position: int = Field(ge=0, strict=True)
+    answer: JsonValue
+    seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    def apply(self, game, state, player, now):
+        game.answer_trial(
+            state,
+            player=player,
+            position=self.position,
+            answer=self.answer,
+            time_taken=self.seconds,
+        )
 
 
 class LiveTrialGame(LiveGame):

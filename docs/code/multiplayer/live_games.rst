@@ -1306,7 +1306,42 @@ does not fetch the image. Declare a small fixed set of page images using
 bird direction demo, or start fetching upcoming images from
 the deck in your browser module as VocabTest does.
 
-A response message can call
+For ordinary answers, subclass :class:`~psynet.live_game.TrialAnswer` and
+register the message in the game. PsyNet validates the answer and submits it
+to the current native trial, where ``score_answer`` can score it::
+
+    class BirdAnswer(TrialAnswer):
+        answer: Literal["left", "right"]
+
+    class BirdGame(LiveTrialGame):
+        messages = [BirdAnswer]
+        preload_fields = ("bird",)
+
+The browser starts a local clock when the experiment displays an occurrence.
+Keep the handle until the participant answers. For example, these lines belong
+in the display and input handlers respectively:
+
+.. code-block:: javascript
+
+    response = game.startResponseClock(view);
+    // On the participant's keypress:
+    response.answer("left");
+
+The handle captures the position and sends ``trial_answer`` with ``position``,
+``answer`` and browser-measured ``seconds``. Starting it sends no message.
+Start a fresh clock on redisplay, including after reload. Preserve the existing
+clock when a new server view merely confirms the same presentation. A queued
+answer suppresses duplicate input. A refused send or server rejection lets the
+current handle retry. The server checks the position and computes the score.
+
+Both the arrow and bird demos explicitly opt into local prediction with
+``game.predict(game.predictTrialAnswer)``. With a public deck, the next item
+can appear immediately. With only a current definition, omit prediction and
+render the next server view via ``game.onChange``. The clock needs only the
+current definition and position. The prepared trial maker still selects the
+server-side sequence up front.
+
+A custom :class:`~psynet.live_game.LiveMessage` can call
 ``game.answer_trial(state, player=player, answer=value, position=position)``.
 Passing the zero-based position shown to the player rejects stale responses,
 including when the next trial repeats the same stimulus. PsyNet opens the

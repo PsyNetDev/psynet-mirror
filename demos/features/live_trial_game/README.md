@@ -6,6 +6,8 @@ In the debug dashboard, inspect the trial table when the first pattern appears. 
 
 [experiment.py](experiment.py) defines the nodes, scores the native trials and reads them back for feedback. [flanker.js](static/flanker.js) presents the next prepared pattern immediately while PsyNet saves the response.
 
+For a standard trial answer, subclass `TrialAnswer` with the accepted answer type. The page calls `game.startResponseClock(view)` when it shows the arrows, then `response.answer(value)` on a keypress. It opts into immediate advancement with `game.predict(game.predictTrialAnswer)`.
+
 ## Extending this to images
 
 `preload_fields` sends the public stimulus fields for the planned trials to the browser. For images, sending a URL prepares the deck; the browser still has to fetch and decode the pixels. For a small fixed set, declare the images in the game page’s `media=MediaSpec(image=...)`; the [bird direction demo](../live_trial_game_images) preloads and decodes all six photographs before the first response. For a longer, participant-specific deck, see [VocabTest’s browser module](../../../psynet/resources/scripts/vocabtest.js) for a working example. It starts fetching the next two images while the participant answers and awaits `decode()` before showing an image and starting its response clock.

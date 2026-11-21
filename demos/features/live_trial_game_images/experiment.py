@@ -2,10 +2,9 @@ import random
 from typing import Literal
 
 from dominate import tags
-from pydantic import Field
 
 import psynet.experiment
-from psynet.live_game import LiveGameControl, LiveMessage, LiveTrialGame, PlayLiveGame
+from psynet.live_game import LiveGameControl, LiveTrialGame, PlayLiveGame, TrialAnswer
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.timeline import MediaSpec, PageMaker, Timeline, join
@@ -28,20 +27,8 @@ class BirdTrial(StaticTrial):
         return int(answer == definition["direction"])
 
 
-class BirdAnswer(LiveMessage):
-    type = "direction"
-    position: int = Field(ge=0, strict=True)
-    direction: Literal["left", "right"]
-    seconds: float = Field(ge=0, allow_inf_nan=False)
-
-    def apply(self, game, state, player, now):
-        game.answer_trial(
-            state,
-            player=player,
-            position=self.position,
-            answer=self.direction,
-            time_taken=self.seconds,
-        )
+class BirdAnswer(TrialAnswer):
+    answer: Literal["left", "right"]
 
 
 class BirdGame(LiveTrialGame):
@@ -53,7 +40,7 @@ class BirdGame(LiveTrialGame):
 
     def bot(self, view, player, now):
         if view["definition"]:
-            return BirdAnswer(position=view["completed"], direction="left", seconds=0.4)
+            return BirdAnswer(position=view["completed"], answer="left", seconds=0.4)
 
 
 class BirdTrials(StaticTrialMaker):

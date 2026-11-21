@@ -3,6 +3,7 @@
 
   // The type of PsyNet's PlayerReady message.
   const READY = "psynet_ready";
+  const TRIAL_ANSWER = "trial_answer";
 
   // How long a player must have been away before onPlayersAway reports them,
   // so that a player whose page reloads isn't reported.
@@ -214,6 +215,7 @@
         interpolate: null,
         receiveCallbacks: [],
         changeCallbacks: [],
+        responseClock: null,
         awayCallbacks: [],
         connectionTimer: null,
         moveOnTimer: null,
@@ -352,6 +354,10 @@
       socket.onOpen(() => {
         readyDue = true;
       });
+      socket.onRejected((number) => {
+        const clock = state.responseClock;
+        if (clock && clock.messageNumber === number) clock.messageNumber = undefined;
+      });
       socket.onClock(() => {
         if (readyDue) {
           readyDue = false;
@@ -471,6 +477,53 @@
         callEach(state.statusCallbacks);
       }
       return number;
+    }
+
+    /**
+     * Start timing the occurrence the experiment has just displayed. The
+     * handle sends at most one queued answer until the server rejects it.
+     * A new clock or leaving the page invalidates the previous handle.
+     */
+    function startResponseClock(view) {
+      if (!Number.isSafeInteger(view?.completed) || view.completed < 0 || view.definition == null) {
+        throw new TypeError("Start the response clock with the view of an open trial.");
+      }
+      const state = pageState();
+      const position = view.completed;
+      const shownAt = performance.now();
+      const clock = { messageNumber: undefined };
+      state.responseClock = clock;
+      return {
+        answer(value) {
+          if (
+            state.left || state.ended || !state.startedView ||
+            state.responseClock !== clock || clock.messageNumber !== undefined
+          ) return;
+
+          // send can synchronously invoke an onChange handler. Reserve the
+          // clock before sending, then unlock it if the message wasn't queued.
+          let number;
+          clock.messageNumber = null;
+          try {
+            number = send(TRIAL_ANSWER, {
+              position, answer: value, seconds: (performance.now() - shownAt) / 1000,
+            });
+            return number;
+          } finally {
+            clock.messageNumber = number;
+          }
+        },
+      };
+    }
+
+    /** Optional prediction for a complete public deck, up to its segment boundary. */
+    function predictTrialAnswer(view, type, message) {
+      if (type !== TRIAL_ANSWER || !Array.isArray(view.deck) ||
+          view.definition == null || view.completed !== message.position) return;
+      const next = view.completed + 1;
+      if (next >= view.deck.length && next !== view.stop) return;
+      view.completed = next;
+      view.definition = view.deck[next] ?? null;
     }
 
     // Asks the server how to show the game's players, while the latest view
@@ -977,6 +1030,8 @@
       secondsLeft: secondsLeft,
       gameTime: gameTime,
       send: send,
+      startResponseClock,
+      predictTrialAnswer,
       showRejections: showRejections,
       showStatus: showStatus,
       onTimeLeft: onTimeLeft,
@@ -1034,6 +1089,8 @@
     // hasGame first. What a method returns then, if not psynet.liveGame.
     const WITHOUT_GAME = {
       send: undefined,
+      startResponseClock: null,
+      predictTrialAnswer: undefined,
       predictedView: null,
       interpolatedView: null,
       secondsLeft: null,

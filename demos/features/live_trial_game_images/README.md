@@ -6,7 +6,7 @@ Run `psynet debug local` in this directory in a PsyNet source checkout. Press th
 
 1. In [experiment.py](experiment.py), `preload_fields = ("bird",)` sends the ordered bird IDs to the participant. The correct directions stay on the server.
 2. The page declares its six JPEGs in `MediaSpec(image=...)`. Each ID matches a hidden `<img>` on the page, so PsyNet fills that element with a local blob URL when the download completes.
-3. At `trialStart`, [birds.js](static/birds.js) awaits `decode()` on all six elements. It then reveals one per trial and measures response time from the animation frame that reveals the photograph. Changing birds only toggles visibility.
+3. At `trialStart`, [birds.js](static/birds.js) awaits `decode()` on all six elements. Like the arrow demo, it uses a typed `TrialAnswer` and explicit prediction. It calls `game.startResponseClock(view)` in the frame that reveals each photograph and `response.answer(value)` on a keypress. Changing birds only toggles visibility.
 
 To see this in browser developer tools, open **Network** on the instruction page, disable the cache, select a slow connection and filter for `/static/birds/`. Press **Next**. Six JPEGs download before the first bird appears. Play through the round with the panel open. The request count stays at six while the pictures change. Reloading the game page preloads its media again and resumes at the first unanswered bird.
 

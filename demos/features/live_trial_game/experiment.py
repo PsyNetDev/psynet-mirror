@@ -3,10 +3,9 @@ from collections import Counter
 from typing import Literal
 
 from dominate import tags
-from pydantic import Field
 
 import psynet.experiment
-from psynet.live_game import LiveGameControl, LiveMessage, LiveTrialGame, PlayLiveGame
+from psynet.live_game import LiveGameControl, LiveTrialGame, PlayLiveGame, TrialAnswer
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.timeline import PageMaker, Timeline, join
@@ -23,34 +22,22 @@ class ArrowTrial(StaticTrial):
         return int(answer == definition["arrows"][2])
 
 
-class ArrowKey(LiveMessage):
-    type = "arrow_key"
-    position: int = Field(ge=0, strict=True)
-    direction: Literal["←", "→"]
-    seconds: float = Field(ge=0, allow_inf_nan=False)
-
-    def apply(self, game, state, player, now):
-        game.answer_trial(
-            state,
-            player=player,
-            position=self.position,
-            answer=self.direction,
-            time_taken=self.seconds,
-        )
+class ArrowAnswer(TrialAnswer):
+    answer: Literal["←", "→"]
 
 
 class FlankerGame(LiveTrialGame):
     name = "flanker"
     min_players = max_players = 1
     timeout = None
-    messages = [ArrowKey]
+    messages = [ArrowAnswer]
     preload_fields = ("arrows",)
 
     def bot(self, view, player, now):
         if view["definition"] is not None:
-            return ArrowKey(
+            return ArrowAnswer(
                 position=view["completed"],
-                direction=view["definition"]["arrows"][2],
+                answer=view["definition"]["arrows"][2],
                 seconds=0.4,
             )
 

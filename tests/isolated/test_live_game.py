@@ -3060,3 +3060,38 @@ def test_live_trial_game_owns_segment_progress():
     assert resumed.view(1)["stop"] == 3
     with pytest.raises(ValueError, match="beyond this segment"):
         LocalGame(LiveTrialGame, players=2, settings={"plans": plans, "stop": 1})
+
+
+def test_typed_trial_answer_without_a_public_deck():
+    from typing import Literal
+
+    from psynet.live_game import LiveTrialGame, TrialAnswer
+
+    class Choice(TrialAnswer):
+        answer: Literal["left", "right"]
+
+    class Game(LiveTrialGame):
+        messages = [Choice]
+
+    plan = {"definitions": ["a", "a"], "_trial_ids": [1, 2], "answers": []}
+    session = LocalGame(Game, players=1, settings={"plans": [plan]})
+    assert "deck" not in session.view(0)
+    answer = {"position": 0, "answer": "left", "seconds": 0.25}
+
+    def send(**changes):
+        session.send(0, {"type": "trial_answer", "message": {**answer, **changes}})
+
+    for invalid in [
+        {"position": True},
+        {"answer": "pass"},
+        {"seconds": -1},
+        {"player": 0},
+    ]:
+        with pytest.raises(Reject):
+            send(**invalid)
+    send()
+    assert session.view(0)["completed"] == 1
+    with pytest.raises(Reject, match="no longer current"):
+        send()
+    session.send(0, Choice(position=1, answer="right"))
+    assert session.is_over()

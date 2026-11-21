@@ -3,19 +3,19 @@ export function activate({root, trial, psynet}) {
     const photos = root.querySelector("#birds");
     let ready = false;
     let position = -1;
-    let shownAt = null;
+    let response = null;
     let frame;
 
     function show(view) {
         if (!ready || !view || !game.playing || position === view.completed) return;
         position = view.completed;
-        shownAt = null;
+        response = null;
         cancelAnimationFrame(frame);
         frame = requestAnimationFrame(() => {
             for (const img of photos.children) {
                 img.hidden = img.id !== view.definition?.bird;
             }
-            if (view.definition) shownAt = performance.now();
+            if (view.definition) response = game.startResponseClock(view);
         });
     }
 
@@ -27,23 +27,14 @@ export function activate({root, trial, psynet}) {
         show(game.predictedView());
     });
 
-    game.predict((view, type, message) => {
-        if (type === "direction" && view.completed === message.position && view.definition) {
-            view.completed++;
-            view.definition = view.deck[view.completed] ?? null;
-        }
-    });
+    game.predict(game.predictTrialAnswer);
     game.onChange(show);
 
     function keydown(event) {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
-        if (!game.playing || shownAt === null || event.repeat) return;
-        game.send("direction", {
-            position,
-            direction: event.key === "ArrowLeft" ? "left" : "right",
-            seconds: (performance.now() - shownAt) / 1000,
-        });
+        if (!game.playing || response === null || event.repeat) return;
+        response.answer(event.key === "ArrowLeft" ? "left" : "right");
     }
     document.addEventListener("keydown", keydown);
     return () => {
