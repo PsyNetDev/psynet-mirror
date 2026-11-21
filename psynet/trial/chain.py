@@ -3370,4 +3370,6 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     def finalize_trial(self, answer, trial, experiment, participant):
         super().finalize_trial(answer, trial, experiment, participant)
-        participant.module_state.participated_networks.append(trial.network_id)
+        participated = participant.module_state.participated_networks
+        if trial.network_id not in participated:
+            participated.append(trial.network_id)

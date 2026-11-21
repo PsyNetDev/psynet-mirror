@@ -355,6 +355,8 @@ class Elt:
     created_within_page_maker = False
     # Set on a trial's feedback page maker and everything it produces.
     _trial_feedback = False
+    # Set on the show_before_trial page maker and everything it produces.
+    _before_trial = False
 
     def __init__(self):
         self.links = {}
@@ -953,6 +955,17 @@ class MediaSpec:
             counter += len(modality)
         return counter
 
+    @property
+    def urls(self):
+        """The URLs of the files and batches to download, by media type."""
+        res = {}
+        for media_type, media in self.data.items():
+            for value in media.values():
+                url = value if isinstance(value, str) else value["url"]
+                if url not in res.setdefault(media_type, []):
+                    res[media_type].append(url)
+        return res
+
     def add(self, modality: str, entries: dict):
         if modality not in self.data:
             self.data[modality] = {}
@@ -1517,6 +1530,7 @@ class Page(Elt):
     skip_beforeunload = False
     # Set by trial makers that prepare their trials in advance.
     upcoming_contents = None
+    upcoming_media = None
     _full_page_layout_key = None
 
     def __init__(
@@ -1915,6 +1929,8 @@ class Page(Elt):
         }
         if self.upcoming_contents is not None:
             attributes["upcoming_contents"] = self.upcoming_contents
+        if self.upcoming_media:
+            attributes["upcoming_media"] = self.upcoming_media
         if self._full_page_layout_key is not None:
             attributes["layout_key"] = self._full_page_layout_key
         arrival_updates = _arrival_updates_for(self, participant)
@@ -2043,7 +2059,8 @@ class Page(Elt):
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
-            trial=_trial_owning_page(participant),
+            # Pages before a trial don't count towards its time_taken.
+            trial=None if self._before_trial else _trial_owning_page(participant),
         )
         db.session.add(resp)
 
@@ -2721,6 +2738,15 @@ class Page(Elt):
             pos = skip_to
         return "".join(parts)
 
+    @property
+    def prefetch_urls(self):
+        """The URLs of the files the page shows, by media type.
+
+        Trial makers that prepare trials in advance send these for the next
+        trials' pages, so the browser can download them early.
+        """
+        return self.media.urls
+
     def layout_key(self, fragment_html):
         """Identify the page's ``#main-body`` and JavaScript in a partial render.
 
@@ -2972,6 +2998,8 @@ class PageMaker(Elt):
             elt.links = {**self.links, **elt.links}
             if self._trial_feedback:
                 elt._trial_feedback = True
+            if self._before_trial:
+                elt._before_trial = True
         return res
 
     def impute_time_estimates(self, elts):

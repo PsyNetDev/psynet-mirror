@@ -22,10 +22,10 @@ export function activate({root, psynet}) {
     root.addEventListener("click", click);
     document.addEventListener("keydown", keydown);
     return {
-        async update({contents, upcoming, response: handle}) {
+        async update({contents, upcomingContents, response: handle}) {
             latest = handle;
             response = null;
-            for (const next of upcoming) new Image().src = next.url;
+            for (const next of upcomingContents) new Image().src = next.url;
             picture.src = contents.url;
             picture.alt = contents.name;
             try {

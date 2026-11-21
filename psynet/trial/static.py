@@ -257,8 +257,14 @@ class StaticTrialMaker(ChainTrialMaker):
         the next :attr:`n_upcoming_trials` trials. A page whose modules
         return an ``update`` function then shows the next trial as soon as
         the participant answers, without waiting for the server; see
-        :doc:`/code/trials/keeping_a_task_on_one_page`. The response timeout
-        counts from when the server first sends each trial's page. Can't be combined with
+        :doc:`/code/trials/keeping_a_task_on_one_page`. Any trial page, such
+        as one with an :class:`~psynet.modular_page.AudioPrompt`, also lists
+        the files of the next trials' pages (their media and
+        :attr:`~psynet.timeline.Page.prefetch_urls`), which the browser
+        downloads while the participant works on the current trial. Both need
+        in-place timeline transitions, which are on by default. The response
+        timeout counts from when the server first sends each trial's page.
+        Can't be combined with
         ``sync_group_type``, ``check_performance_every_trial``,
         ``n_repeat_trials`` or ``recruit_mode="n_trials"``.
         Defaults to ``False``.
@@ -269,8 +275,8 @@ class StaticTrialMaker(ChainTrialMaker):
     n_upcoming_trials : int
         With ``prepare_trials_in_advance``, how many of the next trials'
         contents each trial page carries (default = 5). The participant can
-        be up to one more than this many answers ahead of the server, and a
-        page can preload this many trials' stimuli.
+        be up to one more than this many answers ahead of the server, and
+        this many trials' files are downloaded early.
 
     check_timeout_interval_sec : float
         How often to check for trials that have timed out, in seconds (default = 30).
@@ -504,41 +510,48 @@ class StaticTrialMaker(ChainTrialMaker):
             if trial is None:
                 break
             trials.append(trial)
+            # Selection skips nodes once their trials are finalized, which
+            # trials waiting their turn aren't yet.
+            participated = participant.module_state.participated_networks
+            if trial.network_id not in participated:
+                participated.append(trial.network_id)
         logger.info(
             "Prepared %i trials for participant %i.", len(trials), participant.id
         )
         return trials, status
 
-    def _upcoming_contents(self, trial, page, experiment, participant):
+    def _upcoming(self, trial, page, experiment, participant):
         # Without in-place transitions each reply reloads the page, which would
-        # drop the answers given ahead. A time limit and background recording
-        # are set up for each page, which a predicted page skips.
-        if (
-            not self.prepare_trials_in_advance
-            or not get_config().get("inplace_timeline_transitions")
-            or page.time_limit is not None
-            or page.background_recording is not None
-            or trial.gives_feedback(experiment, participant)
+        # drop the answers given ahead and the files downloaded early.
+        if not self.prepare_trials_in_advance or not get_config().get(
+            "inplace_timeline_transitions"
         ):
-            return None
-        contents = []
+            return None, None
+        # Only page modules show trials in advance. A time limit and background
+        # recording are set up for each page, which a predicted page skips.
+        predict = (
+            bool(page.js_page_modules)
+            and page.time_limit is None
+            and page.background_recording is None
+            and not trial.gives_feedback(experiment, participant)
+        )
+        contents = [] if predict else None
+        media = {}
         upcoming = [
             t
             for t in self.get_participant_trials(participant)
             if t.id > trial.id and not t.complete and not t.failed
         ]
         for following in upcoming[: self.n_upcoming_trials]:
-            if (
+            before = join(
                 call_function_with_context(
                     self.show_before_trial,
                     experiment=experiment,
                     participant=participant,
                     trial=following,
                 )
-                is not None
-            ):
-                break
-            page = join(
+            )
+            pages = join(
                 call_function_with_context(
                     following.show_trial,
                     experiment=experiment,
@@ -546,12 +559,22 @@ class StaticTrialMaker(ChainTrialMaker):
                     trial_maker=self,
                 )
             )
-            if len(page) != 1 or not isinstance(page[0], Page):
-                break
-            contents.append(page[0].contents)
-            if following.gives_feedback(experiment, participant):
-                break
-        return contents
+            for elt in before + pages:
+                if isinstance(elt, Page):
+                    for media_type, urls in elt.prefetch_urls.items():
+                        known = media.setdefault(media_type, [])
+                        known.extend(url for url in urls if url not in known)
+            if (
+                predict
+                and not before
+                and len(pages) == 1
+                and isinstance(pages[0], Page)
+            ):
+                contents.append(pages[0].contents)
+                predict = not following.gives_feedback(experiment, participant)
+            else:
+                predict = False
+        return contents, media
 
     def _selection_hook_overrides(self):
         return [

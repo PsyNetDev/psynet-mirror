@@ -729,11 +729,11 @@
 
     // Show the trial ``offset`` trials after the last confirmed page.
     psynet.updatePageModules = async function (offset) {
-      let [contents, ...upcoming] = psynet.predictedContents().slice(offset);
+      let [contents, ...upcomingContents] = psynet.predictedContents().slice(offset);
       let response = psynet.createResponseHandle();
       psynet.answers.handle = response;
       for (let update of psynet.pageModuleUpdates) {
-        await update({ contents, upcoming, response });
+        await update({ contents, upcomingContents, response });
       }
     };
 
@@ -848,6 +848,7 @@
       if (psynetTemplateData.flags.lucidRecruitment) {
         psynet.addBeforeUnloadEventListener();
       }
+      psynet.media.prefetch(psynet.page.attributes?.upcoming_media);
       psynet.showNextPredictedTrial();
     };
 
@@ -2392,6 +2393,7 @@
       trial.onEvent("trialConstruct", async function () {
         await psynet.media.init();
         $(".wait-for-media-load").removeAttr("disabled");
+        psynet.media.prefetch(psynet.page.attributes?.upcoming_media);
       });
 
       trial.onEvent("trialPrepare", function () {
@@ -2930,8 +2932,12 @@
 
     async function unzipBatch(url) {
       console.log("Zip file: " + url);
-      let batchdata = fetch(url)
-        .then((response) => response.arrayBuffer())
+      let prefetched = await prefetchedData(url, "arraybuffer");
+      let batchdata = (
+        prefetched
+          ? Promise.resolve(prefetched)
+          : fetch(url).then((response) => response.arrayBuffer())
+      )
         .then((data) => JSZip.loadAsync(data))
         .then((zip) => {
           return zip.file("stim.batch").async("uint8array");
@@ -3002,23 +3008,97 @@
       throw Error(msg);
     }
 
-    async function createRequest(url, mediaType, callbackFunction, args) {
-      let request = new XMLHttpRequest();
-      request.open("GET", url, true);
-      let loadGeneration = args.loadGeneration;
+    // Pages of trial makers that prepare trials in advance list the next
+    // trials' files in ``upcoming_media``. Once the current page's media has
+    // loaded, they download here, so that the next pages load at once. Images
+    // load through <img> elements, which later <img> elements and requests
+    // for the same URL reuse; other files are kept as blobs until no upcoming
+    // page lists them. A full page load starts again with nothing.
+    psynet.media.prefetched = new Map();
+    psynet.media.prefetchedImages = new Map();
 
+    psynet.media.prefetch = function (urls) {
+      urls = urls || {};
+      let files = new Set(
+        ["audio", "video", "html"].flatMap((type) => urls[type] || []),
+      );
+      let images = new Set(urls.image || []);
+      let keepOnly = function (cache, wanted) {
+        Array.from(cache.keys())
+          .filter((url) => !wanted.has(url))
+          .forEach((url) => cache.delete(url));
+      };
+      keepOnly(psynet.media.prefetched, files);
+      keepOnly(psynet.media.prefetchedImages, images);
+      let warn = function (url, error) {
+        psynet.log.warn("Couldn't download " + url + " early: " + error);
+      };
+      files.forEach(function (url) {
+        if (psynet.media.prefetched.has(url)) {
+          return;
+        }
+        let blob = fetch(url)
+          .then(function (response) {
+            if (!response.ok) {
+              throw Error("status " + response.status);
+            }
+            return response.blob();
+          })
+          .catch(function (error) {
+            warn(url, error);
+            return null;
+          });
+        psynet.media.prefetched.set(url, blob);
+      });
+      images.forEach(function (url) {
+        if (psynet.media.prefetchedImages.has(url)) {
+          return;
+        }
+        let image = new Image();
+        image.src = url;
+        image.decode().catch((error) => warn(url, error));
+        psynet.media.prefetchedImages.set(url, image);
+      });
+    };
+
+    // A downloaded copy of ``url``, or null to download it now.
+    let prefetchedData = async function (url, responseType) {
+      let blob = await psynet.media.prefetched.get(url);
+      if (!blob) {
+        return null;
+      }
+      return responseType === "blob" ? blob : blob.arrayBuffer();
+    };
+
+    async function createRequest(url, mediaType, callbackFunction, args) {
+      let loadGeneration = args.loadGeneration;
+      let responseType;
       if (mediaType == "audio" || mediaType == "html") {
-        request.responseType = "arraybuffer";
+        responseType = "arraybuffer";
       } else if (mediaType == "image" || mediaType == "video") {
-        request.responseType = "blob";
+        responseType = "blob";
       } else {
         throw Error("Unsupported media type: " + mediaType);
       }
 
       // Make sure all batches are processed as arraybuffers
       if (args["batchId"]) {
-        request.responseType = "arraybuffer";
+        responseType = "arraybuffer";
       }
+
+      let prefetched = await prefetchedData(url, responseType);
+      if (prefetched) {
+        if (!psynet.media.isCurrentLoadGeneration(loadGeneration)) {
+          return false;
+        }
+        psynet.media.downloadProgress.set(mediaType, args["fileId"], 100);
+        await callbackFunction(prefetched, args);
+        return true;
+      }
+
+      let request = new XMLHttpRequest();
+      request.open("GET", url, true);
+      request.responseType = responseType;
 
       request.onprogress = function (e) {
         if (!psynet.media.isCurrentLoadGeneration(loadGeneration)) {
@@ -3119,7 +3199,10 @@
     let createAudioStimulus = function (data, stimulusId, loadGeneration) {
       psynet.log.debug("Decoding sound " + stimulusId + "...");
 
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
+        let failed = function (error) {
+          reject(Error("Couldn't decode sound " + stimulusId + ": " + error));
+        };
         psynet.media.audioContext.decodeAudioData(data, function (buffer) {
           if (!psynet.media.isCurrentLoadGeneration(loadGeneration)) {
             resolve(false);
@@ -3349,13 +3432,45 @@
           out.loaded = true;
 
           resolve(true);
-        });
+        }, failed);
       });
     };
 
     psynet.media.blobToArrayBuffer = async function (blob) {
       let buffer = await new Response(blob).arrayBuffer();
       return buffer;
+    };
+
+    // Loads a sound that isn't in the page's media, for example from a page
+    // module's update(), and resolves with psynet.audio[id]. Each URL is
+    // downloaded once, sharing the copies of upcoming pages' files. Rejects
+    // if the file can't be downloaded or decoded, so callers can retry.
+    let audioLoads = new Map();
+    psynet.media.loadAudio = function (url, id = url) {
+      let pending = audioLoads.get(id);
+      if (pending && psynet.audio?.[id]) {
+        return pending;
+      }
+      let load = (async function () {
+        let data = await prefetchedData(url, "arraybuffer");
+        if (!data) {
+          let response = await fetch(url);
+          if (!response.ok) {
+            reportRequestError(url, response.status);
+          }
+          data = await response.arrayBuffer();
+        }
+        if (!psynet.media.data.audio) {
+          initMediaType("audio");
+        }
+        initStimulus(id, "audio");
+        psynet.media.initAudioContext();
+        await createAudioStimulus(data, id, psynet.media.loadGeneration);
+        return psynet.audio[id];
+      })();
+      audioLoads.set(id, load);
+      load.catch(() => audioLoads.delete(id));
+      return load;
     };
 
     // Used to add extra stimuli that aren't loaded as part of the initial media load

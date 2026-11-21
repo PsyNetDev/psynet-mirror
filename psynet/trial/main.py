@@ -1701,22 +1701,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @classmethod
     def trial_logic(cls, trial_maker=None):
         time_estimate = cls._get_trial_time_estimate(trial_maker)
+        before_trial = None
+        if trial_maker is not None:
+            before_trial = PageMaker(
+                lambda experiment, participant: call_function_with_context(
+                    trial_maker.show_before_trial,
+                    experiment=experiment,
+                    participant=participant,
+                    trial=participant.current_trial,
+                ),
+                time_estimate=0,
+                label="show_before_trial",
+            )
+            before_trial._before_trial = True
 
         return join(
-            (
-                PageMaker(
-                    lambda experiment, participant: call_function_with_context(
-                        trial_maker.show_before_trial,
-                        experiment=experiment,
-                        participant=participant,
-                        trial=participant.current_trial,
-                    ),
-                    time_estimate=0,
-                    label="show_before_trial",
-                )
-                if trial_maker is not None
-                else None
-            ),
+            before_trial,
             CodeBlock(cls._log_time_credit_before_trial),
             CodeBlock(cls._log_progress_before_trial),
             PageMaker(
@@ -1778,8 +1778,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             and isinstance(logic[0], Page)
             and self.trial_maker is not None
         ):
-            logic[0].upcoming_contents = self.trial_maker._upcoming_contents(
-                self, logic[0], experiment, participant
+            page = logic[0]
+            page.upcoming_contents, page.upcoming_media = self.trial_maker._upcoming(
+                self, page, experiment, participant
             )
         return logic
 
@@ -3032,9 +3033,13 @@ class TrialMaker(Module):
 
     prepare_trials_in_advance = False
 
-    def _upcoming_contents(self, trial, page, experiment, participant):
-        """Return the page contents of the trials after ``trial``, or ``None`` if unknown."""
-        return None
+    def _upcoming(self, trial, page, experiment, participant):
+        """Return what is known about the pages of the trials after ``trial``.
+
+        Returns the contents of the trials that can be shown in advance and the
+        URLs of the next trials' files by media type; each is ``None`` if unknown.
+        """
+        return None, None
 
     def finalize_trial(self, answer, trial, experiment, participant):
         """

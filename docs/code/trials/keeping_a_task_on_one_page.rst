@@ -115,17 +115,34 @@ trials (:attr:`~psynet.trial.static.StaticTrialMaker.n_upcoming_trials`, 5 by
 default). The page module needs no changes. When the participant answers,
 PsyNet calls ``update`` with the next trial's ``contents`` at once, and sends
 the answers to the server in the background, one at a time and in order.
-``update`` also receives ``upcoming``, the contents of the known trials after
-the one it shows, for example to preload their images:
+``update`` also receives ``upcomingContents``, the contents of the known
+trials after the one it shows, for example to preload their images:
 
 .. code-block:: javascript
 
-    update({contents, upcoming, response: handle}) {
-        for (const next of upcoming) new Image().src = next.image_url;
+    update({contents, upcomingContents, response: handle}) {
+        for (const next of upcomingContents) new Image().src = next.image_url;
         // Show contents as before.
     },
 
-Without ``prepare_trials_in_advance``, ``upcoming`` is empty.
+Without ``prepare_trials_in_advance``, ``upcomingContents`` is empty.
+
+Sounds work the same way: ``psynet.media.loadAudio(url)`` downloads and
+decodes a sound once per URL and resolves with an object whose ``play()``
+plays it, so ``update`` can start the next trial's sound at once:
+
+.. code-block:: javascript
+
+    async update({contents, upcomingContents, response: handle}) {
+        for (const next of upcomingContents) psynet.media.loadAudio(next.sound_url);
+        const sound = await psynet.media.loadAudio(contents.sound_url);
+        sound.play();
+        handle.startClock();
+    },
+
+The promise rejects if the file can't be downloaded or decoded, so the page
+can offer to try again. Call ``psynet.media.requireAudio()`` in ``activate``
+so that PsyNet asks the participant to enable sound before the first trial.
 
 :download:`The rapid ratings demo <../../../demos/features/rapid_ratings/experiment.py>`
 rates pictures this way, with a break halfway through.
