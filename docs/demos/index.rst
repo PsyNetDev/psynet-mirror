@@ -216,6 +216,12 @@ Trials
     while a ``GeometricStaircaseTrialMaker`` chooses the next brightness
     difference after each answer.
 
+`experiments/flanker <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/flanker>`__
+    An Eriksen flanker reaction time task: a fixation cross, a row of arrows
+    and a key press per trial, with each trial following the last without
+    waiting for the server and reaction times measured from the frame that
+    shows the arrows. :doc:`/code/trials/keeping_a_task_on_one_page`.
+
 `features/rapid_ratings <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/rapid_ratings>`__
     Picture ratings that show each picture as soon as the previous one is
     rated, with ``prepare_trials_in_advance`` and a page module that preloads
