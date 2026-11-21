@@ -798,7 +798,7 @@
             { background: true },
           );
           if (!accepted) {
-            if (answers.queue[0] === entry) {
+            if (psynet.answers === answers && answers.queue[0] === entry) {
               // Show the rejected trial again.
               answers.queue = [];
               await psynet.updatePageModules(0);
@@ -3985,7 +3985,7 @@
         let alertText = $("#alert-message");
         alertText.text(text);
         alertModal.css("display", "block");
-        alertButton.click(async function () {
+        alertButton.one("click", function () {
           alertModal.css("display", "none");
           resolve();
         });
@@ -4189,13 +4189,21 @@
       } else if (options.interrupted) {
         // This page is stale, e.g. another tab already moved on.
         await psynet.loadNextTimelinePageWithReload();
+      } else if (options.background && response.stale_page) {
+        // The server has moved past this page, for example because the page
+        // was reloaded while an earlier answer was still being sent.
+        psynet.resetAnswers();
+        await psynet.loadNextTimelinePageWithReload();
       } else if (response.time_limit_seconds_left !== undefined) {
         // The time limit's countdown resubmits when the server's deadline arrives.
         psynet.restoreSubmissionControlState();
+      } else if (options.background) {
+        // The page's controls stay enabled for background answers, so the
+        // trial is shown again only once the participant has read the message.
+        await psynet.alert(response.message);
       } else {
         psynet.alert(response.message);
-        // A background answer didn't disable the page's controls.
-        if (!options.background) psynet.restoreSubmissionControlState();
+        psynet.restoreSubmissionControlState();
       }
       if (onRejection) {
         onRejection(response);

@@ -4277,6 +4277,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         _p = get_translator(context=True)
         return {
             "submission": "rejected",
+            "stale_page": True,
             "message": _p(
                 "timeline_problem",
                 "Synchronization problem detected. "

@@ -106,3 +106,29 @@ test("ratings advance while the server's replies are held back", { tag: "@inplac
     await assertNoBackendError(participant);
   });
 });
+
+test("an answer from a page the server has moved past reloads the page", { tag: "@inplace-only" }, async ({
+  page,
+  context
+}) => {
+  const dir = path.resolve("demos/features/rapid_ratings");
+
+  await withExperiment(page, context, dir, async (participant) => {
+    await completeInitialGateway(participant);
+    await participant.getByRole("button", { name: "Next", exact: true }).click();
+    const picture = participant.locator("#picture");
+    await expect(picture).toHaveAttribute("alt", "red circle", { timeout: STEP_TIMEOUT_MS });
+
+    // As when the page was reloaded while an earlier answer was being sent.
+    await participant.route("**/response", (route) =>
+      route.fulfill({ json: { submission: "rejected", stale_page: true, message: "Stale." } })
+    );
+    const reloaded = participant.waitForEvent("load");
+    await participant.getByRole("button", { name: "5", exact: true }).click();
+    await reloaded;
+    await participant.unroute("**/response");
+    await expect(picture).toHaveAttribute("alt", "red circle", { timeout: STEP_TIMEOUT_MS });
+    await expect(picture).toBeVisible();
+    await expect(participant.locator("#alert-modal")).toBeHidden();
+  });
+});

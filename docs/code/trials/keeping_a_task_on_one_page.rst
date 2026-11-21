@@ -164,7 +164,8 @@ PsyNet also drops the answers given after it. The browser stops running ahead
 before pages from :meth:`~psynet.trial.main.TrialMaker.show_before_trial`,
 after a trial with feedback, and at the end of the trials. If the participant
 reloads the page, the answers not yet sent are lost, and they continue from
-the first trial the server hasn't saved.
+the first trial the server hasn't saved; anything entered for that trial is
+lost and its clock starts again.
 
 For this to work:
 
