@@ -216,6 +216,11 @@ Trials
     while a ``GeometricStaircaseTrialMaker`` chooses the next brightness
     difference after each answer.
 
+`features/rapid_ratings <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/rapid_ratings>`__
+    Picture ratings that show each picture as soon as the previous one is
+    rated, with ``prepare_trials_in_advance`` and a page module that preloads
+    the upcoming pictures. :doc:`/code/trials/keeping_a_task_on_one_page`.
+
 Chains
 ------
 

@@ -79,12 +79,16 @@ The ``response`` handle has two methods:
 
 ``response.startClock()``
     Starts the clock for the trial's ``time_taken``. Call it when the stimulus
-    is visible. Without it, ``time_taken`` runs from when the page was set up.
+    is visible. Without it, ``time_taken`` runs from when ``update`` was
+    called.
 
 ``response.answer(value)``
-    Submits ``value`` as the trial's answer, like ``psynet.nextPage(value)``.
-    It resolves to ``false`` if the answer wasn't accepted, so the page can
-    let the participant answer again.
+    Submits ``value`` as the trial's answer. Each handle answers once: it
+    returns ``true`` the first time and ``false`` afterwards. PsyNet sends the
+    answer in the background, so the page should stop accepting input until
+    ``update`` is called with the next trial. If the server rejects the
+    answer, PsyNet shows its error message and calls ``update`` again with the
+    same trial.
 
 Showing the next trial without waiting
 --------------------------------------
@@ -120,15 +124,17 @@ the one it shows, for example to preload their images:
 
 Without ``prepare_trials_in_advance``, ``upcoming`` is empty.
 
+:download:`The rapid ratings demo <../../../demos/features/rapid_ratings/experiment.py>`
+rates pictures this way, with a break halfway through.
+
 Each answer is still checked and saved as usual. If the server rejects one,
-PsyNet shows its error message, drops the answers given after it, and calls
-``update`` again with the rejected trial. The browser only runs ahead while the
-next page would be another trial page with the same HTML: it waits for the
+PsyNet also drops the answers given after it. The browser only runs ahead while
+the next page would be another trial page with the same HTML: it waits for the
 server before pages from
 :meth:`~psynet.trial.main.TrialMaker.show_before_trial`, before feedback
-pages, and at the end of the trials. ``response.answer`` resolves to ``true``
-once the answer is queued.
+pages, and at the end of the trials.
 
 Trials prepared in advance can't use sync groups, repeat trials, performance
-checks after every trial, or ``recruit_mode="n_trials"``. The response timeout
+checks after every trial, or ``recruit_mode="n_trials"``. The browser only runs
+ahead with in-place timeline transitions, which are on by default. The response timeout
 of each trial counts from when it is first shown.

@@ -22,6 +22,7 @@ from ..timeline import Page, join
 from ..utils import (
     NoArgumentProvided,
     call_function_with_context,
+    get_config,
     get_logger,
     is_method_overridden,
 )
@@ -477,23 +478,13 @@ class StaticTrialMaker(ChainTrialMaker):
     def prepare_trial(self, experiment, participant):
         if not self.prepare_trials_in_advance:
             return super().prepare_trial(experiment, participant)
-        trials = self._prepared_trials(participant) or self._prepare_trials(
+        trials = self.get_participant_trials(participant) or self._prepare_trials(
             experiment, participant
         )
         trial = next((t for t in trials if not t.complete and not t.failed), None)
         if trial is None:
             return None, "exit"
         return trial, "available"
-
-    def _prepared_trials(self, participant):
-        """Return the participant's trials in this run of the trial maker, in order."""
-        return (
-            self.trial_class.query.filter_by(
-                module_state_id=participant.module_state.id
-            )
-            .order_by(self.trial_class.id)
-            .all()
-        )
 
     def _prepare_trials(self, experiment, participant):
         """Create the participant's trials in the order that they will take them."""
@@ -517,14 +508,18 @@ class StaticTrialMaker(ChainTrialMaker):
         return trials
 
     def _upcoming_contents(self, trial, experiment, participant):
-        if not self.prepare_trials_in_advance or trial.gives_feedback(
-            experiment, participant
+        # Without in-place transitions each reply reloads the page, which would
+        # drop the answers given ahead.
+        if (
+            not self.prepare_trials_in_advance
+            or not get_config().get("inplace_timeline_transitions")
+            or trial.gives_feedback(experiment, participant)
         ):
             return None
         contents = []
         upcoming = [
             t
-            for t in self._prepared_trials(participant)
+            for t in self.get_participant_trials(participant)
             if t.id > trial.id and not t.complete and not t.failed
         ]
         for following in upcoming[: self.n_upcoming_trials]:

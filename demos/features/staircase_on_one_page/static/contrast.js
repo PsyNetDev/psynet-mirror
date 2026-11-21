@@ -2,17 +2,13 @@ export function activate({root}) {
     const patches = root.querySelector("#patches");
     let response = null;
 
-    async function keydown(event) {
+    function keydown(event) {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
         if (response === null || event.repeat) return;
-        const current = response;
+        response.answer(event.key === "ArrowLeft" ? "left" : "right");
         response = null;
         patches.style.visibility = "hidden";
-        if (!(await current.answer(event.key === "ArrowLeft" ? "left" : "right"))) {
-            response = current;
-            patches.style.visibility = "visible";
-        }
     }
 
     document.addEventListener("keydown", keydown);
