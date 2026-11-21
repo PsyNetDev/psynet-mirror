@@ -3,6 +3,8 @@ import re
 import subprocess
 from importlib import resources
 
+import pytest
+
 from psynet.timeline import get_template, templates
 
 
@@ -66,16 +68,23 @@ globalThis.dallinger = {post: (route, data) => {
         return {fail: () => {}};
     }};
 }};
+process.once("beforeExit", () => console.log(JSON.stringify({posts, redirect})));
 %s
-setTimeout(() => console.log(JSON.stringify({posts, redirect})), 50);
 """
 
 
-def test_start_template_creates_a_participant_that_missing_ok_finds_missing():
+@pytest.mark.parametrize(
+    "found, routes",
+    [
+        (None, ["/load-participant", "/participant"]),
+        ({"unique_id": "W:A"}, ["/load-participant"]),
+    ],
+)
+def test_start_template_resumes_or_creates_after_a_missing_ok_lookup(found, routes):
     template = resources.files("psynet").joinpath("templates/start.html").read_text()
     script = re.search(r"<script>(.*?)</script>", template, flags=re.DOTALL).group(1)
     responses = {
-        "/load-participant": {"participant": None},
+        "/load-participant": {"participant": found},
         "/participant": {"participant": {"unique_id": "W:A"}},
     }
 
@@ -87,12 +96,9 @@ def test_start_template_creates_a_participant_that_missing_ok_finds_missing():
     )
 
     output = json.loads(result.stdout)
-    assert [route for route, _ in output["posts"]] == [
-        "/load-participant",
-        "/participant",
-    ]
+    assert [route for route, _ in output["posts"]] == routes
     assert output["posts"][0][1]["missing_ok"] == "true"
-    assert "missing_ok" not in output["posts"][1][1]
+    assert all("missing_ok" not in data for _, data in output["posts"][1:])
     assert output["redirect"] == "/timeline?unique_id=W:A"
 
 
