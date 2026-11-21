@@ -406,19 +406,22 @@ Depending on a custom branch of Dallinger
 -----------------------------------------
 
 Sometimes you may need to use a custom branch of Dallinger in a feature you are contributing to PsyNet.
-In order to do this, you will need to update the Dallinger entry in the ``[project].dependencies`` list of ``pyproject.toml`` to point to your branch.
+In order to do this, you will need to update the Dallinger entry in the ``experiment`` extra of ``pyproject.toml`` to point to a commit on your branch.
 You should write something like this:
 
 .. code-block:: toml
 
-  [project]
-  dependencies = [
+  [project.optional-dependencies]
+  experiment = [
       # ...
       "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@<commit-hash>",
       # ...
   ]
 
-where ``<commit-hash>`` is the commit you want to use. You can also give a branch name there, but a commit hash keeps the dependency fixed while your merge request is reviewed.
+where ``<commit-hash>`` is the full 40-character hash of the commit you want to use.
+PsyNet's bootstrap and CI tooling accept only a released version or such a hash on ``Dallinger/Dallinger``, not a branch name.
+A commit on a fork can be used through the ``Dallinger/Dallinger`` URL once its pull request is open.
+Then run ``psynet dev ci update-dallinger-constraints`` from the PsyNet repository root to refresh the vendored CI constraints, and repeat both steps when you need newer Dallinger commits.
 
 You can find the commit hash by clicking the "Copy" button next to the commit hash on the GitHub page for the branch you want to use.
 Restore the released Dallinger version requirement before your merge request is merged.
