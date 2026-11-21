@@ -1,66 +1,68 @@
-Presenting a sequence of trials
-===============================
+One page per trial, or several trials on one page?
+==================================================
 
-Imagine a brightness staircase. The participant presses an arrow key to choose
-the brighter of two patches. PsyNet scores the answer and the staircase uses
-it to choose the brightness difference for the next pair.
+Imagine a mental arithmetic task. The participant sees “7 + 8”, types “15”
+and presses Enter. What happens next?
 
-You could give each pair its own trial page, followed by a feedback page.
-Or you could keep two squares on screen and change their brightness after each
-keypress. Both designs can use the same :doc:`staircase trial maker <chains>`.
-Both save one trial per comparison, with the assigned stimulus, answer and score.
+.. grid:: 1 1 2 2
+   :gutter: 3
 
-What should happen after a response?
-------------------------------------
+   .. grid-item-card:: One page per trial
 
-**Use ordinary trial pages** when the timeline should move on to another
-screen or control. For example, show a pair, collect the answer, then play a
-sound or give feedback before continuing. This is the simplest place to start.
-A :doc:`trial maker <trials>` can choose the stimuli, balance assignments, or
-run a staircase. If the timeline can choose each trial itself, you can
-:ref:`cue a trial directly <present-trials-cue>`.
+      Enter submits the page. PsyNet opens a fresh page with the next sum
+      and an empty answer box.
 
-**Keep one page open** when the participant should keep looking at the same
-interface. A stream of words can appear in the same spot, or two patches can
-change in place. The trial maker still selects and records each trial. You
-provide the JavaScript that draws each new stimulus on the page. Which
-presentation option to use depends on when the next assignment is known.
+   .. grid-item-card:: Several trials on one page
 
-When can you choose the next stimulus?
---------------------------------------
+      The answer box clears and the cursor stays in place. The sum above it
+      changes. The participant can start typing again.
 
-**Before the first response.** In an arrow flanker task, the researcher can
-shuffle the arrows separately for each participant as soon as they start.
-A ``LiveTrialGame`` can prepare those trials up front. If the page has the
-upcoming stimuli and is configured to advance locally, it can show the next
-one immediately after a keypress. For pictures or sounds, allow time to fetch
-the media too. See :ref:`how to prepare a sequence <present-trials-prepared>`
-or download the :download:`flanker experiment.py <../../demos/features/live_trial_game/experiment.py>`.
+Either way, PsyNet saves a separate trial for each sum, including the question
+and the participant's answer. This choice applies to one part of your study.
+A round of sums can run on one page between ordinary instruction and feedback
+pages.
 
-**After the current response.** In the brightness task, a correct response at
-a gap of 24 leads to a gap of 16. An error leads to 32. With an
-``OnDemandTrialGame``, PsyNet completes the trial, asks the maker for the
-next assignment and returns it to the same page. Each transition takes a
-server round trip. This option supports solo tasks with synchronous scoring.
-See :ref:`how to present trials on demand <present-trials-on-demand>` or
-download the :download:`staircase experiment.py <../../demos/features/live_trial_game_adaptive/experiment.py>`.
+Which experience fits your task?
+--------------------------------
 
-Think about the **participant's sequence**. You might have all 500 paintings
-on disk before recruitment and still need on-demand selection because each
-rating determines which painting to show next.
+**Use ordinary pages** when the built-in prompts and controls fit. This is
+also convenient when a trial has several steps. For instance, after each sum
+you could ask “How confident are you?” on a separate rating page. A
+:doc:`trial maker <trials>` can select the questions. If your timeline
+already determines the sequence, you can :ref:`cue trials directly <present-trials-cue>`.
 
-What does the page receive?
----------------------------
+**Keep one page open** when something on screen should persist between
+answers. In a speeded arithmetic task, that might be the focused answer box
+and a clock counting down the round. You write the JavaScript that updates
+the question and handles the response.
 
-By default the live page receives the saved ``trial.definition``. In the
-brightness task this includes the gap and both grey values, so reloading
-shows the same pair. Override ``get_public_definition(trial)`` when the browser
-needs a different representation. VocabTest sends a word image URL and keeps
-the scoring key on the server.
+How does the next trial reach the page?
+---------------------------------------
 
-Does one player need to react to another?
------------------------------------------
+**If you can choose the sequence up front**, you can send it to the browser
+before the first response. Suppose each participant gets twenty shuffled sums.
+With the questions already in the browser and local advance enabled, pressing
+Enter can display the next sum immediately. If your stimuli include pictures
+or sounds, allow time to fetch the media too.
 
-If two people need to see and respond to each other's moves as they happen,
-such as offers in a negotiation, read :doc:`live_games`. If everyone makes
-a choice and then sees the group's results together, read :doc:`rounds`.
+**If the next question depends on the answer**, keep the page open while
+PsyNet scores the response and selects the next trial. A correct answer might
+earn the participant a harder sum. Even if you wrote every question in advance,
+you only discover which one to show after the participant answers. This takes
+a server round trip. PsyNet currently supports this on-demand approach for solo
+tasks with synchronous scoring.
+
+Implementation examples
+-----------------------
+
+:doc:`/code/trials/keeping_a_task_on_one_page` shows both approaches with
+working experiments:
+
+- :ref:`Prepare a sequence in advance <single-page-prepared>` for an arrow
+  flanker task. :download:`Flanker experiment.py <../../demos/features/live_trial_game/experiment.py>`.
+- :ref:`Assign the next trial on demand <single-page-on-demand>` in a
+  brightness staircase. :download:`Staircase experiment.py <../../demos/features/live_trial_game_adaptive/experiment.py>`.
+
+For tasks where players react to one another's moves, see :doc:`live_games`.
+For groups who each make a choice and then see the results together, see
+:doc:`rounds`.
