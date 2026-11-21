@@ -13,15 +13,34 @@ from psynet.live_game import (
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.timeline import PageMaker, Timeline, join
-from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
+from psynet.trial.staircase import (
+    GeometricStaircaseNode,
+    GeometricStaircaseTrial,
+    GeometricStaircaseTrialMaker,
+)
 
 GAPS = (48, 32, 24, 16, 10, 6, 4)
-START_LEVEL = 2
+START_GAP = 24
 N_TRIALS = 8
 
 
-class ContrastTrial(StaticTrial):
+class ContrastNode(GeometricStaircaseNode):
+    k = 1
+
+    def increase_difficulty(self, parameter):
+        return GAPS[min(GAPS.index(parameter) + 1, len(GAPS) - 1)]
+
+    def decrease_difficulty(self, parameter):
+        return GAPS[max(GAPS.index(parameter) - 1, 0)]
+
+
+class ContrastTrial(GeometricStaircaseTrial):
     time_estimate = 2
+
+    def finalize_definition(self, definition, experiment, participant):
+        # Draw the brighter side once, so a reload shows the assigned pair.
+        delta = random.choice((-1, 1)) * (definition["parameter"] // 2)
+        return {**definition, "left": 128 + delta, "right": 128 - delta}
 
     def score_answer(self, answer, definition):
         other = "right" if answer == "left" else "left"
@@ -32,7 +51,7 @@ class Choice(TrialAnswer):
     answer: Literal["left", "right"]
 
 
-class Staircase(OnDemandTrialGame):
+class BrightnessGame(OnDemandTrialGame):
     name = "contrast_staircase"
     answer_type = Choice
 
@@ -52,7 +71,7 @@ def feedback(participant):
         .order_by(ContrastTrial.position)
         .all()
     )
-    gaps = [abs(t.definition["left"] - t.definition["right"]) for t in trials]
+    gaps = [t.parameter for t in trials]
     return InfoPage(
         tags.div(
             tags.p(
@@ -64,33 +83,14 @@ def feedback(participant):
     )
 
 
-class BrightnessMaker(StaticTrialMaker):
-    def select_node(self, nodes, participant, experiment):
-        last = (
-            ContrastTrial.query.filter_by(
-                module_state_id=participant.module_state.id, complete=True
-            )
-            .order_by(ContrastTrial.position.desc())
-            .first()
-        )
-        level = START_LEVEL
-        if last is not None:
-            gap = abs(last.definition["left"] - last.definition["right"])
-            step = 1 if last.score else -1
-            level = max(0, min(len(GAPS) - 1, GAPS.index(gap) + step))
-        return random.choice(
-            [
-                node
-                for node in nodes
-                if abs(node.definition["left"] - node.definition["right"])
-                == GAPS[level]
-            ]
-        )
+class BrightnessMaker(GeometricStaircaseTrialMaker):
+    def live_trial_definition(self, trial):
+        return {side: trial.definition[side] for side in ("left", "right")}
 
     def present_trials(self):
         return join(
             PlayLiveGame(
-                game_class=Staircase,
+                game_class=BrightnessGame,
                 page=ModularPage(
                     "contrast",
                     tags.div(
@@ -128,13 +128,11 @@ class Exp(psynet.experiment.Experiment):
         BrightnessMaker(
             id_="contrast_round",
             trial_class=ContrastTrial,
-            nodes=[
-                StaticNode(definition={"left": 128 + delta, "right": 128 - delta})
-                for gap in GAPS
-                for delta in (gap // 2, -gap // 2)
-            ],
-            allow_repeated_nodes=True,
-            max_trials_per_participant=N_TRIALS,
+            node_class=ContrastNode,
+            start_nodes=lambda participant: [ContrastNode(parameter=START_GAP)],
+            max_nodes_per_chain=N_TRIALS,
+            # Everyone completes the round, including players with no reversals.
+            check_performance_at_end=False,
             expected_trials_per_participant=N_TRIALS,
         ),
     )
@@ -146,7 +144,14 @@ class Exp(psynet.experiment.Experiment):
             t.complete and t.finalized and t.score == 1 and t.time_taken == 0.4
             for t in trials
         )
-        assert [abs(t.definition["left"] - t.definition["right"]) for t in trials] == [
+        assert len({t.network_id for t in trials}) == 1
+        assert all(
+            t.node.degree == t.position
+            and t.node.parameter == t.parameter
+            and abs(t.definition["left"] - t.definition["right"]) == t.parameter
+            for t in trials
+        )
+        assert [t.parameter for t in trials] == [
             24,
             16,
             10,

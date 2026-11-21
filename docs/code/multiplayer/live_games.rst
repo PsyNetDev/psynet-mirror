@@ -1400,7 +1400,7 @@ and completed in the transaction that selects its successor. Override
 ``live_trial_definition(trial)`` to choose the fields the page receives.
 The runner manages presence and game ending. The page receives its private
 assignment in the HTTP response, with no timeline transition. The
-``features/live_trial_game_adaptive`` demo uses the previous score to select
-a node. This path supports independent solo selections with a single custom
+``features/live_trial_game_adaptive`` demo grows a within-participant chain with the
+existing geometric staircase trial maker. This path supports independent solo selections with a single custom
 renderer and synchronous scoring. Per-trial feedback, timeline controls and
 per-trial performance-check pages require the ordinary trial timeline.

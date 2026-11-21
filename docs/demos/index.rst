@@ -220,8 +220,8 @@ Trials
     set with ``MediaSpec`` before the first bird appears.
 
 `features/live_trial_game_adaptive <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game_adaptive>`__
-    A live brightness staircase. The server chooses one new pair per answer,
-    using the trial maker to complete the answer and assign the next native trial in one transaction.
+    A geometric staircase chooses the brightness gap after each response. One
+    live page presents all eight native trials from the participant’s chain.
 
 Chains
 ------

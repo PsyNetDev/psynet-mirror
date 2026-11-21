@@ -189,6 +189,8 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
     one staircase before starting the next; ``chain_order`` (default
     ``"random"``) chooses the order of the staircases. See
     ``demos/experiments/staircase_pitch_discrimination``.
+    Set ``check_performance_at_end=False`` for tasks that accept runs with no
+    reversal-based threshold estimate.
     """
 
     @property
@@ -209,6 +211,7 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
         chain_order="random",
         interleave_chains: bool = False,
         balance_across_chains=None,
+        check_performance_at_end: bool = True,
         min_passing_score: Optional[float] = None,
         max_passing_score: Optional[float] = None,
         expected_trials_per_participant: Optional[int | str] = None,
@@ -255,7 +258,7 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
             sync_group_waiting_message=sync_group_waiting_message,
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
             max_nodes_per_chain=max_nodes_per_chain,
-            check_performance_at_end=True,
+            check_performance_at_end=check_performance_at_end,
             check_performance_every_trial=False,
             block_order=block_order,
             chain_order=chain_order,

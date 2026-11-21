@@ -1,1 +1,1 @@
-Added on-demand native trial selection in solo live games and an adaptive brightness staircase demo.
+Added on-demand native trial selection in solo live games and a brightness demo using the geometric staircase trial maker. The maker now supports disabling its final threshold check for fixed-length tasks.
