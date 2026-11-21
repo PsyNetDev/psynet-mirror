@@ -61,7 +61,7 @@ experiment = [
     # wakes: never lower this bound below it. Pinned to the Dallinger master
     # commit that merged Dallinger#10431 (live game runner stats) until it is
     # released.
-    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@966e4688549c110f8519ee38221a65f0031a6799",
+    "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@e6c54475ad6258b114a89acfa071f54fb3952b4a",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
     # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
