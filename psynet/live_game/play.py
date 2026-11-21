@@ -120,7 +120,7 @@ class PlayLiveGame(EltCollection):
         that a :class:`~psynet.sync.GroupBarrier`'s ``on_release`` can take,
         such as ``trials`` and ``group_round``, and also ``live_game``,
         the new game's :class:`LiveGameRecord`, whose ``status`` is
-        ``"not_started"`` if no game started.
+        :attr:`~LiveGameStatus.NOT_STARTED` if no game started.
 
     join_running_game
         Whether a member who reaches the step while their group is playing

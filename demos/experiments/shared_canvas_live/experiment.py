@@ -18,6 +18,7 @@ from pydantic import Field
 
 import psynet.experiment
 from psynet.live_game import (
+    FINISHED,
     LiveGame,
     LiveGamePage,
     LiveMessage,
@@ -520,7 +521,7 @@ class Exp(psynet.experiment.Experiment):
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
         game = bot.live_games["shared_canvas"]
-        assert game.finished, game.error
+        assert game.end_reason == FINISHED, game.error
         me = game.participant_ids.index(bot.id)
         assert game.answer["score"] == game.outcome["coins"][me]
         collected = game.outcome["collected"]

@@ -262,7 +262,8 @@ live games whose bots aren't run together (see `Bots and testing`_), and two
 Its ``on_release`` runs when the wait before the game ends, not when the
 game ends, once the group's game has been created. It gets the arguments a
 group barrier's ``on_release`` takes, and also ``live_game``, the new game's
-record (see `A game's record`_), whose ``status`` is ``"not_started"`` if the
+record (see `A game's record`_), whose ``status`` is
+:attr:`LiveGameStatus.NOT_STARTED <psynet.live_game.LiveGameStatus.NOT_STARTED>` if the
 group started no game. Use it for group bookkeeping at the
 start of a round, such as choosing who leaves after it. Work done once the
 game ends, such as scoring, goes in the trial, which gets the game's answer
@@ -1193,7 +1194,10 @@ PsyNet calls once ``is_over`` returns ``True``; the reason then isn't
 Dallinger's `outcome <dallinger-outcome_>`_ lists the other reasons, such as
 ``"not_joined"``. If the game's code raised an error, ``reason`` is
 ``"failed"``, and ``outcome`` is the outcome of the state just before the
-error.
+error. :mod:`psynet.live_game` has constants for PsyNet's reasons:
+:data:`~psynet.live_game.FINISHED`, :data:`~psynet.live_game.TIMEOUT`,
+:data:`~psynet.live_game.PLAYERS_LEFT` and
+:data:`~psynet.live_game.FAILED`.
 
 For a reward earned during the game, such as for each coin a player collects,
 call ``game.add_performance_reward(player, amount)`` in a message's
@@ -1240,8 +1244,11 @@ its ``id_``, as ``participant.active_sync_groups`` is keyed by group type:
 
 .. code-block:: python
 
+    from psynet.live_game import LiveGameStatus
+
     game = participant.live_games["rock_paper_scissors"]
-    if game.ended:
+    if game.status == LiveGameStatus.ENDED:
+        game.end_reason  # why it ended
         game.answer  # this participant's answer
         game.outcome  # the whole game's outcome
         for saved in game.messages:
@@ -1250,21 +1257,18 @@ its ``id_``, as ``participant.active_sync_groups`` is keyed by group type:
 
 A record has:
 
-- ``status``: ``"not_started"`` if the participant's group started no game
-  there, for example because it broke up while it waited, ``"running"``
-  until the game's result is saved, then ``"ended"``, or ``"failed"`` if the
-  game's code raised an error or its record couldn't be saved, with the
-  error in ``error``;
-- ``ended``, whether ``status`` is ``"ended"``: the whole game is over, for
-  any reason, and its result is saved. Check it before reading the game's
-  results. It's ``False`` while the game runs, including for a player who
-  has left it early (see ``left_early`` below);
-- ``finished``, whether the whole game's ``end_reason`` is ``"finished"``
-  (see `Rewards`_ for the reasons). It's ``False`` for a game that ended
-  for any other reason, such as because players left or a reason of the
-  game's own, so a check of ``finished`` alone skips those games;
+- ``status``, a :class:`~psynet.live_game.LiveGameStatus`:
+  ``NOT_STARTED`` if the participant's group started no game there, for
+  example because it broke up while it waited, ``RUNNING`` until the game's
+  result is saved, then ``ENDED``, whatever the reason the game ended, or
+  ``FAILED`` if the game's code raised an error or its record couldn't be
+  saved, with the error in ``error``. It's the whole game's status, so it
+  stays ``RUNNING`` for a player who has left early (see ``left_early``
+  below). Each status is a string too, such as ``"ended"``;
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
-  ended, both ``None`` until it has ended;
+  ended, such as :data:`~psynet.live_game.FINISHED` or
+  :data:`~psynet.live_game.PLAYERS_LEFT` (see `Rewards`_ for the reasons),
+  both ``None`` until it has ended;
 - ``answer``, the participant's answer on the game page, ``None`` until
   their game has ended, and there for a participant who closed the page
   too (see `The answer`_), and ``player``, their player number;
@@ -1427,6 +1431,8 @@ bot's game at the end of the test through its record:
 
 .. code-block:: python
 
+    from psynet.live_game import FINISHED
+
     class Exp(psynet.experiment.Experiment):
         timeline = ...
 
@@ -1436,7 +1442,7 @@ bot's game at the end of the test through its record:
         def test_check_bot(self, bot, **kwargs):
             super().test_check_bot(bot, **kwargs)
             game = bot.live_games["rock_paper_scissors"]
-            assert game.finished, game.error
+            assert game.end_reason == FINISHED, game.error
             assert game.answer["mine"] is not None
 
 To test a game's rules in Python, without starting the experiment, play it

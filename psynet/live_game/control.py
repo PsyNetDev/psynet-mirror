@@ -24,6 +24,7 @@ from .psynet_entry import TOO_LATE
 from .record import (
     LiveGameFailed,
     LiveGameRecord,
+    LiveGameStatus,
     _computed_answer,
     _done_reason,
     _session_channel,
@@ -112,9 +113,9 @@ class LiveGameControl(NullControl):
         if _done_reason(session_id, participant.id) is not None:
             return None
         game = LiveGameRecord(session_id)
-        if game.status == "failed":
+        if game.status == LiveGameStatus.FAILED:
             raise LiveGameFailed(game)
-        if game.status != "running":
+        if game.status != LiveGameStatus.RUNNING:
             return None
         _check_session_can_still_end(session_id)
         _p = get_translator(context=True)

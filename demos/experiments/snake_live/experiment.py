@@ -16,6 +16,7 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.live_game import (
+    FINISHED,
     LiveGame,
     LiveGamePage,
     LiveMessage,
@@ -390,7 +391,7 @@ class Exp(psynet.experiment.Experiment):
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
         game = bot.live_games["snake"]
-        assert game.finished, game.error
+        assert game.end_reason == FINISHED, game.error
         food = game.outcome["food"][game.participant_ids.index(bot.id)]
         assert game.answer["score"] == food
         assert bot.performance_reward == pytest.approx(BONUS_PER_FOOD * food)

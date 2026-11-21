@@ -872,7 +872,7 @@ and that each trial's score and reward match the throws the bot won:
 
 ``bot.live_games`` gives, for each ``PlayLiveGame`` the participant reached,
 keyed by its ``id_``, which is the game's ``name`` unless given, the record of their latest game there, here their
-second game: whether it ``finished``, its outcome, the participant's answer
+second game: its ``end_reason``, its outcome, the participant's answer
 and the game's messages. Snake's result page reads its player's answer the same way.
 
 To test a game's rules without starting the experiment, play it in Python
