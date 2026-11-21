@@ -744,10 +744,17 @@
     psynet.createResponseHandle = function () {
       let shownAt = performance.now();
       let clockStart = null;
+      let marks = {};
+      let elapsed = (at) => (at - (clockStart ?? shownAt)) / 1000;
       let handle = {
         // time_taken then runs from this call rather than from update().
         startClock(at = performance.now()) {
           clockStart = at;
+        },
+        // Records how long after the clock started a step of the trial
+        // happened, such as a first choice before a confidence rating.
+        mark(name, { at = performance.now() } = {}) {
+          marks[name] = elapsed(at);
         },
         answer(value, { at = performance.now() } = {}) {
           let answers = psynet.answers;
@@ -757,7 +764,8 @@
           }
           answers.handle = null;
           let metadata = {
-            time_taken: (at - (clockStart ?? shownAt)) / 1000,
+            time_taken: elapsed(at),
+            marks,
             // The events of this trial only, as later trials share the page.
             event_log: psynet.trial.eventLog.splice(0),
           };
@@ -3257,6 +3265,11 @@
             let stopPromise = null;
             let resolveStopPromise = null;
             let completed = false;
+            let resolveFinished;
+            // Resolves once the sound has ended or been stopped.
+            sound.finished = new Promise((resolve) => {
+              resolveFinished = resolve;
+            });
 
             let clearSoundTimers = function () {
               if (stopTimer !== null) {
@@ -3313,6 +3326,7 @@
               completed = true;
               clearSoundTimers();
               settleStopPromise();
+              resolveFinished();
               psynet.log.debug("Finished sound with ID = " + sound.stimulusId);
               psynet.media.sounds = psynet.media.sounds.filter(
                 (s) => s !== sound,

@@ -100,6 +100,14 @@ The ``response`` handle has two methods:
     optional ``performance.now()`` timestamp to start from instead of now,
     such as the time a ``requestAnimationFrame`` callback receives.
 
+``response.mark(name, {at})``
+    Records when a step of the trial happened, in seconds since the clock
+    started, for trials answered in several steps, such as a choice followed
+    by a confidence rating. The times are saved with the answer as
+    ``metadata["marks"]``, which
+    :meth:`~psynet.timeline.Page.format_answer` receives and which is stored
+    on the trial's ``response``. ``at`` works as for ``answer``.
+
 ``response.answer(value, {at})``
     Submits ``value`` as the trial's answer, with ``time_taken`` up to now or
     to the optional ``performance.now()`` timestamp ``at``. Passing the key
@@ -165,7 +173,10 @@ plays it, so ``update`` can start the next trial's sound at once:
         handle.startClock();
     },
 
-The promise rejects if the file can't be downloaded or decoded, so the page
+``play()`` returns the playing sound, whose ``finished`` promise resolves once
+it has ended or been stopped, for example to accept answers only after the
+sound: ``sound.play().finished.then(enableButtons)``. The promise from
+``loadAudio`` rejects if the file can't be downloaded or decoded, so the page
 can offer to try again. Call ``psynet.media.requireAudio()`` in ``activate``
 so that PsyNet asks the participant to enable sound before the first trial.
 
