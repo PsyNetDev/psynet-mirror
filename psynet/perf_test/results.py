@@ -666,6 +666,8 @@ def workers_falling_behind(result):
         and end - start >= LOW_BACKLOG_GROWTH_MIN_JOBS
     ):
         reasons.append(f"the low-priority backlog grew from {start:,} to {end:,} jobs")
+    if len(reasons) > 2:
+        reasons = [", ".join(reasons[:-1]), reasons[-1]]
     return " and ".join(reasons) or None
 
 

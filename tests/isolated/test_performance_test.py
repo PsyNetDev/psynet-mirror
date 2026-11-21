@@ -1551,6 +1551,12 @@ def test_recommend_workers(result, n, expected):
             "database, room for 2 worker processes with their CPU workers",
             "only 2 cores left",
         ),
+        # One process with one CPU worker.
+        (
+            [_with_cpu_workers(_tapping_result(96, 3, 0.1, server_cores=3), 3, 0.2)],
+            "1 would keep its CPU worker about 60% busy",
+            "its CPU workers",
+        ),
         # A 2-core server leaves no cores, so the required single process
         # isn't "all the cores left".
         (

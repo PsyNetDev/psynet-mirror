@@ -808,8 +808,9 @@ Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
 
   ``psynet test local`` warns when a job's measured CPU time contradicts
   its declaration. See :ref:`async_job_cpu_heavy`.
-* The old names still work but warn. ``WorkerAsyncProcess(...)`` and
-  ``LocalAsyncProcess(...)`` create and enqueue the job, and
+* The old names still work but warn. ``WorkerAsyncProcess(...)``, which
+  now needs ``cpu_heavy=`` too, and ``LocalAsyncProcess(...)`` create and
+  enqueue the job, and
   ``AsyncJob.get_process`` calls ``get_async_job``. A subclass of
   ``WorkerAsyncProcess`` or ``LocalAsyncProcess`` becomes a subclass of the
   new class, so call ``.enqueue()`` on its jobs.

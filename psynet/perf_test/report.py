@@ -1003,9 +1003,11 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
     else:
         group = were(workers, "worker process")
     measured = [f"In {test}, the {group} busy {busy}."] if test else []
+    one_each = result.n_cpu_workers == result.n_rq_workers
+    cpu_workers = "CPU worker" if one_each and processes == 1 else "CPU workers"
     if advice.cpu_bound:
         implied = (
-            f"would keep {'their' if processes != 1 else 'its'} CPU workers "
+            f"would keep {'their' if processes != 1 else 'its'} {cpu_workers} "
             f"about {advice.implied_utilization:.0%} busy"
         )
     else:
@@ -1024,7 +1026,7 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
         server += (
             f", room for {processes} worker process"
             + ("es with their" if processes != 1 else " with its")
-            + " CPU workers"
+            + f" {cpu_workers}"
         )
     # Only the cores keep the count below the test's, so no larger server is needed yet.
     trimmed = advice.demand <= processes < workers
@@ -1037,10 +1039,11 @@ def _describe_worker_advice(advice, result, n, test, above_cap):
         cores = f"The {server}, so this is fewer than the {ran} the test ran; {processes} {implied}."
     else:
         cores = f"The {ran} fell behind, but the {server}; use a larger server or cheaper jobs."
-    sources = ["the workers were busy the whole time"] if test else []
+    kind = "CPU worker" if advice.cpu_bound else "worker"
+    sources = [f"the {kind}s were busy the whole time"] if test else []
     if advice.per_participant_s:
         sources.append(
-            f"it comes from about {advice.per_participant_s:.0f} s of worker time "
+            f"it comes from about {advice.per_participant_s:.0f} s of {kind} time "
             "per participant"
         )
     minimum = f"{processes} is a minimum, not a target"

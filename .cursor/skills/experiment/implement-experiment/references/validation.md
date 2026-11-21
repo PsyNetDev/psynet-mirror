@@ -93,8 +93,9 @@ a steady state, the workers can't keep up long-term. That check uses the
 validation test if there is one, otherwise the largest passing test or the
 first failing one. For CPU-heavy jobs,
 also work out worker throughput: one CPU worker keeps up with about
-(session length) ÷ (job CPU time × jobs per participant) participants, with
-`cpu_avg` from `async_job_stats`. If the queue fails the next count, check
+(session length) ÷ (job run time × jobs per participant) participants, with
+`avg` (the mean wall time) from `async_job_stats`, because a CPU worker is
+busy for the job's whole run and `cpu_avg` misses subprocesses' CPU time. If the queue fails the next count, check
 that the CPU-heavy jobs are marked `cpu_heavy` (so they run in CPU workers)
 and raise `worker_processes` until there is about one CPU worker per spare
 CPU core (spare cores ÷ `cpu_processes_per_worker`). Report how you reached the recommended number of participants.
