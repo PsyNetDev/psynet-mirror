@@ -1283,6 +1283,8 @@ on Dallinger's clock rather than the game's. Use ``now`` and the page's
 .. _dallinger-running-games: https://dallinger.readthedocs.io/latest/realtime_games.html#running-games
 
 
+.. _present-trials-prepared:
+
 Presenting prepared static trials
 ---------------------------------
 
@@ -1384,6 +1386,8 @@ trial-maker run. The default session outcome and page answer are both empty
 dictionaries. Override :meth:`~psynet.live_game.LiveGame.outcome` if the game
 also produces a joint result, such as a team payoff.
 
+
+.. _present-trials-on-demand:
 
 On-demand trials on a solo game page
 ------------------------------------

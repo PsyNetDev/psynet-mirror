@@ -369,6 +369,8 @@ To change what failing participants see, override
 whether a failed check also fails the participant's trials in this trial
 maker. See :doc:`/code/trials/participant_and_trial_failure`.
 
+.. _present-trials-cue:
+
 Trials without a trial maker
 ----------------------------
 
