@@ -78,6 +78,19 @@ rejected answer, so an ``update`` that awaits an image should check afterwards
 that it is still the latest call. A module without trials to show can still
 return just the cleanup function.
 
+When each trial's page comes from the server, PsyNet runs ``cleanup`` and
+``activate`` again for every trial, so state kept in the module, such as a
+running score, starts afresh. When the browser shows trials in advance (see
+below), the module keeps running from trial to trial instead, and whatever
+stays on the page carries over: focus on the last button clicked, a sound
+still playing, a pressed-looking button. Reset these in ``update`` or when
+answering.
+
+PsyNet waits for ``cleanup`` before replacing the page. A ``cleanup`` that
+returns a promise can therefore let feedback on the last answer finish
+before the next page appears, for example
+``cleanup: () => feedbackShown.then(removeListeners)``.
+
 The ``response`` handle has two methods:
 
 ``response.startClock(at)``
@@ -162,7 +175,10 @@ rates pictures this way, with a break halfway through.
 Each answer is still checked and saved as usual. If the server rejects one,
 PsyNet also drops the answers given after it. The browser stops running ahead
 before pages from :meth:`~psynet.trial.main.TrialMaker.show_before_trial`,
-after a trial with feedback, and at the end of the trials. If the participant
+after a trial with feedback, and at the end of the trials. With a feedback
+page after every trial, it never runs ahead, and the participant waits for
+the server twice per trial. To give feedback straight away, show it from the
+page module instead, which needs the correct answer in ``contents``. If the participant
 reloads the page, the answers not yet sent are lost, and they continue from
 the first trial the server hasn't saved; anything entered for that trial is
 lost and its clock starts again.
@@ -180,6 +196,15 @@ For this to work:
   :meth:`~psynet.trial.main.Trial.finalize_definition` instead.
 - Pages with a ``time_limit`` or background recording aren't shown in
   advance, because both are set up for each page.
+
+Also keep in mind:
+
+- ``contents``, including that of upcoming trials, is visible to anyone who
+  inspects the page. Only put the correct answer there if seeing it doesn't
+  matter, for example because the participant could work it out anyway.
+- Bots answer each page through ``bot_response`` and don't run the page
+  module, so ``psynet test local`` doesn't test it. Test the module with a
+  Playwright spec; see :doc:`/test/frontend`.
 
 Trials prepared in advance can't use sync groups, repeat trials, performance
 checks after every trial, or ``recruit_mode="n_trials"``. The browser only runs
