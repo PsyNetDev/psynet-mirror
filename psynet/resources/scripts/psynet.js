@@ -3490,6 +3490,13 @@
       return load;
     };
 
+    // Frees a sound from loadAudio once the page no longer needs it; a later
+    // loadAudio of it downloads and decodes it again.
+    psynet.media.unloadAudio = function (id) {
+      audioLoads.delete(id);
+      if (psynet.audio) delete psynet.audio[id];
+    };
+
     // Used to add extra stimuli that aren't loaded as part of the initial media load
     // (needs refactoring in a general cross-media way)
     psynet.media.addExtraAudioStimulus = async function (buffer, stimulusId) {

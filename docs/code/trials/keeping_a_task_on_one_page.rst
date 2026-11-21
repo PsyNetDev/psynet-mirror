@@ -177,7 +177,9 @@ plays it, so ``update`` can start the next trial's sound at once:
 it has ended or been stopped, for example to accept answers only after the
 sound: ``sound.play().finished.then(enableButtons)``. The promise from
 ``loadAudio`` rejects if the file can't be downloaded or decoded, so the page
-can offer to try again. Call ``psynet.media.requireAudio()`` in ``activate``
+can offer to try again. Decoded sounds take a lot of memory, so in a long run
+of trials call ``psynet.media.unloadAudio(url)`` for sounds that won't play
+again. Call ``psynet.media.requireAudio()`` in ``activate``
 so that PsyNet asks the participant to enable sound before the first trial.
 
 :download:`The rapid ratings demo <../../../demos/features/rapid_ratings/experiment.py>`

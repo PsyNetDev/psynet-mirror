@@ -9,6 +9,7 @@ export function activate({psynet, root}) {
     const image = root.querySelector("#prompt-image");
     // The page's media spec loads the first trial's sound as usual.
     let audioUrl = psynet.media.requests?.audio?.prompt ?? null;
+    let loadedAudio = false;
     let response = null;
     let shown = 0;
 
@@ -37,18 +38,23 @@ export function activate({psynet, root}) {
                 image.src = prompt.image;
                 await image.decode().catch(() => {});
             }
+            const upcomingAudio = upcomingContents
+                .map((next) => next.modular_page?.prompt.audio)
+                .filter((url) => url !== undefined);
             if (prompt.audio !== undefined && prompt.audio !== audioUrl) {
                 psynet.audio.prompt = await psynet.media.loadAudio(prompt.audio);
+                // Decoded sounds are large, so keep only the ones still to come.
+                if (loadedAudio && !upcomingAudio.includes(audioUrl)) {
+                    psynet.media.unloadAudio(audioUrl);
+                }
                 audioUrl = prompt.audio;
+                loadedAudio = true;
             }
             if (current !== shown) return;
-            for (const next of upcomingContents) {
-                const url = next.modular_page?.prompt.audio;
-                if (url !== undefined) {
-                    // Decoded now so that the next sound plays without delay;
-                    // a failure shows when that trial loads it again.
-                    psynet.media.loadAudio(url).catch(() => {});
-                }
+            for (const url of upcomingAudio) {
+                // Decoded now so that the next sound plays without delay;
+                // a failure shows when that trial loads it again.
+                psynet.media.loadAudio(url).catch(() => {});
             }
             response = handle;
             handle.startClock();

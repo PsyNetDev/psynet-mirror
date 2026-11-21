@@ -19,7 +19,7 @@ Step summary:
 2. Trials: participant rates each of the nine sounds with the push buttons.
    The trial maker prepares trials in advance, so pressing a button shows the
    next sound on the same page: the page is never replaced, each sound is
-   downloaded once, and every answer reaches /response in order with the
+   downloaded once, finished sounds are freed, and every answer reaches /response in order with the
    sound's start and the button click in its event log.
 3. Finish: participant reaches the thank-you page.
 */
@@ -66,6 +66,11 @@ test("push buttons show the next sound on the same page", { tag: "@inplace-only"
           "data-first-trial",
           "true"
         );
+      }
+      if (trial === N_TRIALS - 1) {
+        // Only the page's own sound and the last one are still decoded.
+        const decoded = await participant.evaluate(() => Object.keys(psynet.audio));
+        expect(decoded.length).toBeLessThanOrEqual(2);
       }
       chosen.push(String(1 + (trial % 5)));
       await button.click();

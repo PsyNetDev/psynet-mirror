@@ -2561,9 +2561,13 @@ class ModularPage(Page):
             return True
         prompt = self.prompt._advance_contents()
         control = self.control._advance_contents()
+        # Next, start and other page buttons submit or start the page outside
+        # the module, so pages with them load each trial from the server.
         if (
             prompt is None
             or control is None
+            or self.buttons
+            or not self.start_trial_automatically
             or not {"prompt", "control"} <= set(self.layout)
             or not isinstance(self.contents or {}, dict)
         ):
