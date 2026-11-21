@@ -221,9 +221,9 @@ Trials
     with ``MediaSpec`` before the first bird appears.
 
 `features/staircase_on_one_page <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/staircase_on_one_page>`__
-    A brightness staircase whose trial pages share a ``session_id``, so the
-    page stays on screen while a ``GeometricStaircaseTrialMaker`` chooses the
-    next brightness difference after each answer.
+    A brightness staircase on ordinary trial pages that answer on a key press,
+    while a ``GeometricStaircaseTrialMaker`` chooses the next brightness
+    difference after each answer.
 
 Chains
 ------

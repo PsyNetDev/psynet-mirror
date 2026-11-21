@@ -12,11 +12,12 @@ There are two ways to do it:
   :class:`~psynet.live_game.LiveTrialGame` presents them in order on one live
   game page. The browser can receive the upcoming stimuli in advance, so the
   next one appears as soon as the participant answers.
-- **Trial pages that share a session.** Ordinary trial pages with the same
-  ``session_id`` stay on screen between trials, and the browser receives only
-  each new trial's data. This works with any trial maker, including adaptive
-  ones such as staircases, where each answer decides what comes next. Each
-  answer waits for the server to send the next trial.
+- **Ordinary trial pages.** The browser doesn't reload between pages: PsyNet
+  swaps in the next page's content. Trial pages that share a layout and answer
+  on a key press therefore already look like one page. This works with any
+  trial maker, including adaptive ones such as staircases, where each answer
+  decides what comes next. Each answer waits for the server to send the next
+  trial's page.
 
 .. _single-page-prepared:
 
@@ -154,24 +155,22 @@ page's answer, are empty dictionaries. Override
 :meth:`~psynet.live_game.LiveGame.outcome` if the game also produces a joint
 result, such as a team payoff.
 
-.. _single-page-same-session:
+.. _single-page-trial-pages:
 
-Trial pages that share a session
---------------------------------
+Ordinary trial pages
+--------------------
 
 :download:`The adaptive brightness demo <../../../demos/features/staircase_on_one_page/experiment.py>`
 is a complete example. It runs a staircase with PsyNet's
 :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`.
 
-Write ``show_trial`` as usual, and give every trial's page the same
-``session_id``. Put the data the browser needs for each trial in the page's
-``contents``::
+Write ``show_trial`` as usual. Give every trial's page the same HTML, and put
+the data that changes from trial to trial in the page's ``contents``::
 
     def show_trial(self, experiment, participant):
         return ModularPage(
             "contrast",
             patches_html,
-            session_id="contrast",
             contents={"left": self.definition["left"], "right": self.definition["right"]},
             show_next_button=False,
             js_page_modules=["/static/contrast.js"],
@@ -180,26 +179,25 @@ Write ``show_trial`` as usual, and give every trial's page the same
         )
 
 When the participant answers, PsyNet completes the trial and the trial maker
-chooses the next one, as on any trial page. Because the next page has the same
-``session_id``, the browser keeps the current page on screen instead of
-replacing it. It updates ``psynet.page``, including ``psynet.page.contents``,
-and fires the ``pageUpdated`` trial event. Only the first page's HTML and
-scripts are used, so your page's JavaScript should draw each trial from
-``psynet.page.contents``:
+chooses the next one, as on any trial page. The browser then swaps in the next
+trial's page without reloading, and because the layout is the same, only the
+stimulus appears to change. PsyNet runs your page module's ``activate``
+function for each trial's page, so draw the trial there and answer on a key
+press instead of a Next button:
 
 .. code-block:: javascript
 
     export function activate({root, psynet}) {
-        function show() {
-            const pair = psynet.page.contents;
-            // Draw the pair.
+        const pair = psynet.page.contents;
+        // Draw the pair.
+        function keydown(event) {
+            // On the left arrow key: psynet.nextPage("left");
         }
-        psynet.trial.onEvent("pageUpdated", show);
-        show();
-        // On a key press: psynet.nextPage("left");
+        document.addEventListener("keydown", keydown);
+        return () => document.removeEventListener("keydown", keydown);
     }
 
-The trial's ``time_taken`` is measured in the browser, from when the page's
-data arrives to when ``psynet.nextPage`` is called. Pages that share a session
-can't have a ``time_limit``. See :doc:`/developer/page_lifecycle` for the
-details of same-session updates.
+The function that ``activate`` returns runs before the next page replaces this
+one, so listeners on ``document`` don't pile up. The trial's ``time_taken`` is
+measured in the browser, from when the page has been set up to when
+``psynet.nextPage`` is called.
