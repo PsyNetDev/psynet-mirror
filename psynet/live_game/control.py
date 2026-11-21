@@ -113,9 +113,10 @@ class LiveGameControl(NullControl):
         if _done_reason(session_id, participant.id) is not None:
             return None
         game = LiveGameRecord(session_id)
-        if game.status == LiveGameStatus.FAILED:
+        status = game.status
+        if status == LiveGameStatus.FAILED:
             raise LiveGameFailed(game)
-        if game.status != LiveGameStatus.RUNNING:
+        if status != LiveGameStatus.RUNNING:
             return None
         _check_session_can_still_end(session_id)
         _p = get_translator(context=True)

@@ -135,7 +135,8 @@ class LiveGameRecord:
         ``is_over`` returned ``True`` or that reached its ``duration``,
         :data:`~psynet.live_game.TIMEOUT`,
         :data:`~psynet.live_game.PLAYERS_LEFT` or
-        :data:`~psynet.live_game.FAILED`, or a reason that the game's own
+        :data:`~psynet.live_game.FAILED`, ``"not_joined"`` if no player
+        opened the game page in time, or a reason that the game's own
         ``end_reason`` gives, such as ``"deal"``. It's ``None`` until the
         game has ended, or if its record couldn't be saved."""
         row = self._row()

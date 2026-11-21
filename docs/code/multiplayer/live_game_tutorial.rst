@@ -207,8 +207,10 @@ game as soon as it returns ``True``.
 
 ``outcome`` is the game's result for the whole pair, which is saved with the
 experiment's data: here, the choices of each throw. ``reason`` says why the
-game ended. For example, it is ``"finished"`` when ``is_over`` ended the
-game, and ``"timeout"`` when the game's ``timeout`` did.
+game ended. For example, it is :data:`~psynet.live_game.FINISHED`
+(``"finished"``) when ``is_over`` ended the game, and
+:data:`~psynet.live_game.TIMEOUT` (``"timeout"``) when the game's
+``timeout`` did.
 
 ``answer`` turns the outcome into each player's answer on the game page:
 their own throws, with both choices and the result for them, the throws each
