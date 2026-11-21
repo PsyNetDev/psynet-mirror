@@ -2722,7 +2722,7 @@ class Page(Elt):
         return "".join(parts)
 
     def layout_key(self, fragment_html):
-        """Identify the page's ``#main-body`` and page modules in a partial render.
+        """Identify the page's ``#main-body`` and JavaScript in a partial render.
 
         A predicted trial page is only reused for the next trial if the two
         keys match, so that the page modules' ``update`` can show it.
@@ -2730,7 +2730,17 @@ class Page(Elt):
         main_body = self._timeline_fragment_inner_html(fragment_html, "main-body")
         if main_body is None:
             return None
-        layout = json.dumps([main_body, self.js_page_modules])
+        layout = json.dumps(
+            [
+                main_body,
+                self.js_page_modules,
+                self.js_dependencies,
+                self.js_page_code,
+                self.legacy_js_links,
+                self.legacy_scripts,
+            ],
+            default=str,
+        )
         return hashlib.sha256(layout.encode()).hexdigest()[:16]
 
     @staticmethod

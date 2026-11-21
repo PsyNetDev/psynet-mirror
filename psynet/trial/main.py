@@ -1779,7 +1779,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             and self.trial_maker is not None
         ):
             logic[0].upcoming_contents = self.trial_maker._upcoming_contents(
-                self, experiment, participant
+                self, logic[0], experiment, participant
             )
         return logic
 
@@ -2864,8 +2864,13 @@ class TrialMaker(Module):
             else self.trial_class.creation_time
         )
         trials_to_fail = (
-            self.trial_class.query.filter_by(
-                complete=False, failed=False, trial_maker_id=self.id
+            self.trial_class.query.filter_by(complete=False, failed=False)
+            # Custom prepare_trial code can create trials without a trial maker.
+            .filter(
+                or_(
+                    self.trial_class.trial_maker_id == self.id,
+                    self.trial_class.trial_maker_id.is_(None),
+                )
             )
             .filter(started < time_threshold)
             .order_by(self.trial_class.id)
@@ -3027,7 +3032,7 @@ class TrialMaker(Module):
 
     prepare_trials_in_advance = False
 
-    def _upcoming_contents(self, trial, experiment, participant):
+    def _upcoming_contents(self, trial, page, experiment, participant):
         """Return the page contents of the trials after ``trial``, or ``None`` if unknown."""
         return None
 

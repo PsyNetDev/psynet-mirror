@@ -753,8 +753,12 @@
             return false;
           }
           answers.handle = null;
-          let timeTaken = (new Date() - (clockStart ?? shownAt)) / 1000;
-          answers.queue.push({ value, metadata: { time_taken: timeTaken } });
+          let metadata = {
+            time_taken: (new Date() - (clockStart ?? shownAt)) / 1000,
+            // The events of this trial only, as later trials share the page.
+            event_log: psynet.trial.eventLog.splice(0),
+          };
+          answers.queue.push({ value, metadata });
           psynet.showNextPredictedTrial();
           psynet.sendAnswers();
           return true;
@@ -813,26 +817,32 @@
         !psynet.answers.queue.length ||
         expected === undefined ||
         response.page?.attributes?.timeline_hold ||
-        !layoutKey ||
-        layoutKey !== psynet.layoutKey ||
         JSON.stringify(response.page?.contents) !== JSON.stringify(expected)
       ) {
+        return null;
+      }
+      if (!layoutKey || layoutKey !== psynet.layoutKey) {
+        psynet.log.warn(
+          "The next trial's page has different HTML from this one, so PsyNet " +
+            "couldn't show it in advance. Put what changes between trials in " +
+            "the page's contents.",
+        );
         return null;
       }
       return psynet.prepareTimelineFragment(response.timeline_fragment);
     };
 
+    // Swap in everything but #main-body, whose trial the page modules show.
     psynet.adoptPredictedPage = function (fragment) {
       psynet.answers.queue.shift();
-      for (let { currentElement, nextElement } of fragment.replacements) {
-        if (["timeline-header", "psynet-template-data"].includes(currentElement.id)) {
-          currentElement.replaceWith(nextElement);
-        }
-      }
+      fragment.replacements = fragment.replacements.filter(
+        ({ currentElement }) => currentElement.id !== "main-body",
+      );
+      psynet.commitTimelineFragment(fragment);
       let { prompt, control, response } = psynet.page;
       psynet.refreshTemplateData();
       Object.assign(psynet.page, { prompt, control, response });
-      window.pageUuid = psynet.var.pageUuid;
+      psynet.initEarlyExitButton();
       psynet.pageLoadTime = new Date();
       psynet.nextPagePending = false;
       if (psynetTemplateData.flags.lucidRecruitment) {
@@ -4066,7 +4076,8 @@
         psynet.restoreSubmissionControlState();
       } else {
         psynet.alert(response.message);
-        psynet.restoreSubmissionControlState();
+        // A background answer didn't disable the page's controls.
+        if (!options.background) psynet.restoreSubmissionControlState();
       }
       if (onRejection) {
         onRejection(response);
