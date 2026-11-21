@@ -87,15 +87,6 @@
             })
         }
 
-        function shouldAttemptCreate(resp) {
-            return Boolean(
-                resp &&
-                resp.status === 403 &&
-                (resp.errorCode === "participant_not_found" ||
-                 resp.errorCode === "assignment_id_missing")
-            );
-        }
-
         let startInProgress = false;
         let startAttempt = 0;
 
@@ -180,8 +171,7 @@
             const attempt = ++startAttempt;
             let entryInformation = getEntryInformation();
             if (Object.keys(entryInformation).length > 0) {
-                // Dallinger releases without missing_ok answer a new participant
-                // with a 403, which shouldAttemptCreate's fallback handles.
+                // With missing_ok, a new participant gets participant: null.
                 const lookup = Object.assign({}, entryInformation, {missing_ok: "true"});
                 dallinger.post("/load-participant", lookup).done(function (resp) {
                     if (attempt !== startAttempt) {
@@ -193,14 +183,7 @@
                     }
                     window.location.replace("/timeline?unique_id=" + resp.participant.unique_id);
                 }).fail(function(resp) {
-                    if (attempt !== startAttempt) {
-                        return;
-                    }
-                    if (shouldAttemptCreate(resp)) {
-                        createParticipant(entryInformation, attempt);
-                    } else {
-                        handleStartError(resp, attempt);
-                    }
+                    handleStartError(resp, attempt);
                 });
             } else {
                 createParticipant(entryInformation, attempt);
