@@ -115,8 +115,9 @@ node's image asset, override ``StaticTrialMaker.get_public_definition(trial)``.
 A URL alone doesn't download the image. For a small fixed set of images,
 declare them in the page's :class:`~psynet.timeline.MediaSpec`, as in the
 ``features/live_trial_game_images`` demo. For a long or participant-specific
-set, fetch upcoming images from the deck in your page's JavaScript, as
-VocabTest does.
+set, have your page's JavaScript fetch the next few images from the deck while
+the participant answers, and wait for each image's ``decode()`` before showing
+it and starting its response clock.
 
 Splitting a sequence into parts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -127,18 +128,25 @@ because ``stop`` is exclusive and counts from zero. A later ``PlayLiveGame``
 step, with its own ``id_``, continues from the first unanswered trial. Leave
 out ``stop`` to finish the sequence.
 
-VocabTest uses this to play each form as a separate game, followed by the
-trial maker's performance check::
+For example, to play the first 25 trials and run the trial maker's
+performance check before the rest::
 
-    join(
-        PlayLiveGame(
-            id_="vocabulary_form_1",
-            game_class=VocabularyGame,
-            settings={"stop": 34},
-            page=word_page,
-        ),
-        maker.check_performance(),
-    )
+    def present_trials(self):
+        return join(
+            PlayLiveGame(
+                id_="first_half",
+                game_class=SortingGame,
+                settings={"stop": 25},
+                page=make_sorting_page(),
+            ),
+            self.check_performance(),
+            PlayLiveGame(
+                id_="second_half", game_class=SortingGame, page=make_sorting_page()
+            ),
+        )
+
+Each ``PlayLiveGame`` needs a page object of its own, so ``make_sorting_page``
+here builds a new :class:`~psynet.live_game.LiveGamePage` each time.
 
 Interruptions and timeouts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -148,21 +156,12 @@ early because the participant left, failed to join or reached the game's
 timeout, PsyNet starts a new game on the same unanswered trial when they
 return.
 
-Each trial's response clock on the server starts when the game presents it,
-and doesn't restart after an interruption. If the trial maker's
-``response_timeout_sec`` passes before the participant answers, the trial
-fails and the participant's experiment ends unsuccessfully, with the failure
-tag ``incomplete_trial_segment``. Set ``response_timeout_sec=None`` to wait
-indefinitely. PsyNet's usual rules for participants who leave or fail still
-apply.
-
-To count how often a stimulus was displayed, including after reloads, have the
-page send a message whose ``apply`` calls
-``game.record_trial_presentation(state, player=player, position=position)``.
-PsyNet stores the count in ``trial.var.n_presentations``. VocabTest uses this,
-because its ``time_taken`` runs from the display on which the participant
-answered. Bots answer without displaying anything, so their trials have no
-count.
+Each trial's response timeout starts when the game presents the trial, and
+doesn't restart after an interruption. As on an ordinary trial page, a trial
+that isn't answered within the trial maker's ``response_timeout_sec`` fails,
+but the participant carries on: when they answer, PsyNet stores the answer,
+the trial stays failed and the game moves to the next trial. Set
+``response_timeout_sec=None`` to turn the timeout off.
 
 Reading the results
 ~~~~~~~~~~~~~~~~~~~

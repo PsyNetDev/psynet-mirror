@@ -1,28 +1,11 @@
-# Vocabulary test
+# README
 
-Vocabulary tests ask participants whether each word is real or made up. This
-demo runs three: Dutch WikiVocab, Dutch BibleVocab and English WikiVocab. Each
-form shows equal numbers of real and fake words. The Dutch BibleVocab form
-repeats four words to check that participants answer consistently. The
-English test has two forms and gives feedback after each one.
+Lexical decision–style vocab screens: real vs fake words via WikiVocab
+(Wikipedia-derived, generally higher quality) and BibleVocab (broader language
+coverage). This demo runs both (Dutch WikiVocab and another language's
+BibleVocab) as a template for vocabulary-based screening.
 
-## Data
+## Usage
 
-Each word is a static node, and every time a word is shown, including a
-repeat, PsyNet saves a trial. On each trial, `answer` is the participant's
-choice (`"real"` or `"fake"`), `time_taken` is the response time in seconds
-and `score` says whether the choice was correct. Within one run of a test
-(one `module_state_id`), `position` gives the order of presentation, and
-trials with the same `node_id` are repeats of the same word. Each form is
-`n_items + n_repeat_items` consecutive trials.
-
-## Interruptions
-
-If the participant disconnects, the form continues from the first unanswered
-word. The response deadline for that word doesn't restart. If it passes, the
-trial fails and the participant's experiment ends. `time_taken` runs from the
-last time the word was displayed in the browser that answered it, and
-`trial.var.n_presentations` counts how often it was displayed, including after
-reloads.
-
-See the [PsyNet documentation](https://psynetdev.gitlab.io/PsyNet/) for run instructions.
+For instructions on how to run PsyNet experiments like this one, visit the
+[PsyNet documentation](https://psynetdev.gitlab.io/PsyNet/).

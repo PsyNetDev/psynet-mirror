@@ -87,7 +87,7 @@ class LiveTrialGame(LiveGame):
                         "stop must be an exclusive position within each deck."
                     )
                 plan["_trial_ids"] = ids[:stop]
-            if len(plan["answers"]) > len(plan["_trial_ids"]):
+            if plan["completed"] > len(plan["_trial_ids"]):
                 raise ValueError("The player has already answered beyond this segment.")
         return state
 
@@ -97,7 +97,7 @@ class LiveTrialGame(LiveGame):
     def current_definition(self, state, player):
         """Return the player's current definition, or None at the segment boundary."""
         plan = state["plans"][player]
-        index = len(plan["answers"])
+        index = plan["completed"]
         if index >= len(plan["_trial_ids"]):
             return None
         return plan["definitions"][index]
@@ -117,7 +117,7 @@ class LiveTrialGame(LiveGame):
         current = self.current_definition(state, player)
         view = {
             "definition": current,
-            "completed": len(plan["answers"]),
+            "completed": plan["completed"],
             "total": len(plan["definitions"]),
             "stop": len(plan["_trial_ids"]),
         }

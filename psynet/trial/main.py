@@ -2043,6 +2043,12 @@ class TrialMakerState(ModuleState):
     n_created_trials = Column(Integer, default=0, nullable=False)
     n_completed_trials = Column(Integer)
     trial_maker_initialized = Column(Boolean)
+    live_session_id = Column(
+        Integer, doc="The one-player live game presenting this run's prepared trials."
+    )
+    live_segment_end = Column(
+        Integer, doc="The position at which that live game stops presenting trials."
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

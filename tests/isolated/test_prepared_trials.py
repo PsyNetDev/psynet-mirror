@@ -104,7 +104,7 @@ def test_prepared_trials_survive_breaks_and_time_out_only_when_open(
     db.session.commit()
     maker.check_old_trials()
     assert not any(t.failed for t in items)
-    assert maker.trial_plan(alice)["answers"] == [False, None, True]
+    assert maker.trial_plan(alice)["completed"] == 3
     assert alice.module_state.n_completed_trials == 3
     fourth = items[3]
     assert fourth.response_started_at is None
@@ -121,14 +121,16 @@ def test_prepared_trials_survive_breaks_and_time_out_only_when_open(
     maker.check_old_trials()
     assert fourth.failed and fourth.failed_reason == "response_timeout"
     assert all(not t.failed and t.response_started_at is None for t in items[4:])
-    with pytest.raises(ValueError, match="active sequence"):
-        fourth.submit_response(alice, True)
+    # As on an ordinary trial page, a late answer is kept and the participant
+    # moves on, but the trial stays failed.
+    fourth.submit_response(alice, True)
+    assert fourth.complete and fourth.failed and fourth.answer is True
     alice._fail_incomplete_trials("participant_exit")
-    assert all(t.complete and not t.failed for t in items[:3])
-    assert all(t.failed and not t.complete for t in items[3:])
+    assert all(t.complete for t in items[:4])
+    assert all(t.failed and not t.complete for t in items[4:])
     assert all(t.response_started_at is None for t in items[4:])
     assert alice.module_state.n_created_trials == 50
-    assert alice.module_state.n_completed_trials == 3
+    assert alice.module_state.n_completed_trials == 4
 
     # A participant can also leave without a response timeout.
     bob = db.session.get(Participant, bob_id)
@@ -149,16 +151,20 @@ def test_prepared_trials_survive_breaks_and_time_out_only_when_open(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
 @pytest.mark.usefixtures("in_experiment_directory")
-def test_solo_resume_keeps_deadline_and_late_answers_do_not_advance(
-    db_session, monkeypatch
-):
+def test_solo_resume_keeps_deadline_and_accepts_late_answers(db_session, monkeypatch):
     from types import SimpleNamespace
 
     from dallinger.models import RealtimeSession
 
-    from psynet.live_game import LiveGamePage, PlayLiveGame
+    from psynet.live_game import LiveGamePage, LiveTrialGame, PlayLiveGame
     from psynet.live_game.reward import _apply_prepared_trial
-    from psynet.prescreen.vocab_live import VocabularyGame
+
+    class SoloGame(LiveTrialGame):
+        name = "prepared_solo_test"
+        min_players = max_players = 1
+
+        def bot(self, view, player, now):
+            return None
 
     experiment = get_experiment()
     maker = StaticTrialMaker(
@@ -174,8 +180,6 @@ def test_solo_resume_keeps_deadline_and_late_answers_do_not_advance(
     player = start_run(experiment, maker)
     first, second = maker.prepare_trials(player)
     run = player.module_state
-    ended = []
-    monkeypatch.setattr("psynet.live_game.play._end_expired_session", ended.append)
 
     def apply(session_id, trial, **data):
         row = SimpleNamespace(id=session_id, members=[player.id])
@@ -191,42 +195,39 @@ def test_solo_resume_keeps_deadline_and_late_answers_do_not_advance(
 
     monkeypatch.setattr("psynet.live_game.play._create_game_session", create_session)
     solo = PlayLiveGame(
-        game_class=VocabularyGame,
-        page=LiveGamePage("words", "Play.", time_estimate=2),
+        game_class=SoloGame,
+        page=LiveGamePage("items", "Play.", time_estimate=2),
     ).solo
     solo._prepare(player)
+    assert run.live_segment_end == 2
     assert solo._pending(player)
     solo._start_segment(player)
-    original = run.var.solo_trial_session
+    original = run.live_session_id
     apply(original, first)
     apply(original, first, answer=True, time_taken=0.5, next_id=second.id)
-    apply(original, second, presented=True)
     opened = second.response_started_at
+    assert opened is not None
+
+    # The participant drops out, and returns to the same open trial and deadline.
     transport = db.session.get(RealtimeSession, original)
     transport.status, transport.end_reason = "ended", "players_left"
     db.session.flush()
     assert solo._pending(player)
     solo._start_segment(player)
-    resumed = run.var.solo_trial_session
+    resumed = run.live_session_id
     assert resumed != original
     assert [item.id for item in maker.prepare_trials(player)] == [first.id, second.id]
     apply(resumed, second)
     assert second.response_started_at == opened
-    apply(resumed, second, presented=True)
-    assert second.var.n_presentations == 2
+
+    # The deadline passes: the trial fails, but the game carries on.
     second.response_started_at = datetime.now() - timedelta(days=1)
-    with monkeypatch.context() as scoped:
-        scoped.setattr(maker, "response_timeout_sec", None)
-        assert not second._expire_if_overdue()
     db.session.commit()
-    apply(resumed, second, answer=False, time_taken=1, next_id=None)
-    assert second.failed_reason == "response_timeout" and not second.complete
-    db.session.rollback()
-    assert ended == [] and not second.failed
-    # The ordinary timeout sweep reaches the same terminal state without a click.
     maker.check_old_trials()
     db.session.commit()
-    assert ended == [resumed]
-    assert not solo._pending(player) and not solo._completed(player)
-    assert run.n_completed_trials == 1 and first.answer is True
-    assert second.failed_reason == "response_timeout" and second.answer is None
+    assert second.failed_reason == "response_timeout"
+    assert not solo._pending(player)
+    apply(resumed, second, answer=False, time_taken=1, next_id=None)
+    assert second.complete and second.failed and second.answer is False
+    assert solo._completed(player) and not solo._pending(player)
+    assert run.n_completed_trials == 2 and first.answer is True

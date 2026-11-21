@@ -10,7 +10,7 @@ Run `psynet debug local` in this directory, from a PsyNet source checkout. Press
 
 To watch this happen, open the **Network** panel of your browser's developer tools on the instruction page. Disable the cache, choose a slow connection and filter for `/static/birds/`, then press **Next**. All six JPEGs download before the first bird appears, and no more requests appear as you play. If you reload the game page, it downloads the images again and continues from the first unanswered bird.
 
-The [arrow flanker](../live_trial_game) is the same kind of task with text instead of images. For a long sequence of images, see [VocabTest's page script](../../../psynet/resources/scripts/vocabtest.js), which downloads only the next few.
+The [arrow flanker](../live_trial_game) is the same kind of task with text instead of images. Its README explains how to handle a long sequence of images.
 
 ## Photographs
 

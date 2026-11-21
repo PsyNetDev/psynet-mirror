@@ -3997,17 +3997,17 @@ def test_live_trial_game_owns_segment_progress():
     from psynet.live_game.testing import LocalGame
 
     plans = [
-        {"definitions": ["a", "b", "c"], "_trial_ids": [1, 2, 3], "answers": [False]},
+        {"definitions": ["a", "b", "c"], "_trial_ids": [1, 2, 3], "completed": 1},
         {
             "definitions": ["c", "b", "a"],
             "_trial_ids": [4, 5, 6],
-            "answers": [None, True],
+            "completed": 2,
         },
     ]
     session = LocalGame(LiveTrialGame, players=2, settings={"plans": plans, "stop": 2})
     assert session.view(0)["definition"] == "b"
     assert session.view(1)["definition"] is None
-    assert not {"plans", "answers", "_trial_ids"} & session.view(0).keys()
+    assert not {"plans", "_trial_ids"} & session.view(0).keys()
     session.game.answer_trial(session.state, player=0, answer=False)
     assert session.is_over()
     assert session.outcome() == session.answer(0) == session.answer(1) == {}
@@ -4016,7 +4016,7 @@ def test_live_trial_game_owns_segment_progress():
     assert session.view(0)["completed"] == session.view(0)["stop"] == 2
     with pytest.raises(ValueError, match="segment is complete"):
         session.game.answer_trial(session.state, player=0, answer=True)
-    assert plans[0]["answers"] == [False]
+    assert plans[0]["completed"] == 1
     assert plans[0]["_trial_ids"] == [1, 2, 3]
     resumed = LocalGame(LiveTrialGame, players=2, settings={"plans": plans})
     assert resumed.view(1)["definition"] == "a"
@@ -4036,7 +4036,7 @@ def test_typed_trial_answer_without_a_public_deck():
     class Game(LiveTrialGame):
         messages = [Choice]
 
-    plan = {"definitions": ["a", "a"], "_trial_ids": [1, 2], "answers": []}
+    plan = {"definitions": ["a", "a"], "_trial_ids": [1, 2], "completed": 0}
     session = LocalGame(Game, players=1, settings={"plans": [plan]})
     assert "deck" not in session.view(0)
     answer = {"position": 0, "answer": "left", "seconds": 0.25}

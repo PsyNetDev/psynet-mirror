@@ -41,7 +41,6 @@ from dallinger.realtime import (
     RealtimeGame,
     add_realtime_player,
     create_realtime_session,
-    end_realtime_session,
 )
 
 from ..barrier_spec import BarrierSpecError, barrier_spec_json
@@ -533,14 +532,6 @@ def _create_game_session(
         _new_session.reset(token)
 
 
-def _end_expired_session(session_id):
-    try:
-        end_realtime_session(session_id, "response_timeout")
-    except KeyError:
-        # The runner has already discarded the interrupted session.
-        pass
-
-
 class _SoloLiveGame:
     """Start directly on the participant timeline. Prepared segments can span sessions."""
 
@@ -571,7 +562,8 @@ class _SoloLiveGame:
         )
         return session_id
 
-    def _prepare(self, participant):
+    def _segment_settings(self, participant):
+        """Return the game settings, with ``stop`` resolved, and the end position."""
         run = participant.module_state
         trials = self.game_class._active_maker(participant).prepare_trials(participant)
         settings = self._settings(participant)
@@ -587,33 +579,19 @@ class _SoloLiveGame:
             raise ValueError("stop must be within the remaining prepared sequence.")
         # The session indexes this deck from zero. Trial.position counts across blocks.
         start_position = trials[0].position if trials else run.n_completed_trials
-        run.var.solo_trial_segment = {
-            "settings": {**settings, "stop": stop},
-            "end_position": start_position + stop,
-        }
+        return {**settings, "stop": stop}, start_position + stop
+
+    def _prepare(self, participant):
+        _, end = self._segment_settings(participant)
+        participant.module_state.live_segment_end = end
         _set_live_game_id(participant, self.id, None, names=self.page.control.names)
 
     def _completed(self, participant):
         run = participant.module_state
-        return run.n_completed_trials == run.var.solo_trial_segment["end_position"]
+        return run.n_completed_trials == run.live_segment_end
 
     def _pending(self, participant):
-        from ..trial.static import StaticTrial
-
         if self._completed(participant) or participant.failed:
-            return False
-        run = participant.module_state
-        trial = (
-            StaticTrial.query.filter_by(
-                module_state_id=run.id,
-                block_position=run.block_position,
-                position=run.n_completed_trials,
-            )
-            .with_for_update()
-            .populate_existing()
-            .one()
-        )
-        if trial.failed or trial._expire_if_overdue():
             return False
         record = participant.live_games[self.id]
         return record.id is None or record.end_reason in (
@@ -623,10 +601,8 @@ class _SoloLiveGame:
         )
 
     def _start_segment(self, participant):
-        run = participant.module_state
-        run.var.solo_trial_session = self._open(
-            participant, run.var.solo_trial_segment["settings"]
-        )
+        settings, _ = self._segment_settings(participant)
+        participant.module_state.live_session_id = self._open(participant, settings)
 
     def resolve(self):
         if not issubclass(self.game_class, LiveTrialGame):

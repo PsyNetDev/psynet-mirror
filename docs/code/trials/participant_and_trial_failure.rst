@@ -27,9 +27,7 @@ PsyNet also fails trials itself:
   limit). The time runs from when the trial is first shown, or for trials
   prepared in advance, from when a live game presents it. If the participant
   answers later, the answer is still stored, but the trial stays failed and
-  the participant is not failed. The exception is a sequence of trials on
-  one live page, which ends the participant's experiment
-  (see :doc:`keeping_a_task_on_one_page`);
+  the participant is not failed;
 - when the participant fails or leaves before completing the trial;
 - when background work for the trial raises an error: ``async_post_trial``
   (``failed_reason="async_post_trial_failed"``), an async job that

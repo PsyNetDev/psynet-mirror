@@ -81,38 +81,12 @@ class StaticTrial(ChainTrial):
         if (
             state is None
             or self.module_state != state
-            or self.failed
+            or (self.failed and self.failed_reason != "response_timeout")
             or participant.failed
             or self.block_position != state.block_position
             or self.position != state.n_completed_trials
         ):
             raise ValueError("Trial is outside the participant's active sequence.")
-
-    def _expire_if_overdue(self):
-        """Check the native response deadline while holding the trial lock."""
-        if self.complete or self.failed or self.response_started_at is None:
-            return False
-        from ..experiment import get_trial_maker
-
-        seconds = get_trial_maker(self.trial_maker_id).response_timeout_sec
-        if (
-            seconds is None
-            or datetime.datetime.now()
-            < self.response_started_at + datetime.timedelta(seconds=seconds)
-        ):
-            return False
-        self.fail(reason="response_timeout")
-        return True
-
-    def fail(self, reason=None):
-        already_failed = self.failed
-        super().fail(reason=reason)
-        if not already_failed and reason == "response_timeout":
-            session_id = self.var.get("solo_live_session")
-            if session_id is not None:
-                from ..live_game.play import _end_expired_session
-
-                db.run_after_commit(lambda: _end_expired_session(session_id))
 
     def start_response(self, participant):
         """Open the response clock once. The caller locks the participant and trial."""
@@ -137,8 +111,8 @@ class StaticTrial(ChainTrial):
             raise ValueError("Trial does not belong to this player's plan.")
         if self.complete:
             if (
-                json.dumps(self.var.prepared_raw_answer, sort_keys=True)
-                != json.dumps(answer, sort_keys=True)
+                json.dumps(self.format_answer(answer), sort_keys=True, default=str)
+                != json.dumps(self.answer, sort_keys=True, default=str)
                 or self.time_taken != time_taken
             ):
                 raise ValueError("Conflicting replay of a completed trial.")
@@ -147,7 +121,6 @@ class StaticTrial(ChainTrial):
         if self.response_started_at is None:
             raise ValueError("The trial is not open for a response.")
         self.time_taken = time_taken
-        self.var.prepared_raw_answer = answer
         self._complete_with_answer(
             answer, get_experiment(), get_trial_maker(self.trial_maker_id)
         )
@@ -528,9 +501,7 @@ class StaticTrialMaker(ChainTrialMaker):
         trials = self.prepare_trials(participant)
         return {
             "definitions": [self.get_public_definition(trial) for trial in trials],
-            "answers": [
-                trial.var.prepared_raw_answer for trial in trials if trial.complete
-            ],
+            "completed": sum(trial.complete for trial in trials),
             "_trial_ids": [trial.id for trial in trials],
         }
 

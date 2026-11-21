@@ -5100,10 +5100,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     "/static/scripts/live-game.js",
                 ),
                 (
-                    resources.files("psynet") / "resources/scripts/vocabtest.js",
-                    "/static/scripts/vocabtest.js",
-                ),
-                (
                     resources.files("psynet")
                     / "resources/scripts/psynet.early-exit.js",
                     "/static/scripts/psynet.early-exit.js",
