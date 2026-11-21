@@ -1,1 +1,0 @@
-Added `--n-bots` to `psynet audit simulate`, which sets the number of bots for one run like `psynet test local --n-bots` (for example `psynet audit simulate --n-bots 40`). Without it, the command still uses `Experiment.test_n_bots`.

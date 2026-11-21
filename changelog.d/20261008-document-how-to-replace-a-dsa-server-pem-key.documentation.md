@@ -1,1 +1,0 @@
-The server setup guide now explains how to replace a DSA `server_pem`: check the key with `ssh-keygen -l -f`, install a new public key through a login that already works, and point `server_pem` at the new private key.

@@ -8,7 +8,7 @@ Then act on the following PsyNet developer instructions:
 
 ## Source checkout setup
 
-Install PsyNet in editable mode with `uv pip install -e '.[dev,demos,slack]'`.
+Install PsyNet in editable mode with `uv pip install -e '.[dev,demos]'`.
 
 Demo directories contain only the authored experiment files; their unpinned
 `requirements.txt` files and missing constraints are intentional. Running

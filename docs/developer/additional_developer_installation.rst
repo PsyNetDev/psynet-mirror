@@ -106,7 +106,7 @@ that PsyNet requires.
     cd ~/PsyNet
     uv venv --python 3.14
     source .venv/bin/activate
-    uv pip install -e ".[dev,demos,slack]"
+    uv pip install -e ".[dev,demos]"
     psynet --version
 
 If you are changing Dallinger as well, install your checkout in editable mode
