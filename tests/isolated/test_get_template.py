@@ -48,6 +48,54 @@ def test_start_template_only_creates_on_structured_lookup_errors():
     assert "event.persisted" in template
 
 
+START_PAGE_HARNESS = """
+const posts = [];
+let redirect = null;
+const responses = %s;
+globalThis.location = {search: "?workerId=W&assignmentId=A&hitId=H"};
+globalThis.window = {
+    location: {replace: (url) => { redirect = url; }},
+    addEventListener: (event, listener) => listener({persisted: false}),
+};
+globalThis.document = {getElementById: () => ({hidden: true})};
+globalThis.Fingerprint2 = function () { this.get = (done) => done("fp"); };
+globalThis.dallinger = {post: (route, data) => {
+    posts.push([route, data]);
+    return {done: (callback) => {
+        setTimeout(() => callback(responses[route]));
+        return {fail: () => {}};
+    }};
+}};
+%s
+setTimeout(() => console.log(JSON.stringify({posts, redirect})), 50);
+"""
+
+
+def test_start_template_creates_a_participant_that_missing_ok_finds_missing():
+    template = resources.files("psynet").joinpath("templates/start.html").read_text()
+    script = re.search(r"<script>(.*?)</script>", template, flags=re.DOTALL).group(1)
+    responses = {
+        "/load-participant": {"participant": None},
+        "/participant": {"participant": {"unique_id": "W:A"}},
+    }
+
+    result = subprocess.run(
+        ["node", "-e", START_PAGE_HARNESS % (json.dumps(responses), script)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    output = json.loads(result.stdout)
+    assert [route for route, _ in output["posts"]] == [
+        "/load-participant",
+        "/participant",
+    ]
+    assert output["posts"][0][1]["missing_ok"] == "true"
+    assert "missing_ok" not in output["posts"][1][1]
+    assert output["redirect"] == "/timeline?unique_id=W:A"
+
+
 def test_start_template_ignores_stale_async_attempts():
     """A bfcache restore must supersede callbacks from the previous flow."""
     template = resources.files("psynet").joinpath("templates/start.html").read_text()

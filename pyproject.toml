@@ -58,9 +58,10 @@ experiment = [
     "babel",
     # Dallinger#10287 (participant socket admission and scope check), first
     # released in 13.0.0, is a security requirement for directed timeline-hold
-    # wakes: never lower this bound below it. Pinned to the Dallinger master
-    # commit that merged Dallinger#10431 (live game runner stats) until it is
-    # released.
+    # wakes: never lower this bound below it. Pinned to the commit of
+    # Dallinger#10474 (missing_ok for /load-participant), which is based on
+    # the master commit that merged Dallinger#10431 (live game runner stats),
+    # until both are released.
     "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@e6c54475ad6258b114a89acfa071f54fb3952b4a",
     # Unpin dominate once a new version is released which includes the following
     # fix for the Python 3.12 event loop warning:
