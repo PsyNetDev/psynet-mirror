@@ -52,7 +52,11 @@ process.once("beforeExit", () => console.log(JSON.stringify({posts, errors, redi
     [
         ([True, {"participant": None}], ["/load-participant", "/participant"], True),
         ([True, {"participant": {"unique_id": "W:A"}}], ["/load-participant"], True),
-        ([False, {"status": 500}], ["/load-participant"], False),
+        (
+            [False, {"status": 403, "errorCode": "participant_not_found"}],
+            ["/load-participant"],
+            False,
+        ),
     ],
 )
 def test_start_template_handles_a_missing_ok_lookup(lookup, routes, redirect):
