@@ -515,9 +515,10 @@ class StaticTrialMaker(ChainTrialMaker):
             participated = participant.module_state.participated_networks
             if trial.network_id not in participated:
                 participated.append(trial.network_id)
-        logger.info(
-            "Prepared %i trials for participant %i.", len(trials), participant.id
-        )
+        if trials:
+            logger.info(
+                "Prepared %i trials for participant %i.", len(trials), participant.id
+            )
         return trials, status
 
     def _upcoming(self, trial, page, experiment, participant):
