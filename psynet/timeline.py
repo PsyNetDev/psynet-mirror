@@ -1497,7 +1497,7 @@ class Page(Elt):
         A dictionary containing experiment specific data.
 
     session_id : str
-        If session_id is not None, then it must be a string. If two consecutive pages occur with the same session_id, then when it's time to move to the second page, the browser will not navigate to a new page, but will instead update the Javascript variable psynet.page with metadata for the new page, and will trigger an event called pageUpdated. This event can be listened for with Javascript code like window.addEventListener(”pageUpdated”, ...).
+        If session_id is not None, then it must be a string. If two consecutive pages occur with the same session_id, then when it's time to move to the second page, the browser will not navigate to a new page, but will instead update the JavaScript variable ``psynet.page`` with metadata for the new page, and will trigger the trial event ``pageUpdated``. Listen for it with ``psynet.trial.onEvent("pageUpdated", callback)``.
 
     dynamically_update_progress_bar_and_reward : bool
         If ``True``, then the page will regularly poll for updates to the progress bar and the reward.

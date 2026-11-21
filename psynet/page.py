@@ -106,7 +106,7 @@ class UnityPage(Page):
 
     * ``blobs``: Use this for large binaries, e.g. audio recordings.
 
-    Once the ``psynet.nextPage`` function is called, PsyNet will navigate to a new page if the new page has a different session_id compared to the current page, otherwise it will update the page while preserving the ongoing Unity session, specifically updating ``psynet.page`` and triggering the JavaScript event ``pageUpdated`` in the ``window`` object.
+    Once the ``psynet.nextPage`` function is called, PsyNet will navigate to a new page if the new page has a different session_id compared to the current page, otherwise it will update the page while preserving the ongoing Unity session, specifically updating ``psynet.page`` and triggering the trial event ``pageUpdated``, which you can listen for with ``psynet.trial.onEvent("pageUpdated", callback)``.
 
     Parameters
     ----------
@@ -137,7 +137,7 @@ class UnityPage(Page):
         Time estimated for the page (seconds).
 
     session_id:
-        If session_id is not None, then it must be a string. If two consecutive pages occur with the same session_id, then when it’s time to move to the second page, the browser will not navigate to a new page, but will instead update the JavaScript variable psynet.page with metadata for the new page, and will trigger an event called pageUpdated. This event can be listened for with JavaScript code like window.addEventListener(”pageUpdated”, ...).
+        If session_id is not None, then it must be a string. If two consecutive pages occur with the same session_id, then when it's time to move to the second page, the browser will not navigate to a new page, but will instead update the JavaScript variable ``psynet.page`` with metadata for the new page, and will trigger the trial event ``pageUpdated``. Listen for it with ``psynet.trial.onEvent("pageUpdated", callback)``.
 
     debug:
         Specifies if we are in debug mode and use `unity-debug-page.html` as template instead of the standard `unity-page.html`.

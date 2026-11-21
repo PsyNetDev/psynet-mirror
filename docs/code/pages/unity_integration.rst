@@ -41,8 +41,9 @@ starts, Unity reads them. As the game proceeds, Unity submits answers to
 PsyNet, for example each time the participant collects an object. PsyNet can
 then send a new page with different parameters. Consecutive pages with the
 same ``session_id`` update the running game instead of reloading it: PsyNet
-updates ``psynet.page`` and triggers the ``pageUpdated`` event. The game
-decides when it has finished and moves the timeline forward.
+updates ``psynet.page`` and triggers the ``pageUpdated`` trial event, which
+the page can listen for with ``psynet.trial.onEvent("pageUpdated", callback)``.
+The game decides when it has finished and moves the timeline forward.
 
 The PsyNet side
 ---------------
