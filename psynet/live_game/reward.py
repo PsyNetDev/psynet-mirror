@@ -1,8 +1,8 @@
 """What PsyNet does with a live game's record as Dallinger writes it: the
 rewards from add_performance_reward, paid by effects queued during the game,
-the answers to trials presented in the game, the reward from the outcome of a
-player whose game ends before the game does, and, once the result is saved,
-the other players' rewards from the outcome, the copy of the outcome on the game's round, and the removal of
+the reward from the outcome of a player whose game ends before the game
+does, and, once the result is saved, the other players' rewards from the
+outcome, the copy of the outcome on the game's round, and the removal of
 players who didn't play from their groups, for a PlayLiveGame with
 ``absent_action``. The group's top-ups stop when the game stops taking
 players and, unless the PlayLiveGame says otherwise, when it ends. A
@@ -20,7 +20,6 @@ from .method_wrappers import _outermost
 from .psynet_entry import TOO_LATE
 from .record import (
     _CLOSED_EFFECT,
-    _PREPARED_TRIAL_EFFECT,
     _PSYNET_EFFECTS,
     _REWARD_EFFECT,
     _game_started_at,
@@ -91,45 +90,10 @@ def _locked_players(session_row, participant_ids=None):
     )
 
 
-def _apply_prepared_trial(payload, session_row):
-    from ..trial.static import StaticTrial
-
-    member = _player_ids(session_row.members)[payload["player"]]
-    participant = next(p for p in _locked_players(session_row) if p.id == member)
-
-    def locked_trial(id_):
-        return (
-            StaticTrial.query.filter_by(id=id_, participant_id=member)
-            .with_for_update()
-            .populate_existing()
-            .one()
-        )
-
-    trial = locked_trial(payload["trial_id"])
-    run = participant.module_state
-    solo = run is not None and run.live_session_id == session_row.id
-
-    if solo and not trial.complete:
-        # A session the participant has since left can still deliver queued
-        # input. Only the trial at the participant's position may advance it.
-        if participant.failed or trial.position != run.n_completed_trials:
-            return
-    if "answer" not in payload:
-        trial.start_response(participant)
-        return
-    recorded = trial.submit_response(
-        participant, payload["answer"], payload["time_taken"]
-    )
-    if recorded and payload["next_id"] is not None:
-        locked_trial(payload["next_id"]).start_response(participant)
-
-
 @_outermost
 def _handles_reward(self, game_code, name, payload, session_row):
     if name not in _PSYNET_EFFECTS:
         return game_code(name, payload, _record_from_row(session_row))
-    if name == _PREPARED_TRIAL_EFFECT:
-        return _apply_prepared_trial(payload, session_row)
     if name == _CLOSED_EFFECT:
         from .play import _stop_top_ups_soon
 

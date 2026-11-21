@@ -541,6 +541,7 @@
       };
       psynet.setPageReady(false);
       psynet.pageLoaded = false;
+      psynet.responseClockStart = null;
       psynet.nextPagePending = false;
       psynet.media.audioRequired = false;
       psynet.media.otherAudioContexts = [];
@@ -636,6 +637,7 @@
 
     psynet.activatePageJavascript = async function () {
       let activated = [];
+      psynet.pageModuleUpdates = [];
       let context = psynet.getPageActivationContext();
       try {
         for (let src of psynetTemplateData.legacyJsLinks || []) {
@@ -680,12 +682,34 @@
           let cleanup = await module.activate(context);
           psynet.validatePageCleanup(cleanup, `JS page module ${normalizedSrc}`);
           activated.push({ source: normalizedSrc, cleanup });
+          if (typeof module.update === "function") {
+            psynet.pageModuleUpdates.push(() =>
+              module.update({
+                ...context,
+                contents: psynet.page.contents,
+                response: psynet.createResponseHandle(),
+              }),
+            );
+          }
         }
       } catch (error) {
         await psynet.deactivatePageJavascript(activated);
         throw error;
       }
       psynet.activeJSPageBehaviors = activated;
+    };
+
+    // What a page module's update() receives as ``response``.
+    psynet.createResponseHandle = function () {
+      return {
+        // time_taken then runs from this call rather than from page setup.
+        startClock() {
+          psynet.responseClockStart = new Date();
+        },
+        answer(value) {
+          return psynet.nextPage(value);
+        },
+      };
     };
 
     psynet.deactivatePageJavascript = async function (
@@ -1581,6 +1605,10 @@
       }
       psynet.ensureArrivalUpdates(psynet.page.attributes?.arrival_updates);
       psynet.waiting.start(psynet.page.attributes?.waiting);
+      // Page modules show the trial only once it can be answered.
+      for (let update of (psynet.pageModuleUpdates || []).splice(0)) {
+        await update();
+      }
     };
 
     psynet.prepareTimelineFragment = function (payload) {
@@ -3833,6 +3861,7 @@
         psynet.var.pageUuid = response.page.attributes.page_uuid;
         window.pageUuid = psynet.var.pageUuid;
         psynet.pageLoadTime = new Date();
+        psynet.responseClockStart = null;
         psynet.var.backgroundRecording = response.page.attributes.background_recording;
         await psynet.prepareBackgroundRecording();
         psynet.var.recordingCaptureSources = psynet.var.backgroundRecording?.sources || [];
@@ -4196,7 +4225,9 @@
       var currentTime = new Date();
 
       var allMetadata = {
-        time_taken: (currentTime - psynet.pageLoadTime) / 1000,
+        time_taken:
+          (currentTime - (psynet.responseClockStart ?? psynet.pageLoadTime)) /
+          1000,
         platform: platform.toString(),
         download_speed_megabits_per_sec: psynet.estimateDownloadSpeed(),
         event_log: psynet.trial.eventLog,

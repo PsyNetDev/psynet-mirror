@@ -3441,11 +3441,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if isinstance(barrier, _LiveGameBarrier):
                 barriers[id(barrier)] = barrier
         ids = [barrier.id for barrier in barriers.values()]
-        ids.extend(
-            elt.links["solo_live_game"]
-            for elt in cls.timeline.all_elts
-            if "solo_live_game" in (getattr(elt, "links", None) or {})
-        )
         repeated = sorted({id_ for id_ in ids if ids.count(id_) > 1})
         if repeated:
             raise RuntimeError(
@@ -3456,11 +3451,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         serial = cls.test_mode != "parallel" and not cls._subclass_overridden_names(
             "test_serial_run_bots"
         )
-        if (
-            cls.test_n_bots > 1
-            and serial
-            and any(game.max_players != 1 for game in live_game_classes())
-        ):
+        if live_game_classes() and cls.test_n_bots > 1 and serial:
             raise RuntimeError(
                 "The experiment plays live games, whose bots have to play "
                 "together, but psynet test runs its bots one at a time. Set "

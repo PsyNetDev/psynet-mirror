@@ -1,26 +1,31 @@
-export function activate({root, psynet}) {
-    const patches = root.querySelector("#patches");
-    const pair = psynet.page.contents;
-    let answered = false;
+let response = null;
 
-    for (const side of ["left", "right"]) {
-        const grey = pair[side];
-        root.querySelector(`#${side}-patch`).style.backgroundColor = `rgb(${grey}, ${grey}, ${grey})`;
-    }
-    patches.style.visibility = "visible";
+export function activate({root}) {
+    const patches = root.querySelector("#patches");
 
     async function keydown(event) {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
-        if (answered || event.repeat) return;
-        answered = true;
+        if (response === null || event.repeat) return;
+        const current = response;
+        response = null;
         patches.style.visibility = "hidden";
-        if (!(await psynet.nextPage(event.key === "ArrowLeft" ? "left" : "right"))) {
-            answered = false;
+        if (!(await current.answer(event.key === "ArrowLeft" ? "left" : "right"))) {
+            response = current;
             patches.style.visibility = "visible";
         }
     }
 
     document.addEventListener("keydown", keydown);
     return () => document.removeEventListener("keydown", keydown);
+}
+
+export function update({root, contents, response: handle}) {
+    for (const side of ["left", "right"]) {
+        const grey = contents[side];
+        root.querySelector(`#${side}-patch`).style.backgroundColor = `rgb(${grey}, ${grey}, ${grey})`;
+    }
+    root.querySelector("#patches").style.visibility = "visible";
+    response = handle;
+    handle.startClock();
 }

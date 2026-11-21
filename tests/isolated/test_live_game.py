@@ -1360,37 +1360,6 @@ def test_two_play_live_games_with_one_id_are_refused_when_the_experiment_loads(
         Twice.check_live_games()
 
 
-def test_solo_game_needs_no_group_and_keys_must_be_unique(registry):
-    class Solo(LiveGame):
-        name = "one_player"
-        min_players = max_players = 1
-
-        def bot(self, view, player, now):
-            return None
-
-    def step(**kwargs):
-        return PlayLiveGame(
-            game_class=Solo,
-            page=LiveGamePage("solo", "Play.", time_estimate=1),
-            **kwargs,
-        )
-
-    class Once(Experiment):
-        timeline = Timeline(step())
-
-    Once.check_live_games()
-
-    class Twice(Experiment):
-        timeline = Timeline(step(), step())
-
-    with pytest.raises(RuntimeError, match="more than one PlayLiveGame"):
-        Twice.check_live_games()
-    with pytest.raises(TypeError, match="require group_type"):
-        step(max_wait_time=1)
-    with pytest.raises(ValueError, match="exactly one player"):
-        PlayLiveGame(game_class=type(_pick_numbers()), page=None)
-
-
 def test_live_games_need_their_bots_to_play_together(pair):
     class Serial(Experiment):
         test_n_bots = 2
@@ -3990,71 +3959,3 @@ def test_a_newcomer_waits_at_the_barrier_once_the_running_game_is_full(
 
     assert _game_id(members[2], "growing") == session_id
     assert _game_id(members[3], "growing") is None
-
-
-def test_live_trial_game_owns_segment_progress():
-    from psynet.live_game import LiveTrialGame
-    from psynet.live_game.testing import LocalGame
-
-    plans = [
-        {"definitions": ["a", "b", "c"], "_trial_ids": [1, 2, 3], "completed": 1},
-        {
-            "definitions": ["c", "b", "a"],
-            "_trial_ids": [4, 5, 6],
-            "completed": 2,
-        },
-    ]
-    session = LocalGame(LiveTrialGame, players=2, settings={"plans": plans, "stop": 2})
-    assert session.view(0)["definition"] == "b"
-    assert session.view(1)["definition"] is None
-    assert not {"plans", "_trial_ids"} & session.view(0).keys()
-    session.game.answer_trial(session.state, player=0, answer=False)
-    assert session.is_over()
-    assert session.outcome() == session.answer(0) == session.answer(1) == {}
-    assert session.outcome("timeout") == {}
-    assert "deck" not in session.view(0)
-    assert session.view(0)["completed"] == session.view(0)["stop"] == 2
-    with pytest.raises(ValueError, match="segment is complete"):
-        session.game.answer_trial(session.state, player=0, answer=True)
-    assert plans[0]["completed"] == 1
-    assert plans[0]["_trial_ids"] == [1, 2, 3]
-    resumed = LocalGame(LiveTrialGame, players=2, settings={"plans": plans})
-    assert resumed.view(1)["definition"] == "a"
-    assert resumed.view(1)["stop"] == 3
-    with pytest.raises(ValueError, match="beyond this segment"):
-        LocalGame(LiveTrialGame, players=2, settings={"plans": plans, "stop": 1})
-
-
-def test_typed_trial_answer_without_a_public_deck():
-    from typing import Literal
-
-    from psynet.live_game import LiveTrialGame, TrialAnswer
-
-    class Choice(TrialAnswer):
-        answer: Literal["left", "right"]
-
-    class Game(LiveTrialGame):
-        messages = [Choice]
-
-    plan = {"definitions": ["a", "a"], "_trial_ids": [1, 2], "completed": 0}
-    session = LocalGame(Game, players=1, settings={"plans": [plan]})
-    assert "deck" not in session.view(0)
-    answer = {"position": 0, "answer": "left", "seconds": 0.25}
-
-    def send(**changes):
-        session.send(0, {"type": "trial_answer", "message": {**answer, **changes}})
-
-    for invalid in [
-        {"position": True},
-        {"answer": "pass"},
-        {"seconds": -1},
-        {"player": 0},
-    ]:
-        with pytest.raises(Reject):
-            send(**invalid)
-    send()
-    assert session.view(0)["completed"] == 1
-    with pytest.raises(Reject, match="no longer current"):
-        send()
-    session.send(0, Choice(position=1, answer="right"))
-    assert session.is_over()

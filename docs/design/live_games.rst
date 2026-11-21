@@ -3,24 +3,17 @@
 Live games
 ==========
 
-A **live game** keeps one page open while the game's state changes on the
-server. It has two main uses.
+In a **live game**, a group plays together on one page in real time. Each
+move reaches the others as soon as it's made, so players can react to each other
+while they act. That's the reason to choose a live game. In contrast, a design
+in which each player decides and then sees everyone's decisions is simpler
+played in :doc:`rounds <rounds>`. As in any :doc:`group experiment
+<groups>`, all the players need to be online at the same time.
 
-With several players, each move reaches the others as soon as it's made, so
-players can react to each other while they act: responding to an offer in a
-negotiation, steering around a shared board or fishing on a lake together.
-That's the reason to choose a multiplayer live game. All the players need to
-be online at the same time. If each player decides and then everyone sees the
-decisions together, :doc:`rounds <rounds>` are simpler.
+How it works
+------------
 
-With one player, a live game can present
-:doc:`a sequence of trials on a single page <presenting_trials>`, so that the
-next stimulus appears without a page transition.
-
-The rest of this page is about multiplayer games.
-
-How a multiplayer game works
-----------------------------
+A game is played from start to end like this:
 
 1. A group reaches the game in the timeline and waits there until all its
    members have arrived, as at any group barrier.
@@ -135,8 +128,8 @@ or once their own game ends in a game that lets players finish early.
 Around the game
 ---------------
 
-A multiplayer live game is one step in the timeline, between barriers like
-other group steps:
+A live game is one step in the timeline, between barriers like any other
+group step:
 
 - **The wait before it** is a group barrier, so everything :doc:`groups` says
   about waiting applies, and it needs a limit: usually how long a member may

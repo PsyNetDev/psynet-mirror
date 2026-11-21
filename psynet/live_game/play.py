@@ -1,7 +1,7 @@
-"""PlayLiveGame, the timeline step for solo and group live games, and
+"""PlayLiveGame, the timeline step where a group plays a live game, and
 each participant's record of the games they played.
 
-With group_type, PlayLiveGame resolves into a group barrier, which starts the game when
+PlayLiveGame resolves into a group barrier, which starts the game when
 it releases the group, followed by the game page. The barrier stores the
 game's id in each member's ``live_game_data``, keyed by the step's id, and
 the game page reads it from there, and saves the player's
@@ -11,10 +11,6 @@ without a record is one the participant never reached. The record also keeps
 every game the participant played at the step, with their answer in each,
 its ``history``. Participant.live_games and live_game_history read it, as
 LiveGameRecord objects.
-
-Without a group, the timeline creates a session for the participant directly.
-A solo prepared segment checks the trial cursor after each session and can open
-a replacement session for the same pending trial.
 
 With ``join_running_game``, a participant whose group is playing a game
 from the step is added to that game instead, and skips the barrier.
@@ -45,7 +41,6 @@ from dallinger.realtime import (
 
 from ..barrier_spec import BarrierSpecError, barrier_spec_json
 from ..bot import Bot
-from ..page import UnsuccessfulEndPage
 from ..sync import (
     BarrierBehaviorMismatch,
     GroupBarrier,
@@ -55,12 +50,11 @@ from ..sync import (
     _round_trial,
     _validate_group_timeouts,
 )
-from ..timeline import CodeBlock, EltCollection, conditional, join, while_loop
+from ..timeline import CodeBlock, EltCollection, conditional, join
 from ..utils import get_logger
 from .game import LiveGame
 from .psynet_entry import _new_session
 from .record import LiveGameRecord, _player_ending
-from .trials import LiveTrialGame
 
 logger = get_logger()
 
@@ -70,9 +64,9 @@ _STOP_TOP_UPS_ATTEMPTS = 3
 
 
 class PlayLiveGame(EltCollection):
-    """Play a live game alone or with a group.
+    """The step of the timeline where a group plays a live game.
 
-    With ``group_type``, as in a :class:`~psynet.sync.GroupBarrier`, it waits for every
+    Like a :class:`~psynet.sync.GroupBarrier`, it first waits for every
     member of the participant's group to arrive. It then starts a game of
     ``game_class`` with the members as its players, and the group moves on
     together to ``page``, where they play it. A group that arrives again,
@@ -103,8 +97,7 @@ class PlayLiveGame(EltCollection):
 
     group_type
         The ``group_type`` of the :class:`~psynet.sync.Grouper` whose groups
-        play the game. Omit for a game with exactly one player. A solo prepared
-        segment resumes interrupted sessions until it completes or its open trial fails.
+        play the game.
 
     game_class
         The game the group plays, a :class:`LiveGame` subclass with a
@@ -120,8 +113,6 @@ class PlayLiveGame(EltCollection):
         ``initial_state(self, players, settings)`` gets. In a trial's
         ``show_trial``, pass the trial's ``definition``. The members of a
         group must all arrive with the same settings.
-        A callable receives the participants in seat order and supplies settings
-        when the session starts.
 
     on_release
         Optional function called when the wait ends and the group's game
@@ -182,9 +173,9 @@ class PlayLiveGame(EltCollection):
 
     def __init__(
         self,
-        group_type: str | None = None,
-        game_class=None,
-        page=None,
+        group_type: str,
+        game_class,
+        page,
         settings=None,
         on_release=None,
         join_running_game: bool = False,
@@ -216,24 +207,7 @@ class PlayLiveGame(EltCollection):
             )
         if id_ is None:
             id_ = game_class.name
-        solo = group_type is None
-        if solo and game_class.max_players != 1:
-            raise ValueError("Omit group_type only for a game with exactly one player.")
-        if solo and (
-            on_release
-            or join_running_game
-            or absent_action is not None
-            or not stop_top_ups_at_end
-            or kwargs
-        ):
-            raise TypeError(
-                "Group release, joining, and wait options require group_type."
-            )
-        if (
-            not solo
-            and kwargs.get("late_after") is None
-            and kwargs.get("max_wait_time") is None
-        ):
+        if kwargs.get("late_after") is None and kwargs.get("max_wait_time") is None:
             raise TypeError(
                 f"The PlayLiveGame {id_!r} needs a limit on its wait. Usually "
                 'give it late_after, with late_action="leave_group", which '
@@ -256,30 +230,24 @@ class PlayLiveGame(EltCollection):
                 "PlayLiveGame a page of its own."
             )
         page.control.play_id = id_
-        self.page = page
-        self.solo = _SoloLiveGame(id_, game_class, settings, page) if solo else None
-        self.barrier = (
-            None
-            if solo
-            else _LiveGameBarrier(
-                id_,
-                group_type,
-                game_class,
-                settings,
-                on_release,
-                join_running_game=join_running_game,
-                stop_top_ups_at_end=stop_top_ups_at_end,
-                absent_leave=[group_type, *also_leave]
-                if absent_action == "leave_group"
-                else [],
-                names=page.control.names,
-                **kwargs,
-            )
+        self.barrier = _LiveGameBarrier(
+            id_,
+            group_type,
+            game_class,
+            settings,
+            on_release,
+            join_running_game=join_running_game,
+            stop_top_ups_at_end=stop_top_ups_at_end,
+            names=page.control.names,
+            absent_leave=(
+                [group_type, *also_leave] if absent_action == "leave_group" else []
+            ),
+            **kwargs,
         )
+        self.page = page
 
     def resolve(self):
-        steps = self.solo.resolve() if self.solo else join(self.barrier, self.page)
-        return join(CodeBlock(self._save_player_info), steps)
+        return join(CodeBlock(self._save_player_info), self.barrier, self.page)
 
     def _save_player_info(self, participant):
         # Saved on each visit, so a later page without player_info doesn't
@@ -290,11 +258,11 @@ class PlayLiveGame(EltCollection):
             info = json.loads(json.dumps(info, allow_nan=False))
         except (TypeError, ValueError) as error:
             raise TypeError(
-                f"The player_info of the PlayLiveGame {self.page.control.play_id!r}'s "
+                f"The player_info of the PlayLiveGame {self.barrier.id!r}'s "
                 f"page returned {info!r}, which can't be saved as JSON: {error}"
             ) from None
-        data = _live_game_data(participant).get(self.page.control.play_id, {})
-        _set_data(participant, self.page.control.play_id, {**data, "info": info})
+        data = _live_game_data(participant).get(self.barrier.id, {})
+        _set_data(participant, self.barrier.id, {**data, "info": info})
 
 
 class _LiveGameBarrier(GroupBarrier):
@@ -315,9 +283,7 @@ class _LiveGameBarrier(GroupBarrier):
         absent_leave=(),
         **kwargs,
     ):
-        settings = (
-            settings if callable(settings) else _checked_settings(game_class, settings)
-        )
+        settings = _checked_settings(game_class, settings)
         super().__init__(
             id_=id_,
             group_type=group_type,
@@ -487,138 +453,26 @@ class _LiveGameBarrier(GroupBarrier):
         # pages do.
         seats = group.seats
         participants = sorted(participants, key=lambda member: seats[member.id])
-        settings = (
-            self.settings(participants=participants)
-            if callable(self.settings)
-            else self.settings
+        token = _new_session.set(
+            {
+                "settings": self.settings,
+                "group_id": group.id,
+                "stop_top_ups_at_end": self.stop_top_ups_at_end,
+            }
         )
-        session_id = _create_game_session(
-            game_class,
-            participants,
-            settings,
-            group_id=group.id,
-            stop_top_ups_at_end=self.stop_top_ups_at_end,
-        )
+        try:
+            session_id = create_realtime_session(
+                game_class,
+                [member.id for member in participants],
+                bots=[member.id for member in participants if isinstance(member, Bot)],
+            )
+        finally:
+            _new_session.reset(token)
         for member in participants:
             _set_live_game_id(member, self.id, session_id)
         if group_round is not None:
             group_round.live_game_id = session_id
         return session_id
-
-
-def _create_game_session(
-    game_class, participants, settings, *, group_id=None, stop_top_ups_at_end=False
-):
-    if issubclass(game_class, LiveTrialGame):
-        settings = game_class._session_settings(participants, settings)
-    token = _new_session.set(
-        {
-            "settings": _checked_settings(game_class, settings),
-            "group_id": group_id,
-            "stop_top_ups_at_end": stop_top_ups_at_end,
-        }
-    )
-    try:
-        return create_realtime_session(
-            game_class,
-            [member.id for member in participants],
-            bots=[member.id for member in participants if isinstance(member, Bot)],
-        )
-    finally:
-        _new_session.reset(token)
-
-
-class _SoloLiveGame:
-    """Start directly on the participant timeline. Prepared segments can span sessions."""
-
-    def __init__(self, id_, game_class, settings, page):
-        self.id = id_
-        self.game_class = game_class
-        self.settings = (
-            settings if callable(settings) else _checked_settings(game_class, settings)
-        )
-        self.page = page
-
-    def _settings(self, participant):
-        return (
-            self.settings(participants=[participant])
-            if callable(self.settings)
-            else self.settings
-        )
-
-    def _start(self, participant):
-        self._open(participant, self._settings(participant))
-
-    def _open(self, participant, settings):
-        session_id = _create_game_session(self.game_class, [participant], settings)
-        _set_live_game_id(
-            participant, self.id, session_id, names=self.page.control.names
-        )
-        return session_id
-
-    def _segment_settings(self, participant):
-        """Return the game settings, with ``stop`` resolved, and the end position."""
-        run = participant.module_state
-        trials = self.game_class._active_maker(participant).prepare_trials(participant)
-        settings = self._settings(participant)
-        if settings is not None and not isinstance(settings, dict):
-            raise ValueError("LiveTrialGame settings must be a dictionary.")
-        settings = dict(settings or {})
-        stop = settings.get("stop")
-        if stop is None:
-            stop = len(trials)
-        if type(stop) is not int or not sum(t.complete for t in trials) <= stop <= len(
-            trials
-        ):
-            raise ValueError("stop must be within the remaining prepared sequence.")
-        # The session indexes this deck from zero. Trial.position counts across blocks.
-        start_position = trials[0].position if trials else run.n_completed_trials
-        return {**settings, "stop": stop}, start_position + stop
-
-    def _prepare(self, participant):
-        _, end = self._segment_settings(participant)
-        participant.module_state.live_segment_end = end
-        _set_live_game_id(participant, self.id, None, names=self.page.control.names)
-
-    def _completed(self, participant):
-        run = participant.module_state
-        return run.n_completed_trials == run.live_segment_end
-
-    def _pending(self, participant):
-        if self._completed(participant) or participant.failed:
-            return False
-        record = participant.live_games[self.id]
-        return record.id is None or record.end_reason in (
-            "players_left",
-            "not_joined",
-            "timeout",
-        )
-
-    def _start_segment(self, participant):
-        settings, _ = self._segment_settings(participant)
-        participant.module_state.live_session_id = self._open(participant, settings)
-
-    def resolve(self):
-        if not issubclass(self.game_class, LiveTrialGame):
-            start = CodeBlock(self._start)
-            start.links["solo_live_game"] = self.id
-            return join(start, self.page)
-        prepare = CodeBlock(self._prepare)
-        prepare.links["solo_live_game"] = self.id
-        return join(
-            prepare,
-            while_loop(
-                f"{self.id}_pending",
-                self._pending,
-                join(CodeBlock(self._start_segment), self.page),
-                expected_repetitions=1,
-            ),
-            conditional(
-                f"{self.id}_incomplete",
-                lambda participant: not self._completed(participant),
-                UnsuccessfulEndPage(failure_tags=["incomplete_trial_segment"]),
-            ),
-        )
 
 
 def _check_game_class(game_class, label="game_class"):
@@ -712,7 +566,7 @@ def _check_reached_game(participant, play_id):
         raise ValueError(
             f"Participant {participant.id} hasn't reached the PlayLiveGame "
             f"{play_id!r}, whose game page they were shown. Only its "
-            "start step leads to the page, so check for anything that skips it."
+            "barrier leads to the page, so check for anything that skips it."
         )
 
 

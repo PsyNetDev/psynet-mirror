@@ -37,7 +37,6 @@ from .psynet_entry import PlayerReady, _absences, _psynet_entry
 from .record import (
     _CLOSED_EFFECT,
     _MOMENT_EFFECT,
-    _PREPARED_TRIAL_EFFECT,
     _PSYNET_EFFECTS,
     _REWARD_EFFECT,
     _STARTED_EFFECT,
@@ -594,51 +593,6 @@ class LiveGame(RealtimeGame):
             game started.
         """
         return super().handle_player_ending(game, player, ending)
-
-    def start_trials(self, state):
-        """Open each player's current trial when this game starts."""
-        for player, plan in enumerate(state["plans"]):
-            position = plan["completed"]
-            ids = plan["_trial_ids"]
-            if position < len(ids):
-                super().queue_effect(
-                    _PREPARED_TRIAL_EFFECT,
-                    {"player": player, "trial_id": ids[position]},
-                )
-
-    def _open_trial(self, state, player, position):
-        plans = state["plans"]
-        if type(player) is not int or not 0 <= player < len(plans):
-            raise ValueError("Unknown player for these trial plans.")
-        plan = plans[player]
-        current = plan["completed"]
-        ids = plan["_trial_ids"]
-        if position is not None and (
-            type(position) is not int or position != current or current >= len(ids)
-        ):
-            raise Reject("This trial is no longer current.")
-        if current >= len(ids):
-            raise ValueError("This player's trial segment is complete.")
-        return plan, ids, current
-
-    def answer_trial(self, state, *, player, answer, position=None, time_taken=None):
-        """Answer the open trial and start the next one in the same event transaction."""
-        plan, ids, position = self._open_trial(state, player, position)
-        if time_taken is not None and (not is_number(time_taken) or time_taken < 0):
-            raise ValueError("Invalid presentation duration.")
-        super().queue_effect(
-            _PREPARED_TRIAL_EFFECT,
-            to_jsonable_python(
-                {
-                    "player": player,
-                    "trial_id": ids[position],
-                    "answer": answer,
-                    "time_taken": time_taken,
-                    "next_id": ids[position + 1] if position + 1 < len(ids) else None,
-                }
-            ),
-        )
-        plan["completed"] += 1
 
     def record(self, name, data=None):
         """Record a moment in the game, such as a round's result or a player
