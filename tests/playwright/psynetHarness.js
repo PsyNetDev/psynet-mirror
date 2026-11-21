@@ -850,6 +850,12 @@ async function withExperiment(page, context, experimentDir, runTest) {
   }
 }
 
+// The JSON part of a POST /response request's multipart body.
+function postedResponse(request) {
+  const json = request.postData().match(/name="json"\r\n\r\n(.*)\r\n/);
+  return JSON.parse(json[1]);
+}
+
 function startResponseSubmitTracker(page) {
   let count = 0;
   const onResponse = (response) => {
@@ -1782,6 +1788,7 @@ module.exports = {
   isInplaceTimelineModeEnabled,
   startExperiment,
   startParticipantsTogether,
+  postedResponse,
   startResponseSubmitTracker,
   stopExperiment,
   waitForResponseSubmitIncrement,

@@ -4,6 +4,7 @@ const { test, expect } = require("../fixtures");
 const {
   assertNoBackendError,
   completeInitialGateway,
+  postedResponse,
   waitForMainBodyContains,
   withExperiment
 } = require("../psynetHarness");
@@ -47,8 +48,7 @@ test("flanker trials follow each other without waiting for the server", { tag: "
     const held = new Promise((resolve) => (release = resolve));
     const reactionTimes = [];
     await participant.route("**/response", async (route) => {
-      const json = route.request().postData().match(/name="json"\r\n\r\n(.*)\r\n/);
-      reactionTimes.push(JSON.parse(json[1]).metadata.time_taken);
+      reactionTimes.push(postedResponse(route.request()).metadata.time_taken);
       await held;
       await route.continue();
     });

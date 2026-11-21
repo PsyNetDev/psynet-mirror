@@ -352,7 +352,8 @@ which are on by default.
 Some trial makers can't prepare trials in advance; see the
 ``prepare_trials_in_advance`` parameter of
 :class:`~psynet.trial.static.StaticTrialMaker`. If trials share one page
-layout, they can also skip waiting for the server altogether; see
+layout, they can also skip waiting for the server altogether, which a page
+with an audio or image prompt and push buttons does without further code; see
 :doc:`/code/trials/keeping_a_task_on_one_page`.
 :download:`The simple audio rating demo <../../demos/experiments/simple_audio_rating/experiment.py>`
 downloads its sounds this way.

@@ -1,5 +1,6 @@
 {% macro simple(params) %}
-    {% if params.text is not none %}
+    {# Pages shown in advance fill in the text of each trial. #}
+    {% if params.text is not none or params.shown_in_advance %}
         <style>
             #prompt-text {
                 text-align: {{ params.text_align }};
@@ -7,7 +8,7 @@
         </style>
 
         <div id="prompt-text">
-            {{ params.text_html }}
+            {% if not params.shown_in_advance %}{{ params.text_html }}{% endif %}
         </div>
     {% endif %}
     <script>
@@ -227,7 +228,7 @@
         }
     </style>
 
-    <img id="prompt-image" src="{{ params.url }}" alt="{{ gettext("Image not found") | forceescape }}">
+    <img id="prompt-image" {% if not params.shown_in_advance %}src="{{ params.url }}"{% endif %} alt="{{ gettext("Image not found") | forceescape }}">
 
     <script>
         let promptImage = $("#prompt-image").get(0);

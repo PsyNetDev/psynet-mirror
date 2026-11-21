@@ -201,7 +201,9 @@ Trials
     practice and main trial makers. :doc:`/code/using_stimuli`.
 
 `experiments/static_audio_3 <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/static_audio_3>`__
-    Participants rate how much they like existing sound files.
+    Participants rate how much they like existing sound files with push
+    buttons, each sound following the last on the same page.
+    :doc:`/code/trials/keeping_a_task_on_one_page`.
 
 `features/dense_color <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/dense_color>`__
     ``DenseTrialMaker`` sampling colors from continuous hue, saturation and

@@ -4,6 +4,7 @@ const { test, expect } = require("../fixtures");
 const {
   assertNoBackendError,
   completeInitialGateway,
+  postedResponse,
   waitForMainBodyContains,
   withExperiment
 } = require("../psynetHarness");
@@ -22,8 +23,7 @@ async function responseGate(page) {
   };
   await page.route("**/response", async (route) => {
     gate.posted += 1;
-    const json = route.request().postData().match(/name="json"\r\n\r\n(.*)\r\n/);
-    gate.eventLogs.push(JSON.parse(json[1]).metadata.event_log.length);
+    gate.eventLogs.push(postedResponse(route.request()).metadata.event_log.length);
     await gate.held;
     if (gate.reject) {
       const message = gate.reject;

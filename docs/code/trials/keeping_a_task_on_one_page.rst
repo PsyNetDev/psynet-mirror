@@ -183,6 +183,21 @@ so that PsyNet asks the participant to enable sound before the first trial.
 :download:`The rapid ratings demo <../../../demos/features/rapid_ratings/experiment.py>`
 rates pictures this way, with a break halfway through.
 
+Some pages run ahead without a page module of your own. A
+:class:`~psynet.modular_page.ModularPage` that combines a plain
+:class:`~psynet.modular_page.Prompt`, an
+:class:`~psynet.modular_page.ImagePrompt` or an
+:class:`~psynet.modular_page.AudioPrompt` with a
+:class:`~psynet.modular_page.PushButtonControl` or
+:class:`~psynet.modular_page.KeyboardPushButtonControl` only needs
+``prepare_trials_in_advance=True``. PsyNet then fills in each trial's text,
+image or sound on the same page, plays the sound and enables the buttons
+again, much as if the page had loaded afresh. The buttons must be the same on
+every trial: pages whose buttons differ load from the server as usual.
+:download:`A sound rating demo <../../../demos/experiments/static_audio_3/experiment.py>`
+works this way. Other prompts and controls, such as sliders and SurveyJS
+questions, don't run ahead yet.
+
 Each answer is still checked and saved as usual. If the server rejects one,
 PsyNet also drops the answers given after it. The browser stops running ahead
 before pages from :meth:`~psynet.trial.main.TrialMaker.show_before_trial`,

@@ -1,0 +1,1 @@
+With `prepare_trials_in_advance=True`, a `ModularPage` that combines a plain `Prompt`, an `ImagePrompt` or an `AudioPrompt` with a `PushButtonControl` or `KeyboardPushButtonControl` now shows the next trial as soon as the participant answers, without a page module of its own, as long as the buttons are the same on every trial. The `static_audio_3` demo works this way.

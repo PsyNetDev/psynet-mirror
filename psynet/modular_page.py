@@ -174,6 +174,9 @@ class Prompt(JavaScriptContributor):
 
     macro = "simple"
     external_template = None
+    # Set on pages that show their trials in advance: the macro then leaves out
+    # what ``_advance_contents`` lists, which the page module fills in.
+    shown_in_advance = False
 
     @property
     def metadata(self):
@@ -187,6 +190,16 @@ class Prompt(JavaScriptContributor):
     def prefetch_urls(self):
         """URLs of files shown without the media spec, by media type, to download early."""
         return {}
+
+    def _advance_contents(self):
+        """What differs between trials, for showing them in advance.
+
+        Returns ``None`` if this prompt type can't be shown in advance.
+        """
+        return self._advance_text() if type(self) is Prompt else None
+
+    def _advance_text(self):
+        return {"text": "" if self.text_html is None else str(self.text_html)}
 
     def visualize(self, trial):
         if self.text is None:
@@ -387,6 +400,11 @@ class AudioPrompt(BaseAudioPrompt):
     @property
     def media(self):
         return MediaSpec(audio={"prompt": self.url})
+
+    def _advance_contents(self):
+        if type(self) is not AudioPrompt:
+            return None
+        return {**self._advance_text(), "audio": self.url}
 
     def visualize(self, trial):
         start, end = tuple(self.play_window)
@@ -629,6 +647,11 @@ class ImagePrompt(Prompt):
     def prefetch_urls(self):
         return {"image": [self.url]}
 
+    def _advance_contents(self):
+        if type(self) is not ImagePrompt:
+            return None
+        return {**self._advance_text(), "image": self.url}
+
     @property
     def metadata(self):
         return {
@@ -802,6 +825,13 @@ class Control(JavaScriptContributor):
     def prefetch_urls(self):
         """URLs of files shown without the media spec, by media type, to download early."""
         return {}
+
+    def _advance_contents(self):
+        """What differs between trials, for showing them in advance.
+
+        Returns ``None`` if this control type can't be shown in advance.
+        """
+        return None
 
     def format_answer(self, raw_answer, **kwargs):
         """
@@ -1414,6 +1444,13 @@ class PushButtonControl(OptionControl):
     @property
     def metadata(self):
         return {"choices": self.choices, "labels": self.labels}
+
+    def _advance_contents(self):
+        # The buttons stay in the page's HTML, so trials with different
+        # buttons fall back to loading their own page.
+        if type(self) in (PushButtonControl, KeyboardPushButtonControl):
+            return {}
+        return None
 
     def visualize_response(self, answer, response, trial):
         return self._visualize_buttons(lambda choice: choice == answer)
@@ -2511,6 +2548,37 @@ class ModularPage(Page):
                 known = urls.setdefault(media_type, [])
                 known.extend(url for url in extra if url not in known)
         return urls
+
+    def _show_in_advance(self):
+        """Whether the page can show trials in advance, setting it up to if needed.
+
+        Without a page module of its own, a page whose built-in prompt and
+        control support it renders without what differs between trials and
+        lists that under ``contents["modular_page"]``. The
+        ``modular-page-in-advance.js`` module then shows each trial in turn.
+        """
+        if super()._show_in_advance():
+            return True
+        prompt = self.prompt._advance_contents()
+        control = self.control._advance_contents()
+        if (
+            prompt is None
+            or control is None
+            or not {"prompt", "control"} <= set(self.layout)
+            or not isinstance(self.contents or {}, dict)
+        ):
+            return False
+        self.prompt.shown_in_advance = True
+        self.contents = {
+            **(self.contents or {}),
+            "modular_page": {"prompt": prompt, "control": control},
+        }
+        self.js_page_modules = [
+            package_static_url("psynet", "scripts/modular-page-in-advance.js")
+        ]
+        # The module starts each trial once it has filled the trial in.
+        self.events["trialPrepare"] = Event(is_triggered_by=None, once=True)
+        return True
 
     def visualize(self, trial):
         prompt = self.prompt.visualize(trial)

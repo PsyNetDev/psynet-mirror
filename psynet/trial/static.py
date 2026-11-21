@@ -257,7 +257,14 @@ class StaticTrialMaker(ChainTrialMaker):
         the next :attr:`n_upcoming_trials` trials. A page whose modules
         return an ``update`` function then shows the next trial as soon as
         the participant answers, without waiting for the server; see
-        :doc:`/code/trials/keeping_a_task_on_one_page`. Any trial page, such
+        :doc:`/code/trials/keeping_a_task_on_one_page`. So does a
+        :class:`~psynet.modular_page.ModularPage` without page modules that
+        combines a plain :class:`~psynet.modular_page.Prompt`,
+        :class:`~psynet.modular_page.ImagePrompt` or
+        :class:`~psynet.modular_page.AudioPrompt` with a
+        :class:`~psynet.modular_page.PushButtonControl` or
+        :class:`~psynet.modular_page.KeyboardPushButtonControl`, as long as
+        the buttons are the same on every trial. Any trial page, such
         as one with an :class:`~psynet.modular_page.AudioPrompt`, also lists
         the files of the next trials' pages (their media and
         :attr:`~psynet.timeline.Page.prefetch_urls`), which the browser
@@ -528,13 +535,13 @@ class StaticTrialMaker(ChainTrialMaker):
             "inplace_timeline_transitions"
         ):
             return None, None
-        # Only page modules show trials in advance. A time limit and background
-        # recording are set up for each page, which a predicted page skips.
+        # A time limit and background recording are set up for each page,
+        # which a predicted page skips.
         predict = (
-            bool(page.js_page_modules)
-            and page.time_limit is None
+            page.time_limit is None
             and page.background_recording is None
             and not trial.gives_feedback(experiment, participant)
+            and page._show_in_advance()
         )
         contents = [] if predict else None
         media = {}
@@ -570,6 +577,7 @@ class StaticTrialMaker(ChainTrialMaker):
                 and not before
                 and len(pages) == 1
                 and isinstance(pages[0], Page)
+                and pages[0]._show_in_advance()
             ):
                 contents.append(pages[0].contents)
                 predict = not following.gives_feedback(experiment, participant)

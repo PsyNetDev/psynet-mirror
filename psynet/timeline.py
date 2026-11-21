@@ -2747,6 +2747,13 @@ class Page(Elt):
         """
         return self.media.urls
 
+    def _show_in_advance(self):
+        """Whether the page can show trials before the server confirms them.
+
+        Only page modules can, as their ``update`` shows each trial.
+        """
+        return bool(self.js_page_modules)
+
     def layout_key(self, fragment_html):
         """Identify the page's ``#main-body`` and JavaScript in a partial render.
 

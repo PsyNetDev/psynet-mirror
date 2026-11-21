@@ -103,5 +103,7 @@ class Exp(psynet.experiment.Experiment):
             recruit_mode="n_participants",
             expected_trials_per_participant=len(nodes),
             allow_repeated_nodes=False,
+            # Each answer shows the next sound straight away, on the same page.
+            prepare_trials_in_advance=True,
         ),
     )
