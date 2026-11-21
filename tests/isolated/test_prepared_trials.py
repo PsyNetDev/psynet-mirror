@@ -5,6 +5,7 @@ import pytest
 from dallinger import db
 
 from psynet.bot import BotDriver
+from psynet.participant import Participant
 from psynet.trial.main import Trial
 
 EXPERIMENT = str(Path(__file__).parents[2] / "demos/features/rapid_ratings")
@@ -30,7 +31,8 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     trial_maker = trials[0].trial_maker
     # A time limit is set up for each page, so such pages aren't predicted.
     page.time_limit = 10
-    assert trial_maker._upcoming_contents(trials[0], page, None, bot) is None
+    participant = Participant.query.get(bot.id)
+    assert trial_maker._upcoming(trials[0], page, None, participant)[0] is None
 
     month_ago = datetime.datetime.now() - datetime.timedelta(days=30)
     for trial in trials:

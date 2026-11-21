@@ -320,6 +320,43 @@ about to be shown and returns pages to show first, or ``None``:
 These pages belong to the sequence rather than to the trial, so their answers
 aren't saved on it and don't count towards its ``time_taken``.
 
+Downloading the next trials' files early
+----------------------------------------
+
+Each trial page normally downloads its sound, video or image when it opens,
+so the participant waits for the file after every response. When the trial
+order doesn't depend on the participant's answers, pass
+``prepare_trials_in_advance=True``:
+
+.. code-block:: python
+
+    StaticTrialMaker(
+        id_="ratings",
+        trial_class=RatingTrial,
+        nodes=nodes,
+        expected_trials_per_participant=len(nodes),
+        prepare_trials_in_advance=True,
+    )
+
+The trial maker then creates the participant's trials, in order, when they
+reach it, and each trial page lists the files of the next few trials' pages.
+The browser downloads them while the participant works on the current trial,
+so the next page usually opens without waiting for its file. This covers the
+page's media, such as an :class:`~psynet.modular_page.AudioPrompt` or
+:class:`~psynet.modular_page.VideoPrompt`, and the picture of an
+:class:`~psynet.modular_page.ImagePrompt`. A custom page lists any other files
+it shows in :attr:`~psynet.timeline.Page.prefetch_urls`. The downloaded files
+stay in the browser's memory, so this needs in-place timeline transitions,
+which are on by default.
+
+Some trial makers can't prepare trials in advance; see the
+``prepare_trials_in_advance`` parameter of
+:class:`~psynet.trial.static.StaticTrialMaker`. If trials share one page
+layout, they can also skip waiting for the server altogether; see
+:doc:`/code/trials/keeping_a_task_on_one_page`.
+:download:`The simple audio rating demo <../../../demos/experiments/simple_audio_rating/experiment.py>`
+downloads its sounds this way.
+
 .. _trial_after_the_response:
 
 After the response

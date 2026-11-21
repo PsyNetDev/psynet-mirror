@@ -323,7 +323,7 @@ while ``activate()`` runs for every hosting page.
 The activation context contains ``root``, ``trial``, ``vars``, ``page``, and
 ``psynet``. ``activate()`` may return an asynchronous cleanup function, or
 an object ``{update, cleanup}``. PsyNet calls
-``update({contents, upcoming, response})`` after the page is ready; see
+``update({contents, upcomingContents, response})`` after the page is ready; see
 :doc:`/code/trials/keeping_a_task_on_one_page`. Answers given through
 ``response`` go to ``/response`` in the background, in order, from the answer
 queue in ``psynet.js``. A reply that repeats the shown page's layout key and

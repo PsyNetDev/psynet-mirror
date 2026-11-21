@@ -1778,8 +1778,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             and isinstance(logic[0], Page)
             and self.trial_maker is not None
         ):
-            logic[0].upcoming_contents = self.trial_maker._upcoming_contents(
-                self, logic[0], experiment, participant
+            page = logic[0]
+            page.upcoming_contents, page.upcoming_media = self.trial_maker._upcoming(
+                self, page, experiment, participant
             )
         return logic
 
@@ -3032,9 +3033,13 @@ class TrialMaker(Module):
 
     prepare_trials_in_advance = False
 
-    def _upcoming_contents(self, trial, page, experiment, participant):
-        """Return the page contents of the trials after ``trial``, or ``None`` if unknown."""
-        return None
+    def _upcoming(self, trial, page, experiment, participant):
+        """Return what is known about the pages of the trials after ``trial``.
+
+        Returns the contents of the trials that can be shown in advance and the
+        URLs of the next trials' files by media type; each is ``None`` if unknown.
+        """
+        return None, None
 
     def finalize_trial(self, answer, trial, experiment, participant):
         """

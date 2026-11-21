@@ -183,6 +183,11 @@ class Prompt(JavaScriptContributor):
     def media(self):
         return MediaSpec()
 
+    @property
+    def prefetch_urls(self):
+        """URLs of files shown without the media spec, by media type, to download early."""
+        return {}
+
     def visualize(self, trial):
         if self.text is None:
             return ""
@@ -621,6 +626,10 @@ class ImagePrompt(Prompt):
     macro = "image"
 
     @property
+    def prefetch_urls(self):
+        return {"image": [self.url]}
+
+    @property
     def metadata(self):
         return {
             "text": str(self.text),
@@ -788,6 +797,11 @@ class Control(JavaScriptContributor):
     @property
     def media(self):
         return MediaSpec()
+
+    @property
+    def prefetch_urls(self):
+        """URLs of files shown without the media spec, by media type, to download early."""
+        return {}
 
     def format_answer(self, raw_answer, **kwargs):
         """
@@ -2488,6 +2502,15 @@ class ModularPage(Page):
                 if path is not None
             ]
         )
+
+    @property
+    def prefetch_urls(self):
+        urls = super().prefetch_urls
+        for part in (self.prompt, self.control):
+            for media_type, extra in part.prefetch_urls.items():
+                known = urls.setdefault(media_type, [])
+                known.extend(url for url in extra if url not in known)
+        return urls
 
     def visualize(self, trial):
         prompt = self.prompt.visualize(trial)
