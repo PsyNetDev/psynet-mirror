@@ -23,11 +23,8 @@ from .record import (
     LiveGameRecord,
 )
 from .registry import live_game_classes
-from .trials import LiveTrialGame, TrialAnswer
 
 __all__ = [
-    "LiveTrialGame",
-    "TrialAnswer",
     "LiveMessage",
     "LiveGame",
     "LiveGameCheckpoint",

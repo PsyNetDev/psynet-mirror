@@ -1503,10 +1503,3 @@ on Dallinger's clock rather than the game's. Use ``now`` and the page's
 .. _dallinger-outcome: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.outcome
 .. _dallinger-save-message: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.save_message
 .. _dallinger-bot: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.bot
-
-Several trials on one game page
--------------------------------
-
-A live game can present a sequence of trials prepared by a trial maker on a
-single page, saving each response on its own trial. See
-:ref:`single-page-prepared`.

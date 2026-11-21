@@ -46,12 +46,14 @@ it. Each swipe records a response to one painting.
 .. figure:: ../_static/images/design/trials/art_sorting.svg
    :alt: One continuous sorting page spans three trials, one for each painting.
 
-Keep several trials on one page when the task is fast and the next stimulus
-should follow a response without delay. If the browser already has the
-upcoming paintings, the next one can appear the moment the participant
-swipes, and the timeline moves on only once, at the end of the round. If the
-next painting depends on the answer, as in an adaptive task, the page still
-waits for the server to choose it.
+Keep several trials on one page when the task is fast and the interface
+should stay put between responses. Each trial still has a page of its own,
+but the pages share one layout and answer from the page's JavaScript, so only
+the painting changes. Each swipe goes to the server, which records it and
+sends the next painting, usually within a fraction of a second, depending on
+the participant's connection. Because the paintings come in a fixed order, the
+trial maker can also send the next few paintings ahead, so that the next one
+appears at once while the server records the swipe.
 
 The cost is that you write more of the interface yourself. Here, you would
 handle the swipe, animate the painting and decide when the next one can take

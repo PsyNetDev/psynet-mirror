@@ -1,186 +1,32 @@
 Keeping a task on one page
 ==========================
 
-A fast task can present many trials on a single page, while the trial maker
-still assigns, scores and saves one trial per response. If you're still
-deciding whether to do this, see :doc:`/design/presenting_trials`.
+A fast task can keep its interface on screen while the trial maker presents
+one trial after another, still assigning, scoring and saving one trial per
+response. If you're still deciding whether to do this, see
+:doc:`/design/presenting_trials`.
 
-There are two ways to do it:
-
-- **A prepared sequence.** A :class:`~psynet.trial.static.StaticTrialMaker`
-  creates all of the participant's trials up front, and a
-  :class:`~psynet.live_game.LiveTrialGame` presents them in order on one live
-  game page. The browser can receive the upcoming stimuli in advance, so the
-  next one appears as soon as the participant answers.
-- **Trial pages that share a session.** Ordinary trial pages with the same
-  ``session_id`` stay on screen between trials, and the browser receives only
-  each new trial's data. This works with any trial maker, including adaptive
-  ones such as staircases, where each answer decides what comes next. Each
-  answer waits for the server to send the next trial.
-
-.. _single-page-prepared:
-
-A prepared sequence
--------------------
-
-:download:`The arrow flanker demo <../../../demos/features/live_trial_game/experiment.py>`
-is a complete example.
-
-Use a :class:`~psynet.live_game.LiveTrialGame` inside a
-:class:`~psynet.trial.static.StaticTrialMaker` whose ``node_order`` fixes each
-participant's sequence. When the game starts, the maker creates the
-participant's trials for the block, or reloads them if they already exist, and
-the game presents them in order.
-
-Answering trials
-~~~~~~~~~~~~~~~~
-
-Define the answer message by subclassing :class:`~psynet.live_game.TrialAnswer`
-and narrowing the type of ``answer``. Register it in the game's ``messages``.
-PsyNet checks each answer against that type, saves it on the current trial and
-scores it with the trial's ``score_answer``::
-
-    class BirdAnswer(TrialAnswer):
-        answer: Literal["left", "right"]
-
-    class BirdGame(LiveTrialGame):
-        min_players = max_players = 1
-        messages = [BirdAnswer]
-        preload_fields = ("bird",)
-
-In the page's JavaScript, start a response clock when you display a stimulus,
-and answer through the handle it returns:
-
-.. code-block:: javascript
-
-    // When the stimulus appears:
-    response = game.startResponseClock(view);
-    // When the participant presses a key:
-    response.answer("left");
-
-The browser measures the response time from the call to
-``startResponseClock`` to the call to ``answer``, and sends both with the
-trial's position. The server checks that the position is still the current
-one, so a late or duplicated answer can't land on the next trial, even when
-the next trial shows the same stimulus. PsyNet stores the time in seconds in
-the trial's ``time_taken``.
-
-Start a new clock whenever you display a stimulus again, including after a
-reload. Don't restart it when the server merely confirms the view you are
-already showing. A handle sends at most one answer, so repeated key presses
-are ignored. If the server rejects the answer, the same handle can send again.
-
-If you need a custom message rather than :class:`~psynet.live_game.TrialAnswer`,
-call ``game.answer_trial(state, player=player, answer=value, position=position)``
-from its ``apply`` method, passing the zero-based position the player saw.
-
-Sending stimuli ahead
-~~~~~~~~~~~~~~~~~~~~~
-
-By default, the browser receives only the current trial's ``definition``,
-together with ``completed`` (the number answered), ``total`` and ``stop``. To
-show the next stimulus without waiting for the server, set ``preload_fields``
-to the definition keys the browser may see. The view then also contains a
-``deck``: those fields for each trial up to ``stop``. The same fields are the
-only ones sent for the current trial, so you can keep answer keys on the
-server.
-
-With a deck in the browser, opt into showing the next trial straight away by
-calling ``game.predict(game.predictTrialAnswer)``. Both the arrow and bird demos
-do this. Without a deck, leave out the prediction and render each new view
-from ``game.onChange``.
-
-To send something other than the stored definition, such as the URL of a
-node's image asset, override ``StaticTrialMaker.get_public_definition(trial)``.
-A URL alone doesn't download the image. For a small fixed set of images,
-declare them in the page's :class:`~psynet.timeline.MediaSpec`, as in the
-``features/live_trial_game_images`` demo. For a long or participant-specific
-set, have your page's JavaScript fetch the next few images from the deck while
-the participant answers, and wait for each image's ``decode()`` before showing
-it and starting its response clock. VocabTest's page script,
-``psynet/resources/scripts/vocabtest.js``, does this.
-
-Splitting a sequence into parts
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-To stop partway through, for example to show feedback, pass
-``settings={"stop": 25}``. The game then ends after the trial at position 24,
-because ``stop`` is exclusive and counts from zero. A later ``PlayLiveGame``
-step, with its own ``id_``, continues from the first unanswered trial. Leave
-out ``stop`` to finish the sequence.
-
-For example, to play the first 25 trials and run the trial maker's
-performance check before the rest::
-
-    def present_trials(self):
-        return join(
-            PlayLiveGame(
-                id_="first_half",
-                game_class=SortingGame,
-                settings={"stop": 25},
-                page=make_sorting_page(),
-            ),
-            self.check_performance(),
-            PlayLiveGame(
-                id_="second_half", game_class=SortingGame, page=make_sorting_page()
-            ),
-        )
-
-Each ``PlayLiveGame`` needs a page object of its own, so ``make_sorting_page``
-here builds a new :class:`~psynet.live_game.LiveGamePage` each time.
-
-Interruptions and timeouts
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-A one-player game picks up where the participant left off. If the game ends
-early because the participant left, failed to join or reached the game's
-timeout, PsyNet starts a new game on the same unanswered trial when they
-return.
-
-Each trial's response timeout starts when the game presents the trial, and
-doesn't restart after an interruption. As on an ordinary trial page, a trial
-that isn't answered within the trial maker's ``response_timeout_sec`` fails,
-but the participant carries on: when they answer, PsyNet stores the answer,
-the trial stays failed and the game moves to the next trial. Set
-``response_timeout_sec=None`` to turn the timeout off.
-
-To count how often a stimulus was displayed, including after reloads, have the
-page send a message whose ``apply`` calls
-``game.record_trial_presentation(state, player=player, position=position)``.
-PsyNet stores the count in the trial's ``n_presentations``. VocabTest does
-this, because its ``time_taken`` runs from the display on which the
-participant answered. Bots answer without displaying anything, so their
-trials have no count.
-
-Reading the results
-~~~~~~~~~~~~~~~~~~~
-
-The responses are on the trials, as for any trial maker: each has its
-``definition``, ``answer``, ``score`` and ``time_taken``. To read a
-participant's responses across several games in the same trial maker, query
-completed trials by ``module_state_id``. The game's own outcome, and the
-page's answer, are empty dictionaries. Override
-:meth:`~psynet.live_game.LiveGame.outcome` if the game also produces a joint
-result, such as a team payoff.
-
-.. _single-page-same-session:
-
-Trial pages that share a session
---------------------------------
+The browser doesn't reload between pages: PsyNet swaps in the next page's
+content. Trial pages that share a layout and answer on a key press therefore
+already look like one page. This works with any trial maker, including
+adaptive ones such as staircases, where each answer decides what comes next.
+Each answer waits for the server to send the next trial's page, unless the
+trials are fixed in advance (see `Showing the next trial without waiting`_).
 
 :download:`The adaptive brightness demo <../../../demos/features/staircase_on_one_page/experiment.py>`
 is a complete example. It runs a staircase with PsyNet's
 :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`.
 
-Write ``show_trial`` as usual, and give every trial's page the same
-``session_id``. Put the data the browser needs for each trial in the page's
-``contents``::
+The trial's page
+----------------
+
+Write ``show_trial`` as usual. Give every trial's page the same HTML, and put
+the data that changes from trial to trial in the page's ``contents``::
 
     def show_trial(self, experiment, participant):
         return ModularPage(
             "contrast",
             patches_html,
-            session_id="contrast",
             contents={"left": self.definition["left"], "right": self.definition["right"]},
             show_next_button=False,
             js_page_modules=["/static/contrast.js"],
@@ -189,26 +35,106 @@ Write ``show_trial`` as usual, and give every trial's page the same
         )
 
 When the participant answers, PsyNet completes the trial and the trial maker
-chooses the next one, as on any trial page. Because the next page has the same
-``session_id``, the browser keeps the current page on screen instead of
-replacing it. It updates ``psynet.page``, including ``psynet.page.contents``,
-and fires the ``pageUpdated`` trial event. Only the first page's HTML and
-scripts are used, so your page's JavaScript should draw each trial from
-``psynet.page.contents``:
+chooses the next one, as on any trial page. The browser then swaps in the next
+trial's page, and because the layout is the same, only the stimulus appears to
+change.
+
+The page module
+---------------
+
+The page module answers on a key press instead of a Next button. Its
+``activate`` function sets up what stays the same from trial to trial, such as
+listeners, and returns an object with two functions:
+
+- ``update`` shows one trial. It receives the trial's ``contents`` and a
+  ``response`` handle for answering it.
+- ``cleanup`` removes what ``activate`` set up.
 
 .. code-block:: javascript
 
-    export function activate({root, psynet}) {
-        function show() {
-            const pair = psynet.page.contents;
-            // Draw the pair.
+    export function activate({root}) {
+        let response = null;
+        function keydown(event) {
+            if (response === null) return;
+            // On the left arrow key:
+            response.answer("left");
         }
-        psynet.trial.onEvent("pageUpdated", show);
-        show();
-        // On a key press: psynet.nextPage("left");
+        document.addEventListener("keydown", keydown);
+        return {
+            update({contents, response: handle}) {
+                // Draw contents.left and contents.right.
+                response = handle;
+                handle.startClock();
+            },
+            cleanup: () => document.removeEventListener("keydown", keydown),
+        };
     }
 
-The trial's ``time_taken`` is measured in the browser, from when the page's
-data arrives to when ``psynet.nextPage`` is called. Pages that share a session
-can't have a ``time_limit``. See :doc:`/developer/page_lifecycle` for the
-details of same-session updates.
+PsyNet calls ``activate``, and then ``update`` once the page accepts answers.
+Keep anything specific to one trial in ``update``, and don't assume
+``activate`` runs again before each trial. A module without trials to show
+can still return just the cleanup function.
+
+The ``response`` handle has two methods:
+
+``response.startClock()``
+    Starts the clock for the trial's ``time_taken``. Call it when the stimulus
+    is visible. Without it, ``time_taken`` runs from when ``update`` was
+    called.
+
+``response.answer(value)``
+    Submits ``value`` as the trial's answer. Each handle answers once: it
+    returns ``true`` the first time and ``false`` afterwards. PsyNet sends the
+    answer in the background, so the page should stop accepting input until
+    ``update`` is called with the next trial. If the server rejects the
+    answer, PsyNet shows its error message and calls ``update`` again with the
+    same trial.
+
+Showing the next trial without waiting
+--------------------------------------
+
+When nothing the participant answers changes which trials come next, the
+browser can show the next trial straight away instead of waiting for the
+server. Pass ``prepare_trials_in_advance=True`` to a
+:class:`~psynet.trial.static.StaticTrialMaker`::
+
+    trial_maker = StaticTrialMaker(
+        id_="ratings",
+        trial_class=RatingTrial,
+        nodes=nodes,
+        expected_trials_per_participant=len(nodes),
+        prepare_trials_in_advance=True,
+    )
+
+The trial maker then creates all of a participant's trials, in order, when they
+reach it, and each trial page also carries the ``contents`` of the next few
+trials (:attr:`~psynet.trial.static.StaticTrialMaker.n_upcoming_trials`, 5 by
+default). The page module needs no changes. When the participant answers,
+PsyNet calls ``update`` with the next trial's ``contents`` at once, and sends
+the answers to the server in the background, one at a time and in order.
+``update`` also receives ``upcoming``, the contents of the known trials after
+the one it shows, for example to preload their images:
+
+.. code-block:: javascript
+
+    update({contents, upcoming, response: handle}) {
+        for (const next of upcoming) new Image().src = next.image_url;
+        // Show contents as before.
+    },
+
+Without ``prepare_trials_in_advance``, ``upcoming`` is empty.
+
+:download:`The rapid ratings demo <../../../demos/features/rapid_ratings/experiment.py>`
+rates pictures this way, with a break halfway through.
+
+Each answer is still checked and saved as usual. If the server rejects one,
+PsyNet also drops the answers given after it. The browser only runs ahead while
+the next page would be another trial page with the same HTML: it waits for the
+server before pages from
+:meth:`~psynet.trial.main.TrialMaker.show_before_trial`, before feedback
+pages, and at the end of the trials.
+
+Trials prepared in advance can't use sync groups, repeat trials, performance
+checks after every trial, or ``recruit_mode="n_trials"``. The browser only runs
+ahead with in-place timeline transitions, which are on by default. The response timeout
+of each trial counts from when it is first shown.

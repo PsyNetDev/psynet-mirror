@@ -1,30 +1,27 @@
-export function activate({root, psynet}) {
+export function activate({root}) {
     const patches = root.querySelector("#patches");
-    let answered = false;
+    let response = null;
 
-    // Called for the first trial, and again whenever the next trial's page
-    // arrives with the same session_id.
-    function show() {
-        const pair = psynet.page.contents;
-        for (const side of ["left", "right"]) {
-            const grey = pair[side];
-            root.querySelector(`#${side}-patch`).style.backgroundColor = `rgb(${grey}, ${grey}, ${grey})`;
-        }
-        patches.style.visibility = "visible";
-        answered = false;
-    }
-
-    async function keydown(event) {
+    function keydown(event) {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
-        if (answered || event.repeat) return;
-        answered = true;
+        if (response === null || event.repeat) return;
+        response.answer(event.key === "ArrowLeft" ? "left" : "right");
+        response = null;
         patches.style.visibility = "hidden";
-        if (!(await psynet.nextPage(event.key === "ArrowLeft" ? "left" : "right"))) show();
     }
 
-    psynet.trial.onEvent("pageUpdated", show);
-    show();
     document.addEventListener("keydown", keydown);
-    return () => document.removeEventListener("keydown", keydown);
+    return {
+        update({contents, response: handle}) {
+            for (const side of ["left", "right"]) {
+                const grey = contents[side];
+                root.querySelector(`#${side}-patch`).style.backgroundColor = `rgb(${grey}, ${grey}, ${grey})`;
+            }
+            patches.style.visibility = "visible";
+            response = handle;
+            handle.startClock();
+        },
+        cleanup: () => document.removeEventListener("keydown", keydown),
+    };
 }

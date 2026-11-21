@@ -303,6 +303,23 @@ PsyNet logs a warning. There are three ways to keep it fast:
 filter or rank on in its own column. Chain trial makers have the same
 hooks under the names ``filter_chains_query`` and ``chain_priority``.
 
+Pages between trials
+--------------------
+
+To show a page between trials, such as a break halfway through, override
+:meth:`~psynet.trial.main.TrialMaker.show_before_trial`. It receives the trial
+about to be shown and returns pages to show first, or ``None``:
+
+.. code-block:: python
+
+    class RatingTrialMaker(StaticTrialMaker):
+        def show_before_trial(self, trial):
+            if trial.position == 25:
+                return InfoPage("Take a break.", time_estimate=5)
+
+These pages belong to the sequence rather than to the trial, so their answers
+aren't saved on it and don't count towards its ``time_taken``.
+
 .. _trial_after_the_response:
 
 After the response

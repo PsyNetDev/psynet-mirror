@@ -59,9 +59,6 @@ class ContrastTrial(GeometricStaircaseTrial):
                 tags.p("← Left　　Right →", cls="mt-3"),
                 cls="text-center",
             ),
-            # Consecutive pages with the same session_id keep the page on
-            # screen: the browser only receives the new contents.
-            session_id="contrast",
             contents={"left": pair["left"], "right": pair["right"]},
             show_next_button=False,
             js_page_modules=["/static/contrast.js"],
