@@ -1627,6 +1627,7 @@
     };
 
     psynet.finalizePageReady = async function () {
+      const generation = psynet.pageModuleGeneration;
       await new Promise((resolve) => setTimeout(resolve, 0));
       psynet.setPageReady(true);
       await psynet.trial.registerEvent("pageReady");
@@ -1639,7 +1640,11 @@
       // An in-place page stays dimmed until here, not while update() awaits.
       psynet.setTimelineTransitionBusy(false);
       // Page modules show the trial only once it can be answered.
+      // Stop once the participant has moved on to another page, whose own
+      // finalizePageReady runs its updates.
+      if (psynet.pageModuleGeneration !== generation) return;
       for (let update of (psynet.pageModuleUpdates || []).splice(0)) {
+        if (psynet.pageModuleGeneration !== generation) break;
         await update();
       }
     };
