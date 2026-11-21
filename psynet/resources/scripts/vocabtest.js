@@ -72,12 +72,12 @@ export function activate({root, psynet}) {
     document.addEventListener("keydown", keydown);
     root.addEventListener("click", click);
     return {
-        update({contents, upcoming, response: handle}) {
+        update({contents, upcomingContents, response: handle}) {
             clearTimeout(timer);
             latest = handle;
             enable(null);
             target.replaceChildren();
-            for (const item of upcoming.slice(0, 2)) {
+            for (const item of upcomingContents.slice(0, 2)) {
                 if (item.image) imageFor(item.image);
             }
             timer = setTimeout(() => display(contents, handle),
