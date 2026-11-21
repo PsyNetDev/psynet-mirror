@@ -219,6 +219,10 @@ Trials
     A keyboard task using six bird photographs. The page preloads the fixed image
     set with ``MediaSpec`` before the first bird appears.
 
+`features/live_trial_game_adaptive <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game_adaptive>`__
+    A live brightness staircase. The server chooses one new pair per answer,
+    with the accepted answer and next pair recorded together by the SQL writer.
+
 Chains
 ------
 
