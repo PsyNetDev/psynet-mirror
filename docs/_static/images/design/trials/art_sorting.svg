@@ -6,16 +6,16 @@
     </marker>
   </defs>
   <rect width="382" height="112" rx="10" fill="#fff"/>
-  <text x="10" y="36" font-size="13" font-weight="600" fill="#4b5563">Pages</text>
-  <rect x="54" y="12" width="318" height="38" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
-  <text x="213" y="36" text-anchor="middle" font-size="14" fill="#111827">Swipe through the paintings</text>
-  <text x="10" y="86" font-size="13" font-weight="600" fill="#1d4ed8">Trials</text>
-  <rect x="54" y="62" width="94" height="38" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
-  <text x="101" y="86" text-anchor="middle" font-size="14" fill="#111827">Painting A</text>
-  <path d="M151 81h11" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <rect x="166" y="62" width="94" height="38" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
-  <text x="213" y="86" text-anchor="middle" font-size="14" fill="#111827">Painting B</text>
-  <path d="M263 81h11" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <rect x="278" y="62" width="94" height="38" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
-  <text x="325" y="86" text-anchor="middle" font-size="14" fill="#111827">Painting C</text>
+  <text x="10" y="36" font-size="13" font-weight="600" fill="#1d4ed8">Trials</text>
+  <rect x="54" y="12" width="94" height="38" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="101" y="36" text-anchor="middle" font-size="14" fill="#111827">Painting A</text>
+  <path d="M151 31h11" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="166" y="12" width="94" height="38" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="213" y="36" text-anchor="middle" font-size="14" fill="#111827">Painting B</text>
+  <path d="M263 31h11" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="278" y="12" width="94" height="38" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="325" y="36" text-anchor="middle" font-size="14" fill="#111827">Painting C</text>
+  <text x="10" y="86" font-size="13" font-weight="600" fill="#4b5563">Pages</text>
+  <rect x="54" y="62" width="318" height="38" rx="8" fill="#f3f4f6" stroke="#4b5563" stroke-width="1.5"/>
+  <text x="213" y="86" text-anchor="middle" font-size="14" fill="#111827">Swipe through the paintings</text>
 </svg>

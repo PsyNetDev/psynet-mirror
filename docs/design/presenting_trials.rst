@@ -46,15 +46,18 @@ it. Each swipe records a response to one painting.
 .. figure:: ../_static/images/design/trials/art_sorting.svg
    :alt: One continuous sorting page spans three trials, one for each painting.
 
-Use a live page when the interaction itself spans trials. Here the gesture
-carries one painting into the next, and the timeline advances when the deck
-is finished. Ordinary pages can also keep the same interface on screen.
-With those pages, each submission moves the participant to the next step
-on the timeline.
+A single live page is usually the best choice for a fast-paced task where
+you need to minimise the delay between a response and the next stimulus. If the
+deck is ready in the browser, the next painting can appear as soon as the
+participant swipes. The timeline advances once, at the end of the round.
+If PsyNet needs the answer to select the next painting, the page still has
+to wait for that choice.
 
-The order of the paintings affects the pace. With a shuffled deck, the next
-picture can be ready before the swipe. If each response determines which
-painting to show next, the page waits for that choice before revealing it.
+The trade-off is that you build more of the front end yourself. In this
+task, you handle the swipe, animate the painting and decide when the next
+one is ready for input. Ordinary pages can also keep the interface on screen
+as the timeline advances. They take less work when a built-in control and
+a page submission per response suit the pace of your task.
 
 .. seealso::
 
