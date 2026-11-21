@@ -20,40 +20,47 @@ def test_get_template():
 
 START_PAGE_HARNESS = """
 const posts = [];
+const errors = [];
 let redirect = null;
 const responses = %s;
 globalThis.location = {search: "?workerId=W&assignmentId=A&hitId=H"};
 globalThis.window = {
     location: {replace: (url) => { redirect = url; }},
-    addEventListener: (event, listener) => listener({persisted: false}),
+    addEventListener: (event, listener) => {
+        if (event === "pageshow") listener({persisted: false});
+    },
 };
 globalThis.document = {getElementById: () => ({hidden: true})};
 globalThis.Fingerprint2 = function () { this.get = (done) => done("fp"); };
-globalThis.dallinger = {post: (route, data) => {
-    posts.push([route, data]);
-    return {done: (callback) => {
-        setTimeout(() => callback(responses[route]));
-        return {fail: () => {}};
-    }};
-}};
-process.once("beforeExit", () => console.log(JSON.stringify({posts, redirect})));
+globalThis.dallinger = {
+    error: (resp) => errors.push(resp),
+    post: (route, data) => {
+        posts.push([route, data]);
+        const [ok, body] = responses[route];
+        return {done: (onDone) => ({fail: (onFail) => {
+            setTimeout(() => (ok ? onDone : onFail)(body));
+        }})};
+    },
+};
+process.once("beforeExit", () => console.log(JSON.stringify({posts, errors, redirect})));
 %s
 """
 
 
 @pytest.mark.parametrize(
-    "found, routes",
+    "lookup, routes, redirect",
     [
-        (None, ["/load-participant", "/participant"]),
-        ({"unique_id": "W:A"}, ["/load-participant"]),
+        ([True, {"participant": None}], ["/load-participant", "/participant"], True),
+        ([True, {"participant": {"unique_id": "W:A"}}], ["/load-participant"], True),
+        ([False, {"status": 500}], ["/load-participant"], False),
     ],
 )
-def test_start_template_resumes_or_creates_after_a_missing_ok_lookup(found, routes):
+def test_start_template_handles_a_missing_ok_lookup(lookup, routes, redirect):
     template = resources.files("psynet").joinpath("templates/start.html").read_text()
     script = re.search(r"<script>(.*?)</script>", template, flags=re.DOTALL).group(1)
     responses = {
-        "/load-participant": {"participant": found},
-        "/participant": {"participant": {"unique_id": "W:A"}},
+        "/load-participant": lookup,
+        "/participant": [True, {"participant": {"unique_id": "W:A"}}],
     }
 
     result = subprocess.run(
@@ -67,7 +74,12 @@ def test_start_template_resumes_or_creates_after_a_missing_ok_lookup(found, rout
     assert [route for route, _ in output["posts"]] == routes
     assert output["posts"][0][1]["missing_ok"] == "true"
     assert all("missing_ok" not in data for _, data in output["posts"][1:])
-    assert output["redirect"] == "/timeline?unique_id=W:A"
+    if redirect:
+        assert output["redirect"] == "/timeline?unique_id=W:A"
+        assert output["errors"] == []
+    else:
+        assert output["redirect"] is None
+        assert output["errors"] == [lookup[1]]
 
 
 def test_start_template_ignores_stale_async_attempts():
