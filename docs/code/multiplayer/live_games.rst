@@ -1507,7 +1507,6 @@ on Dallinger's clock rather than the game's. Use ``now`` and the page's
 Several trials on one game page
 -------------------------------
 
-A live game can present a sequence of a trial maker's trials on a single
-page, saving each response on its own trial. See :doc:`/code/trials/keeping_a_task_on_one_page` for
-:ref:`prepared sequences <single-page-prepared>` and
-:ref:`on-demand trials <single-page-on-demand>`.
+A live game can present a sequence of trials prepared by a trial maker on a
+single page, saving each response on its own trial. See
+:ref:`single-page-prepared`.

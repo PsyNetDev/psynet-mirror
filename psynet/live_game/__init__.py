@@ -14,7 +14,6 @@ from dallinger.realtime import Reject
 from .control import LiveGamePage
 from .game import LiveGame
 from .messages import LiveMessage, SavedMessage
-from .on_demand import OnDemandTrialGame
 from .play import PlayLiveGame
 from .psynet_entry import NOT_STARTED, PLAYERS_LEFT, TIMEOUT, TOO_LATE, PlayerReady
 from .record import (
@@ -28,7 +27,6 @@ from .trials import LiveTrialGame, TrialAnswer
 
 __all__ = [
     "LiveTrialGame",
-    "OnDemandTrialGame",
     "TrialAnswer",
     "LiveMessage",
     "LiveGame",

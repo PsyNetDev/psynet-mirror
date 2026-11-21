@@ -1,42 +1,22 @@
 Keeping a task on one page
 ==========================
 
-A fast task can present many trials on a single page. The trial maker still
-assigns, scores and saves one trial per response, as usual. A live game
-replaces the page-per-trial loop: your page draws each stimulus and sends each
-answer, and PsyNet saves it on the matching trial. If you're still deciding
-whether to do this, see :doc:`/design/presenting_trials`.
+A fast task can present many trials on a single page, while the trial maker
+still assigns, scores and saves one trial per response. If you're still
+deciding whether to do this, see :doc:`/design/presenting_trials`.
 
 There are two ways to do it:
 
 - **A prepared sequence.** A :class:`~psynet.trial.static.StaticTrialMaker`
   creates all of the participant's trials up front, and a
-  :class:`~psynet.live_game.LiveTrialGame` presents them in order. The browser
-  can receive the upcoming stimuli in advance, so the next one appears as soon
-  as the participant answers.
-- **On-demand trials.** An :class:`~psynet.live_game.OnDemandTrialGame` asks the
-  trial maker for the next trial after each answer. Use it when the answer
-  decides what comes next, as in a staircase. Each answer waits for the server
-  to choose the next trial.
-
-Both start the same way: return a :class:`~psynet.live_game.PlayLiveGame` from
-the trial maker's ``present_trials()`` method. Other steps can follow it, such
-as a feedback page::
-
-    class FlankerTrials(StaticTrialMaker):
-        def present_trials(self):
-            return join(
-                PlayLiveGame(game_class=FlankerGame, page=flanker_page),
-                PageMaker(self.feedback, time_estimate=3),
-            )
-
-For a game with exactly one player (``min_players = max_players = 1``), leave
-out ``group_type``. PsyNet then starts the game as soon as the participant
-reaches it, without waiting for a group.
-
-If you only need the interface to stay on screen between ordinary pages, you
-don't need a live game. Give the pages the same ``session_id`` instead; see
-:doc:`/developer/page_lifecycle`.
+  :class:`~psynet.live_game.LiveTrialGame` presents them in order on one live
+  game page. The browser can receive the upcoming stimuli in advance, so the
+  next one appears as soon as the participant answers.
+- **Trial pages that share a session.** Ordinary trial pages with the same
+  ``session_id`` stay on screen between trials, and the browser receives only
+  each new trial's data. This works with any trial maker, including adaptive
+  ones such as staircases, where each answer decides what comes next. Each
+  answer waits for the server to send the next trial.
 
 .. _single-page-prepared:
 
@@ -183,55 +163,52 @@ page's answer, are empty dictionaries. Override
 :meth:`~psynet.live_game.LiveGame.outcome` if the game also produces a joint
 result, such as a team payoff.
 
-.. _single-page-on-demand:
+.. _single-page-same-session:
 
-On-demand trials
-----------------
+Trial pages that share a session
+--------------------------------
 
-:download:`The adaptive brightness demo <../../../demos/features/live_trial_game_adaptive/experiment.py>`
-is a complete example. It runs one staircase with PsyNet's
+:download:`The adaptive brightness demo <../../../demos/features/staircase_on_one_page/experiment.py>`
+is a complete example. It runs a staircase with PsyNet's
 :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`.
 
-Subclass :class:`~psynet.live_game.OnDemandTrialGame`. Set its ``answer_type``
-to your :class:`~psynet.live_game.TrialAnswer` subclass and implement
-``bot_answer(view)`` to return one for bots::
+Write ``show_trial`` as usual, and give every trial's page the same
+``session_id``. Put the data the browser needs for each trial in the page's
+``contents``::
 
-    class Choice(TrialAnswer):
-        answer: Literal["left", "right"]
+    def show_trial(self, experiment, participant):
+        return ModularPage(
+            "contrast",
+            patches_html,
+            session_id="contrast",
+            contents={"left": self.definition["left"], "right": self.definition["right"]},
+            show_next_button=False,
+            js_page_modules=["/static/contrast.js"],
+            bot_response=...,
+            time_estimate=self.time_estimate,
+        )
 
-    class BrightnessGame(OnDemandTrialGame):
-        name = "contrast_staircase"
-        answer_type = Choice
+When the participant answers, PsyNet completes the trial and the trial maker
+chooses the next one, as on any trial page. Because the next page has the same
+``session_id``, the browser keeps the current page on screen instead of
+replacing it. It updates ``psynet.page``, including ``psynet.page.contents``,
+and fires the ``pageUpdated`` trial event. Only the first page's HTML and
+scripts are used, so your page's JavaScript should draw each trial from
+``psynet.page.contents``:
 
-        @staticmethod
-        def bot_answer(view):
-            pair = view["definition"]
-            return Choice(
-                position=view["completed"],
-                answer="left" if pair["left"] > pair["right"] else "right",
-            )
+.. code-block:: javascript
 
-In the page, render each trial with ``game.onTrial(render)``, and call
-``game.startResponseClock(view)`` when the stimulus appears. ``onTrial`` also
-works with a prepared sequence, so one renderer can serve both.
+    export function activate({root, psynet}) {
+        function show() {
+            const pair = psynet.page.contents;
+            // Draw the pair.
+        }
+        psynet.trial.onEvent("pageUpdated", show);
+        show();
+        // On a key press: psynet.nextPage("left");
+    }
 
-Each answer completes its trial, and the trial maker chooses the next one, in
-the same database transaction. The page receives the new trial in the reply,
-without a page transition. If the reply is lost, the page sends the same answer
-again, with its original response time. The response timeout of an on-demand
-trial starts when the trial maker selects it. If the game ends before the
-trial maker has finished, for example because the participant waited too long
-for the next trial, the participant's experiment ends unsuccessfully, with the
-failure tag ``incomplete_live_trials``.
-
-The browser receives the trial's whole ``definition`` by default. Override the
-trial maker's ``get_public_definition(trial)`` to send something else, for
-example to keep the correct answer on the server.
-
-On-demand trials currently have these limits:
-
-- Only one-player games.
-- The trial maker must score answers synchronously, and can't use
-  ``sync_group_type`` or ``check_performance_every_trial``.
-- There are no per-trial feedback or performance-check pages. Use ordinary
-  trial pages if you need them.
+The trial's ``time_taken`` is measured in the browser, from when the page's
+data arrives to when ``psynet.nextPage`` is called. Pages that share a session
+can't have a ``time_limit``. See :doc:`/developer/page_lifecycle` for the
+details of same-session updates.
