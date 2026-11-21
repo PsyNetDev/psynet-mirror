@@ -180,10 +180,15 @@
             const attempt = ++startAttempt;
             let entryInformation = getEntryInformation();
             if (Object.keys(entryInformation).length > 0) {
-                // A new participant gets an expected 403 (participant_not_found)
-                // here, and is created by shouldAttemptCreate's fallback.
-                dallinger.post("/load-participant", entryInformation).done(function (resp) {
+                // Dallinger releases without missing_ok answer a new participant
+                // with a 403, which shouldAttemptCreate's fallback handles.
+                const lookup = Object.assign({}, entryInformation, {missing_ok: "true"});
+                dallinger.post("/load-participant", lookup).done(function (resp) {
                     if (attempt !== startAttempt) {
+                        return;
+                    }
+                    if (!resp.participant) {
+                        createParticipant(entryInformation, attempt);
                         return;
                     }
                     window.location.replace("/timeline?unique_id=" + resp.participant.unique_id);

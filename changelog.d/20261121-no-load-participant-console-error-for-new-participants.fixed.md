@@ -1,0 +1,1 @@
+The browser console no longer shows a `POST /load-participant 403` error each time a new participant opens the experiment. Run `psynet scripts update` to refresh an experiment's copy of the agent instructions, which described the error as expected.
