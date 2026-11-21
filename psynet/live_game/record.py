@@ -39,7 +39,7 @@ class LiveGameRecord:
     ::
 
         game = participant.live_games["rock_paper_scissors"]
-        if game.finished:
+        if game.ended:
             game.answer       # this participant's answer
             game.outcome      # what the game's outcome returned
             game.messages     # every message, in order
@@ -103,13 +103,23 @@ class LiveGameRecord:
         return "not_started" if self._id is None else self._row().status
 
     @property
+    def ended(self) -> bool:
+        """Whether the game is over and its result saved without an error,
+        whatever its :attr:`end_reason`: also for a game that ended early,
+        such as because players left. Check this before reading the
+        game's results; :attr:`finished` is ``True`` for only one of the
+        reasons."""
+        return self.status == "ended"
+
+    @property
     def finished(self) -> bool:
         """Whether the game ended with the reason ``"finished"``: through an
         ``is_over`` that returned ``True``, or at the end of its
         ``duration``. It's ``False`` for a game that ended early, such as
         because players left or it reached its ``timeout``, for one
         whose ``end_reason`` gave a reason of its own, such as ``"deal"``,
-        and for one still running. It's about the whole game, so check
+        and for one still running, so use :attr:`ended` to tell whether
+        the game is over. It's about the whole game, so check
         :attr:`left_early` first for a participant whose own game may have
         ended before it."""
         row = self._row()

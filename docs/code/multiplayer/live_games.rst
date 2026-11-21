@@ -1241,7 +1241,7 @@ its ``id_``, as ``participant.active_sync_groups`` is keyed by group type:
 .. code-block:: python
 
     game = participant.live_games["rock_paper_scissors"]
-    if game.finished:
+    if game.ended:
         game.answer  # this participant's answer
         game.outcome  # the whole game's outcome
         for saved in game.messages:
@@ -1255,10 +1255,14 @@ A record has:
   until the game's result is saved, then ``"ended"``, or ``"failed"`` if the
   game's code raised an error or its record couldn't be saved, with the
   error in ``error``;
+- ``ended``, whether ``status`` is ``"ended"``: the game is over, for any
+  reason, and its result is saved. Check it before reading the game's
+  results;
 - ``finished``, whether the whole game's ``end_reason`` is ``"finished"``
   (see `Rewards`_ for the reasons), rather than early, for example because
   players left. It's ``False`` while the game runs, including for a player
-  who has left it early;
+  who has left it early, so a check of ``finished`` alone skips games that
+  ended early;
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
   ended, both ``None`` until it has ended;
 - ``answer``, the participant's answer on the game page, ``None`` until

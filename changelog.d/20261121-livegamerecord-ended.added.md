@@ -1,0 +1,1 @@
+Added `LiveGameRecord.ended`, which says whether a live game is over and its result saved, whatever the reason it ended. Check it before reading a game's results: `finished` is `True` only for games that ended with the reason `"finished"`, so checking `finished` skips games that ended early, for example because players left.

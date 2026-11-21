@@ -2680,12 +2680,26 @@ def test_a_step_without_a_game_has_a_record_that_says_so(pair, monkeypatch):
         _arrive(game_barrier, member)
 
     game = members[0].live_games[game_barrier.id]
-    assert (game.id, game.status, game.finished) == (None, "not_started", False)
+    assert (game.id, game.status, game.ended, game.finished) == (
+        None,
+        "not_started",
+        False,
+        False,
+    )
     assert (game.answer, game.outcome, game.end_reason, game.player) == (None,) * 4
     assert (game.left_early, game.done_reason) == (False, None)
     assert (game.messages, game.moments, game.participant_ids) == ([], [], [])
     assert not game.record_complete
     assert members[0].live_game_history[game_barrier.id] == []
+
+
+def test_a_game_that_ended_early_has_ended_but_not_finished(pair):
+    session_id = _pair_session(pair)
+    row = db.session.get(RealtimeSession, session_id)
+    game = LiveGameRecord(session_id)
+    assert (game.ended, game.finished) == (False, False)
+    row.status, row.end_reason = "ended", PLAYERS_LEFT
+    assert (game.ended, game.finished) == (True, False)
 
 
 def test_the_game_page_fails_once_its_game_can_no_longer_end(pair, monkeypatch):
