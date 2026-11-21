@@ -18,12 +18,6 @@ directly into this experiment's ``./audit/``; pass ``--n-bots N`` to override
 ``Experiment.test_n_bots`` for that run. Running from a directory named
 ``audit`` is an error.
 
-.. note::
-
-   Older packets with ``audit.json`` in the experiment root must be moved to
-   ``./audit/``. ``experiment.source_base`` and ``experiment.source_path`` are
-   no longer used.
-
 Audit support ships with PsyNet but requires the full experiment runtime
 (``psynet[experiment]``), including Dallinger and the audit HTML render
 dependencies. Participant video validation also requires ``ffprobe`` from
@@ -210,8 +204,7 @@ sections). Each section's ``kind`` selects one panel:
   modules and says how many more were omitted;
 * ``files`` lists the remaining artifacts; data exports are not repeated here
   because they have their own download panel;
-* ``evidence`` renders every evidence subsection in a single panel and remains
-  supported for older packets;
+* ``evidence`` renders every evidence subsection in a single panel;
 * ``checks`` panels are omitted when no checks are recorded.
 
 The ``screenshots`` panel shows the images under ``artifacts/screenshots/``.

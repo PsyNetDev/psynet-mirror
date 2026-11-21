@@ -1,1 +1,0 @@
-Group barrier arrivals now use the same number of database queries whatever the group size. Previously each arrival loaded every group member separately, and the last arrival also reloaded each waiter's hold one by one, so a group of 16 needed about 280 queries for the last arrival instead of about 75.

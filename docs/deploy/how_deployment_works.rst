@@ -51,8 +51,10 @@ Remote deployments need a Git repository with at least one commit. PsyNet
 records the deployed commit and whether any file in the deployment plan had
 uncommitted changes, including untracked or Git-ignored files. Changes to
 files outside the plan, or elsewhere in a parent repository, don't count.
-``psynet export`` compares this record with your local checkout and warns if
-they differ. Commit your changes before a live deployment so that the
+``psynet export`` compares this record with your local checkout and, if they
+differ, lists the differences and asks you to confirm before exporting
+(without a terminal it refuses unless you pass ``--allow-project-mismatch``;
+see :doc:`/data/exporting_data`). Commit your changes before a live deployment so that the
 recorded commit matches what was deployed.
 
 The server

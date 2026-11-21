@@ -7,6 +7,63 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"يمكن لهذه الصفحة تسجيل فيديو اختياري بالكاميرا أو الشاشة. يمكنك المتابعة دون"
+" تسجيل."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"تتطلب هذه المحاولة فيديو من الكاميرا أو الشاشة. إذا تابعت دون تسجيل، فسيُحفظ"
+" ردك، لكن لن تكتمل المحاولة بنجاح."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "تفعيل الكاميرا"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "جارٍ التسجيل"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "توقف التسجيل"
+
+#: psynet/chatroom.py
+#, fuzzy
+msgctxt "chat sender"
+msgid "You"
+msgstr "أنت"
+
+#: psynet/chatroom.py
+#, fuzzy, python-brace-format
+msgctxt "chat participant list"
+msgid "{NAME} (you)"
+msgstr "{NAME} (أنت)"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "شريكك"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "لاعب آخر"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -267,45 +324,45 @@ msgstr "لا أرقص أبدًا"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
 msgstr "متى كانت آخر مرة رقصت فيها؟ (اختر الإجابة الأكثر دقة):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "هذا الأسبوع"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "هذا الشهر"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "هذا العام"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
-msgstr "منذ بعض السنوات"
+msgstr "قبل بضع سنوات"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
-msgstr "منذ سنوات عديدة"
+msgstr "قبل سنوات عديدة"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "لم أرقص أبدًا"
+msgstr "لم أرقص قط"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -436,34 +493,52 @@ msgstr "إنهاء"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
-"ستتلقى مكافأة قدرها <strong>{CURRENCY}{TIME_REWARD}</strong> مقابل الوقت "
-"الذي قضيته في التجربة. لقد حصلت أيضًا على مكافأة أداء قدرها "
-"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"ستحصل على مكافأة قدرها <strong>{CURRENCY}{TIME_REWARD}</strong> مقابل الوقت "
+"الذي قضيته."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"لقد حصلت أيضًا على مكافأة أداء قدرها "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "انقر على إنهاء للعودة إلى لوحتك."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "انقر على إنهاء لإنهاء الجلسة."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgid "This page continues by itself in {SECONDS} s."
+msgstr "ستتابع هذه الصفحة تلقائيًا بعد {SECONDS} ثانية."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "هذا هو نهاية التجربة!"
+msgid "That's the end!"
+msgstr "هذا هو النهاية!"
 
-#: psynet/end.py
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
 msgid "Thank you for taking part."
 msgstr "شكرًا لمشاركتك."
 
 #: psynet/end.py
 #, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "يرجى النقر على \"إنهاء\" لإكمال المهمة."
-
-#: psynet/end.py
-#, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "للأسف يجب أن تنتهي التجربة مبكرًا."
+msgid "Unfortunately we have to stop early."
+msgstr "للأسف، علينا التوقف مبكرًا."
 
 #: psynet/end.py
 #, fuzzy
@@ -473,20 +548,41 @@ msgstr "ومع ذلك، ستظل تحصل على أجر مقابل الوقت ا
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "سيتم توجيهك."
+msgctxt "final_page_unsuccessful"
+msgid "You took too long to reach the next step, so we ended your session."
+msgstr ""
+"استغرقت وقتًا طويلًا جدًا للوصول إلى الخطوة التالية، لذا أنهينا جلستك."
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid ""
+"Too few members of your group remained to continue, so we ended your "
+"session."
+msgstr "لم يبقَ عدد كافٍ من أفراد مجموعتك للمتابعة، لذا أنهينا جلستك."
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid "We waited too long for other participants, so we ended your session."
+msgstr "انتظرنا طويلًا جدًا المشاركين الآخرين، لذا أنهينا جلستك."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "تم رفض الموافقة."
+msgid "You chose not to continue."
+msgstr "لقد اخترت عدم الاستمرار."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "نهاية التجربة."
+msgid "You may close this page."
+msgstr "يمكنك إغلاق هذه الصفحة."
+
+#: psynet/end.py
+#, fuzzy
+msgid "We will return you to your panel in a few seconds."
+msgstr "سنعود بك إلى لوحتك في غضون ثوانٍ قليلة."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -494,44 +590,6 @@ msgid ""
 "When continuing to the next page you may see a permissions request; please "
 "grant it."
 msgstr "عند الانتقال إلى الصفحة التالية، قد ترى طلب إذن؛ يرجى منحه."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "حدث خطأ ولا يمكنك المتابعة، نعتذر!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"للاستفسار عن التعويض، يرجى الاتصال بالباحث على {EMAIL} ووصف ما أدى إلى هذا "
-"الخطأ."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "يرجى أيضًا ذكر المعلومات التالية:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "لا تقلق، تم تسجيل تقدمك."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"للاستفسار عن التعويض، يرجى إرسال رسالة إلى الباحث عبر موقع Prolific ووصف ما "
-"أدى إلى خطأك."
 
 #: psynet/experiment.py
 #, fuzzy
@@ -543,16 +601,89 @@ msgstr ""
 "تم اكتشاف مشكلة في المزامنة. هل تقوم بتشغيل نفس التجربة في عدة علامات تبويب "
 "للمتصفح؟ يرجى إغلاق جميع العلامات الأخرى وتحديث الصفحة."
 
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "هذه الجلسة قد انتهت بالفعل. يرجى إعادة تحميل الصفحة."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "التجربة مشغولة مؤقتًا. يرجى المحاولة مرة أخرى."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
+msgstr ""
+"لم تعد هذه الجلسة متاحة. ربما انتهت، أو ربما أُعيد تشغيل الدراسة منذ أن فتحت"
+" هذه الصفحة."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "has answered"
+msgstr "أجاب"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} has answered."
+msgstr "أجاب {NAME}."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "انتهى الوقت"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "انتهى الوقت المتاح لـ {NAME}."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your group"
+msgstr "مجموعتك"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Group"
+msgstr "المجموعة"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "You"
+msgstr "أنت"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (left)"
+msgstr "{NAME} (غادر)"
+
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"
 msgstr "تشغيل"
 
-#: psynet/modular_page.py
+#: psynet/modular_page.py psynet/templates/macros/control.html
 #, fuzzy
-msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "تحتاج إلى تحديد إجابة واحدة على الأقل!"
+msgid "Stop"
+msgstr "إيقاف"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "تكرار"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -563,8 +694,67 @@ msgstr "تحتاج إلى اختيار إجابة!"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
+msgid "You need to check at least one answer!"
+msgstr "تحتاج إلى تحديد إجابة واحدة على الأقل!"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "تحتاج إلى تقديم رقم!"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"شارك شاشتك لتسجيل هذه الإجابة. قد يؤدي المتابعة دون تسجيل إلى عدم نجاح هذه "
+"المحاولة."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "شارك شاشتك لتسجيل هذه الإجابة."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "مشاركة الشاشة"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "المتابعة دون تسجيل"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "جارٍ تحميل التسجيل، يُرجى إبقاء هذه الصفحة مفتوحة."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"تعذّر التقاط تسجيلك. يُرجى التأكد من أن متصفحك يستطيع الوصول إلى الكاميرا أو"
+" الشاشة، ثم أعد تحميل الصفحة."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"تعذّر علينا تأكيد استلام إجابتك. يُرجى التحقق من اتصالك والضغط على «التالي» "
+"مرة أخرى."
+
+#: psynet/page.py psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "جارٍ العمل..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -609,6 +799,95 @@ msgstr "أي صوت يختلف عن الصوتين الآخرين: 1، 2، أو 
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr "مهمتك هي الحكم <strong>أي صوت هو المختلف عن الباقين</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr "يحتاج هذا الاختبار إلى التحقق من أن الميكروفون والكاميرا يعملان."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr "سيطلب متصفحك الإذن بالوصول إلى الميكروفون والكاميرا."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "يحتاج هذا الاختبار إلى التحقق من أن الميكروفون يعمل."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "سيطلب متصفحك الإذن بالوصول إلى الميكروفون."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "يحتاج هذا الاختبار إلى التحقق من أن الكاميرا تعمل."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "سيطلب متصفحك الإذن بالوصول إلى الكاميرا."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "يرجى النقر على «السماح» عند ظهور المطالبة."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"تعذّر علينا الوصول إلى الميكروفون. قد يكون قيد الاستخدام من تطبيق آخر، أو "
+"غير متاح على جهازك، أو لم يتم منح الإذن بالوصول إليه."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"تعذّر علينا الوصول إلى الكاميرا. قد تكون قيد الاستخدام من تطبيق آخر، أو غير "
+"متاحة على جهازك، أو لم يتم منح الإذن بالوصول إليها."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "متصفحك لا يدعم التقاط الشاشة."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "متصفحك لا يدعم تسجيل الفيديو."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "متصفحك لا يدعم تشغيل الصوت."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "متصفحك لا يستوفي المتطلبات التقنية لهذا الاختبار."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -731,203 +1010,1061 @@ msgstr "في حال نسيت المفاتيح، سيتم طباعتها في ك�
 msgid "The test will start on the next page."
 msgstr "سيبدأ الاختبار في الصفحة التالية."
 
-#: psynet/recruiters.py
+#: psynet/pseudonym.py
 #, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "التواصل مع المجند..."
+msgctxt "pseudonym"
+msgid "Orange fox"
+msgstr "ثعلب برتقالي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange owl"
+msgstr "بومة برتقالية"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange otter"
+msgstr "قضاعة برتقالية"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange panda"
+msgstr "باندا برتقالية"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange tiger"
+msgstr "نمر برتقالي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange frog"
+msgstr "ضفدع برتقالي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange koala"
+msgstr "كوالا برتقالية"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange penguin"
+msgstr "بطريق برتقالي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange rabbit"
+msgstr "أرنب برتقالي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange whale"
+msgstr "حوت برتقالي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange cat"
+msgstr "قط برتقالي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue fox"
+msgstr "ثعلب أزرق فاتح"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue owl"
+msgstr "بومة زرقاء فاتحة"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue otter"
+msgstr "قضاعة زرقاء فاتحة"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue panda"
+msgstr "باندا زرقاء فاتحة"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue tiger"
+msgstr "نمر أزرق فاتح"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue frog"
+msgstr "ضفدع أزرق فاتح"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue koala"
+msgstr "كوالا زرقاء فاتحة"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue penguin"
+msgstr "بطريق أزرق فاتح"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue rabbit"
+msgstr "أرنب أزرق فاتح"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue whale"
+msgstr "حوت أزرق فاتح"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue cat"
+msgstr "قط أزرق فاتح"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green fox"
+msgstr "ثعلب أخضر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green owl"
+msgstr "بومة خضراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green otter"
+msgstr "قضاعة خضراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green panda"
+msgstr "باندا خضراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green tiger"
+msgstr "نمر أخضر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green frog"
+msgstr "ضفدع أخضر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green koala"
+msgstr "كوالا خضراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green penguin"
+msgstr "بطريق أخضر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green rabbit"
+msgstr "أرنب أخضر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green whale"
+msgstr "حوت أخضر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green cat"
+msgstr "قط أخضر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow fox"
+msgstr "ثعلب أصفر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow owl"
+msgstr "بومة صفراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow otter"
+msgstr "قضاعة صفراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow panda"
+msgstr "باندا صفراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow tiger"
+msgstr "نمر أصفر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow frog"
+msgstr "ضفدع أصفر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow koala"
+msgstr "كوالا صفراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow penguin"
+msgstr "بطريق أصفر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow rabbit"
+msgstr "أرنب أصفر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow whale"
+msgstr "حوت أصفر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow cat"
+msgstr "قط أصفر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue fox"
+msgstr "ثعلب أزرق"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue owl"
+msgstr "بومة زرقاء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue otter"
+msgstr "قضاعة زرقاء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue panda"
+msgstr "باندا زرقاء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue tiger"
+msgstr "نمر أزرق"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue frog"
+msgstr "ضفدع أزرق"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue koala"
+msgstr "كوالا زرقاء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue penguin"
+msgstr "بطريق أزرق"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue rabbit"
+msgstr "أرنب أزرق"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue whale"
+msgstr "حوت أزرق"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue cat"
+msgstr "قط أزرق"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red fox"
+msgstr "ثعلب أحمر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red owl"
+msgstr "بومة حمراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red otter"
+msgstr "قضاعة حمراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red panda"
+msgstr "باندا حمراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red tiger"
+msgstr "نمر أحمر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red frog"
+msgstr "ضفدع أحمر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red koala"
+msgstr "كوالا حمراء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red penguin"
+msgstr "بطريق أحمر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red rabbit"
+msgstr "أرنب أحمر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red whale"
+msgstr "حوت أحمر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red cat"
+msgstr "قط أحمر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink fox"
+msgstr "ثعلب وردي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink owl"
+msgstr "بومة وردية"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink otter"
+msgstr "قضاعة وردية"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink panda"
+msgstr "باندا وردية"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink tiger"
+msgstr "نمر وردي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink frog"
+msgstr "ضفدع وردي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink koala"
+msgstr "كوالا وردية"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink penguin"
+msgstr "بطريق وردي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink rabbit"
+msgstr "أرنب وردي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink whale"
+msgstr "حوت وردي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink cat"
+msgstr "قط وردي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black fox"
+msgstr "ثعلب أسود"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black owl"
+msgstr "بومة سوداء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black otter"
+msgstr "قضاعة سوداء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black panda"
+msgstr "باندا سوداء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black tiger"
+msgstr "نمر أسود"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black frog"
+msgstr "ضفدع أسود"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black koala"
+msgstr "كوالا سوداء"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black penguin"
+msgstr "بطريق أسود"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black rabbit"
+msgstr "أرنب أسود"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black whale"
+msgstr "حوت أسود"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black cat"
+msgstr "قط أسود"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "orange"
+msgstr "برتقالي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "light blue"
+msgstr "أزرق فاتح"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "green"
+msgstr "أخضر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "yellow"
+msgstr "أصفر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "blue"
+msgstr "أزرق"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "red"
+msgstr "أحمر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "pink"
+msgstr "وردي"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "black"
+msgstr "أسود"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "fox"
+msgstr "ثعلب"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "owl"
+msgstr "بومة"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "otter"
+msgstr "قضاعة"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "panda"
+msgstr "باندا"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "tiger"
+msgstr "نمر"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "frog"
+msgstr "ضفدع"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "koala"
+msgstr "كوالا"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "penguin"
+msgstr "بطريق"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "rabbit"
+msgstr "أرنب"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "whale"
+msgstr "حوت"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "cat"
+msgstr "قط"
+
+#: psynet/pseudonym.py
+#, fuzzy, python-brace-format
+msgctxt "pseudonym"
+msgid "{COLOR} {ANIMAL}"
+msgstr "{ANIMAL} {COLOR}"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"إذا كنت بحاجة إلى الاتصال بالباحث بشأن هذا الخطأ، اكتب إلى {EMAIL} واذكر رمز"
+" المرجع {REFERENCE_CODE}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr "إذا كنت بحاجة إلى الاتصال بالباحث بشأن هذا الخطأ، اكتب إلى {EMAIL}."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "يمكنك إغلاق هذه الصفحة."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "للأسف، حدث خطأ ولا يمكننا المتابعة."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "ومع ذلك، تم حفظ إجاباتك حتى الآن."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"لقد تم اعتمادك للوقت الذي قضيته في التجربة. نظرًا لأنك لم تتمكن من التقدم "
-"إلى التجربة الرئيسية، سيظهر تقديمك كـ 'مستبعد' في Prolific. يمكنك الآن إغلاق"
-" نافذة المتصفح هذه."
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. سيتم حفظ إجاباتك حتى الآن."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"لقد كسبت {EARNED} حتى الآن. تحتاج على الأقل إلى {THRESHOLD} للمغادرة مع "
+"الدفع. إذا غادرت بدون دفع، لن تتمكن من المتابعة لاحقًا. سيتم حفظ إجاباتك حتى"
+" الآن."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "المغادرة بدون دفع"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "المغادرة"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "المغادرة دون إنهاء؟"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "إلغاء"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "يمكنك إغلاق هذه الصفحة."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفحص' بقيمة"
+" {FIXED}. نظرًا لأنك كسبت {EARNED} حتى الآن، سيتم دفع {REMAINDER} إضافية "
+"كمكافأة. سيتم حفظ ردودك حتى الآن."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفحص' بقيمة"
+" {FIXED}. سيتم حفظ ردودك حتى الآن."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفحص' بقيمة"
+" {FIXED} بالإضافة إلى مكافأة أداء بقيمة {PERFORMANCE}. لن يتم دفعك مقابل "
+"الوقت الإضافي. سيتم حفظ ردودك حتى الآن."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستتلقى دفعة ثابتة 'للفحص' بقيمة"
+" {FIXED}. لن يتم دفعك مقابل الوقت الإضافي. سيتم حفظ ردودك حتى الآن."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا. ستحتاج إلى إعادة تقديم طلبك على"
+" Prolific. ثم سيتم دفع {EARNED} لك كمكافأة عن العمل الذي أكملته حتى الآن. "
+"سيتم حفظ إجاباتك حتى الآن."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr "إذا كنت قد بدأت بالفعل، راسل الباحث عبر Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr "يرجى مراسلة الباحث عبر Prolific ووصف ما أدى إلى هذا الخطأ."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr "سندفع لك عن تقدمك حتى الآن: ستتلقى {FIXED} عبر Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr "سندفع أيضًا {BONUS} كمكافأة، ليصبح إجمالي دفعتك {TOTAL}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "سندفع أيضًا مكافأة الأداء الخاصة بك {BONUS}."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr "أي مبلغ إضافي كسبته سيتم دفعه كمكافأة."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "اختر إرسال إلى Prolific لإكمال تقديمك."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "إرسال إلى Prolific"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"لتلقي {EARNED} عن العمل الذي أكملته، ستحتاج إلى إعادة تقديم طلبك على "
+"Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"لتلقي الدفع عن العمل الذي أكملته، ستحتاج إلى إعادة تقديم طلبك على Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr "اختر متابعة إلى تعليمات الدفع لإكمال هذه الخطوات."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"لم نتمكن من فتح تعليمات الدفع. يرجى المحاولة مرة أخرى. إذا استمر هذا، راسل "
+"الباحث عبر Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "متابعة إلى تعليمات الدفع"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"تم حفظ إجاباتك حتى الآن. يرجى إعادة تقديمك على Prolific. لن تتلقى دفعة. "
+"يمكنك إغلاق هذه الصفحة."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "تم إرسال تقديمك إلى Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "يمكنك إغلاق هذه الصفحة."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"لم نتمكن من إرسال تقديمك إلى Prolific. يرجى المحاولة مرة أخرى. إذا استمر هذا"
+" في الحدوث، راسل الباحث عبر Prolific."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
 "يرجى إعادة تقديمك عبر واجهة Prolific والنقر على التالي. سنقوم بعد ذلك بدفع "
-"مكافأة لك تلقائيًا عن وقتك."
+"مكافأة لك تلقائيًا."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"لقد نجح الأمر! لقد تم اعتمادك للوقت الذي قضيته في التجربة. شكرًا لمشاركتك. "
-"يمكنك الآن إغلاق نافذة المتصفح هذه."
+"تم ذلك. لقد تم اعتمادك للوقت الذي قضيته. شكرًا لمشاركتك. يمكنك إغلاق هذه "
+"الصفحة."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"تم تسجيل عودتك، لكن لم نتمكن من إتمام دفع المكافأة تلقائيًا. تم إخطار الباحث"
+" وسيقوم بترتيب الدفع. يمكنك إغلاق هذه الصفحة."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"لم ينجح ذلك. هل أنت متأكد أنك أعدت التقديم لهذه الدراسة؟ يرجى الذهاب إلى "
-"واجهة Prolific، والتأكد من أنك أعدت التقديم، ثم انقر على زر 'التالي'."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"نحن آسفون لأنك لم تتمكن من التقدم إلى التجربة الرئيسية، لكننا سنظل ندفع لك "
-"عن الوقت الذي قضيته حتى الآن. لتلقي هذا الدفع، نحتاج منك إعادة هذه المهمة "
-"عبر واجهة Prolific، ثم انقر على زر 'التالي' أدناه."
+"لم ينجح ذلك. هل أنت متأكد أنك أعدت التقديم؟ أعده على Prolific، ثم انقر على "
+"التالي."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"نحن آسفون لأنك لم تتمكن من التقدم إلى التجربة الرئيسية. لتلقي هذا الدفع عن "
-"وقتك، يرجى إعادة مهمتك في Prolific وإرسال رسالة إلى المجرب عبر نظام الرسائل "
-"في Prolific. سيقوم المجرب بمراجعة حالتك وترتيب الدفع إذا كان ذلك مناسبًا. "
-"شكرًا لتفهمك. يمكنك الآن إغلاق نافذة المتصفح هذه."
+"لتلقي الدفع عن الوقت الذي قضيته، أعد تقديمك على Prolific وراسل الباحث هناك. "
+"سيقومون بمراجعة حالتك وترتيب الدفع إذا كان مستحقًا. يمكنك إغلاق هذه الصفحة."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"إذا غادرت الآن، لن تتمكن من المتابعة لاحقًا، وستعود إلى مزود اللوحة الخاص "
+"بك. لن تصدر هذه الجلسة دفعة؛ أي دفعة تعتمد على قواعد مزود اللوحة الخاص بك. "
+"سيتم حفظ إجاباتك حتى الآن."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "إعادة التوجيه إلى Lucid Marketplace..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "سنقوم بإعادتك إلى لوحتك في غضون بضع ثوانٍ."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "الإلغاء غير ممكن."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "سنقوم بإعادتك إلى لوحتك في غضون بضع ثوانٍ."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
-msgstr "لا يمكن إلغاء التجربة لأن المجرب لا يسمح بذلك في هذا الوقت!"
-
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"يجب عليك جمع <strong>على الأقل "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> من المكافأة لتتمكن"
-" من الحصول على التعويض."
+"لم نتمكن من إعادتك إلى لوحتك. يرجى المحاولة مرة أخرى. إذا استمر هذا في "
+"الحدوث، اتصل بمزود اللوحة الخاص بك."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr "انظر أدناه المعلومات حول مكافأتك المتراكمة حاليًا."
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "العودة إلى لوحتك"
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
+#: psynet/sync.py psynet/timeline_hold.py
 #, fuzzy
-msgid "Assignment ID"
-msgstr "معرف التعيين"
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "في انتظار المشاركين الآخرين..."
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
+#: psynet/sync.py
 #, fuzzy
-msgid "HIT ID"
-msgstr "معرف HIT"
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "لم نتمكن من العثور على شريك لك في الوقت المناسب. يُرجى المتابعة."
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
+#: psynet/sync.py
 #, fuzzy
-msgid "Accumulated reward"
-msgstr "المكافأة المتراكمة"
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "لم نتمكن من تشكيل مجموعة لك في الوقت المناسب. يُرجى المتابعة."
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "إغلاق النافذة"
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Your group is ready. Moving on in {SECONDS} s."
+msgstr "مجموعتك جاهزة. سيتم الانتقال خلال {SECONDS} ث."
 
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "هل أنت متأكد أنك تريد إيقاف التجربة؟"
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Moving on in {SECONDS} s."
+msgstr "سيتم الانتقال خلال {SECONDS} ث."
 
-#: psynet/templates/abort_possible.html
+#: psynet/sync.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"إذا قمت بالنقر على زر الإيقاف، ستنتهي التجربة مبكرًا، وستحصل تلقائيًا على "
-"التعويض الذي كسبته حتى الآن."
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "لم يعد شريكك ضمن مجموعتك. يُرجى المتابعة."
 
-#: psynet/templates/abort_possible.html
+#: psynet/sync.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr "يرجى الاتصال بنا فقط إذا واجهت مشكلة في استلام دفعتك."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "انظر المعلومات أدناه للحصول على تفاصيل تعويضك."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "إلغاء التجربة"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "دعوة للمشاركة"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "متطلبات المشاركة هي كما يلي"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr "يرجى النقر على زر \"قبول HIT\" على موقع أمازون أعلاه لبدء المهمة."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "شكرًا لقبولك هذا HIT."
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "لم يبقَ عدد كافٍ من أعضاء مجموعتك. يُرجى المتابعة."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -962,11 +2099,6 @@ msgstr "يرجى تعطيل حاصرات النوافذ المنبثقة قبل 
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "بدء التجربة"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr "انقر على الزر أعلاه للحصول على تعويض في حالة حدوث خطأ."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2327,8 +3459,40 @@ msgstr "من خلال القيام بالمهمة، أنت تساعد العلم
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "تقديم استبيان لوسيد"
+msgid "Returning you to your panel"
+msgstr "إعادة توجيهك إلى لوحتك"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "يرجى الانتظار."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "إرسال إلى Prolific"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr "انقر أدناه لإرسال مشاركتك إلى Prolific. لن تحتاج إلى إدخال رمز إكمال."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "يرجى الانتظار."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "حاول مرة أخرى"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2339,6 +3503,17 @@ msgstr "اختر تخطيط لوحة المفاتيح:"
 #, fuzzy
 msgid "You did not press all required keys."
 msgstr "لم تضغط جميع المفاتيح المطلوبة."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"متصفحك قديم ولا يدعم الميزات المطلوبة لهذه التجربة. يُرجى تحديث متصفحك إلى "
+"أحدث إصدار أو تثبيت Google Chrome."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2362,15 +3537,11 @@ msgstr "يرجى اتباع التعليمات أدناه للمتابعة."
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
-msgstr "تحتاج إلى استخدام أحدث إصدار من Google Chrome للمشاركة في التجربة."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "أنت تستخدم:"
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
+msgstr ""
+"تعذّر علينا التحقق مما إذا كنت تستخدم نافذة تصفح خاصة. يُرجى فتح نافذة "
+"للتصفح المتخفي والمحاولة مرة أخرى."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2557,11 +3728,6 @@ msgstr "أوافق"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "لا، شكرًا (العودة إلى المهمة)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "قم بالتمرير لأعلى/لأسفل لرؤية كل النص"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2840,6 +4006,12 @@ msgstr "إعادة تعيين"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "مستوى الميكروفون"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "المنزلقات"
@@ -2930,26 +4102,6 @@ msgstr "تشغيل الموجه"
 msgid "Play recording"
 msgstr "تشغيل التسجيل"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "إيقاف"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "إيقاف"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "تكرار"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "تكرار"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -2960,56 +4112,135 @@ msgstr "الفيديو غير موجود"
 msgid "Image not found"
 msgstr "الصورة غير موجودة"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "تم تخزين التعليق."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "يرجى الانتظار حتى يتم تحميل الصفحة."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "حاول مرة أخرى بعد بضع ثوانٍ."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "يتم التحضير، يرجى الانتظار..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "المكافأة"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "المكافأة المكتسبة حتى الآن"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "للوقت"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "للأداء"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "تعليق"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "مغادرة"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "مغادرة دون إكمال."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "خطأ!"
+msgid "An error occurred"
+msgstr "حدث خطأ"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr ""
-"قد تتمكن من إلغاء التجربة باستخدام زر <strong>إلغاء التجربة</strong> "
-"<strong>على صفحة إعلان MTurk</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "يرجى الانتظار."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"بمجرد الإلغاء، لا حاجة للاتصال بنا لتلقي التعويض؛ يجب أن يتم منحه لك "
-"تلقائيًا عبر MTurk بعد بضع دقائق."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "حاول مرة أخرى"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"إذا لم يكن الأمر كذلك، يرجى الاتصال بنا على %(EMAIL)s مع ذكر المعلومات "
-"التالية:"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "نوع الخطأ"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "لقد اخترت المغادرة."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "معرف العامل"
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "يمكنك إغلاق هذه الصفحة."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "تم حفظ إجاباتك. يمكنك إغلاق هذه الصفحة."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "رمز المرجع"
 
 #: psynet/templates/start.html
 #, fuzzy
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr "بدء التجربة..."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "يشارك الكثير من الأشخاص الآن."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"يرجى إبقاء هذه الصفحة مفتوحة: ستنضم تلقائيًا بمجرد توفر مكان. ويمكنك أيضًا "
+"العودة لاحقًا."
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
@@ -3067,41 +4298,65 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "استئناف"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "المكافأة"
+#: psynet/timeline.py
+#, fuzzy, python-brace-format
+msgctxt "time_limit"
+msgid "{SECONDS} s left"
+msgstr "متبقية {SECONDS} ثانية"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "تعليق"
+msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "لم نتمكن من ضمك إلى مجموعة في الوقت المناسب. يُرجى المتابعة."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "إنهاء التجربة مبكرًا"
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "لم يصل شريكك في الوقت المناسب. يُرجى المتابعة."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "تم تخزين التعليق."
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "لم يصل جميع أفراد مجموعتك في الوقت المناسب. يُرجى المتابعة."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "يرجى الانتظار حتى يتم تحميل الصفحة."
+msgctxt "timeline_hold"
+msgid "Your partner went on without you. Please continue."
+msgstr "واصل شريكك من دونك. يُرجى المتابعة."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "حاول مرة أخرى بعد بضع ثوانٍ."
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "تابعت مجموعتك من دونك. يُرجى المتابعة."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "شريكك جاهز."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED}/{TOTAL} من مجموعتك جاهزون."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} من {TOTAL} لم يكونوا جاهزين بعد"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "يرجى الانتظار، من المفترض أن يستمر التجربة قريبًا..."
 
 #: psynet/translation/countries.py
 #, fuzzy
