@@ -101,6 +101,8 @@ class LiveGameControl(NullControl):
         ``show_next_button``.
     """
 
+    on_demand = False
+
     def __init__(
         self,
         auto_advance=True,
@@ -154,6 +156,20 @@ class LiveGameControl(NullControl):
             raise LiveGameFailed(game)
         if game.status != "running":
             return None
+        if self.on_demand:
+            from ..bot import Bot
+
+            if isinstance(participant, Bot):
+                game = _session_game_class(session_id)
+                view = game.step(experiment, participant, session_id)
+                if view["status"] == "available":
+                    answer = game.bot_answer(view)
+                    game.step(
+                        experiment,
+                        participant,
+                        session_id,
+                        answer.model_dump(mode="json"),
+                    )
         _check_session_can_still_end(session_id)
         _p = get_translator(context=True)
         return ResponseNotReady(
@@ -247,6 +263,7 @@ class LiveGameControl(NullControl):
         return {
             "liveGame": {
                 "playId": self.play_id,
+                "onDemand": self.on_demand,
                 "liveGameId": session_id,
                 "gameChannel": (
                     None if session_id is None else _game_channel(session_id)

@@ -1383,3 +1383,24 @@ trials by ``module_state_id`` to read responses across sessions in the same
 trial-maker run. The default session outcome and page answer are both empty
 dictionaries. Override :meth:`~psynet.live_game.LiveGame.outcome` if the game
 also produces a joint result, such as a team payoff.
+
+
+On-demand trials on a solo game page
+------------------------------------
+
+Return a ``PlayLiveGame`` from the maker's ``present_trials()``, with a
+:class:`~psynet.live_game.OnDemandTrialGame` subclass. Set its ``answer_type``
+to a typed ``TrialAnswer`` and implement ``bot_answer(view)`` with that type.
+In the page, subscribe with ``game.onTrial(render)`` and call
+``game.startResponseClock(view)`` when the renderer presents the stimulus.
+The same renderer can use ``onTrial`` for a prepared deck.
+
+The active maker assigns one native trial at a time. Each answer is validated
+and completed in the transaction that selects its successor. Override
+``live_trial_definition(trial)`` to choose the fields the page receives.
+The runner manages presence and game ending. The page receives its private
+assignment in the HTTP response, with no timeline transition. The
+``features/live_trial_game_adaptive`` demo uses the previous score to select
+a node. This path supports independent solo selections with a single custom
+renderer and synchronous scoring. Per-trial feedback, timeline controls and
+per-trial performance-check pages require the ordinary trial timeline.

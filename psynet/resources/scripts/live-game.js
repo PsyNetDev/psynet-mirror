@@ -180,6 +180,9 @@
         currentPage = null;
         if (state !== null) {
           state.left = true;
+          state.trialRequest?.abort();
+          clearTimeout(state.trialTimer);
+          page.showNotice("psynet-trial-status", null);
           state.socket?.close();
           state.away.stop();
           clearTimeout(state.connectionTimer);
@@ -505,15 +508,60 @@
           let number;
           clock.messageNumber = null;
           try {
-            number = send(TRIAL_ANSWER, {
-              position, answer: value, seconds: (performance.now() - shownAt) / 1000,
-            });
+            const response = {position, answer: value, seconds: (performance.now() - shownAt) / 1000};
+            if (state.advanceTrial) {
+              state.advanceTrial(response);
+              number = position;
+            } else {
+              number = send(TRIAL_ANSWER, response);
+            }
             return number;
           } finally {
             clock.messageNumber = number;
           }
         },
       };
+    }
+
+    // An on-demand assignment lives in SQL. Retransmit the exact answer (and
+    // original RT) if its acknowledgement is lost. A second tab can win the
+    // race; ask for its current assignment after a conflicting response.
+    function onTrial(callback) {
+      if (!session().onDemand) return onChange(callback);
+      const state = pageState();
+      if (state.trialRequest) throw new Error("Register one onTrial renderer per game page.");
+      state.trialRequest = new AbortController();
+      const identity = page.trialIdentity(state.session.liveGameId);
+      async function advance(response = null) {
+        if (state.left || state.ended) return;
+        let reply;
+        let view;
+        try {
+          reply = await fetch("/live_game/trial", {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            signal: state.trialRequest.signal,
+            body: JSON.stringify({...identity, response}),
+          });
+          if (reply.status >= 500) throw new Error("Temporary server error");
+          if (reply.ok) view = await reply.json();
+        } catch (error) {
+          if (state.left || state.ended) return;
+          page.showNotice("psynet-trial-status", "Reconnecting to your trial…");
+          state.trialTimer = setTimeout(() => advance(response), 1000);
+          return;
+        }
+        if (state.left || state.ended) return;
+        if (reply.status === 409 && response !== null) return advance();
+        if (!reply.ok) {
+          page.showNotice("psynet-trial-status", "This trial could not continue. Reload the page to resume.");
+          return;
+        }
+        page.showNotice("psynet-trial-status", view.status === "wait" ? "Waiting for the next trial…" : null);
+        if (view.status === "available") callback(view);
+        else state.trialTimer = setTimeout(() => advance(), 1000);
+      }
+      state.advanceTrial = advance;
+      return onStarted(() => advance());
     }
 
     /** Optional prediction for a complete public deck, up to its segment boundary. */
@@ -1038,6 +1086,7 @@
       onStarted: onStarted,
       enableWhilePlaying: enableWhilePlaying,
       onChange: onChange,
+      onTrial,
       onReceive: onReceive,
       onPlayersAway: onPlayersAway,
       predict: predict,
@@ -1142,6 +1191,7 @@
             element.hidden = true;
           });
         },
+        trialIdentity: (session) => ({session, uniqueId: window.psynetTemplateData.uniqueId, page: psynet.var.pageUuid}),
         fetchPlayers: async (playId) => {
           let params = new URLSearchParams({ uniqueId: psynet.uniqueId, playId });
           let response = await fetch(`/live_game/players?${params}`, {

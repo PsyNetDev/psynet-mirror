@@ -5,90 +5,43 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.live_game import (
-    LiveGame,
     LiveGameControl,
+    OnDemandTrialGame,
     PlayLiveGame,
-    Reject,
     TrialAnswer,
 )
 from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
-from psynet.timeline import Module, PageMaker, Timeline
-
-from .trials import ContrastTrial, trial_context, write_step
+from psynet.timeline import PageMaker, Timeline, join
+from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
 GAPS = (48, 32, 24, 16, 10, 6, 4)
 START_LEVEL = 2
 N_TRIALS = 8
 
 
-def make_pair(level):
-    """Draw the bright side once and keep the mean grey constant."""
-    half_gap = GAPS[level] // 2
-    left, right = random.sample([128 - half_gap, 128 + half_gap], 2)
-    return {"left": left, "right": right}
+class ContrastTrial(StaticTrial):
+    time_estimate = 2
+
+    def score_answer(self, answer, definition):
+        other = "right" if answer == "left" else "left"
+        return int(definition[answer] > definition[other])
 
 
 class Choice(TrialAnswer):
     answer: Literal["left", "right"]
 
 
-class Staircase(LiveGame):
+class Staircase(OnDemandTrialGame):
     name = "contrast_staircase"
-    min_players = max_players = 1
-    messages = [Choice]
-    timeout = None
+    answer_type = Choice
 
-    def initial_state(self, players, settings):
-        return {"context": settings, "completed": 0, "level": START_LEVEL, "pair": None}
-
-    def on_start(self, state):
-        self.advance(state)
-
-    def advance(self, state, answer=None, seconds=None):
-        pair = make_pair(state["level"]) if state["completed"] < N_TRIALS else None
-        state["pair"] = pair
-        self.queue_effect(
-            "staircase_step",
-            {
-                **state["context"],
-                "completed": state["completed"],
-                "answer": answer,
-                "seconds": seconds,
-                "next_pair": pair,
-            },
-        )
-
-    def answer_trial(self, state, *, player, position, answer, time_taken=None):
-        if position != state["completed"] or state["pair"] is None:
-            raise Reject("This pair is no longer current.")
-        correct = ContrastTrial.score_answer(answer, state["pair"])
-        step = 1 if correct else -1
-        state["level"] = max(0, min(len(GAPS) - 1, state["level"] + step))
-        state["completed"] += 1
-        self.advance(state, answer, time_taken)
-
-    def view(self, state, player):
-        return {"completed": state["completed"], "definition": state["pair"]}
-
-    def is_over(self, state):
-        return state["completed"] == N_TRIALS
-
-    def outcome(self, state, reason):
-        return {"completed": state["completed"]}
-
-    def handle_effect(self, name, payload, session_row):
-        if name == "staircase_step":
-            write_step(session_row, payload)
-        else:
-            super().handle_effect(name, payload, session_row)
-
-    def bot(self, view, player, now):
+    @staticmethod
+    def bot_answer(view):
         pair = view["definition"]
-        if pair:
-            return Choice(
-                position=view["completed"], answer=max(pair, key=pair.get), seconds=0.4
-            )
+        return Choice(
+            position=view["completed"], answer=max(pair, key=pair.get), seconds=0.4
+        )
 
 
 def feedback(participant):
@@ -111,18 +64,33 @@ def feedback(participant):
     )
 
 
-class Exp(psynet.experiment.Experiment):
-    label = "Adaptive brightness comparison"
-    timeline = Timeline(
-        InfoPage(
-            "Which patch is brighter? Press the left or right arrow key. Each correct answer makes the next pair more similar, until you reach the smallest difference.",
-            time_estimate=5,
-        ),
-        Module(
-            "contrast_round",
+class BrightnessMaker(StaticTrialMaker):
+    def select_node(self, nodes, participant, experiment):
+        last = (
+            ContrastTrial.query.filter_by(
+                module_state_id=participant.module_state.id, complete=True
+            )
+            .order_by(ContrastTrial.position.desc())
+            .first()
+        )
+        level = START_LEVEL
+        if last is not None:
+            gap = abs(last.definition["left"] - last.definition["right"])
+            step = 1 if last.score else -1
+            level = max(0, min(len(GAPS) - 1, GAPS.index(gap) + step))
+        return random.choice(
+            [
+                node
+                for node in nodes
+                if abs(node.definition["left"] - node.definition["right"])
+                == GAPS[level]
+            ]
+        )
+
+    def present_trials(self):
+        return join(
             PlayLiveGame(
                 game_class=Staircase,
-                settings=trial_context,
                 page=ModularPage(
                     "contrast",
                     tags.div(
@@ -147,12 +115,33 @@ class Exp(psynet.experiment.Experiment):
                 ),
             ),
             PageMaker(feedback, time_estimate=4),
+        )
+
+
+class Exp(psynet.experiment.Experiment):
+    label = "Adaptive brightness comparison"
+    timeline = Timeline(
+        InfoPage(
+            "Which patch is brighter? Press the left or right arrow key. Each correct answer makes the next pair more similar, until you reach the smallest difference.",
+            time_estimate=5,
+        ),
+        BrightnessMaker(
+            id_="contrast_round",
+            trial_class=ContrastTrial,
+            nodes=[
+                StaticNode(definition={"left": 128 + delta, "right": 128 - delta})
+                for gap in GAPS
+                for delta in (gap // 2, -gap // 2)
+            ],
+            allow_repeated_nodes=True,
+            max_trials_per_participant=N_TRIALS,
+            expected_trials_per_participant=N_TRIALS,
         ),
     )
 
     def test_check_bot(self, bot, **kwargs):
         trials = sorted(bot.all_trials, key=lambda t: t.position)
-        assert [t.live_slot for t in trials] == list(range(N_TRIALS))
+        assert [t.position for t in trials] == list(range(N_TRIALS))
         assert all(
             t.complete and t.finalized and t.score == 1 and t.time_taken == 0.4
             for t in trials

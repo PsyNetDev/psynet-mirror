@@ -221,7 +221,7 @@ Trials
 
 `features/live_trial_game_adaptive <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game_adaptive>`__
     A live brightness staircase. The server chooses one new pair per answer,
-    with the accepted answer and next pair recorded together by the SQL writer.
+    using the trial maker to complete the answer and assign the next native trial in one transaction.
 
 Chains
 ------

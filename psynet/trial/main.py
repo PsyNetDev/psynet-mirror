@@ -3284,6 +3284,10 @@ class TrialMaker(Module):
             ),
         )
 
+    def live_trial_definition(self, trial):
+        """Return participant-facing display data for an assigned live trial."""
+        return trial.definition
+
     def present_trials(self):
         """Build the presentation timeline inside this maker's normal setup and wrap-up."""
         return self._trial_loop()

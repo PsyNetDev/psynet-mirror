@@ -1,1 +1,1 @@
-Added a live adaptive brightness staircase with incremental native trials.
+Added on-demand native trial selection in solo live games and an adaptive brightness staircase demo.

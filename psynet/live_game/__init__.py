@@ -16,6 +16,7 @@ from .control import LiveGameControl
 from .game import LiveGame
 from .history import LiveGameCheckpoint, LiveGameMoment
 from .messages import LiveMessage, SavedMessage
+from .on_demand import OnDemandTrialGame
 from .play import PlayLiveGame
 from .psynet_entry import NOT_STARTED, PLAYERS_LEFT, TIMEOUT, PlayerReady
 from .record import LiveGameFailed, LiveGameRecord
@@ -24,6 +25,7 @@ from .trials import LiveTrialGame, TrialAnswer
 
 __all__ = [
     "LiveTrialGame",
+    "OnDemandTrialGame",
     "TrialAnswer",
     "LiveMessage",
     "LiveGame",

@@ -7866,6 +7866,26 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             request.args.get("barrierId"),
         )
 
+    @experiment_route("/live_game/trial", methods=["POST"])
+    @classmethod
+    @with_transaction
+    def route_live_game_trial(cls):
+        from flask import abort
+        from sqlalchemy.orm.exc import NoResultFound
+
+        from .live_game.on_demand import page_step
+
+        body = request.get_json()
+        if not isinstance(body, dict) or not isinstance(body.get("uniqueId"), str):
+            abort(400)
+        try:
+            participant = cls._get_request_participant_from_unique_id(
+                body["uniqueId"], for_update=True
+            )
+        except NoResultFound:
+            abort(404)
+        return page_step(get_experiment(), participant, body)
+
     @experiment_route("/live_game/players", methods=["GET"])
     @classmethod
     @with_transaction

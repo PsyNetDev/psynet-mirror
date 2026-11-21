@@ -5,9 +5,10 @@ export function activate({root, psynet}) {
     let response = null;
     let frame;
 
-    game.onChange(view => {
+    game.onTrial(view => {
         if (!game.playing || position === view.completed) return;
         position = view.completed;
+        patches.dataset.position = position;
         response = null;
         cancelAnimationFrame(frame);
         if (!view.definition) {
