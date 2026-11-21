@@ -749,10 +749,10 @@
     psynet.updatePageModules = async function (offset) {
       let prediction = psynet.prediction;
       prediction.shown = prediction.base + offset;
-      let contents = psynet.predictedContents()[offset];
+      let [contents, ...upcoming] = psynet.predictedContents().slice(offset);
       let response = psynet.createResponseHandle(prediction.shown);
       for (let update of psynet.pageModuleUpdates) {
-        await update({ contents, response });
+        await update({ contents, upcoming, response });
       }
     };
 

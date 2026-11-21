@@ -107,10 +107,18 @@ reach it, and each trial page also carries the ``contents`` of the next few
 trials (:attr:`~psynet.trial.static.StaticTrialMaker.n_upcoming_trials`, 5 by
 default). The page module needs no changes. When the participant answers,
 PsyNet calls ``update`` with the next trial's ``contents`` at once, and sends
-the answers to the server in the background, one at a time and in order. The
-module can read the upcoming contents from
-``psynet.page.attributes.upcoming_contents``, for example to preload the next
-images.
+the answers to the server in the background, one at a time and in order.
+``update`` also receives ``upcoming``, the contents of the known trials after
+the one it shows, for example to preload their images:
+
+.. code-block:: javascript
+
+    update({contents, upcoming, response: handle}) {
+        for (const next of upcoming) new Image().src = next.image_url;
+        // Show contents as before.
+    },
+
+Without ``prepare_trials_in_advance``, ``upcoming`` is empty.
 
 Each answer is still checked and saved as usual. If the server rejects one,
 PsyNet shows its error message, drops the answers given after it, and calls
