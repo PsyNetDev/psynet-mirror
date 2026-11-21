@@ -11,6 +11,7 @@ import json
 from typing import Callable, List, Literal, Optional, Sequence, Union
 
 from dallinger import db
+from sqlalchemy import Column, Integer
 
 from psynet.trial.chain import (
     Candidate,
@@ -70,6 +71,11 @@ class StaticTrial(ChainTrial):
     block
         The block in which the trial is situated.
     """
+
+    n_presentations = Column(
+        Integer,
+        doc="How often a live game page reported displaying this prepared trial.",
+    )
 
     def show_trial(self, experiment, participant):
         raise NotImplementedError

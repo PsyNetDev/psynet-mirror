@@ -7,44 +7,6 @@ import requests
 from psynet.prescreen.vocabtest import VocabTest, VocabTrial
 
 
-def test_vocab_finalize_definition_sets_hashes_after_asset_setup(monkeypatch):
-    received_previous = []
-
-    def choose_hashes(stimuli, previous):
-        received_previous.extend(previous)
-        return ["h"]
-
-    def expire_then_return_assets(stimuli, hashes):
-        trial.definition = {}
-        return {"h": object()}
-
-    maker = SimpleNamespace(
-        choose_hashes=choose_hashes,
-        get_assets=expire_then_return_assets,
-    )
-    trial = SimpleNamespace(
-        trial_maker_id="vocab",
-        assets={},
-        definition={},
-        node=SimpleNamespace(seed=[{"hash": "h"}]),
-        trial_maker=maker,
-    )
-
-    monkeypatch.setattr(
-        VocabTrial,
-        "query",
-        SimpleNamespace(
-            filter_by=lambda **kwargs: SimpleNamespace(all=lambda: [trial])
-        ),
-    )
-
-    definition = VocabTrial.finalize_definition(trial, {}, None, SimpleNamespace(id=1))
-
-    assert received_previous == []
-    assert definition["hashes"] == ["h"]
-    assert "h" in trial.assets
-
-
 def _make_vocab_test(tmp_path, **kwargs):
     csv_path = tmp_path / "items.csv"
     csv_path.write_text(
@@ -62,111 +24,85 @@ def _make_vocab_test(tmp_path, **kwargs):
         )
 
 
-def _score(vocab_test, hashes, answer):
-    seed = vocab_test.start_nodes[0].seed
-    trial = SimpleNamespace(
-        id=1,
-        definition={"hashes": hashes},
-        node=SimpleNamespace(seed=seed),
-        answer=answer,
-    )
-    return vocab_test.score_trial(trial)
-
-
-def test_vocab_item_ids_do_not_identify_words(tmp_path):
-    first, second = _make_vocab_test(tmp_path), _make_vocab_test(tmp_path)
-    assert {item["hash"] for item in first.start_nodes[0].seed}.isdisjoint(
-        item["hash"] for item in second.start_nodes[0].seed
-    )
-
-
-def test_vocab_scores_only_complete_answers(tmp_path):
-    vocab_test = _make_vocab_test(tmp_path)
-    seed = vocab_test.start_nodes[0].seed
-    hashes = [item["hash"] for item in seed]
-    correct = [
-        {
-            "hash": item["hash"],
-            "answer": "real" if item["stimulus"] in ("cat", "dog") else "fake",
-        }
-        for item in seed
-    ]
-
-    assert _score(vocab_test, hashes, correct) == 1
-    assert _score(vocab_test, hashes, correct[:1]) == 0
-    assert _score(vocab_test, hashes, correct[:1] * 4) == 0
-    assert _score(vocab_test, hashes, list(reversed(correct))) == 0
-    assert (
-        _score(vocab_test, hashes, [{**item, "answer": "yes"} for item in correct]) == 0
-    )
-
-
-def test_vocab_performance_check_scores_the_latest_trial(tmp_path):
-    vocab_test = _make_vocab_test(
-        tmp_path, n_trials=2, performance_threshold_per_trial=1
-    )
-    seed = vocab_test.start_nodes[0].seed
-    hashes = [item["hash"] for item in seed]
-    correct = [
-        {
-            "hash": item["hash"],
-            "answer": "real" if item["stimulus"] in ("cat", "dog") else "fake",
-        }
-        for item in seed
-    ]
-
-    def trial(answer):
-        return SimpleNamespace(
-            id=1,
-            definition={"hashes": hashes},
-            node=SimpleNamespace(seed=seed),
+def words(maker, answers, offset=0):
+    nodes = list(enumerate(maker.start_nodes, start=1))
+    occurrences = nodes + nodes[: maker.n_repeat_items]
+    return [
+        SimpleNamespace(
+            position=position,
+            node_id=node_id,
+            definition=node.definition,
+            module_state_id=7,
+            complete=True,
+            failed=False,
             answer=answer,
+            score=VocabTrial.score_answer(answer, node.definition),
         )
-
-    result = vocab_test.performance_check(None, None, [trial(correct), trial(None)])
-    assert result["passed"] is False
-
-
-@pytest.mark.parametrize("answer", [None, "real", {"hash": "h", "answer": "real"}])
-def test_vocab_scores_non_list_answers_as_zero(tmp_path, answer):
-    vocab_test = _make_vocab_test(tmp_path)
-    hashes = [item["hash"] for item in vocab_test.start_nodes[0].seed]
-    assert _score(vocab_test, hashes, answer) == 0
+        for position, ((node_id, node), answer) in enumerate(
+            zip(occurrences, answers, strict=True), start=offset
+        )
+    ]
 
 
-def test_vocab_consistency_rejects_answers_for_other_items(tmp_path):
-    vocab_test = _make_vocab_test(
-        tmp_path, performance_check_type="consistency", n_repeat_items=2
+@pytest.mark.parametrize("kind,expected", [("accuracy", 1), ("consistency", 0.5)])
+def test_form_scores_native_trials_and_repeated_nodes(tmp_path, kind, expected):
+    maker = _make_vocab_test(tmp_path, performance_check_type=kind, n_repeat_items=2)
+    form = words(maker, ["real", "real", "fake", "fake", "real", "fake"])
+    participant = SimpleNamespace(
+        module_state=SimpleNamespace(id=7, n_completed_trials=6)
     )
-    seed = vocab_test.start_nodes[0].seed
-    hashes = [item["hash"] for item in seed] + [seed[0]["hash"], seed[1]["hash"]]
-    answer = [{"hash": seed[0]["hash"], "answer": "real"}] * len(hashes)
+    assert maker.score_form(participant, list(reversed(form))) == expected
+    assert maker.score_form(participant, form[:-1]) == 0
+    form[0].failed = True
+    assert maker.score_form(participant, form) == 0
 
-    assert _score(vocab_test, hashes, answer) == 0
+
+def test_performance_check_uses_latest_form_in_this_run(tmp_path):
+    maker = _make_vocab_test(tmp_path, n_trials=2, performance_threshold_per_trial=1)
+    correct = ["real", "real", "fake", "fake"]
+    first = words(maker, correct)
+    second = words(maker, ["fake"] * 4, offset=4)
+    participant = SimpleNamespace(
+        module_state=SimpleNamespace(id=7, n_completed_trials=4)
+    )
+    assert maker.performance_check(None, participant, first + second)["passed"]
+    participant.module_state.n_completed_trials = 8
+    other_run = words(maker, correct, offset=4)
+    for trial in other_run:
+        trial.module_state_id = 8
+    assert maker.performance_check(None, participant, first + second + other_run) == {
+        "score": 0.5,
+        "passed": False,
+    }
 
 
 @pytest.mark.parametrize(
-    "performance_check_type, expected", [("accuracy", 1), ("consistency", 0.5)]
+    "public_word", [{"image": "/asset/example"}, {"stimulus": "cat"}]
 )
-def test_vocab_scores_answers_with_repeat_items(
-    tmp_path, performance_check_type, expected
-):
-    vocab_test = _make_vocab_test(
-        tmp_path, performance_check_type=performance_check_type, n_repeat_items=2
-    )
-    seed = vocab_test.start_nodes[0].seed
-    correct = [
-        {
-            "hash": item["hash"],
-            "answer": "real" if item["stimulus"] in ("cat", "dog") else "fake",
-        }
-        for item in seed
-    ]
-    flipped = {"real": "fake", "fake": "real"}[correct[1]["answer"]]
-    repeats = [correct[0], {**correct[1], "answer": flipped}]
-    answer = correct + repeats
+def test_repeat_uses_presentation_position_without_exposing_identifiers(public_word):
+    from psynet.live_game import Reject
+    from psynet.live_game.testing import LocalGame
+    from psynet.prescreen.vocab_live import VocabularyGame, WordResponse
 
-    assert _score(vocab_test, [item["hash"] for item in answer], answer) == expected
+    word = {**public_word, "correct_answer": "correct"}
+    plan = {
+        "definitions": [word, word, word],
+        "_trial_ids": [40, 41, 42],
+        "completed": 1,
+    }
+    session = LocalGame(
+        VocabularyGame, players=1, settings={"plans": [plan], "stop": 2}
+    )
+    view = session.view(0)
+    assert view["completed"] == 1
+    assert view["definition"] == public_word and view["deck"] == [
+        public_word,
+        public_word,
+    ]
+    with pytest.raises(Reject, match="no longer current"):
+        session.send(0, WordResponse(position=0, answer="fake"))
+    session.send(0, WordResponse(position=1, answer="real"))
+    assert session.is_over()
 
 
 def test_vocab_test_rejects_sync_groups(tmp_path):

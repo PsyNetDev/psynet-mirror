@@ -621,6 +621,18 @@ class LiveGame(RealtimeGame):
             raise ValueError("This player's trial segment is complete.")
         return plan, ids, current
 
+    def record_trial_presentation(self, state, *, player, position):
+        """Count a browser display of the current trial, including a redisplay."""
+        _, ids, position = self._open_trial(state, player, position)
+        super().queue_effect(
+            _PREPARED_TRIAL_EFFECT,
+            {
+                "player": player,
+                "trial_id": ids[position],
+                "presented": True,
+            },
+        )
+
     def answer_trial(self, state, *, player, answer, position=None, time_taken=None):
         """Answer the open trial and start the next one in the same event transaction."""
         plan, ids, position = self._open_trial(state, player, position)

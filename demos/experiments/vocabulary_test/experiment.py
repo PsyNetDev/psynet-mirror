@@ -2,7 +2,6 @@
 # participants have to indicate for each word if it's real or fake.
 # WikiVocab is made from Wikipedia and is generally of a better quality than BibleVocab, which is made from the Bible.
 # However, BibleVocab is available for more languages.
-import random
 
 import requests
 
@@ -39,6 +38,8 @@ class Exp(psynet.experiment.Experiment):
         BibleVocab(
             "nl",
             show_instructions=False,
+            n_repeat_items=4,
+            performance_check_type="consistency",
             performance_threshold_per_trial=0,
         ),
         InfoPage(
@@ -48,6 +49,7 @@ class Exp(psynet.experiment.Experiment):
         WikiVocab(
             "en",
             n_trials=2,
+            present_as_image=False,
             show_instructions=False,
             performance_threshold_per_trial=0,
         ),
@@ -58,26 +60,38 @@ class Exp(psynet.experiment.Experiment):
         from psynet.experiment import get_experiment
 
         assert not bot.failed
+        assert not bot.sync_group_links
         trials = bot.all_trials
-        assert len(trials) == 4  # 1 wikivocab + 1 biblevocab nl + 2x wikivocab en
+        assert len(trials) == 30 + 34 + 60
+        assert all(
+            t.complete and t.finalized and t.answer in ("real", "fake") for t in trials
+        )
+        assert all(t.prepared_in_advance and t.response_started_at for t in trials)
 
-        # polvanrijn's original version of this code checked for uniqueness of hashes
-        # across all trials. This seems problematic as perhaps the same word appears
-        # in multiple datasets; if so, this would cause the test to stochastically fail.
-        for trial in trials:
-            visited_hashes = [item["hash"] for item in trial.answer]
-            # Make sure the participant doesn't revisit the same asset
-            assert len(visited_hashes) == len(set(visited_hashes))
-            # The thresholds of 0 pass any answer, so check that the answer has
-            # the shape that scoring accepts.
-            assert visited_hashes == trial.definition["hashes"]
-            assert {item["answer"] for item in trial.answer} <= {"real", "fake"}
+        for label, size, repeats in [
+            ("wikivocab_nl", 30, 0),
+            ("biblevocab_nld", 30, 4),
+            ("wikivocab_en", 60, 0),
+        ]:
+            items = sorted(
+                (t for t in trials if t.trial_maker_id == label),
+                key=lambda t: t.position,
+            )
+            assert [t.position for t in items] == list(range(size + repeats))
+            assert len({t.node_id for t in items[:size]}) == size
+            assert all(
+                t.node_id in {original.node_id for original in items[:size]}
+                for t in items[size:]
+            )
+            assert (
+                sum(t.definition["correct_answer"] == "correct" for t in items[:size])
+                == size // 2
+            )
+            assert items[-1].creation_time <= items[0].response_started_at
 
-        assets = trials[0].assets
-        assert len(assets) == 30
-        asset_key = random.sample(list(assets.keys()), 1)[0]
-        asset = assets[asset_key]
-        exp = get_experiment()
-        url = exp.asset_storage._prepare_url_for_http_export(asset.url)
-        assert url.startswith("http")
-        assert requests.get(url).status_code == 200
+        trial = next(t for t in trials if t.trial_maker_id == "wikivocab_nl")
+        asset = trial.node.assets["image"]
+        url = get_experiment().asset_storage._prepare_url_for_http_export(asset.url)
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        assert response.content.startswith(bytes.fromhex("89504e470d0a1a0a"))

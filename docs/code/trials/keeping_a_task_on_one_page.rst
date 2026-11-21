@@ -117,7 +117,8 @@ declare them in the page's :class:`~psynet.timeline.MediaSpec`, as in the
 ``features/live_trial_game_images`` demo. For a long or participant-specific
 set, have your page's JavaScript fetch the next few images from the deck while
 the participant answers, and wait for each image's ``decode()`` before showing
-it and starting its response clock.
+it and starting its response clock. VocabTest's page script,
+``psynet/resources/scripts/vocabtest.js``, does this.
 
 Splitting a sequence into parts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -162,6 +163,14 @@ that isn't answered within the trial maker's ``response_timeout_sec`` fails,
 but the participant carries on: when they answer, PsyNet stores the answer,
 the trial stays failed and the game moves to the next trial. Set
 ``response_timeout_sec=None`` to turn the timeout off.
+
+To count how often a stimulus was displayed, including after reloads, have the
+page send a message whose ``apply`` calls
+``game.record_trial_presentation(state, player=player, position=position)``.
+PsyNet stores the count in the trial's ``n_presentations``. VocabTest does
+this, because its ``time_taken`` runs from the display on which the
+participant answered. Bots answer without displaying anything, so their
+trials have no count.
 
 Reading the results
 ~~~~~~~~~~~~~~~~~~~

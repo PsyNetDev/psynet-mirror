@@ -219,6 +219,9 @@ def test_solo_resume_keeps_deadline_and_accepts_late_answers(db_session, monkeyp
     assert [item.id for item in maker.prepare_trials(player)] == [first.id, second.id]
     apply(resumed, second)
     assert second.response_started_at == opened
+    apply(original, second, presented=True)
+    apply(resumed, second, presented=True)
+    assert second.n_presentations == 2
 
     # The deadline passes: the trial fails, but the game carries on.
     second.response_started_at = datetime.now() - timedelta(days=1)

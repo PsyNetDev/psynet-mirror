@@ -114,6 +114,9 @@ def _apply_prepared_trial(payload, session_row):
         # input. Only the trial at the participant's position may advance it.
         if participant.failed or trial.position != run.n_completed_trials:
             return
+    if payload.get("presented"):
+        trial.n_presentations = (trial.n_presentations or 0) + 1
+        return
     if "answer" not in payload:
         trial.start_response(participant)
         return
