@@ -406,8 +406,8 @@ Depending on a custom branch of Dallinger
 -----------------------------------------
 
 Sometimes you may need to use a custom branch of Dallinger in a feature you are contributing to PsyNet.
-First make sure your Dallinger branch contains any Dallinger commit that the PsyNet target branch already pins (merge Dallinger's updated ``master`` into it if not), and push it.
-Then update the Dallinger entry in the ``experiment`` extra of ``pyproject.toml`` to point to the head commit of your branch.
+First make sure your Dallinger branch contains any Dallinger commit that the PsyNet target branch already pins (merge that commit in if not; it may be on Dallinger's ``master`` or on another unmerged branch), and push it.
+Then update the Dallinger entry in the ``experiment`` extra of ``pyproject.toml`` to point to the head commit of your branch, and update the comment above it to say which unreleased Dallinger changes the pin carries.
 You should write something like this:
 
 .. code-block:: toml

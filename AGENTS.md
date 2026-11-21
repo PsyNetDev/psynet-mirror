@@ -114,10 +114,11 @@ Open a PR to upstream, writing the description to a file first:
 
 If your PsyNet PR depends on this new unmerged change to Dallinger, first
 make sure the Dallinger branch contains any Dallinger commit that the
-PsyNet target branch already pins (merge Dallinger's updated `master` into it if not) and push
-it. Then, once that Dallinger PR is open, replace the Dallinger entry in
+PsyNet target branch already pins: merge that commit in if not (it may
+be on Dallinger's `master` or on another unmerged branch), and push. Then, once that Dallinger PR is open, replace the Dallinger entry in
 `pyproject.toml` with a pin on the full commit SHA of the branch head, not
-the branch name. PsyNet's bootstrap and CI tooling accept only a
+the branch name, and update the comment above it to say which unreleased
+Dallinger changes the pin carries. PsyNet's bootstrap and CI tooling accept only a
 `>=X.Y.Z` lower bound whose `vX.Y.Z` tag exists, or a full 40-character
 commit SHA on `github.com/Dallinger/Dallinger`. A commit on a fork branch
 can be fetched from `Dallinger/Dallinger` once its PR is open, so the URL
