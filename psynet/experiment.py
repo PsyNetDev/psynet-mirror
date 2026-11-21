@@ -7827,10 +7827,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Leave-button plans are also stored in that write phase so this helper
         can stay read-only.
         """
-        return {
-            "html": page.render(experiment, participant, partial_mode=True),
-            "page_uuid": participant.page_uuid,
-        }
+        html = page.render(experiment, participant, partial_mode=True)
+        payload = {"html": html, "page_uuid": participant.page_uuid}
+        if page.upcoming_contents is not None:
+            payload["layout_key"] = page.layout_key(html)
+        return payload
 
     @experiment_route("/timeline/arrival_notice", methods=["GET"])
     @classmethod

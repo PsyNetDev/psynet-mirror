@@ -231,6 +231,9 @@
       // When the current page left the server, in Date.now() milliseconds; the
       // first response byte on a full load, otherwise when /response answered.
       pageReceivedAt: psynetNavigationResponseStart(),
+      // Identifies the shown page's #main-body for predicted trial pages.
+      // Fragments carry it next to their HTML, full pages in the attributes.
+      layoutKey: psynetTemplateData.page?.attributes?.layout_key ?? null,
     };
     psynet.SUBMISSION_HANDLED = Symbol("psynet.SUBMISSION_HANDLED");
 
@@ -638,7 +641,6 @@
     psynet.activatePageJavascript = async function () {
       let activated = [];
       psynet.pageModuleUpdates = [];
-      psynet.pageMarkup = psynet.getMainBodyMarkup(document);
       let context = psynet.getPageActivationContext();
       try {
         for (let src of psynetTemplateData.legacyJsLinks || []) {
@@ -730,19 +732,6 @@
         psynet.page.contents,
         ...(psynet.page.attributes?.upcoming_contents || []),
       ];
-    };
-
-    // The markup that a predicted reply must repeat. Full-page loads and
-    // fragments render the same page with different script types, asset
-    // holders and whitespace, and the ready marker changes while it is shown.
-    psynet.getMainBodyMarkup = function (root) {
-      let mainBody = root.querySelector("#main-body");
-      if (!mainBody) return null;
-      let copy = mainBody.cloneNode(true);
-      copy.removeAttribute("data-page-ready");
-      copy.querySelector("#psynet-fragment-assets")?.remove();
-      copy.querySelectorAll("script").forEach((script) => script.removeAttribute("type"));
-      return copy.outerHTML.replace(/\s+/g, " ").replace(/> </g, "><");
     };
 
     // Show the trial ``offset`` trials after the last confirmed page.
@@ -844,29 +833,18 @@
     psynet.predictedFragment = function (response) {
       let prediction = psynet.prediction;
       let expected = psynet.predictedContents()[1];
+      let layoutKey = response.timeline_fragment?.layout_key;
       if (
         !prediction.queue.length ||
         expected === undefined ||
         response.page?.attributes?.timeline_hold ||
-        !response.timeline_fragment?.html ||
+        !layoutKey ||
+        layoutKey !== psynet.layoutKey ||
         JSON.stringify(response.page?.contents) !== JSON.stringify(expected)
       ) {
         return null;
       }
-      let fragment = psynet.prepareTimelineFragment(response.timeline_fragment);
-      let data = JSON.parse(
-        fragment.template.content.querySelector("#psynet-template-data")
-          .textContent,
-      );
-      if (
-        psynet.getMainBodyMarkup(fragment.template.content) !==
-          psynet.pageMarkup ||
-        JSON.stringify(data.jsPageModules) !==
-          JSON.stringify(psynetTemplateData.jsPageModules)
-      ) {
-        return null;
-      }
-      return fragment;
+      return psynet.prepareTimelineFragment(response.timeline_fragment);
     };
 
     psynet.adoptPredictedPage = function (fragment) {
@@ -1894,6 +1872,7 @@
       if (fragment.payload.page_uuid !== undefined) {
         window.pageUuid = fragment.payload.page_uuid;
       }
+      psynet.layoutKey = fragment.payload.layout_key ?? null;
     };
 
     psynet.deactivateTimelineFragmentLifecycle = async function () {

@@ -36,6 +36,9 @@ test("prepared trials advance while the server's replies are held back", { tag: 
     const word = experimentPage.locator("#word");
     const answer = experimentPage.locator("#answer-button");
     await expect(word).toHaveText("apple", { timeout: STEP_TIMEOUT_MS });
+    // A full page load gets its layout key from the page, not a fragment.
+    await experimentPage.reload();
+    await expect(word).toHaveText("apple", { timeout: STEP_TIMEOUT_MS });
     const gate = await responseGate(experimentPage);
 
     // Answers go one at a time; the break before the fourth trial stops the

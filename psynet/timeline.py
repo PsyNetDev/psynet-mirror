@@ -6,6 +6,7 @@ if TYPE_CHECKING:
 
 import copy
 import enum
+import hashlib
 import inspect
 import json
 import random
@@ -1516,6 +1517,7 @@ class Page(Elt):
     skip_beforeunload = False
     # Set by trial makers that prepare their trials in advance.
     upcoming_contents = None
+    _full_page_layout_key = None
 
     def __init__(
         self,
@@ -1913,6 +1915,8 @@ class Page(Elt):
         }
         if self.upcoming_contents is not None:
             attributes["upcoming_contents"] = self.upcoming_contents
+        if self._full_page_layout_key is not None:
+            attributes["layout_key"] = self._full_page_layout_key
         arrival_updates = _arrival_updates_for(self, participant)
         if arrival_updates is not None:
             attributes["arrival_updates"] = arrival_updates
@@ -2343,6 +2347,12 @@ class Page(Elt):
             raise NotImplementedError(
                 f"{type(self).__name__} delegates rendering and must override render()."
             )
+        if not partial_mode and self.upcoming_contents is not None:
+            # Fragments carry their key beside the HTML; a full page needs a
+            # partial render to compute the same key.
+            self._full_page_layout_key = self.layout_key(
+                self.render(experiment, participant, partial_mode=True)
+            )
 
         # Architecture: docs/developer/page_lifecycle.rst
         # `partial_mode` is an internal render shape used for inplace
@@ -2610,18 +2620,18 @@ class Page(Elt):
         return pos + close.end()
 
     @staticmethod
-    def _timeline_fragment_inner_html(html):
-        """Return the inner HTML of ``#psynet-timeline-fragment`` without parsing.
+    def _timeline_fragment_inner_html(html, element_id="psynet-timeline-fragment"):
+        """Return the inner HTML of the ``div`` with ``element_id`` without parsing.
 
-        Partial-mode templates emit that wrapper as the document root. Nested
-        ``div`` matching skips ``script``, ``style``, and ``template`` bodies
-        and HTML comments so JSON or markup inside those regions cannot close
-        the fragment early.
+        Partial-mode templates emit ``#psynet-timeline-fragment`` as the
+        document root. Nested ``div`` matching skips ``script``, ``style``,
+        and ``template`` bodies and HTML comments so JSON or markup inside
+        those regions cannot close the element early.
         """
-        marker = 'id="psynet-timeline-fragment"'
+        marker = f'id="{element_id}"'
         marker_idx = html.find(marker)
         if marker_idx < 0:
-            marker = "id='psynet-timeline-fragment'"
+            marker = f"id='{element_id}'"
             marker_idx = html.find(marker)
         if marker_idx < 0:
             return None
@@ -2710,6 +2720,18 @@ class Page(Elt):
             parts.append(html[open_end + 1 : skip_to])
             pos = skip_to
         return "".join(parts)
+
+    def layout_key(self, fragment_html):
+        """Identify the page's ``#main-body`` and page modules in a partial render.
+
+        A predicted trial page is only reused for the next trial if the two
+        keys match, so that the page modules' ``update`` can show it.
+        """
+        main_body = self._timeline_fragment_inner_html(fragment_html, "main-body")
+        if main_body is None:
+            return None
+        layout = json.dumps([main_body, self.js_page_modules])
+        return hashlib.sha256(layout.encode()).hexdigest()[:16]
 
     @staticmethod
     def _extract_partial_render(rendered_html):
