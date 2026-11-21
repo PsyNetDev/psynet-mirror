@@ -504,6 +504,11 @@ class StaticTrialMaker(ChainTrialMaker):
             if trial is None:
                 break
             trials.append(trial)
+            # Selection skips nodes once their trials are finalized, which
+            # trials waiting their turn aren't yet.
+            participated = participant.module_state.participated_networks
+            if trial.network_id not in participated:
+                participated.append(trial.network_id)
         logger.info(
             "Prepared %i trials for participant %i.", len(trials), participant.id
         )

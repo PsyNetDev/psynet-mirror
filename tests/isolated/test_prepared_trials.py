@@ -43,3 +43,16 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     db.session.commit()
     trial_maker.check_old_trials()
     assert [trial.failed for trial in trials] == [True] + [False] * 7
+
+
+@pytest.mark.parametrize("experiment_directory", [EXPERIMENT], indirect=True)
+@pytest.mark.usefixtures("launched_experiment")
+def test_a_break_does_not_count_towards_the_next_trial():
+    bot = BotDriver()
+    while "break" not in str(bot.get_current_page().prompt.text).lower():
+        bot.take_page()
+    # Bots report each page's time_estimate as its time_taken.
+    bot.take_page()
+    bot.take_page()
+    trial = Trial.query.filter_by(participant_id=bot.id, position=4).one()
+    assert trial.complete and trial.time_taken == 2

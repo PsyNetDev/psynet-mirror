@@ -355,6 +355,8 @@ class Elt:
     created_within_page_maker = False
     # Set on a trial's feedback page maker and everything it produces.
     _trial_feedback = False
+    # Set on the show_before_trial page maker and everything it produces.
+    _before_trial = False
 
     def __init__(self):
         self.links = {}
@@ -2043,7 +2045,8 @@ class Page(Elt):
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
-            trial=_trial_owning_page(participant),
+            # Pages before a trial don't count towards its time_taken.
+            trial=None if self._before_trial else _trial_owning_page(participant),
         )
         db.session.add(resp)
 
@@ -2972,6 +2975,8 @@ class PageMaker(Elt):
             elt.links = {**self.links, **elt.links}
             if self._trial_feedback:
                 elt._trial_feedback = True
+            if self._before_trial:
+                elt._before_trial = True
         return res
 
     def impute_time_estimates(self, elts):
