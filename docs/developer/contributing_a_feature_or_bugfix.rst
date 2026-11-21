@@ -419,9 +419,10 @@ You should write something like this:
   ]
 
 where ``<commit-hash>`` is the full 40-character hash of the commit you want to use.
-PsyNet's bootstrap and CI tooling accept only a released version or such a hash on ``Dallinger/Dallinger``, not a branch name.
+PsyNet's bootstrap and CI tooling accept only a ``>=X.Y.Z`` lower bound whose ``vX.Y.Z`` tag exists, or such a hash on ``github.com/Dallinger/Dallinger``; not a branch name.
 A commit on a fork can be used through the ``Dallinger/Dallinger`` URL once its pull request is open.
 Then run ``psynet dev ci update-dallinger-constraints`` from the PsyNet repository root to refresh the vendored CI constraints, and repeat both steps when you need newer Dallinger commits.
 
 You can find the commit hash by clicking the "Copy" button next to the commit hash on the GitHub page for the branch you want to use.
-Restore the released Dallinger version requirement before your merge request is merged.
+The pinned commit must also contain any Dallinger commit that the target branch already pins.
+Return to a lower bound only once a Dallinger release contains everything PsyNet needs, and refresh the constraints again then.
