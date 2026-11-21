@@ -46,5 +46,6 @@ class Exp(psynet.experiment.Experiment):
     test_mode = "parallel"
 
     def test_check_bots(self, bots):
+        super().test_check_bots(bots)
         assert SyncGroup.query.count() == 1
         assert all(bot.sync_group_links for bot in bots)
