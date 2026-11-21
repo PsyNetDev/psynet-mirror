@@ -1,20 +1,28 @@
 # Vocabulary test
 
-The demo presents Dutch WikiVocab, Dutch BibleVocab, and English WikiVocab.
-Each form samples equal numbers of real and fake words. The Dutch BibleVocab
-form repeats four words to score consistency. The English test has two forms
-and gives feedback after each one.
+Vocabulary tests ask participants whether each word is real or made up. This
+demo runs three: Dutch WikiVocab, Dutch BibleVocab and English WikiVocab. Each
+form shows equal numbers of real and fake words. The Dutch BibleVocab form
+repeats four words to check that participants answer consistently. The
+English test has two forms and gives feedback after each one.
 
-Each word is a static node. Each presentation, including a repeat, has its own
-trial row. Read `answer` for the real/fake choice, `time_taken` for the response
-time in seconds, and `score` for accuracy. Within a module run, `position` gives
-the presentation order and `node_id` identifies repeated presentations. A form
-contains `n_items + n_repeat_items` consecutive trials.
+## Data
 
-A form resumes at the first unanswered word after a disconnect. The open word
-keeps its original response deadline. If it expires, the form ends as incomplete
-and the trial retains its failure reason. A completed word's `time_taken` starts
-at its latest display in the answering browser. `trial.var.n_presentations`
-counts reported browser displays of that occurrence, including reloads.
+Each word is a static node, and every time a word is shown, including a
+repeat, PsyNet saves a trial. On each trial, `answer` is the participant's
+choice (`"real"` or `"fake"`), `time_taken` is the response time in seconds
+and `score` says whether the choice was correct. Within one run of a test
+(one `module_state_id`), `position` gives the order of presentation, and
+trials with the same `node_id` are repeats of the same word. Each form is
+`n_items + n_repeat_items` consecutive trials.
+
+## Interruptions
+
+If the participant disconnects, the form continues from the first unanswered
+word. The response deadline for that word doesn't restart. If it passes, the
+trial fails and the participant's experiment ends. `time_taken` runs from the
+last time the word was displayed in the browser that answered it, and
+`trial.var.n_presentations` counts how often it was displayed, including after
+reloads.
 
 See the [PsyNet documentation](https://psynetdev.gitlab.io/PsyNet/) for run instructions.

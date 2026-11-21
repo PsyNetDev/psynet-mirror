@@ -1,89 +1,134 @@
 Keeping a task on one page
 ==========================
 
-To present several trials on a single page, put a live game in your trial
-maker's ``present_trials()`` timeline. The maker assigns and records the
-trials. Your page draws each stimulus and sends the participant's answer.
-If you're still choosing how to present the task, see
-:doc:`/design/presenting_trials`.
+A fast task can present many trials on a single page. The trial maker still
+assigns, scores and saves one trial per response, as usual. A live game
+replaces the page-per-trial loop: your page draws each stimulus and sends each
+answer, and PsyNet saves it on the matching trial. If you're still deciding
+whether to do this, see :doc:`/design/presenting_trials`.
 
-For ordinary timeline submissions that preserve the interface across
-consecutive pages, give those pages the same ``session_id``. See
-:doc:`/developer/page_lifecycle` for the same-session transition behaviour.
+There are two ways to do it:
+
+- **A prepared sequence.** A :class:`~psynet.trial.static.StaticTrialMaker`
+  creates all of the participant's trials up front, and a
+  :class:`~psynet.live_game.LiveTrialGame` presents them in order. The browser
+  can receive the upcoming stimuli in advance, so the next one appears as soon
+  as the participant answers.
+- **On-demand trials.** An :class:`~psynet.live_game.OnDemandTrialGame` asks the
+  trial maker for the next trial after each answer. Use it when the answer
+  decides what comes next, as in a staircase. Each answer waits for the server
+  to choose the next trial.
+
+Both start the same way: return a :class:`~psynet.live_game.PlayLiveGame` from
+the trial maker's ``present_trials()`` method. Other steps can follow it, such
+as a feedback page::
+
+    class FlankerTrials(StaticTrialMaker):
+        def present_trials(self):
+            return join(
+                PlayLiveGame(game_class=FlankerGame, page=flanker_page),
+                PageMaker(self.feedback, time_estimate=3),
+            )
+
+For a game with exactly one player (``min_players = max_players = 1``), leave
+out ``group_type``. PsyNet then starts the game as soon as the participant
+reaches it, without waiting for a group.
+
+If you only need the interface to stay on screen between ordinary pages, you
+don't need a live game. Give the pages the same ``session_id`` instead; see
+:doc:`/developer/page_lifecycle`.
 
 .. _single-page-prepared:
 
-Presenting prepared static trials
----------------------------------
+A prepared sequence
+-------------------
 
-Use :class:`~psynet.live_game.LiveTrialGame` when each player has a fixed
-sequence from a :class:`~psynet.trial.static.StaticTrialMaker`. Put the
-:class:`~psynet.live_game.PlayLiveGame` step inside the maker's
-``present_trials()`` timeline. When the group starts, PsyNet prepares or
-reloads the native trials for each player in seat order.
+:download:`The arrow flanker demo <../../../demos/features/live_trial_game/experiment.py>`
+is a complete example.
 
-:download:`Download the flanker experiment <../../../demos/features/live_trial_game/experiment.py>` for a complete example.
+Use a :class:`~psynet.live_game.LiveTrialGame` inside a
+:class:`~psynet.trial.static.StaticTrialMaker` whose ``node_order`` fixes each
+participant's sequence. When the game starts, the maker creates the
+participant's trials for the block, or reloads them if they already exist, and
+the game presents them in order.
 
-Set ``settings={"stop": 25}`` to play up to position 25 (exclusive).
-A second step with its own game ID can omit ``stop`` to finish the full deck.
-Each session starts at the first unanswered item. The default view supplies
-the player's current ``definition``, number ``completed``, ``total`` and
-``stop``. To send trial definitions up front, set ``preload_fields`` to the
-public keys of each definition. The view then includes a ``deck`` up to the
-segment boundary and applies the same field selection to the current item.
-Override ``StaticTrialMaker.get_public_definition(trial)`` to present a
-different representation, such as the URL of a node's image asset. Sending a URL
-does not fetch the image. Declare a small fixed set of page images using
-:class:`~psynet.timeline.MediaSpec` as in the ``features/live_trial_game_images``
-bird direction demo, or start fetching upcoming images from
-the deck in your browser module as VocabTest does.
+Answering trials
+~~~~~~~~~~~~~~~~
 
-For ordinary answers, subclass :class:`~psynet.live_game.TrialAnswer` and
-register the message in the game. PsyNet validates the answer and submits it
-to the current native trial, where ``score_answer`` can score it::
+Define the answer message by subclassing :class:`~psynet.live_game.TrialAnswer`
+and narrowing the type of ``answer``. Register it in the game's ``messages``.
+PsyNet checks each answer against that type, saves it on the current trial and
+scores it with the trial's ``score_answer``::
 
     class BirdAnswer(TrialAnswer):
         answer: Literal["left", "right"]
 
     class BirdGame(LiveTrialGame):
+        min_players = max_players = 1
         messages = [BirdAnswer]
         preload_fields = ("bird",)
 
-The browser starts a local clock when the experiment displays an occurrence.
-Keep the handle until the participant answers. For example, these lines belong
-in the display and input handlers respectively:
+In the page's JavaScript, start a response clock when you display a stimulus,
+and answer through the handle it returns:
 
 .. code-block:: javascript
 
+    // When the stimulus appears:
     response = game.startResponseClock(view);
-    // On the participant's keypress:
+    // When the participant presses a key:
     response.answer("left");
 
-The handle captures the position and sends ``trial_answer`` with ``position``,
-``answer`` and browser-measured ``seconds``. Starting it sends no message.
-Start a fresh clock on redisplay, including after reload. Preserve the existing
-clock when a new server view merely confirms the same presentation. A queued
-answer suppresses duplicate input. A refused send or server rejection lets the
-current handle retry. The server checks the position and computes the score.
+The browser measures the response time from the call to
+``startResponseClock`` to the call to ``answer``, and sends both with the
+trial's position. The server checks that the position is still the current
+one, so a late or duplicated answer can't land on the next trial, even when
+the next trial shows the same stimulus. PsyNet stores the time in seconds in
+the trial's ``time_taken``.
 
-Both the arrow and bird demos explicitly opt into local prediction with
-``game.predict(game.predictTrialAnswer)``. With a public deck, the next item
-can appear immediately. With only a current definition, omit prediction and
-render the next server view via ``game.onChange``. The clock needs only the
-current definition and position. The prepared trial maker still selects the
-server-side sequence up front.
+Start a new clock whenever you display a stimulus again, including after a
+reload. Don't restart it when the server merely confirms the view you are
+already showing. A handle sends at most one answer, so repeated key presses
+are ignored. If the server rejects the answer, the same handle can send again.
 
-A custom :class:`~psynet.live_game.LiveMessage` can call
-``game.answer_trial(state, player=player, answer=value, position=position)``.
-Passing the zero-based position shown to the player rejects stale responses,
-including when the next trial repeats the same stimulus. PsyNet opens the
-first response clock, advances it after each saved answer and ends the session
-when everyone reaches their boundary.
+If you need a custom message rather than :class:`~psynet.live_game.TrialAnswer`,
+call ``game.answer_trial(state, player=player, answer=value, position=position)``
+from its ``apply`` method, passing the zero-based position the player saw.
 
-For a one-player game (both ``min_players`` and ``max_players`` are 1), omit
-``group_type`` from ``PlayLiveGame``. This starts a session directly for the
-participant. For example, the vocabulary screen plays a form and then
-applies its trial maker's existing performance check::
+Sending stimuli ahead
+~~~~~~~~~~~~~~~~~~~~~
+
+By default, the browser receives only the current trial's ``definition``,
+together with ``completed`` (the number answered), ``total`` and ``stop``. To
+show the next stimulus without waiting for the server, set ``preload_fields``
+to the definition keys the browser may see. The view then also contains a
+``deck``: those fields for each trial up to ``stop``. The same fields are the
+only ones sent for the current trial, so you can keep answer keys on the
+server.
+
+With a deck in the browser, opt into showing the next trial straight away by
+calling ``game.predict(game.predictTrialAnswer)``. Both the arrow and bird demos
+do this. Without a deck, leave out the prediction and render each new view
+from ``game.onChange``.
+
+To send something other than the stored definition, such as the URL of a
+node's image asset, override ``StaticTrialMaker.get_public_definition(trial)``.
+A URL alone doesn't download the image. For a small fixed set of images,
+declare them in the page's :class:`~psynet.timeline.MediaSpec`, as in the
+``features/live_trial_game_images`` demo. For a long or participant-specific
+set, fetch upcoming images from the deck in your page's JavaScript, as
+VocabTest does.
+
+Splitting a sequence into parts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To stop partway through, for example to show feedback, pass
+``settings={"stop": 25}``. The game then ends after the trial at position 24,
+because ``stop`` is exclusive and counts from zero. A later ``PlayLiveGame``
+step, with its own ``id_``, continues from the first unanswered trial. Leave
+out ``stop`` to finish the sequence.
+
+VocabTest uses this to play each form as a separate game, followed by the
+trial maker's performance check::
 
     join(
         PlayLiveGame(
@@ -95,50 +140,90 @@ applies its trial maker's existing performance check::
         maker.check_performance(),
     )
 
-A solo prepared segment advances when the required native trials are complete.
-If the live session ends because the participant leaves, fails to join, or
-reaches the session timeout, returning starts a session on the same open
-trial. Its original ``response_started_at`` still applies. Expiry of the
-maker's ``response_timeout_sec`` ends the segment as incomplete. Setting it
-to ``None`` leaves the response window open. Normal participant exit and
-failure rules still apply. Use ``maker.check_performance()`` in the timeline
-to run the screening check after a completed form.
+Interruptions and timeouts
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A browser can report each display (including a reload) via a message that
-calls ``game.record_trial_presentation(state, player=player, position=position)``.
-PsyNet then stores the observed display count in ``trial.var.n_presentations``.
-VocabTest's ``time_taken`` is measured from the display on which the person
-answered. Bots that supply an answer without displaying a word have no count.
+A one-player game picks up where the participant left off. If the game ends
+early because the participant left, failed to join or reached the game's
+timeout, PsyNet starts a new game on the same unanswered trial when they
+return.
 
-Each player's native trials hold their definitions and answers. Query completed
-trials by ``module_state_id`` to read responses across sessions in the same
-trial-maker run. The default session outcome and page answer are both empty
-dictionaries. Override :meth:`~psynet.live_game.LiveGame.outcome` if the game
-also produces a joint result, such as a team payoff.
+Each trial's response clock on the server starts when the game presents it,
+and doesn't restart after an interruption. If the trial maker's
+``response_timeout_sec`` passes before the participant answers, the trial
+fails and the participant's experiment ends unsuccessfully, with the failure
+tag ``incomplete_trial_segment``. Set ``response_timeout_sec=None`` to wait
+indefinitely. PsyNet's usual rules for participants who leave or fail still
+apply.
 
+To count how often a stimulus was displayed, including after reloads, have the
+page send a message whose ``apply`` calls
+``game.record_trial_presentation(state, player=player, position=position)``.
+PsyNet stores the count in ``trial.var.n_presentations``. VocabTest uses this,
+because its ``time_taken`` runs from the display on which the participant
+answered. Bots answer without displaying anything, so their trials have no
+count.
+
+Reading the results
+~~~~~~~~~~~~~~~~~~~
+
+The responses are on the trials, as for any trial maker: each has its
+``definition``, ``answer``, ``score`` and ``time_taken``. To read a
+participant's responses across several games in the same trial maker, query
+completed trials by ``module_state_id``. The game's own outcome, and the
+page's answer, are empty dictionaries. Override
+:meth:`~psynet.live_game.LiveGame.outcome` if the game also produces a joint
+result, such as a team payoff.
 
 .. _single-page-on-demand:
 
-On-demand trials on a solo game page
-------------------------------------
+On-demand trials
+----------------
 
-Return a ``PlayLiveGame`` from the maker's ``present_trials()``, with a
-:class:`~psynet.live_game.OnDemandTrialGame` subclass. Set its ``answer_type``
-to a typed ``TrialAnswer`` and implement ``bot_answer(view)`` with that type.
-In the page, subscribe with ``game.onTrial(render)`` and call
-``game.startResponseClock(view)`` when the renderer presents the stimulus.
-The same renderer can use ``onTrial`` for a prepared deck.
+:download:`The adaptive brightness demo <../../../demos/features/live_trial_game_adaptive/experiment.py>`
+is a complete example. It runs one staircase with PsyNet's
+:class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`.
 
-:download:`Download the adaptive brightness experiment <../../../demos/features/live_trial_game_adaptive/experiment.py>` for a complete example.
+Subclass :class:`~psynet.live_game.OnDemandTrialGame`. Set its ``answer_type``
+to your :class:`~psynet.live_game.TrialAnswer` subclass and implement
+``bot_answer(view)`` to return one for bots::
 
-The active maker assigns one native trial at a time. Each answer is validated
-and completed in the transaction that selects its successor. By default the
-page receives the complete saved ``trial.definition``. A maker can override
-``get_public_definition(trial)`` when presentation needs a different payload,
-such as a vocabulary image URL with the scoring key kept on the server.
-The runner manages presence and game ending. The page receives its private
-assignment in the HTTP response, with no timeline transition. The
-``features/live_trial_game_adaptive`` demo grows a within-participant chain with the
-existing geometric staircase trial maker. This path supports independent solo selections with a single custom
-renderer and synchronous scoring. Per-trial feedback, timeline controls and
-per-trial performance-check pages require the ordinary trial timeline.
+    class Choice(TrialAnswer):
+        answer: Literal["left", "right"]
+
+    class BrightnessGame(OnDemandTrialGame):
+        name = "contrast_staircase"
+        answer_type = Choice
+
+        @staticmethod
+        def bot_answer(view):
+            pair = view["definition"]
+            return Choice(
+                position=view["completed"],
+                answer="left" if pair["left"] > pair["right"] else "right",
+            )
+
+In the page, render each trial with ``game.onTrial(render)``, and call
+``game.startResponseClock(view)`` when the stimulus appears. ``onTrial`` also
+works with a prepared sequence, so one renderer can serve both.
+
+Each answer completes its trial, and the trial maker chooses the next one, in
+the same database transaction. The page receives the new trial in the reply,
+without a page transition. If the reply is lost, the page sends the same answer
+again, with its original response time. The response timeout of an on-demand
+trial starts when the trial maker selects it. If the game ends before the
+trial maker has finished, for example because the participant waited too long
+for the next trial, the participant's experiment ends unsuccessfully, with the
+failure tag ``incomplete_live_trials``.
+
+The browser receives the trial's whole ``definition`` by default. Override the
+trial maker's ``get_public_definition(trial)`` to send something else, for
+example to keep the correct answer on the server.
+
+On-demand trials currently have these limits:
+
+- Only one-player games.
+- The trial maker must score answers synchronously, and can't use
+  ``sync_group_type`` or ``check_performance_every_trial``.
+- There are no per-trial feedback or performance-check pages. Use ordinary
+  trial pages if you need them.

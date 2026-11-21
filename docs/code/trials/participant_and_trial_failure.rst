@@ -22,11 +22,14 @@ recording:
 PsyNet also fails trials itself:
 
 - when recording analysis returns ``"failed": True``;
-- when the participant has not responded ``response_timeout_sec`` seconds
-  after the response clock starts (at creation for ordinary trials, at
-  presentation for prepared trials). The trial maker defaults to five
-  minutes. Set its timeout to ``None`` for an open-ended response window. If they submit later, the answer is still stored, but the trial
-  stays failed and the participant is not failed;
+- when the participant has not responded within the trial maker's
+  ``response_timeout_sec`` (five minutes by default, or ``None`` for no
+  limit). The time runs from when the trial is first shown, or for trials
+  prepared in advance, from when a live game presents it. If the participant
+  answers later, the answer is still stored, but the trial stays failed and
+  the participant is not failed. The exception is a sequence of trials on
+  one live page, which ends the participant's experiment
+  (see :doc:`keeping_a_task_on_one_page`);
 - when the participant fails or leaves before completing the trial;
 - when background work for the trial raises an error: ``async_post_trial``
   (``failed_reason="async_post_trial_failed"``), an async job that

@@ -1,13 +1,22 @@
 # Arrow flanker
 
-Run `psynet debug local` in this directory. Use the left and right arrow keys to match the **middle** arrow. The round shuffles two copies of four patterns and presents all eight on one page. A brief blank separates successive patterns, including identical ones.
+Run `psynet debug local` in this directory. Each screen shows five arrows; press the left or right arrow key to match the **middle** one. The round shows each of four patterns twice, in a shuffled order, all on one page. A short blank separates consecutive patterns, so you can tell when the same pattern repeats.
 
-In the debug dashboard, inspect the trial table when the first pattern appears. All eight rows already have a node and a position. Answer three, wait for those rows to be marked complete, then reload the participant page. You should see the fourth pattern again. Finish the round and compare the feedback with the sum of the eight trial scores. Each row also holds the direction pressed and the time in seconds from the latest display of the pattern to the keypress.
+## What to look for
 
-[experiment.py](experiment.py) defines the nodes, scores the native trials and reads them back for feedback. [flanker.js](static/flanker.js) presents the next prepared pattern immediately while PsyNet saves the response.
+The trial maker creates all eight trials before the first pattern appears, and the page saves each answer on its own trial.
 
-For a standard trial answer, subclass `TrialAnswer` with the accepted answer type. The page calls `game.startResponseClock(view)` when it shows the arrows, then `response.answer(value)` on a keypress. It opts into immediate advancement with `game.predict(game.predictTrialAnswer)`.
+1. Open the trial table in the debug dashboard when the first pattern appears. All eight rows already exist, each with its node and position.
+2. Answer three patterns and wait until those rows are marked complete.
+3. Reload the participant page. The fourth pattern appears again.
+4. Finish the round. The feedback score is the sum of the eight trials' scores. Each trial also stores the key pressed and the response time in seconds, from when the pattern last appeared to the key press.
 
-## Extending this to images
+## How it works
 
-`preload_fields` sends the public stimulus fields for the planned trials to the browser. For images, sending a URL prepares the deck; the browser still has to fetch and decode the pixels. For a small fixed set, declare the images in the game page’s `media=MediaSpec(image=...)`; the [bird direction demo](../live_trial_game_images) preloads and decodes all six photographs before the first response. For a longer, participant-specific deck, see [VocabTest’s browser module](../../../psynet/resources/scripts/vocabtest.js) for a working example. It starts fetching the next two images while the participant answers and awaits `decode()` before showing an image and starting its response clock.
+[experiment.py](experiment.py) defines the nodes, scores each trial and reads the trials back to build the feedback. [flanker.js](static/flanker.js) shows the next pattern straight away while PsyNet saves the previous answer.
+
+The answer message subclasses `TrialAnswer`, narrowing `answer` to the two arrows. The page calls `game.startResponseClock(view)` when it shows a pattern and `response.answer(value)` when a key is pressed. It calls `game.predict(game.predictTrialAnswer)` to show the next pattern without waiting for the server.
+
+## Using images instead
+
+`preload_fields` sends the listed fields of each trial's definition to the browser in advance. For images, that would be a URL, and the browser still has to download and decode the picture. For a small fixed set, declare the images in the page's `media=MediaSpec(image=...)`, as the [bird direction demo](../live_trial_game_images) does: it downloads and decodes all six photographs before the first one appears. For a long or participant-specific set, see [VocabTest's page script](../../../psynet/resources/scripts/vocabtest.js). It downloads the next two images while the participant answers, and waits for `decode()` before showing an image and starting its response clock.

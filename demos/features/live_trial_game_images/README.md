@@ -1,16 +1,16 @@
 # Which way is the bird facing?
 
-Run `psynet debug local` in this directory in a PsyNet source checkout. Press the left or right arrow key to match the direction of the beak in each photograph. The six birds appear once each, in a shuffled order. The final page gives your score from the six saved trials.
+Run `psynet debug local` in this directory, from a PsyNet source checkout. Press the left or right arrow key to say which way each bird's beak points. Each of the six birds appears once, in a shuffled order, and the final page scores your six answers.
 
-## How the pictures get ready
+## How the photographs are loaded in advance
 
-1. In [experiment.py](experiment.py), `preload_fields = ("bird",)` sends the ordered bird IDs to the participant. The correct directions stay on the server.
-2. The page declares its six JPEGs in `MediaSpec(image=...)`. Each ID matches a hidden `<img>` on the page, so PsyNet fills that element with a local blob URL when the download completes.
-3. At `trialStart`, [birds.js](static/birds.js) awaits `decode()` on all six elements. Like the arrow demo, it uses a typed `TrialAnswer` and explicit prediction. It calls `game.startResponseClock(view)` in the frame that reveals each photograph and `response.answer(value)` on a keypress. Changing birds only toggles visibility.
+1. In [experiment.py](experiment.py), `preload_fields = ("bird",)` sends the participant's sequence of bird IDs to the browser. The correct directions stay on the server.
+2. The page lists its six JPEGs in `MediaSpec(image=...)`. Each ID matches a hidden `<img>` element on the page, and PsyNet points that element at the downloaded file.
+3. When the page starts, [birds.js](static/birds.js) waits for all six images to decode. Moving to the next bird then only hides one image and shows another. As in the arrow flanker demo, the page calls `game.startResponseClock(view)` in the frame that shows each photograph and `response.answer(value)` when a key is pressed.
 
-To see this in browser developer tools, open **Network** on the instruction page, disable the cache, select a slow connection and filter for `/static/birds/`. Press **Next**. Six JPEGs download before the first bird appears. Play through the round with the panel open. The request count stays at six while the pictures change. Reloading the game page preloads its media again and resumes at the first unanswered bird.
+To watch this happen, open the **Network** panel of your browser's developer tools on the instruction page. Disable the cache, choose a slow connection and filter for `/static/birds/`, then press **Next**. All six JPEGs download before the first bird appears, and no more requests appear as you play. If you reload the game page, it downloads the images again and continues from the first unanswered bird.
 
-The [arrow flanker](../live_trial_game) uses the same live-trial pattern with text stimuli. [VocabTest](../../../psynet/resources/scripts/vocabtest.js) shows how to fetch just the next few images for a longer deck.
+The [arrow flanker](../live_trial_game) is the same kind of task with text instead of images. For a long sequence of images, see [VocabTest's page script](../../../psynet/resources/scripts/vocabtest.js), which downloads only the next few.
 
 ## Photographs
 

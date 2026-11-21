@@ -212,16 +212,17 @@ Trials
     with the adaptive rule in a separate, testable module.
 
 `features/live_trial_game <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game>`__
-    An eight-trial arrow flanker task on one page, with prepared static trials,
-    keyboard response times and feedback from the saved scores.
+    An arrow flanker task that presents eight trials on one page. The trial
+    maker creates the trials up front, and the browser shows each one as soon
+    as the previous answer is given.
 
 `features/live_trial_game_images <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game_images>`__
-    A keyboard task using six bird photographs. The page preloads the fixed image
-    set with ``MediaSpec`` before the first bird appears.
+    The same kind of task with six bird photographs, which the page downloads
+    with ``MediaSpec`` before the first bird appears.
 
 `features/live_trial_game_adaptive <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game_adaptive>`__
-    A geometric staircase chooses the brightness gap after each response. One
-    live page presents all eight native trials from the participant’s chain.
+    A brightness staircase on one page. After each answer, a
+    ``GeometricStaircaseTrialMaker`` chooses the next brightness difference.
 
 Chains
 ------

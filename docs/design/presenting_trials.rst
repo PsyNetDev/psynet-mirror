@@ -1,10 +1,11 @@
 Trials and pages
 ================
 
-A :doc:`trial <trials>` records one participant's encounter with a stimulus.
-A :doc:`page <pages>` is a step on the participant's timeline. How the two
-fit together depends on what you want to measure and what the participant
-should do next.
+A :doc:`trial <trials>` records one participant's response to a stimulus.
+A :doc:`page <pages>` is one screen of the participant's timeline. Usually
+each trial gets its own page, but a trial can span several pages, and several
+trials can share one page. Which suits your task depends on what you want to
+measure and how quickly the participant should move on.
 
 One page per trial
 ------------------
@@ -31,10 +32,9 @@ A second page asks how confident they are.
 .. figure:: ../_static/images/design/trials/face_recognition.svg
    :alt: A recognition page followed by a confidence page. One trial spans both pages for the same face.
 
-Use several pages when the order of the responses matters. Here, asking
-about confidence on a second page lets you measure certainty about a decision
-the participant has already made. Both responses can be kept together in
-the trial for that face.
+Use several pages when the order of the responses matters. Asking about
+confidence on a second page measures certainty about a decision the
+participant has already made. The trial for that face keeps both responses.
 
 Several trials on one page
 --------------------------
@@ -46,21 +46,21 @@ it. Each swipe records a response to one painting.
 .. figure:: ../_static/images/design/trials/art_sorting.svg
    :alt: One continuous sorting page spans three trials, one for each painting.
 
-A single live page is usually the best choice for a fast-paced task where
-you need to minimise the delay between a response and the next stimulus. If the
-deck is ready in the browser, the next painting can appear as soon as the
-participant swipes. The timeline advances once, at the end of the round.
-If PsyNet needs the answer to select the next painting, the page still has
-to wait for that choice.
+Keep several trials on one page when the task is fast and the next stimulus
+should follow a response without delay. If the browser already has the
+upcoming paintings, the next one can appear the moment the participant
+swipes, and the timeline moves on only once, at the end of the round. If the
+next painting depends on the answer, as in an adaptive task, the page still
+waits for the server to choose it.
 
-The trade-off is that you build more of the front end yourself. In this
-task, you handle the swipe, animate the painting and decide when the next
-one is ready for input. Ordinary pages can also keep the interface on screen
-as the timeline advances. They take less work when a built-in control and
-a page submission per response suit the pace of your task.
+The cost is that you write more of the interface yourself. Here, you would
+handle the swipe, animate the painting and decide when the next one can take
+input. If a built-in control and one page submission per response are fast
+enough for your task, ordinary pages are less work, and they can keep the
+interface on screen between trials.
 
 .. seealso::
 
-   :doc:`/code/writing_a_trial_maker` covers trials with one or more pages.
-   :doc:`/code/trials/keeping_a_task_on_one_page` covers prepared and adaptive
-   sequences on a live page.
+   :doc:`/code/writing_a_trial_maker` shows how to give a trial one or more
+   pages. :doc:`/code/trials/keeping_a_task_on_one_page` shows how to present
+   a fixed or adaptive sequence of trials on one page.

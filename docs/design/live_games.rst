@@ -3,14 +3,21 @@
 Live games
 ==========
 
-Live games keep a page open while its state changes. A solo task can use a
-live game to show :doc:`a sequence of trials on one page <presenting_trials>`.
+A **live game** keeps one page open while the game's state changes on the
+server. It has two main uses.
 
-In a multiplayer live game, each player's moves reach the others as they
-happen. Players can respond to an offer in a negotiation, steer around a shared
-board, or fish on a lake together. The players involved in an interaction
-need to be online at the same time. For a group that makes decisions and
-reveals them together, see :doc:`rounds`.
+With several players, each move reaches the others as soon as it's made, so
+players can react to each other while they act: responding to an offer in a
+negotiation, steering around a shared board or fishing on a lake together.
+That's the reason to choose a multiplayer live game. All the players need to
+be online at the same time. If each player decides and then everyone sees the
+decisions together, :doc:`rounds <rounds>` are simpler.
+
+With one player, a live game can present
+:doc:`a sequence of trials on a single page <presenting_trials>`, so that the
+next stimulus appears without a page transition.
+
+The rest of this page is about multiplayer games.
 
 How a multiplayer game works
 ----------------------------

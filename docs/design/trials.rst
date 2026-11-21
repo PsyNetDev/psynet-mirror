@@ -32,8 +32,8 @@ The participant then moves on to another node, until the trial maker
 decides they have done enough, and they continue with the rest of the
 :doc:`timeline <timeline>`.
 
-You can present each trial on its own page or keep one page open throughout
-the task. See :doc:`presenting_trials`.
+Each trial usually has a page of its own, but a fast task can keep one page
+open for the whole sequence; see :doc:`presenting_trials`.
 
 What a node holds is up to you. Usually it is one stimulus, but it can
 equally be a question, a topic, or a condition. Trials on the same node
