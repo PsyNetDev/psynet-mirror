@@ -2693,13 +2693,22 @@ def test_a_step_without_a_game_has_a_record_that_says_so(pair, monkeypatch):
     assert members[0].live_game_history[game_barrier.id] == []
 
 
-def test_a_game_that_ended_early_has_ended_but_not_finished(pair):
-    session_id = _pair_session(pair)
-    row = db.session.get(RealtimeSession, session_id)
-    game = LiveGameRecord(session_id)
-    assert (game.ended, game.finished) == (False, False)
-    row.status, row.end_reason = "ended", PLAYERS_LEFT
-    assert (game.ended, game.finished) == (True, False)
+@pytest.mark.parametrize(
+    "status, end_reason, ended, finished",
+    [
+        ("running", None, False, False),
+        ("ended", "finished", True, True),
+        ("ended", PLAYERS_LEFT, True, False),
+        ("failed", "failed", False, False),
+    ],
+)
+def test_a_game_has_ended_whatever_its_reason_but_finished_only_for_one(
+    pair, status, end_reason, ended, finished
+):
+    row = db.session.get(RealtimeSession, _pair_session(pair))
+    row.status, row.end_reason = status, end_reason
+    game = LiveGameRecord(row.id)
+    assert (game.ended, game.finished) == (ended, finished)
 
 
 def test_the_game_page_fails_once_its_game_can_no_longer_end(pair, monkeypatch):

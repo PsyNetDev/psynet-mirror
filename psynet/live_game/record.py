@@ -108,7 +108,8 @@ class LiveGameRecord:
         whatever its :attr:`end_reason`: also for a game that ended early,
         such as because players left. Check this before reading the
         game's results; :attr:`finished` is ``True`` for only one of the
-        reasons."""
+        reasons. It's about the whole game, so it's ``False`` while the
+        game runs, also for a participant who :attr:`left_early`."""
         return self.status == "ended"
 
     @property
@@ -185,7 +186,7 @@ class LiveGameRecord:
         because the game's ``is_done`` ended it, such as when they retired,
         or because they joined after the game's ``accepts_players`` returned
         ``False`` or as the game ended. :attr:`done_reason` says why. The game may still be running, so
-        :attr:`finished` and :attr:`end_reason`, which are the whole game's,
+        :attr:`ended`, :attr:`finished` and :attr:`end_reason`, which are the whole game's,
         don't say anything about such a player."""
         return self._own_done_reason("left_early") is not None
 

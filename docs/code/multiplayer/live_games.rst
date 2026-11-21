@@ -1255,14 +1255,14 @@ A record has:
   until the game's result is saved, then ``"ended"``, or ``"failed"`` if the
   game's code raised an error or its record couldn't be saved, with the
   error in ``error``;
-- ``ended``, whether ``status`` is ``"ended"``: the game is over, for any
-  reason, and its result is saved. Check it before reading the game's
-  results;
+- ``ended``, whether ``status`` is ``"ended"``: the whole game is over, for
+  any reason, and its result is saved. Check it before reading the game's
+  results. It's ``False`` while the game runs, including for a player who
+  has left it early (see ``left_early`` below);
 - ``finished``, whether the whole game's ``end_reason`` is ``"finished"``
-  (see `Rewards`_ for the reasons), rather than early, for example because
-  players left. It's ``False`` while the game runs, including for a player
-  who has left it early, so a check of ``finished`` alone skips games that
-  ended early;
+  (see `Rewards`_ for the reasons). It's ``False`` for a game that ended
+  for any other reason, such as because players left or a reason of the
+  game's own, so a check of ``finished`` alone skips those games;
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
   ended, both ``None`` until it has ended;
 - ``answer``, the participant's answer on the game page, ``None`` until
