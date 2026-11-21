@@ -224,7 +224,8 @@ and of those among them whose latest timed page ran out of time
 the time-out as it happens in ``Participant.timed_out_since_barrier``, which
 the next barrier copies onto the visit and clears; waiting pages and a trial's
 feedback pages leave it alone (``Page._time_limit_counts``; the feedback page
-maker marks the pages it makes with ``_trial_feedback``).
+maker marks the pages it makes with ``_after_trial``, as does
+:meth:`~psynet.trial.main.TrialMaker.show_after_trial`).
 Hold overlays for members who are already waiting are still sent with the
 update, so their counts can lag until the next arrival.
 

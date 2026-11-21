@@ -355,6 +355,8 @@ class Elt:
     # Set on the page makers that run after a trial is finalized (feedback
     # and show_after_trial) and everything they produce.
     _after_trial = False
+    # Set on the show_after_trial page maker and everything it produces.
+    _between_trials = False
 
     def __init__(self):
         self.links = {}
@@ -2040,7 +2042,7 @@ class Page(Elt):
         )
         db.session.add(resp)
 
-        resp._background_parent = participant.current_trial or participant
+        resp._recording_parent = _page_trial(self, participant) or participant
 
         timed_out = self._time_limit_reached(metadata, participant)
         if timed_out:
@@ -2066,7 +2068,7 @@ class Page(Elt):
                 metadata=metadata,
                 experiment=experiment,
                 participant=participant,
-                trial=participant.current_trial,
+                trial=_page_trial(self, participant),
                 response=resp,
             )
 
@@ -2937,6 +2939,8 @@ class PageMaker(Elt):
             elt.links = {**self.links, **elt.links}
             if self._after_trial:
                 elt._after_trial = True
+            if self._between_trials:
+                elt._between_trials = True
         return res
 
     def impute_time_estimates(self, elts):
@@ -3352,6 +3356,15 @@ def estimate_duration(logic):
     # This join ensures that any modules are resolved into lists of Elts.
     elts = join(logic)
     return CreditEstimate(elts).get_max("time")
+
+
+def _page_trial(page, participant):
+    """Return the trial that ``page``'s recordings belong to, or ``None``.
+
+    Feedback pages keep the trial that just finished, but pages from
+    :meth:`~psynet.trial.main.TrialMaker.show_after_trial` don't.
+    """
+    return None if page._between_trials else participant.current_trial
 
 
 def _trial_owning_page(participant):

@@ -318,8 +318,9 @@ that just finished and returns pages to show next, or ``None``:
                 return InfoPage("Take a break.", time_estimate=5)
 
 These pages run once the trial is finalized and its feedback shown, and before
-the next trial is prepared, so they don't affect either trial. The next trial
-can't be known yet, so check ``trial.position`` rather than showing a page
+the next trial is prepared, so they don't affect either trial, and recordings
+made on them belong to the participant. They are skipped after a failed trial.
+The next trial can't be known yet, so check ``trial.position`` rather than showing a page
 after every trial, which would include the last one. Give the pages a
 ``time_estimate`` to pay for them; it doesn't move the progress bar, because
 the experiment's duration estimate doesn't include them. In trial makers with

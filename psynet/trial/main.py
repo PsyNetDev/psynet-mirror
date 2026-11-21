@@ -1699,17 +1699,27 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         time_estimate = cls._get_trial_time_estimate(trial_maker)
         after_trial = None
         if trial_maker is not None:
-            after_trial = PageMaker(
-                lambda experiment, participant: call_function_with_context(
+
+            def show_after_trial(experiment, participant):
+                trial = participant.current_trial
+                if (
+                    participant.failed
+                    or trial.failed
+                    or trial_maker._left_sync_group(participant)
+                ):
+                    return None
+                return call_function_with_context(
                     trial_maker.show_after_trial,
                     experiment=experiment,
                     participant=participant,
-                    trial=participant.current_trial,
-                ),
-                time_estimate=0,
-                label="show_after_trial",
+                    trial=trial,
+                )
+
+            after_trial = PageMaker(
+                show_after_trial, time_estimate=0, label="show_after_trial"
             )
             after_trial._after_trial = True
+            after_trial._between_trials = True
 
         return join(
             CodeBlock(cls._log_time_credit_before_trial),
@@ -2974,10 +2984,11 @@ class TrialMaker(Module):
         Return pages to show after ``trial``, such as a break, or ``None``.
 
         The pages run once the trial is finalized and its feedback shown, and
-        before the next trial is prepared, so they don't affect either trial.
-        PsyNet can't tell yet whether another trial follows, so check
-        ``trial.position`` to avoid a break after the last trial. Pages
-        without a ``time_estimate`` count as taking no time. Like
+        before the next trial is prepared, so they don't affect either trial;
+        recordings made on them belong to the participant. They are skipped
+        after a failed trial. PsyNet can't tell yet whether another trial
+        follows, so check ``trial.position`` to avoid a break after the last
+        trial. Give each page a ``time_estimate``. Like
         :meth:`~psynet.trial.main.Trial.show_trial`, the method may take any
         subset of its parameters.
 
