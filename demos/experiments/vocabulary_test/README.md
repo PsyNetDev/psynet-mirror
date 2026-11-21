@@ -16,13 +16,18 @@ and `score` says whether the choice was correct. Within one run of a test
 trials with the same `node_id` are repeats of the same word. Each form is
 `n_items + n_repeat_items` consecutive trials.
 
+## How it works
+
+Every word's page has the same HTML, so the browser keeps the page and the
+page script `vocabtest.js` only swaps in the next word. The tests prepare each
+participant's words in advance, so the next word appears after the lag without
+waiting for the server, and the next images are fetched while the participant
+answers. Answers go to the server in the background, one at a time.
+
 ## Interruptions
 
-If the participant disconnects, the form continues from the first unanswered
-word. The response deadline for that word doesn't restart. If it passes, the
-trial fails, but the participant can still answer and carry on. `time_taken` runs from the
-last time the word was displayed in the browser that answered it, and
-`trial.n_presentations` counts how often it was displayed, including after
-reloads.
+If the participant reloads or disconnects, the form continues from the first
+unanswered word. The response deadline for that word doesn't restart, and
+`time_taken` runs from when the word last appeared on screen.
 
 See the [PsyNet documentation](https://psynetdev.gitlab.io/PsyNet/) for run instructions.

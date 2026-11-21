@@ -11,10 +11,12 @@ from typing import Optional, Type
 
 import arabic_reshaper
 import requests
+from dominate import tags
 from markupsafe import Markup
 from yaspin import yaspin
 
 from psynet.asset import OnDemandAsset
+from psynet.modular_page import ModularPage
 from psynet.page import InfoPage
 from psynet.timeline import join
 from psynet.translation.keyboards import KeyboardPage
@@ -228,10 +230,15 @@ locale2bible_tag = {
 biblevocab_locales = list(locale2bible_tag.values())
 
 
+_ = get_translator()
+
+
 class VocabTrial(StaticTrial):
     """One presentation of a vocabulary item, including a repeated presentation."""
 
     time_estimate = 1.8
+    # The feedback after a form's last word adds to that trial's time.
+    check_time_credit_received = False
 
     @staticmethod
     def score_answer(answer, definition):
@@ -239,8 +246,28 @@ class VocabTrial(StaticTrial):
             answer == ("real" if definition["correct_answer"] == "correct" else "fake")
         )
 
+    def show_trial(self, experiment, participant):
+        return self.trial_maker.word_page(self)
 
-_ = get_translator()
+    def ends_form(self):
+        """Return whether this is the last presentation of its form."""
+        return (self.position + 1) % self.trial_maker.form_size == 0
+
+    def gives_feedback(self, experiment, participant):
+        return self.trial_maker.show_feedback and self.ends_form()
+
+    def show_feedback(self, experiment, participant):
+        maker = self.trial_maker
+        score = maker.score_form(
+            maker.get_participant_trials(participant), self.position + 1
+        )
+        return InfoPage(
+            _("Your score was")
+            + f" {score:.0%}. "
+            + _("Press the button to continue."),
+            time_estimate=5,
+        )
+
 
 default_test_config = {
     "image_width": 500,
@@ -440,6 +467,8 @@ class VocabTest(StaticTrialMaker):
             max_trials_per_participant=count,
             node_order=self.word_order,
             allow_repeated_nodes=True,
+            check_performance_at_end=True,
+            prepare_trials_in_advance=True,
         )
 
     @property
@@ -473,11 +502,6 @@ class VocabTest(StaticTrialMaker):
             visits.update(node.id for node in form)
         return order
 
-    def present_trials(self):
-        from .vocab_live import present_forms
-
-        return present_forms(self)
-
     def word_node(self, item):
         if not self.present_as_image:
             return StaticNode(definition=item)
@@ -500,10 +524,58 @@ class VocabTest(StaticTrialMaker):
         )
         return StaticNode(definition=item, assets={"image": image})
 
-    def get_public_definition(self, trial):
+    def word_page(self, trial):
+        """Return the page for one word; every word's page has the same HTML."""
+
+        def choice(value, label, key):
+            caption = f"{label} ({key})" if self.use_keyboard else label
+            if self.use_buttons:
+                return tags.button(
+                    caption,
+                    type="button",
+                    disabled=True,
+                    data_choice=value,
+                    cls="btn btn-outline-secondary mx-1",
+                )
+            return tags.span(caption, cls="mx-2")
+
+        height = self.image_height if self.present_as_image else 260
         if self.present_as_image:
-            return {"image": trial.node.assets["image"].url}
-        return {"stimulus": trial.definition["stimulus"]}
+            contents = {"image": trial.node.assets["image"].url}
+        else:
+            contents = {"stimulus": trial.definition["stimulus"]}
+        return ModularPage(
+            "vocabtest",
+            tags.div(
+                tags.div(
+                    id="test-stimulus",
+                    role="status",
+                    style=(
+                        f"min-height:min({height}px,55vh);display:grid;place-items:center;"
+                        "font-size:clamp(2rem,7vw,5rem);font-weight:bold"
+                    ),
+                ),
+                choice("real", _("Real"), self.true_key_label),
+                choice("fake", _("Fake"), self.false_key_label),
+                cls="text-center",
+            ),
+            contents=contents,
+            js_vars={
+                "vocab": {
+                    "trueKey": self.true_key_button,
+                    "falseKey": self.false_key_button,
+                    "keyboard": self.use_keyboard,
+                    "buttons": self.use_buttons,
+                    "hideAfter": self.hide_after,
+                    "lag": self.lag_between_items,
+                    "width": getattr(self, "image_width", None),
+                }
+            },
+            js_page_modules=["/static/scripts/vocabtest.js"],
+            show_next_button=False,
+            bot_response=lambda: random.choice(["real", "fake"]),
+            time_estimate=self.trial_class.time_estimate,
+        )
 
     @staticmethod
     def get_font_path(font_url):
@@ -555,19 +627,12 @@ class VocabTest(StaticTrialMaker):
         )
         return use_arabic_script, image_width, image_height, font_size
 
-    def score_form(self, participant, trials):
-        """Score the just-finished form by presentation position within this run."""
-        state = participant.module_state
-        stop = state.n_completed_trials
-        if not stop or stop % self.form_size:
-            return 0
-        form = [
-            trial
-            for trial in trials
-            if trial.module_state_id == state.id
-            and stop - self.form_size <= trial.position < stop
-        ]
-        form.sort(key=lambda trial: trial.position)
+    def score_form(self, trials, stop):
+        """Score the form that ends just before position ``stop``."""
+        form = sorted(
+            (t for t in trials if stop - self.form_size <= t.position < stop),
+            key=lambda t: t.position,
+        )
         if len(form) != self.form_size or any(
             not t.complete or t.failed or t.answer not in ("real", "fake") for t in form
         ):
@@ -581,11 +646,22 @@ class VocabTest(StaticTrialMaker):
             )
         return sum(t.score for t in originals) / len(originals)
 
-    def performance_check(self, experiment, participant, participant_trials):
-        score = self.score_form(participant, participant_trials)
+    def _passes(self, score):
         threshold = self.performance_threshold_per_trial
-        passed = threshold is None or score >= threshold
-        return {"score": score, "passed": passed}
+        return threshold is None or score >= threshold
+
+    def show_before_trial(self, participant, trial):
+        """End the test before the next form if the participant failed the last one."""
+        if trial.position == 0 or trial.position % self.form_size:
+            return None
+        score = self.score_form(
+            self.get_participant_trials(participant), trial.position
+        )
+        return None if self._passes(score) else self.check_fail_logic()
+
+    def performance_check(self, experiment, participant, participant_trials):
+        score = self.score_form(participant_trials, self.n_trials * self.form_size)
+        return {"score": score, "passed": self._passes(score)}
 
     @classmethod
     def get_language_name(self, test_locale):

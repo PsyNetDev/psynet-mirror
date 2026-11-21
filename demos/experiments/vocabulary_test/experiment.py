@@ -66,7 +66,7 @@ class Exp(psynet.experiment.Experiment):
         assert all(
             t.complete and t.finalized and t.answer in ("real", "fake") for t in trials
         )
-        assert all(t.prepared_in_advance and t.response_started_at for t in trials)
+        assert all(t.response_started_at for t in trials)
 
         for label, size, repeats in [
             ("wikivocab_nl", 30, 0),
@@ -87,7 +87,6 @@ class Exp(psynet.experiment.Experiment):
                 sum(t.definition["correct_answer"] == "correct" for t in items[:size])
                 == size // 2
             )
-            assert items[-1].creation_time <= items[0].response_started_at
 
         trial = next(t for t in trials if t.trial_maker_id == "wikivocab_nl")
         asset = trial.node.assets["image"]

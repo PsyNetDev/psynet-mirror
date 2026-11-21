@@ -48,61 +48,38 @@ def words(maker, answers, offset=0):
 def test_form_scores_native_trials_and_repeated_nodes(tmp_path, kind, expected):
     maker = _make_vocab_test(tmp_path, performance_check_type=kind, n_repeat_items=2)
     form = words(maker, ["real", "real", "fake", "fake", "real", "fake"])
-    participant = SimpleNamespace(
-        module_state=SimpleNamespace(id=7, n_completed_trials=6)
-    )
-    assert maker.score_form(participant, list(reversed(form))) == expected
-    assert maker.score_form(participant, form[:-1]) == 0
+    assert maker.score_form(list(reversed(form)), 6) == expected
+    assert maker.score_form(form[:-1], 6) == 0
     form[0].failed = True
-    assert maker.score_form(participant, form) == 0
+    assert maker.score_form(form, 6) == 0
 
 
-def test_performance_check_uses_latest_form_in_this_run(tmp_path):
-    maker = _make_vocab_test(tmp_path, n_trials=2, performance_threshold_per_trial=1)
+def test_a_failed_form_ends_the_test_before_the_next_one(tmp_path):
+    maker = _make_vocab_test(tmp_path, n_trials=3, performance_threshold_per_trial=1)
     correct = ["real", "real", "fake", "fake"]
-    first = words(maker, correct)
-    second = words(maker, ["fake"] * 4, offset=4)
-    participant = SimpleNamespace(
-        module_state=SimpleNamespace(id=7, n_completed_trials=4)
+    trials = (
+        words(maker, correct)
+        + words(maker, ["fake"] * 4, offset=4)
+        + words(maker, correct, offset=8)
     )
-    assert maker.performance_check(None, participant, first + second)["passed"]
-    participant.module_state.n_completed_trials = 8
-    other_run = words(maker, correct, offset=4)
-    for trial in other_run:
-        trial.module_state_id = 8
-    assert maker.performance_check(None, participant, first + second + other_run) == {
-        "score": 0.5,
-        "passed": False,
-    }
+    maker.get_participant_trials = lambda participant: trials
+    assert maker.show_before_trial(None, trials[4]) is None
+    assert maker.show_before_trial(None, trials[5]) is None
+    assert maker.show_before_trial(None, trials[8]) is not None
+    assert maker.performance_check(None, None, trials) == {"score": 1, "passed": True}
 
 
-@pytest.mark.parametrize(
-    "public_word", [{"image": "/asset/example"}, {"stimulus": "cat"}]
-)
-def test_repeat_uses_presentation_position_without_exposing_identifiers(public_word):
-    from psynet.live_game import Reject
-    from psynet.live_game.testing import LocalGame
-    from psynet.prescreen.vocab_live import VocabularyGame, WordResponse
-
-    word = {**public_word, "correct_answer": "correct"}
-    plan = {
-        "definitions": [word, word, word],
-        "_trial_ids": [40, 41, 42],
-        "completed": 1,
-    }
-    session = LocalGame(
-        VocabularyGame, players=1, settings={"plans": [plan], "stop": 2}
-    )
-    view = session.view(0)
-    assert view["completed"] == 1
-    assert view["definition"] == public_word and view["deck"] == [
-        public_word,
-        public_word,
+def test_word_pages_share_their_html_and_hide_the_answer(tmp_path):
+    maker = _make_vocab_test(tmp_path)
+    pages = [
+        maker.word_page(SimpleNamespace(definition=node.definition))
+        for node in maker.start_nodes[:2]
     ]
-    with pytest.raises(Reject, match="no longer current"):
-        session.send(0, WordResponse(position=0, answer="fake"))
-    session.send(0, WordResponse(position=1, answer="real"))
-    assert session.is_over()
+    assert [page.contents for page in pages] == [
+        {"stimulus": "cat"},
+        {"stimulus": "dog"},
+    ]
+    assert pages[0].prompt.text.render() == pages[1].prompt.text.render()
 
 
 def test_vocab_test_rejects_sync_groups(tmp_path):
