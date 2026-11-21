@@ -284,6 +284,12 @@ per-bot traits on ``bot.var`` in ``initialize_bot`` rather than in globals or
 on ``self``, and avoid calling ``random.seed()`` from experiment code. To
 measure how the server performs under load, see :doc:`scalability`.
 
+Bots answer pages instantly by default (``test_time_factor = 0``), except
+that they stay at least 0.25 s on each page shown while they wait at a
+barrier, such as the pages of a grouper's ``waiting_logic``. Without that
+pause, one of the waiting bots would always be mid-request, and the barrier
+could never group or release them.
+
 Testing on a remote server
 --------------------------
 
