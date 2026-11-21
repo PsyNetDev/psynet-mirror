@@ -26,7 +26,8 @@ The Playwright jobs reuse the same balancing: ``playwright-files`` prints the
 spec files for one shard, because Playwright's own ``--shard`` splits by test
 count, and a single spec of 40 sub-second layout tests then fills a shard.
 Playwright durations are keyed ``<spec>::<mode>`` since the default and
-legacy jobs select different tests from the same files.
+legacy jobs select different tests from the same files. They come from the
+chromium jobs only; shards of the other browser projects reuse them.
 
 Refresh the durations after the suite changes noticeably with
 ``psynet dev ci update-test-durations``, passing the ``ci_durations_*.json``
@@ -240,23 +241,22 @@ def _stop_starting_processes():
         return list(_running)
 
 
-def _stop_running_processes(processes, threads):
-    """Terminate ``processes`` and wait for the workers.
+def _stop_running_processes(processes, done_events):
+    """Terminate ``processes`` and wait for the workers to set ``done_events``.
 
     Processes still running after a grace period are killed. Workers that
     are still blocked after that, e.g. on a pipe held open by a
     grandchild, are abandoned; they are daemon threads.
     """
-    threads = [thread for thread in threads if thread.ident is not None]
     for process in processes:
         process.terminate()
     deadline = time.monotonic() + _STOP_GRACE_S
-    for thread in threads:
-        thread.join(max(0, deadline - time.monotonic()))
+    for done in done_events:
+        done.wait(max(0, deadline - time.monotonic()))
     for process in processes:
         process.kill()
-    for thread in threads:
-        thread.join(5)
+    for done in done_events:
+        done.wait(5)
 
 
 def _run_item(item, slot, timeout, junit_dir, python_version):
@@ -306,7 +306,13 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
     print_lock = threading.Lock()
     results = []
 
-    def worker(slot):
+    def worker(slot, done):
+        try:
+            run_queued_items(slot)
+        finally:
+            done.set()
+
+    def run_queued_items(slot):
         while True:
             with lock:
                 if not queue:
@@ -340,21 +346,24 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
 
     _stopping.clear()
     slots = []
-    threads = []
+    # Workers are awaited through these events rather than Thread.join():
+    # Python 3.11 and 3.12 mark a thread as stopped when a signal interrupts
+    # its join(), so every later join() returns at once.
+    workers = []
     ignored_signals = {}
     try:
         with _exit_on_termination_signal():
             for index in range(n_slots):
                 slots.append(_Slot(index))
-            threads = [
-                threading.Thread(target=worker, args=(slot,), daemon=True)
-                for slot in slots
-            ]
-            for thread in threads:
+            for slot in slots:
+                done = threading.Event()
+                thread = threading.Thread(target=worker, args=(slot, done), daemon=True)
+                workers.append((thread, done))
                 thread.start()
-            for thread in threads:
-                thread.join()
+            for _, done in workers:
+                done.wait()
     except BaseException as e:
+        done_events = [done for thread, done in workers if thread.ident is not None]
         # Emptying the queue stops workers from starting new items. This must
         # happen before SIGTERM is ignored, which new processes would inherit.
         with lock:
@@ -366,11 +375,10 @@ def run_items(items, n_slots, timeout, junit_dir, python_version, log_dir):
         # Ctrl+C in the terminal also interrupts the running pytest processes;
         # SIGTERM and SIGHUP reach only this process, so they are passed on.
         if isinstance(e, KeyboardInterrupt):
-            for thread in threads:
-                if thread.ident is not None:
-                    thread.join()
+            for done in done_events:
+                done.wait()
         else:
-            _stop_running_processes(processes, threads)
+            _stop_running_processes(processes, done_events)
         raise
     finally:
         for slot in slots:
@@ -453,13 +461,20 @@ def playwright_files_command(mode, node_total, node_index):
 
 
 def _playwright_junit_durations(path):
-    """Sum test times per spec file in a ``playwright-<mode>-<shard>-junit.xml`` report."""
+    """Sum test times per spec file in a ``playwright-<mode>-<project>-<shard>-junit.xml`` report.
+
+    Reports of browser projects other than chromium give no durations.
+    """
     import xml.etree.ElementTree as ET
 
-    match = re.search(r"(default|legacy)", Path(path).name)
+    match = re.search(r"playwright-(default|legacy)-([a-z]+)-", Path(path).name)
     if match is None:
-        raise click.ClickException(f"Cannot tell the Playwright mode of {path}.")
-    mode = match.group(1)
+        raise click.ClickException(
+            f"Cannot tell the Playwright mode and project of {path}."
+        )
+    mode, project = match.groups()
+    if project != "chromium":
+        return {}
     durations = {}
     for case in ET.parse(path).getroot().iter("testcase"):
         key = _playwright_key(f"{PLAYWRIGHT_DIR}/{case.get('classname')}", mode)
@@ -471,7 +486,7 @@ def update_test_durations_command(paths):
     """Merge duration artifacts into :data:`DURATIONS_PATH`.
 
     Accepts the JSON files written by ``run-tests`` and the
-    ``playwright-<mode>-<shard>-junit.xml`` reports of the Playwright jobs. Entries
+    ``playwright-<mode>-<project>-<shard>-junit.xml`` reports of the Playwright jobs. Entries
     for paths that no longer exist are dropped.
     """
     samples = {}

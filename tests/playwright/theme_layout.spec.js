@@ -10,7 +10,7 @@ const path = require("path");
 const { test, expect } = require("./fixtures");
 
 const JQUERY_JS = fs.readFileSync(
-  path.resolve("psynet/resources/libraries/jQuery/jquery-3.7.1.min.js"),
+  path.resolve("psynet/resources/libraries/jQuery/jquery-4.0.0.min.js"),
   "utf8"
 );
 const THEME_CSS = fs.readFileSync(
@@ -1569,7 +1569,13 @@ async function renderThemedText(page) {
 test(
   "text does not resize when Inter replaces the fallback font",
   { tag: "@both" },
-  async ({ page }) => {
+  async ({ page, browserName }) => {
+    test.fail(
+      browserName !== "chromium",
+      "Found with Dallinger#10095: Firefox does not report the theme's " +
+        "declared fallback face; on WebKit, the title wraps onto two lines " +
+        "with the fallback and one with Inter."
+    );
     await page.setViewportSize({ width: 1280, height: 720 });
     await renderThemedText(page);
 

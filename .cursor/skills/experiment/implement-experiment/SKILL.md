@@ -103,7 +103,7 @@ Prefer **`psynet setup`** as the general-purpose route for creating and
 refreshing experiment files and the constrained environment. Do not hand-write
 boilerplate (`Dockerfile`, `test.py`, `.gitignore`, `deploy.toml`, managed
 skills) when setup/scaffold can produce it. Experiment-local `docker/` helper
-scripts are obsolete; use `psynet debug local --docker`.
+scripts are obsolete; use `psynet debug local --docker --no-browsers`.
 
 Canonical setup guidance: `code/project/agentic_programming` (see Read first)
 and the experiment's `AGENTS.md`, which `psynet setup` writes.
@@ -136,8 +136,9 @@ installs the experiment runtime (`psynet[experiment]`), and initializes Git when
 needed. Without a terminal, setup stops if the folder has no `experiment.py`
 and contains files that aren't part of a PsyNet experiment (`static/`,
 `audit/`, `uv init` files, licence files and caches are fine); if those files belong to this experiment, re-run
-with `psynet setup --yes`. After setup, use `psynet debug local --docker`
-when the experiment should run in Docker mode.
+with `psynet setup --yes`. After setup, use
+`psynet debug local --docker --no-browsers` when the experiment should run in
+Docker mode.
 
 When splitting logic out of `experiment.py`, follow
 `develop-experiment-back-end/SKILL.md`: import sibling modules with
@@ -168,20 +169,20 @@ PsyNet. Do not treat `scripts update` as a substitute for first-time setup.
 
 - Confirm `psynet --version`, then `psynet services ensure` (or let
   `psynet debug` / `psynet test local` ensure services).
-- Launch with `psynet debug local` or validate with `psynet test local`.
+- Launch with `psynet debug local --no-browsers` or validate with
+  `psynet test local`.
 
 **One `psynet debug local` at a time**
 
 `psynet test local`, `psynet audit simulate` and `psynet performance-test local`
 run in their own database, Redis and port, so they can run alongside another
 experiment. `psynet debug local` sessions share port 5000, the database, Redis
-and Dallinger's development folder, and starting one stops the other's
-workers. Before `psynet debug local`, check that nothing else is listening on
+and Dallinger's development folder, so a second one refuses to start while
+another is running. Before `psynet debug local`, check that nothing else is listening on
 port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If another experiment is
 running, ask the user to stop it rather than stopping it yourself, and record
 the wait in the audit timeline. Remote launches (`psynet deploy ssh`,
-`psynet deploy heroku`, `psynet debug ssh`, `psynet debug heroku` and
-`psynet performance-test ssh`) prepare in a scratch database and Redis of
+`psynet debug ssh` and `psynet performance-test ssh`) prepare in a scratch database and Redis of
 their own, so they leave local data alone, but they don't run at the same time
 as a local server or test session in the same directory.
 

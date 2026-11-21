@@ -169,7 +169,7 @@ says why they left (see
 participant out of their group of that type, for example after their last
 round. The list has no guaranteed
 order. When you need a stable one, for example to assign roles or turns,
-use :func:`group_seats(group) <psynet.sync.group_seats>`, which numbers
+use :attr:`group.seats <psynet.sync.SyncGroup.seats>`, which numbers
 everyone who has been in the group by when they joined, and keeps the
 numbers when members leave (see the ``story_chain`` demo).
 ``sync_group.leader`` is the group's leader.
@@ -680,7 +680,7 @@ have answered get a tick. A member has answered once they wait at a barrier
 of the group, typically the barrier
 after the decision page. A member who reached the barrier because their
 page's time limit ran out gets a grey dash instead
-(:func:`~psynet.sync.reached_barrier_after_time_limit`), and screen readers announce
+(:meth:`~psynet.sync.SyncGroup.reached_barrier_after_time_limit`), and screen readers announce
 that they ran out of time. Pass ``show_progress=False`` to
 hide the ticks.
 
@@ -711,9 +711,10 @@ bubble, as a dictionary from participant ID to answer; ``show_progress``
 then defaults to ``False``, and passing ``show_progress=True`` with
 ``answers`` raises an error. A member whose answer is
 ``None``, for example because they ran out of time, keeps their seat
-without a bubble. Participant variables
-store dictionary keys as strings, so a dictionary read back from one can be
-passed as it is; ``highlight`` takes string IDs too. Speech bubbles may
+without a bubble. Both ``answers`` and ``highlight`` are keyed by integer
+participant IDs; variables keep the type of their keys, so a dictionary
+stored as ``{t.participant_id: t.answer for t in trials}`` can be passed as
+it is. Speech bubbles may
 overlap a neighbour; hovering over or tapping a member brings their bubble to
 the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for
 HTML such as an image. ``highlight`` marks members, with built-in styles for
@@ -836,7 +837,7 @@ are fixed or formed anew each round. For a worked example, with the
 group's results in ``group_round.var`` and the exports, see
 :ref:`rounds-one-trial-per-player` in the round-based tutorial. For a group
 that works through a stimulus set or a chain, use a trial maker with
-``sync_group_type`` instead (see :ref:`concept_groups` for how to choose,
+``sync_group_type`` instead (see :ref:`design-rounds-cued-or-synced` for how to choose,
 and :ref:`rounds of a trial maker <trial-maker-rounds>`).
 
 ``cue`` numbers each group's rounds by itself, from 0:
@@ -1224,9 +1225,14 @@ the maximum waiting time:
 
     A member who has started a page with a ``time_limit``, other than a
     waiting page, since the group last passed a barrier (or since being
-    admitted) is not late until that limit has run out plus 10 seconds, so
-    that an answer sent at the deadline can arrive. So the late limit need not be
-    longer than the pages' time limits. See
+    admitted) has their late limit counted from when that limit runs out plus
+    10 seconds, so that an answer sent at the deadline can arrive. So the late
+    limit needs to cover only the pages without a time limit: with a
+    30-second page and ``late_after=20``, a member who closes their tab on
+    the page is late 60 seconds after it started. A page without a time limit can say
+    when it ends at the latest with :meth:`~psynet.timeline.Page.ends_by`,
+    which counts in the same way; a live game's page does this (see
+    :doc:`live_games`). See
     :ref:`a worked example <rounds-slow-players>`.
 
     At a group's first barrier the late limit counts from when each member
@@ -1405,8 +1411,10 @@ settings together decide both fates:
 ``"fail"`` stops a pair or group from carrying on short-handed. Combined
 with ``late_action="leave_group"`` it would let the late member carry on
 while failing the partner who was on time, so the experiment rejects that
-combination when it loads; for a barrier it can't see then, such as one
-built in ``show_trial``, PsyNet logs a warning when it happens. To let the
+combination when it loads. A barrier built in ``show_trial`` is checked when
+the trial is shown, which raises the same error; for one built in a
+``for_loop`` or another ``PageMaker``, PsyNet logs a warning when it
+happens. To let the
 members who were on time carry on, set
 ``below_quorum="continue_without_group"`` on the grouper:
 
@@ -1552,7 +1560,7 @@ group admits them. A pending member holds a seat, so the group's
 ``max_group_size`` counts them, but nothing else counts them: not the
 quorum, the barriers, the choice of leader,
 :class:`~psynet.group_prompt.GroupPrompt` or
-:func:`~psynet.sync.group_seats`. The group's other barriers let them
+:attr:`~psynet.sync.SyncGroup.seats`. The group's other barriers let them
 straight through, and a cue by a pending member raises an error. The
 admission points are:
 
@@ -1725,7 +1733,8 @@ For the rest of the timeline:
   needs another room, or none, then.
 - ``participant.sync_group_removal_reason("pair")`` says why they left:
   ``"late"``, ``"waited_too_long"``, ``"no_group_formed"`` (a grouper found
-  them no group in time), ``"group_dissolved"``, ``"moved_on"`` (a
+  them no group in time), ``"no_show"`` or ``"left_game"`` (they didn't play
+  a live game, see :ref:`live-games-absent`), ``"group_dissolved"``, ``"moved_on"`` (a
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
   ``"finished"``, ``"not_admitted"`` (they were turned away before an

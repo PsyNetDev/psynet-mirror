@@ -45,8 +45,11 @@ from psynet.perf_test.measure import (
     bot_duration_stats,
     bot_outcome_stats,
     configured_worker_processes,
+    count_non_bot_participants,
     count_rq_workers,
     database_rows,
+    live_game_snapshot,
+    live_game_stats,
     phase_stats,
     request_stats,
     wait_for_async_jobs,
@@ -149,7 +152,8 @@ class _BotState:
     # Bots that finished during the test after the experiment failed them.
     bots_failed_during_test: int = 0
     total_bot_errors: int = 0
-    errored_bot_ids: set = field(default_factory=set)
+    # The time.time() at which each bot that raised an error did so, by its ID.
+    errored_bots: dict = field(default_factory=dict)
     # Short description of each failure, e.g. "HTTP 500 on /response".
     bot_error_kinds: Counter = field(default_factory=Counter)
     # (bot_id, duration_s, stopped_by_test_end) of each finished bot.
@@ -507,6 +511,7 @@ class PerformanceTester:
                 actual_duration = time.time() - start_time
                 last_request_id = self._max_request_id()
                 ended_at = datetime.datetime.now()
+                live_games = live_game_snapshot()
             finally:
                 self._stop_bots(bot_state)
         self._clear_realtime_status()
@@ -520,6 +525,7 @@ class PerformanceTester:
             bot_state,
             last_request_id,
             ended_at,
+            live_games,
         )
 
     @staticmethod
@@ -545,6 +551,7 @@ class PerformanceTester:
         max_participant_id = db.session.query(func.max(Participant.id)).scalar() or 0
 
         db_rows = database_rows()
+        live_games = live_game_snapshot()
         # Don't hold locks on the growing tables, which would block
         # autovacuum, for the whole test.
         db.session.rollback()
@@ -553,6 +560,7 @@ class PerformanceTester:
             "max_async_job_id": max_async_job_id,
             "max_participant_id": max_participant_id,
             "db_rows": db_rows,
+            "live_games": live_games,
         }
 
     def _bounded_random_multiplier(self, max_multiplier=3.0):
@@ -679,7 +687,7 @@ class PerformanceTester:
                 bot_state.total_bot_errors += 1
                 bot_state.bot_error_kinds[error_kind] += 1
                 if bot_id is not None:
-                    bot_state.errored_bot_ids.add(bot_id)
+                    bot_state.errored_bots[bot_id] = now
             elif outcome == "completed" and now < end_time:
                 bot_state.bots_completed_during_test += 1
                 if bot_state.first_completed_at is None:
@@ -831,11 +839,13 @@ class PerformanceTester:
         bot_state,
         last_request_id,
         ended_at,
+        live_games,
     ):
         """Calculate final metrics and report results.
 
         Request statistics cover requests logged up to ``last_request_id``, i.e.
         before the bots were stopped, so that they match ``actual_duration``.
+        Likewise, live games count up to the ``live_games`` snapshot taken then.
         Async jobs count if they started by ``ended_at``. For each priority,
         ``queue_waits`` also records the jobs enqueued during the test that
         were still waiting for a worker at ``ended_at`` and how long the
@@ -855,7 +865,7 @@ class PerformanceTester:
         )
         async_job_summary = async_job_stats(initial_state["max_async_job_id"], ended_at)
         outcomes, bot_stats = bot_outcome_stats(
-            initial_state["max_participant_id"], bot_state.errored_bot_ids
+            initial_state["max_participant_id"], bot_state.errored_bots
         )
         total_requests = request_summary["total_requests"]
         result = PerformanceTestResult(
@@ -886,6 +896,7 @@ class PerformanceTester:
             **bot_stats,
             **bot_duration_stats(bot_state.bot_durations, outcomes),
         )
+        steady_from = None
         completed_at = bot_state.first_completed_at
         if completed_at is not None:
             result.first_completion_s = completed_at - start_time
@@ -901,6 +912,17 @@ class PerformanceTester:
                 result.worker_load = worker_load(
                     initial_state["max_async_job_id"], ended_at, steady_from, outcomes
                 )
+        result.live_games = live_game_stats(
+            initial_state["live_games"],
+            live_games,
+            bot_state.errored_bots,
+            startup_bot_ids={
+                bot_id
+                for bot_id, at in bot_state.errored_bots.items()
+                if steady_from is not None and at < completed_at
+            },
+        )
+        result.non_bot_participants = count_non_bot_participants()
         result.n_rq_workers, result.n_rq_job_slots = count_rq_workers()
         result.configured_worker_processes = configured_worker_processes()
         result.server_cores = os.cpu_count()

@@ -8,7 +8,7 @@ Then act on the following PsyNet developer instructions:
 
 ## Source checkout setup
 
-Install PsyNet in editable mode with `uv pip install -e '.[dev,demos,slack]'`.
+Install PsyNet in editable mode with `uv pip install -e '.[dev,demos]'`.
 
 Demo directories contain only the authored experiment files; their unpinned
 `requirements.txt` files and missing constraints are intentional. Running
@@ -301,14 +301,37 @@ Non-trivial code changes should be tested.
 Prefer red/green test-driven development, but avoid committing overly verbose tests in the final PR.
 Implement sensible unit tests where appropriate.
 Verify changes end-to-end by running `psynet test local` within a relevant demo.
-Each `psynet test local` run gets its own database, Redis server and port, so
-several can run at once, including from agents working in other worktrees.
-Runs in the same experiment directory wait for each other automatically. Don't
-queue test runs behind your own lock or wait for other agents' tests to finish.
 Prefer concise tests that exercise real/public interfaces.
 Avoid very long tests with extensive monkeypatching unless there is no practical
 alternative; if monkeypatching is necessary, keep it minimal and focused on
 observable behavior rather than internal implementation details.
+
+### Running work in parallel
+
+`pytest` from this checkout and each `psynet test local` run get their own
+database, Redis server and port, so several can run at once, including from
+agents working in other worktrees. Test sessions in the same experiment
+directory wait for each other automatically. Don't queue test runs behind your
+own lock or wait for other agents' tests to finish. A test session and a
+`psynet debug local` server (with or without `--isolated`) refuse to share an
+experiment directory, because both replace its generated files; to test an
+experiment while debugging it, run the tests from a git worktree.
+
+To test another branch without switching this checkout, use a git worktree.
+Set `PYTHONPATH` for both `pytest` and `psynet` commands there, because the
+editable install points at this checkout:
+
+```bash
+git worktree add /tmp/wt-<branch> <branch>
+cd /tmp/wt-<branch> && PYTHONPATH=/tmp/wt-<branch> python -m pytest tests/isolated/<file>.py
+cd /tmp/wt-<branch>/demos/<dir> && PYTHONPATH=/tmp/wt-<branch> psynet test local
+```
+
+`psynet debug local`, `psynet deploy local` (also with `--docker`) and the
+Playwright specs, which start `psynet debug local`, use the shared database,
+Redis and port (5000 by default), so only one of them can run at a time.
+Subagents and parallel dogfood runs should use `psynet debug local --isolated`.
+Remove the worktrees when you are done. See `docs/developer/running_tests.rst`.
 
 ## Code organization and documentation
 

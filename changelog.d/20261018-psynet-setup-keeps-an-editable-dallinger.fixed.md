@@ -1,1 +1,0 @@
-`psynet setup` now keeps an editable Dallinger checkout instead of replacing it with the pinned version, and installs any new dependencies the checkout needs. `requirements.txt` and `constraints.txt` still record PsyNet's Dallinger pin for deployment. Pinning PsyNet to a commit still replaces the checkout, and setup now warns and says how to restore it.

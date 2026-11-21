@@ -60,8 +60,9 @@ useful, then point clearly at any upgrade path (docs and/or
 migration manuals.
 
 Skip this step only for patch-only releases with nothing meaningful to say
-there. Commit What's new changes with the other release-preparation commits
-or as their own commit on the release branch.
+there. A major release always updates What's new. Commit What's new changes
+with the other release-preparation commits or as their own commit on the
+release branch.
 
 ### Update package translations
 
@@ -73,8 +74,7 @@ can pass:
 psynet translate
 ```
 
-This requires translator credentials in ``~/.dallingerconfig``
-(``openai_api_key`` or ``google_translate_json_path``). Then:
+This requires ``openai_api_key`` in ``~/.dallingerconfig``. Then:
 
 ```bash
 CI_COMMIT_REF_NAME=release-test pytest tests/isolated/translation/test_translations.py::test_psynet_translations_up_to_date
@@ -246,8 +246,8 @@ Verify the release is live at
 
 Use the `psynet dev release announce` command. It composes the message
 envelope (title, RC notice, upgrade instructions, links) from the
-version argument and posts using the `[slack]` extra (already installed
-via the prerequisites). Set `SLACK_BOT_TOKEN` to a bot token that has
+version argument and posts using `slack_sdk` from the `[dev]` extra
+(already installed via the prerequisites). Set `SLACK_BOT_TOKEN` to a bot token that has
 `chat:write` access to the channel. If the token is not set in the
 environment and not present in the user's `~/.zshrc` or `~/.bashrc`
 (check for the variable name only; never print the value), ask the user
@@ -257,13 +257,53 @@ to paste the token.
 not generate the changes summary; you supply it via `--summary-file`.
 Read the release's section in `CHANGELOG.md` (for tagged versions:
 `git show vX.Y.Z:CHANGELOG.md`) and write a Slack-mrkdwn highlights
-file, e.g. `/tmp/release-highlights-X.Y.Z.md`:
+file, e.g. `/tmp/release-highlights-X.Y.Z.md`.
 
-- Use `*Category*` headers in this order, keeping only non-empty ones:
-  Breaking, Added, Changed, Deprecated, Removed, Fixed.
-- One `•` bullet per entry, condensed to its essential point (drop
+Release candidate announcements are cumulative, so that nobody has to
+read the earlier ones: the announcement for `X.Y.ZrcN` covers the
+sections of every earlier release candidate of `X.Y.Z` as well as its
+own. Where a later release candidate renamed or replaced something,
+describe only the current behavior.
+
+Write the file as follows:
+
+- For a major release and its release candidates, open with a bold line
+  of its own that links the upgrade guide, before anything else:
+
+  ```text
+  :compass: *Upgrading an experiment? Work through the <https://psynetdev.gitlab.io/PsyNet/rc/v14.0.0rc4/whats_new/upgrading_to_psynet_14.html|PsyNet 14 upgrade guide>.* It lists, step by step, what to search for and what to change.
+  ```
+
+- Add a short **must-know section** just above the first category
+  header, for changes that every experimenter has to know about: changes
+  that break most experiments or silently change their behavior, data or
+  payments. Give one bullet per topic, starting with a bold label and
+  saying what to do:
+
+  ```text
+  :pushpin: *What every experimenter needs to know*
+  • *HTML is escaped:* plain strings in prompts, labels and templates show as text. Wrap your own HTML in `markupsafe.Markup`, but never participant text.
+  • *Group experiments:* `SimpleGrouper(min_group_size=...)` is now `quorum=` ...
+  ```
+
+  Go through every step of the upgrade guide (for a major release,
+  `docs/whats_new/upgrading_to_psynet_<major>.rst`) and every Breaking
+  entry: add each change that most experimenters must act on, and drop
+  each one that most can ignore. Typical topics are setup, page
+  rendering, who can take part, recruitment and payment defaults, answer
+  and export formats, and deployment. Put synchronous and group
+  experiment changes under a label that names who they apply to. Leave out changes
+  that only affect a rarely used feature (keep those under Breaking) and
+  renames that the old names still handle. If nothing qualifies, omit the
+  section.
+- Then use `*Category*` headers in this order, keeping only non-empty
+  ones: Breaking, Added, Changed, Deprecated, Removed, Fixed.
+- Give one `•` bullet per entry, condensed to its essential point (drop
   leading "Added"/"Fixed", trailing rationale clauses, and author
-  metadata). Use single `*` for bold and single backticks for code.
+  metadata). Use single `*` for bold and single backticks for code. When
+  a release has too many entries to read in Slack, group related entries
+  into one bullet and summarize Fixed as a count with a link to the
+  CHANGELOG at the tag.
 - **Include** what affects people building or running experiments:
   experiment API changes (timeline, trials, trial makers, assets,
   sync groups, modular pages), recruiter changes (Prolific/Lucid),
@@ -308,7 +348,7 @@ The dry run prints the exact body that would be posted; have the
 release manager check the summary against the CHANGELOG section for
 missing or superfluous bullets. Then post to the
 `#testing-bot-messages` channel, so the release manager can review the
-actual Slack rendering (link previews, mrkdwn formatting, block layout)
+actual Slack rendering (mrkdwn formatting, block layout)
 before the real announcement; only after that review post to
 `#psynet-support`. The message uses Slack `mrkdwn` syntax (single `*`
 for bold, `<URL|label>` for inline links); the final-release template

@@ -1,1 +1,0 @@
-The *Ready* summary of `psynet deploy ssh` and `psynet debug ssh` names the deployed Docker image when Dallinger reports it, and its log viewer row says that the password is saved in `launch-info.json`.

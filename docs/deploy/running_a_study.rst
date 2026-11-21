@@ -55,16 +55,15 @@ Check the code and dependencies
   uncommitted changes, and the names of up to 20 such files.
   ``psynet export`` compares them with your checkout later, so commit
   everything before you deploy and push to your remote.
-  ``psynet deploy ssh`` and ``psynet deploy heroku`` list any deployed files
-  with uncommitted changes and, in a terminal, ask whether to deploy them
-  anyway (the default is no, which cancels the deployment). Without a
-  terminal they only warn.
+  ``psynet deploy ssh`` lists any deployed files with uncommitted changes
+  and, in a terminal, asks whether to deploy them anyway (the default is no,
+  which cancels the deployment). Without a terminal it only warns.
 - The PsyNet and Dallinger versions you tested locally must match their
   pins. Each package's exact pin in ``requirements.txt`` (``==`` or a Git
   commit or release tag) takes precedence; otherwise its pin in
   ``constraints.txt`` is used, which is where Dallinger is usually pinned.
-  ``psynet deploy ssh``, ``psynet deploy heroku``, ``psynet debug ssh``,
-  ``psynet debug heroku`` and ``psynet performance-test ssh`` check both
+  ``psynet deploy ssh``, ``psynet debug ssh`` and
+  ``psynet performance-test ssh`` check both
   packages and stop if they differ; ``psynet debug ssh --use-local-psynet``
   and ``--use-local-dallinger`` skip the check for that package. If you change
   ``requirements.txt``, regenerate and commit ``constraints.txt`` with
@@ -256,7 +255,7 @@ that are removed afterwards, so a local experiment can keep running while you
 deploy. Because the deploy replaces the experiment directory's generated
 files, it doesn't run at the same time as a ``psynet debug local`` or test
 session in the same directory: whichever starts second refuses to.
-``psynet debug ssh`` and ``psynet debug heroku`` do the same. When
+``psynet debug ssh`` does the same. When
 ``psynet deploy ssh`` finishes, it prints a *Ready* summary of the
 participant link, the dashboard link and user, where the password is saved,
 the logs command and, for apps with classic ingress, the log viewer in the
@@ -335,8 +334,9 @@ check before recruiting more:
 
 Then increase the places in batches. On Prolific, open the study, choose
 **Action > Increase places**, and enter the number of *additional*
-participants. PsyNet typically copes with about 50 simultaneous
-participants, depending on how efficient the experiment code is. Keep the
+participants. How many participants a server can take at once depends on
+its size and on how efficient the experiment code is; see
+:ref:`choosing_server_size`. Keep the
 median hourly wage on the Prolific study page above Prolific's minimum.
 
 .. image:: /_static/images/running_studies/recruiters/prolific/recruitment-strategy.png
@@ -419,10 +419,13 @@ participants email the address configured in your Lab Recruiter setup.
 Participants who hit an error, fail a pre-screening task or leave early
 are paid automatically: they click **Submit to Prolific**, PsyNet
 completes the submission with a screen-out payment and tops it up to the
-reward they had earned. Do not ask them to return the submission or pay
-them by hand unless they never submitted (for example they closed the
-error page) or ``prolific_pay_unsuccessful`` is false. The payment rules
-are in :doc:`/deploy/recruiters/prolific`.
+reward they had earned. The exception is leaving with **Leave** before
+their reward reaches ``min_reward_for_paid_early_exit`` (default 0.20):
+those participants are offered **Leave without payment** instead (see
+:ref:`Leaving early <payment-leaving-early>`). Do not ask them to return the
+submission or pay them by hand unless they never submitted (for example they
+closed the error page) or ``prolific_pay_unsuccessful`` is false. The payment
+rules are in :doc:`/deploy/recruiters/prolific`.
 
 **Slack notifications.** Slack notifications report launches, errors and
 recruitment changes, and forward new Prolific messages for the study. They
@@ -460,8 +463,7 @@ so treat data you have not exported as lost.
 If async jobs are still running, for example analyses of participants'
 recordings, ``psynet export ssh`` (and ``psynet export local``) ends with a
 warning that the export does not include their results. Wait for them to
-finish and export again; see :doc:`/reference/api/async_job`.
-``psynet export heroku`` does not check. Jobs that were lost before
+finish and export again; see :doc:`/reference/api/async_job`. Jobs that were lost before
 starting, for example when Redis restarted, are failed about an hour after
 they were enqueued and then stop counting as pending.
 
@@ -542,7 +544,7 @@ Getting help
 Read the whole stack trace. The last line names the error, but it is
 often a symptom of an earlier one further up. Search for the specific
 part of the message first (for example a missing key such as
-``show_bonus``), then for the error type together with the failing
+``show_reward``), then for the error type together with the failing
 function, in the
 `PsyNet issue tracker <https://gitlab.com/PsyNetDev/PsyNet/-/issues>`__,
 the `Dallinger issue tracker <https://github.com/Dallinger/Dallinger/issues>`__,

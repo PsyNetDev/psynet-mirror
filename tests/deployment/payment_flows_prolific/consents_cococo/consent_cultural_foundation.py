@@ -402,6 +402,13 @@ def _build_consent_html(
         procedure_body2 = _p('cf_procedure_body2_cint', 'During the experiment, you may be asked to make judgments or observe others, including humans or AI agents, making decisions. We may ask you to explain or justify some of your choices.')
         procedure_body3 = _p('cf_procedure_body3_cint', 'Some sessions may include mild deception or audio/video recording. If a session includes recordings, we will ask for additional explicit consent before collecting those data.')
 
+    # These strings contain backslash escapes. Python 3.11 rejects those
+    # inside an f-string expression, so they are built before the template.
+    ai_body1 = _p('cf_ai_body1', 'Please note that in some experiments, your data may be shared with industry-based large language models (LLMs) or artificial intelligence (AI) agents. In such cases, only the information you provide or receive during the interaction will be shared \u2014 your recruiter identity will not be disclosed.')
+    privacy_body1 = _p('cf_privacy_body1', 'During the study, we will only know you by a participant ID made of alphanumeric code. We do not collect your personal details \u2014 just this code from the recruitment service (e.g., Prolific). If you choose to type something that reveals who you are, such as your real name, that text could be stored and seen by others, but providing such information is never required and is strongly discouraged.')
+    privacy_body4 = _p('cf_privacy_body4', 'We will do our best to keep your participation in this research study confidential to the extent permitted by law. Please note that the experiment is being conducted with the help of Jazkarta (https://jazkarta.com/), a company not affiliated with Cornell and with its own privacy and security policies. If technical issues arise, the Jazkarta employee working on the project may need temporary access to research data. In addition, the following people/groups may check and copy records about this research: the Office for Human Research Protections; the National Science Foundation; and Cornell University\u2019s Institutional Review Board and Office for Research Integrity and Assurance.')
+    privacy_body5 = _p('cf_privacy_body5', 'Please note that the experiment is conducted with the help of a recruiter such as Prolific, Amazon Mechanical Turk, CINT or Qualtrics \u2014 a company not affiliated with Cornell and with its own privacy and security policies. Please note that email communication is neither private nor secure. We cannot guarantee against interception of data sent via the internet by third parties.')
+
     html = f"""
   <h1>{heading}</h1>
   <hr>
@@ -442,17 +449,17 @@ def _build_consent_html(
 
       <h4>{_p('cf_ai_title', 'AI in the experiment and analysis')}</h4>
       <p class="consent-text">
-        {_p('cf_ai_body1', 'Please note that in some experiments, your data may be shared with industry-based large language models (LLMs) or artificial intelligence (AI) agents. In such cases, only the information you provide or receive during the interaction will be shared \u2014 your recruiter identity will not be disclosed.')}
+        {ai_body1}
         {_p('cf_ai_body2', 'Data may also be shared with AI agents (e.g., ChatGPT, Claude, Gemini, Llama, Mistral, or Grok), but it will not reveal your identity unless you disclose personal information yourself. Your response may also be analyzed after the experiment using AI systems, including models other than the one you originally interacted with.')}
       </p>
 
       <h4>{_p('cf_privacy_title', 'Privacy / Confidentiality / Data Security')}</h4>
       <p class="consent-text">
-        {_p('cf_privacy_body1', 'During the study, we will only know you by a participant ID made of alphanumeric code. We do not collect your personal details \u2014 just this code from the recruitment service (e.g., Prolific). If you choose to type something that reveals who you are, such as your real name, that text could be stored and seen by others, but providing such information is never required and is strongly discouraged.')}
+        {privacy_body1}
         {_p('cf_privacy_body2', 'If an experiment includes audio or video recordings, these files will be stored securely and will only be used for research purposes described in this consent form. Any such recordings will be handled as potentially identifiable data, kept separate from your anonymous responses, and will never be shared publicly without being fully de-identified.')}
         {_p('cf_privacy_body3', 'We may share the study data with other researchers or make it public to support open science, but we will keep it de-identified so no one can link the data back to you. We also protect all data with strong security measures, including secure servers, encryption, and restricted access. Data are temporarily stored on password-protected devices/servers and will be moved to Cornell servers for permanent storage.')}
-        {_p('cf_privacy_body4', 'We will do our best to keep your participation in this research study confidential to the extent permitted by law. Please note that the experiment is being conducted with the help of Jazkarta (https://jazkarta.com/), a company not affiliated with Cornell and with its own privacy and security policies. If technical issues arise, the Jazkarta employee working on the project may need temporary access to research data. In addition, the following people/groups may check and copy records about this research: the Office for Human Research Protections; the National Science Foundation; and Cornell University\u2019s Institutional Review Board and Office for Research Integrity and Assurance.')}
-        {_p('cf_privacy_body5', 'Please note that the experiment is conducted with the help of a recruiter such as Prolific, Amazon Mechanical Turk, CINT or Qualtrics \u2014 a company not affiliated with Cornell and with its own privacy and security policies. Please note that email communication is neither private nor secure. We cannot guarantee against interception of data sent via the internet by third parties.')}
+        {privacy_body4}
+        {privacy_body5}
       </p>
 
       <h4>{_p('cf_sharing_title', 'Sharing De-identified Data Collected in this Research')}</h4>

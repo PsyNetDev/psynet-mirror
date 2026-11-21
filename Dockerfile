@@ -11,7 +11,7 @@ FROM --platform=${DOCKER_PLATFORM} node:${NODE_VERSION}-trixie-slim AS node
 
 FROM --platform=${DOCKER_PLATFORM} python:${PYTHON_VERSION}-trixie
 ARG PYTHON_VERSION
-ARG CHROME_VERSION=149.0.7827.54
+ARG CHROME_VERSION=157.0.8103.78
 
 # Every CI job builds this image, so a brief PyPI outage fails them all at
 # once; uv's default 3 retries give up within seconds, and pip's defaults
@@ -50,13 +50,5 @@ RUN echo Installing Chrome $CHROME_VERSION && \
 
 COPY pyproject.toml pyproject.toml
 COPY ci/dallinger-dev-requirements.txt dallinger-dev-requirements.txt
-
-# Generate PsyNet constraints.txt (experiment runtime + demos extras) and install it.
-# Use a vendored Dallinger dev-requirements snapshot so parallel CI Docker
-# builds do not depend on raw.githubusercontent.com availability.
-# Compile for the image's full Python version: uv reads 3.11 as 3.11.0.
-RUN uv pip compile --python-version "$(python -c 'import platform; print(platform.python_version())')" pyproject.toml \
-        --extra experiment --extra demos \
-        --constraint dallinger-dev-requirements.txt \
-        --output-file constraints.txt
-RUN uv pip install --no-cache --system -r constraints.txt
+COPY ci/install-psynet-deps.sh /usr/local/bin/install-psynet-deps
+RUN install-psynet-deps

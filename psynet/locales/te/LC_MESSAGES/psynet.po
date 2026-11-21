@@ -7,6 +7,64 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"ఈ పేజీలో ఐచ్ఛికంగా కెమెరా లేదా స్క్రీన్ వీడియోను రికార్డ్ చేయవచ్చు. "
+"రికార్డింగ్ చేయకుండానే మీరు కొనసాగవచ్చు."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"ఈ ట్రయల్‌కు కెమెరా లేదా స్క్రీన్ వీడియో అవసరం. రికార్డింగ్ చేయకుండా "
+"కొనసాగితే, మీ సమాధానం సేవ్ అవుతుంది, కానీ ట్రయల్‌ను విజయవంతంగా పూర్తి "
+"చేయలేరు."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "కెమెరాను ప్రారంభించండి"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "రికార్డింగ్"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "రికార్డింగ్ ఆగింది"
+
+#: psynet/chatroom.py
+#, fuzzy
+msgctxt "chat sender"
+msgid "You"
+msgstr "మీరు"
+
+#: psynet/chatroom.py
+#, fuzzy, python-brace-format
+msgctxt "chat participant list"
+msgid "{NAME} (you)"
+msgstr "{NAME} (మీరు)"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "మీ భాగస్వామి"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "మరొక ఆటగారు"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -265,45 +323,44 @@ msgstr "నేను ఎప్పుడూ నృత్యం చేయను"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
 msgstr ""
-"మీరు చివరిసారిగా ఎప్పుడు నృత్యం చేశారు? (అత్యంత ఖచ్చితమైన సమాధానాన్ని "
-"ఎంచుకోండి):"
+"మీరు చివరిసారిగా ఎప్పుడు నృత్యం చేశారు? (అత్యంత సరైన సమాధానాన్ని ఎంచుకోండి):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "ఈ వారం"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "ఈ నెల"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "ఈ సంవత్సరం"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
 msgstr "కొన్ని సంవత్సరాల క్రితం"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
 msgstr "చాలా సంవత్సరాల క్రితం"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
 msgstr "నేను ఎప్పుడూ నృత్యం చేయలేదు"
 
@@ -436,34 +493,52 @@ msgstr "ముగించండి"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
-"మీరు ప్రయోగంలో గడిపిన సమయానికి <strong>{CURRENCY}{TIME_REWARD}</strong> "
-"బహుమతిని అందుకుంటారు. మీకు <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong> "
-"ప్రదర్శన బహుమతి కూడా లభించింది!"
+"మీరు గడిపిన సమయానికి <strong>{CURRENCY}{TIME_REWARD}</strong> బహుమతిని "
+"అందుకుంటారు."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"మీకు <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong> పనితీరు బహుమతి కూడా "
+"అందించబడింది."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "మీ ప్యానెల్‌కు తిరిగి వెళ్లడానికి ముగించండి క్లిక్ చేయండి."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "సెషన్‌ను ముగించడానికి ముగించండి క్లిక్ చేయండి."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgid "This page continues by itself in {SECONDS} s."
+msgstr "ఈ పేజీ {SECONDS} సెకన్లలో స్వయంచాలకంగా కొనసాగుతుంది."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "ప్రయోగం ముగిసింది!"
+msgid "That's the end!"
+msgstr "ఇది ముగిసింది!"
 
-#: psynet/end.py
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
 msgid "Thank you for taking part."
 msgstr "పాల్గొన్నందుకు ధన్యవాదాలు."
 
 #: psynet/end.py
 #, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "HIT పూర్తి చేయడానికి \"Finish\" క్లిక్ చేయండి."
-
-#: psynet/end.py
-#, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "దురదృష్టవశాత్తు ప్రయోగం త్వరగా ముగించబడుతుంది."
+msgid "Unfortunately we have to stop early."
+msgstr "దురదృష్టవశాత్తు మేము ముందుగానే ఆపవలసి వచ్చింది."
 
 #: psynet/end.py
 #, fuzzy
@@ -473,20 +548,43 @@ msgstr "అయితే, మీరు ఇప్పటివరకు గడి�
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "మీరు దారిమార్పు చేయబడతారు."
+msgctxt "final_page_unsuccessful"
+msgid "You took too long to reach the next step, so we ended your session."
+msgstr ""
+"మీకు తర్వాతి దశకు చేరుకోవడానికి చాలా సమయం పట్టడంతో, మీ సెషన్‌ను ముగించాము."
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid ""
+"Too few members of your group remained to continue, so we ended your "
+"session."
+msgstr ""
+"కొనసాగించడానికి మీ బృందంలో చాలా తక్కువ మంది మాత్రమే మిగిలి ఉండటంతో, మీ "
+"సెషన్‌ను ముగించాము."
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid "We waited too long for other participants, so we ended your session."
+msgstr "ఇతర పాల్గొనేవారి కోసం చాలా సేపు వేచి ఉన్నందున, మీ సెషన్‌ను ముగించాము."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "సమ్మతి తిరస్కరించబడింది."
+msgid "You chose not to continue."
+msgstr "మీరు కొనసాగించకూడదని ఎంచుకున్నారు."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "ప్రయోగం ముగిసింది."
+msgid "You may close this page."
+msgstr "మీరు ఈ పేజీని మూసివేయవచ్చు."
+
+#: psynet/end.py
+#, fuzzy
+msgid "We will return you to your panel in a few seconds."
+msgstr "మేము కొద్ది సెకన్లలో మీ ప్యానెల్‌కు మిమ్మల్ని తిరిగి తీసుకువెళ్తాము."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -499,45 +597,6 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "లోపం సంభవించింది మరియు మీరు కొనసాగలేరు, క్షమించండి!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"పరిహారం గురించి విచారించడానికి, దయచేసి {EMAIL} వద్ద పరిశోధకుడిని "
-"సంప్రదించండి మరియు ఈ లోపానికి దారితీసిన పరిస్థితులను వివరించండి."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "దయచేసి ఈ క్రింది సమాచారాన్ని కూడా పేర్కొనండి:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "చింతించకండి, మీ పురోగతి నమోదు చేయబడింది."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"పరిహారం గురించి విచారించడానికి, దయచేసి Prolific వెబ్‌సైట్ ద్వారా "
-"పరిశోధకుడికి సందేశం పంపండి మరియు మీ లోపానికి దారితీసిన పరిస్థితులను "
-"వివరించండి."
-
-#: psynet/experiment.py
-#, fuzzy
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
@@ -547,16 +606,89 @@ msgstr ""
 " నిర్వహిస్తున్నారా? దయచేసి అన్ని ఇతర ట్యాబ్‌లను మూసివేసి పేజీని రిఫ్రెష్ "
 "చేయండి."
 
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "ఈ సెషన్ ఇప్పటికే ముగిసింది. దయచేసి పేజీని రీలోడ్ చేయండి."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "ప్రయోగం తాత్కాలికంగా బిజీగా ఉంది. దయచేసి మళ్లీ ప్రయత్నించండి."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
+msgstr ""
+"ఈ సెషన్ ఇకపై అందుబాటులో లేదు. ఇది ముగిసి ఉండవచ్చు లేదా మీరు ఈ పేజీని "
+"తెరిచినప్పటి నుండి అధ్యయనం మళ్లీ ప్రారంభించబడి ఉండవచ్చు."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "has answered"
+msgstr "సమాధానమిచ్చారు"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} has answered."
+msgstr "{NAME} సమాధానమిచ్చారు."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "సమయం ముగిసింది"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} సమయం ముగిసింది."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your group"
+msgstr "మీ బృందం"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Group"
+msgstr "బృందం"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "You"
+msgstr "మీరు"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (left)"
+msgstr "{NAME} (నిష్క్రమించారు)"
+
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"
 msgstr "ప్లే"
 
-#: psynet/modular_page.py
+#: psynet/modular_page.py psynet/templates/macros/control.html
 #, fuzzy
-msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "మీరు కనీసం ఒక సమాధానాన్ని తనిఖీ చేయాలి!"
+msgid "Stop"
+msgstr "ఆపి వేయండి"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "లూప్"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -567,8 +699,68 @@ msgstr "మీరు సమాధానాన్ని ఎంచుకోవా�
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
+msgid "You need to check at least one answer!"
+msgstr "మీరు కనీసం ఒక సమాధానాన్ని తనిఖీ చేయాలి!"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "మీరు ఒక సంఖ్యను అందించాలి!"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"ఈ సమాధానాన్ని రికార్డ్ చేయడానికి మీ స్క్రీన్‌ను షేర్ చేయండి. రికార్డింగ్ "
+"చేయకుండా కొనసాగితే ఈ ప్రయత్నం విఫలమవవచ్చు."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "ఈ సమాధానాన్ని రికార్డ్ చేయడానికి మీ స్క్రీన్‌ను షేర్ చేయండి."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "స్క్రీన్‌ను షేర్ చేయండి"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "రికార్డింగ్ చేయకుండా కొనసాగండి"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "మీ రికార్డింగ్ అప్‌లోడ్ అవుతోంది, దయచేసి ఈ పేజీని తెరిచి ఉంచండి."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"మీ రికార్డింగ్‌ను క్యాప్చర్ చేయలేకపోయాము. మీ బ్రౌజర్‌కు మీ కెమెరా లేదా "
+"స్క్రీన్‌ను యాక్సెస్ చేసే అనుమతి ఉందని నిర్ధారించుకుని, ఆపై పేజీని మళ్లీ "
+"లోడ్ చేయండి."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"మీ సమాధానం అందిందో లేదో మేము నిర్ధారించలేకపోయాము. దయచేసి మీ కనెక్షన్‌ను "
+"తనిఖీ చేసి, మళ్లీ తదుపరి నొక్కండి."
+
+#: psynet/page.py psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "పని జరుగుతోంది..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -615,6 +807,99 @@ msgstr "మూడు ధ్వనులలో ఏది ఇతర రెండ�
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr "మీ పని <strong> ఏ ధ్వని వేరుగా ఉందో </strong> నిర్ణయించడం."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"మీ మైక్రోఫోన్ మరియు కెమెరా పనిచేస్తున్నాయో లేదో ఈ ప్రయోగం తనిఖీ చేయాలి."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"మీ మైక్రోఫోన్ మరియు కెమెరాను యాక్సెస్ చేయడానికి మీ బ్రౌజర్ అనుమతి "
+"అడుగుతుంది."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "మీ మైక్రోఫోన్ పనిచేస్తుందో లేదో ఈ ప్రయోగం తనిఖీ చేయాలి."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "మీ మైక్రోఫోన్‌ను యాక్సెస్ చేయడానికి మీ బ్రౌజర్ అనుమతి అడుగుతుంది."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "మీ కెమెరా పనిచేస్తుందో లేదో ఈ ప్రయోగం తనిఖీ చేయాలి."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "మీ కెమెరాను యాక్సెస్ చేయడానికి మీ బ్రౌజర్ అనుమతి అడుగుతుంది."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "అడిగినప్పుడు దయచేసి అనుమతించు పై క్లిక్ చేయండి."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"మీ మైక్రోఫోన్‌ను యాక్సెస్ చేయలేకపోయాము. అది మరొక యాప్‌లో ఉపయోగంలో ఉండవచ్చు, "
+"మీ పరికరంలో అందుబాటులో లేకపోవచ్చు లేదా యాక్సెస్‌కు అనుమతి ఇవ్వకపోయి "
+"ఉండవచ్చు."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"మీ కెమెరాను యాక్సెస్ చేయలేకపోయాము. అది మరొక యాప్‌లో ఉపయోగంలో ఉండవచ్చు, మీ "
+"పరికరంలో అందుబాటులో లేకపోవచ్చు లేదా యాక్సెస్‌కు అనుమతి ఇవ్వకపోయి ఉండవచ్చు."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "మీ బ్రౌజర్ స్క్రీన్ క్యాప్చర్‌కు మద్దతు ఇవ్వదు."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "మీ బ్రౌజర్ వీడియో రికార్డింగ్‌కు మద్దతు ఇవ్వదు."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "మీ బ్రౌజర్ ఆడియో ప్లేబ్యాక్‌కు మద్దతు ఇవ్వదు."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "ఈ ప్రయోగానికి అవసరమైన సాంకేతిక అవసరాలను మీ బ్రౌజర్ తీర్చడం లేదు."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -733,211 +1018,1080 @@ msgstr "మీకు కీలు మర్చి పోయినట్లయి
 msgid "The test will start on the next page."
 msgstr "పరీక్ష రాబోయే పేజీలో ప్రారంభమవుతుంది."
 
-#: psynet/recruiters.py
+#: psynet/pseudonym.py
 #, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "భర్తీదారుతో కమ్యూనికేట్ చేస్తున్నాం..."
+msgctxt "pseudonym"
+msgid "Orange fox"
+msgstr "నారింజ రంగు నక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange owl"
+msgstr "నారింజ రంగు గుడ్లగూబ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange otter"
+msgstr "నారింజ రంగు నీటికుక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange panda"
+msgstr "నారింజ రంగు పాండా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange tiger"
+msgstr "నారింజ రంగు పులి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange frog"
+msgstr "నారింజ రంగు కప్ప"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange koala"
+msgstr "నారింజ రంగు కోఆలా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange penguin"
+msgstr "నారింజ రంగు పెంగ్విన్"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange rabbit"
+msgstr "నారింజ రంగు కుందేలు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange whale"
+msgstr "నారింజ రంగు తిమింగలం"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange cat"
+msgstr "నారింజ రంగు పిల్లి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue fox"
+msgstr "లేత నీలం రంగు నక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue owl"
+msgstr "లేత నీలం రంగు గుడ్లగూబ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue otter"
+msgstr "లేత నీలం రంగు నీటికుక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue panda"
+msgstr "లేత నీలం రంగు పాండా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue tiger"
+msgstr "లేత నీలం రంగు పులి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue frog"
+msgstr "లేత నీలం రంగు కప్ప"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue koala"
+msgstr "లేత నీలం రంగు కోఆలా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue penguin"
+msgstr "లేత నీలం రంగు పెంగ్విన్"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue rabbit"
+msgstr "లేత నీలం రంగు కుందేలు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue whale"
+msgstr "లేత నీలం రంగు తిమింగలం"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue cat"
+msgstr "లేత నీలం రంగు పిల్లి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green fox"
+msgstr "ఆకుపచ్చ నక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green owl"
+msgstr "ఆకుపచ్చ గుడ్లగూబ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green otter"
+msgstr "ఆకుపచ్చ నీటికుక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green panda"
+msgstr "ఆకుపచ్చ పాండా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green tiger"
+msgstr "ఆకుపచ్చ పులి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green frog"
+msgstr "ఆకుపచ్చ కప్ప"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green koala"
+msgstr "ఆకుపచ్చ కోఆలా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green penguin"
+msgstr "ఆకుపచ్చ పెంగ్విన్"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green rabbit"
+msgstr "ఆకుపచ్చ రంగు కుందేలు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green whale"
+msgstr "ఆకుపచ్చ రంగు తిమింగలం"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green cat"
+msgstr "ఆకుపచ్చ రంగు పిల్లి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow fox"
+msgstr "పసుపు రంగు నక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow owl"
+msgstr "పసుపు రంగు గుడ్లగూబ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow otter"
+msgstr "పసుపు రంగు నీటికుక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow panda"
+msgstr "పసుపు రంగు పాండా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow tiger"
+msgstr "పసుపు రంగు పులి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow frog"
+msgstr "పసుపు రంగు కప్ప"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow koala"
+msgstr "పసుపు రంగు కోఆలా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow penguin"
+msgstr "పసుపు రంగు పెంగ్విన్"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow rabbit"
+msgstr "పసుపు రంగు కుందేలు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow whale"
+msgstr "పసుపు రంగు తిమింగలం"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow cat"
+msgstr "పసుపు రంగు పిల్లి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue fox"
+msgstr "నీలం రంగు నక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue owl"
+msgstr "నీలం రంగు గుడ్లగూబ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue otter"
+msgstr "నీలం రంగు నీటికుక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue panda"
+msgstr "నీలం రంగు పాండా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue tiger"
+msgstr "నీలం రంగు పులి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue frog"
+msgstr "నీలం రంగు కప్ప"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue koala"
+msgstr "నీలం రంగు కోఆలా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue penguin"
+msgstr "నీలం రంగు పెంగ్విన్"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue rabbit"
+msgstr "నీలం రంగు కుందేలు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue whale"
+msgstr "నీలం రంగు తిమింగలం"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue cat"
+msgstr "నీలం రంగు పిల్లి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red fox"
+msgstr "ఎరుపు రంగు నక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red owl"
+msgstr "ఎరుపు రంగు గుడ్లగూబ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red otter"
+msgstr "ఎరుపు రంగు నీటికుక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red panda"
+msgstr "ఎరుపు రంగు పాండా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red tiger"
+msgstr "ఎరుపు రంగు పులి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red frog"
+msgstr "ఎరుపు రంగు కప్ప"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red koala"
+msgstr "ఎరుపు రంగు కోఆలా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red penguin"
+msgstr "ఎరుపు రంగు పెంగ్విన్"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red rabbit"
+msgstr "ఎరుపు రంగు కుందేలు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red whale"
+msgstr "ఎరుపు రంగు తిమింగలం"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red cat"
+msgstr "ఎరుపు రంగు పిల్లి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink fox"
+msgstr "గులాబీ రంగు నక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink owl"
+msgstr "గులాబీ రంగు గుడ్లగూబ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink otter"
+msgstr "గులాబీ రంగు నీటికుక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink panda"
+msgstr "గులాబీ రంగు పాండా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink tiger"
+msgstr "గులాబీ రంగు పులి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink frog"
+msgstr "గులాబీ రంగు కప్ప"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink koala"
+msgstr "గులాబీ రంగు కోఆలా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink penguin"
+msgstr "గులాబీ రంగు పెంగ్విన్"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink rabbit"
+msgstr "గులాబీ రంగు కుందేలు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink whale"
+msgstr "గులాబీ రంగు తిమింగలం"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink cat"
+msgstr "గులాబీ రంగు పిల్లి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black fox"
+msgstr "నలుపు రంగు నక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black owl"
+msgstr "నలుపు రంగు గుడ్లగూబ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black otter"
+msgstr "నలుపు రంగు నీటికుక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black panda"
+msgstr "నలుపు రంగు పాండా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black tiger"
+msgstr "నలుపు రంగు పులి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black frog"
+msgstr "నలుపు రంగు కప్ప"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black koala"
+msgstr "నలుపు రంగు కోఆలా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black penguin"
+msgstr "నలుపు రంగు పెంగ్విన్"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black rabbit"
+msgstr "నలుపు రంగు కుందేలు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black whale"
+msgstr "నలుపు రంగు తిమింగలం"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black cat"
+msgstr "నలుపు రంగు పిల్లి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "orange"
+msgstr "నారింజ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "light blue"
+msgstr "లేత నీలం"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "green"
+msgstr "ఆకుపచ్చ రంగు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "yellow"
+msgstr "పసుపు రంగు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "blue"
+msgstr "నీలం రంగు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "red"
+msgstr "ఎరుపు రంగు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "pink"
+msgstr "గులాబీ రంగు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "black"
+msgstr "నలుపు రంగు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "fox"
+msgstr "నక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "owl"
+msgstr "గుడ్లగూబ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "otter"
+msgstr "నీటికుక్క"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "panda"
+msgstr "పాండా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "tiger"
+msgstr "పులి"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "frog"
+msgstr "కప్ప"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "koala"
+msgstr "కోఆలా"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "penguin"
+msgstr "పెంగ్విన్"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "rabbit"
+msgstr "కుందేలు"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "whale"
+msgstr "తిమింగలం"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "cat"
+msgstr "పిల్లి"
+
+#: psynet/pseudonym.py
+#, fuzzy, python-brace-format
+msgctxt "pseudonym"
+msgid "{COLOR} {ANIMAL}"
+msgstr "{COLOR} రంగు {ANIMAL}"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"ఈ లోపం గురించి పరిశోధకుడిని సంప్రదించాల్సిన అవసరం ఉంటే, {EMAIL} కు రాయండి "
+"మరియు సూచన కోడ్ {REFERENCE_CODE} ను పేర్కొనండి."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+"ఈ లోపం గురించి పరిశోధకుడిని సంప్రదించాల్సిన అవసరం ఉంటే, {EMAIL} కు రాయండి."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "మీరు ఈ పేజీని మూసివేయవచ్చు."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "దురదృష్టవశాత్తు లోపం సంభవించింది మరియు మేము కొనసాగించలేము."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "అయితే, ఇప్పటివరకు మీ ప్రతిస్పందనలు సేవ్ చేయబడ్డాయి."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"మీరు ప్రయోగంలో గడిపిన సమయానికి క్రెడిట్ పొందారు. మీరు ప్రధాన ప్రయోగానికి "
-"కొనసాగలేకపోయినందున మీ సమర్పణ 'స్క్రీన్డ్ అవుట్'గా ప్రొలిఫిక్‌లో "
-"కనిపిస్తుంది. మీరు ఇప్పుడు ఈ బ్రౌజర్ విండోను మూసివేయవచ్చు."
+"మీరు ఇప్పుడు వెళ్లిపోతే, మీరు తరువాత కొనసాగించలేరు. ఇప్పటివరకు మీ "
+"ప్రతిస్పందనలు సేవ్ చేయబడతాయి."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"ఇప్పటివరకు మీరు {EARNED} సంపాదించారు. చెల్లింపుతో వెళ్లిపోవడానికి మీకు కనీసం"
+" {THRESHOLD} అవసరం. మీరు చెల్లింపు లేకుండా వెళ్లిపోతే, మీరు తరువాత "
+"కొనసాగించలేరు. ఇప్పటివరకు మీ ప్రతిస్పందనలు సేవ్ చేయబడతాయి."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "చెల్లింపు లేకుండా వెళ్లిపోవడం"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "వదిలివేయండి"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "ముగించకుండా వెళ్లిపోవాలా?"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "రద్దు చేయండి"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "మీరు ఈ పేజీని మూసివేయవచ్చు."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"మీరు ఇప్పుడు వెళ్లిపోతే, మీరు తరువాత కొనసాగించలేరు. మీరు {FIXED} యొక్క స్థిర"
+" 'స్క్రీన్-అవుట్' చెల్లింపును అందుకుంటారు. ఇప్పటివరకు మీరు {EARNED} "
+"సంపాదించినందున, అదనంగా {REMAINDER} బోనస్‌గా చెల్లించబడుతుంది. ఇప్పటివరకు మీ "
+"ప్రతిస్పందనలు సేవ్ చేయబడతాయి."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"మీరు ఇప్పుడు వెళ్లిపోతే, మీరు తరువాత కొనసాగించలేరు. మీరు {FIXED} యొక్క స్థిర"
+" 'స్క్రీన్-అవుట్' చెల్లింపును అందుకుంటారు. ఇప్పటివరకు మీ ప్రతిస్పందనలు సేవ్ "
+"చేయబడతాయి."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"మీరు ఇప్పుడు వెళ్లిపోతే, మీరు తరువాత కొనసాగించలేరు. మీరు {FIXED} యొక్క స్థిర"
+" 'స్క్రీన్-అవుట్' చెల్లింపుతో పాటు {PERFORMANCE} పనితీరు బోనస్‌ను "
+"అందుకుంటారు. అదనపు సమయానికి మీకు చెల్లింపు చేయబడదు. ఇప్పటివరకు మీ "
+"ప్రతిస్పందనలు సేవ్ చేయబడతాయి."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"మీరు ఇప్పుడు వెళ్లిపోతే, మీరు తరువాత కొనసాగించలేరు. మీరు {FIXED} యొక్క స్థిర"
+" 'స్క్రీన్-అవుట్' చెల్లింపును అందుకుంటారు. అదనపు సమయానికి మీకు చెల్లింపు "
+"చేయబడదు. ఇప్పటివరకు మీ ప్రతిస్పందనలు సేవ్ చేయబడతాయి."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"మీరు ఇప్పుడు వెళ్లిపోతే, మీరు తరువాత కొనసాగించలేరు. మీరు మీ ప్రొలిఫిక్ "
+"సమర్పణను తిరిగి ఇవ్వాలి. మీరు ఇప్పటివరకు పూర్తి చేసిన పనికి బోనస్‌గా "
+"{EARNED} చెల్లించబడతారు. ఇప్పటివరకు మీ ప్రతిస్పందనలు సేవ్ చేయబడతాయి."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr ""
+"మీరు ఇప్పటికే ప్రారంభించి ఉంటే, ప్రొలిఫిక్ ద్వారా పరిశోధకుడికి సందేశం "
+"పంపండి."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"దయచేసి ప్రొలిఫిక్ ద్వారా పరిశోధకుడికి సందేశం పంపండి మరియు ఈ లోపానికి "
+"దారితీసినదాన్ని వివరించండి."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"ఇప్పటివరకు మీ పురోగతికి మేము మీకు చెల్లిస్తాము: మీరు ప్రొలిఫిక్ ద్వారా "
+"{FIXED} అందుకుంటారు."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr ""
+"మేము అదనంగా {BONUS} బోనస్‌గా చెల్లిస్తాము, మీ మొత్తం చెల్లింపును {TOTAL} కు "
+"తీసుకువెళ్తుంది."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "మేము మీ {BONUS} పనితీరు బోనస్‌ను కూడా చెల్లిస్తాము."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr "మీరు సంపాదించిన ఏదైనా అదనపు మొత్తం బోనస్‌గా చెల్లించబడుతుంది."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "మీ సమర్పణను పూర్తి చేయడానికి ప్రొలిఫిక్‌కు సమర్పించండి ఎంచుకోండి."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "ప్రొలిఫిక్‌కు సమర్పించండి"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"మీరు పూర్తి చేసిన పనికి {EARNED} అందుకోవడానికి, మీరు ప్రొలిఫిక్‌లో మీ "
+"సమర్పణను తిరిగి ఇవ్వాలి."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"మీరు పూర్తి చేసిన పనికి చెల్లింపును అందుకోవడానికి, మీరు ప్రొలిఫిక్‌లో మీ "
+"సమర్పణను తిరిగి ఇవ్వాలి."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr "ఈ దశలను పూర్తి చేయడానికి చెల్లింపు సూచనలకు కొనసాగించండి ఎంచుకోండి."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"మేము చెల్లింపు సూచనలను తెరవలేకపోయాము. దయచేసి మళ్లీ ప్రయత్నించండి. ఇది "
+"కొనసాగితే, ప్రొలిఫిక్ ద్వారా పరిశోధకుడికి సందేశం పంపండి."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "చెల్లింపు సూచనలకు కొనసాగించండి"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"మీ సమాధానాలు ఇప్పటివరకు సేవ్ చేయబడ్డాయి. దయచేసి మీ సమర్పణను Prolific లో "
+"తిరిగి ఇవ్వండి. మీకు చెల్లింపు అందదు. మీరు ఈ పేజీని మూసివేయవచ్చు."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "మీ సమర్పణ Prolific కు పంపబడింది."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "మీరు ఈ పేజీని మూసివేయవచ్చు."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"మీ సమర్పణను Prolific కు పంపలేకపోయాము. దయచేసి మళ్లీ ప్రయత్నించండి. ఇది "
+"కొనసాగితే, Prolific ద్వారా పరిశోధకుడికి సందేశం పంపండి."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
-"దయచేసి ప్రొలిఫిక్ ఇంటర్‌ఫేస్ ద్వారా మీ సమర్పణను తిరిగి ఇవ్వండి మరియు "
-"నెక్స్ట్ క్లిక్ చేయండి. అప్పుడు మేము మీ సమయానికి ఆటోమేటిక్‌గా మీకు బోనస్ "
-"చెల్లిస్తాము."
+"దయచేసి Prolific ఇంటర్‌ఫేస్ ద్వారా మీ సమర్పణను తిరిగి ఇవ్వండి మరియు తదుపరి "
+"క్లిక్ చేయండి. అప్పుడు మేము మీకు స్వయంచాలకంగా బోనస్ చెల్లిస్తాము."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"అది పనిచేసింది! మీరు ప్రయోగంలో గడిపిన సమయానికి క్రెడిట్ పొందారు. "
-"పాల్గొన్నందుకు ధన్యవాదాలు. మీరు ఇప్పుడు ఈ బ్రౌజర్ విండోను మూసివేయవచ్చు."
+"అది పనిచేసింది. మీరు ఖర్చు చేసిన సమయానికి క్రెడిట్ పొందారు. పాల్గొన్నందుకు "
+"ధన్యవాదాలు. మీరు ఈ పేజీని మూసివేయవచ్చు."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"మీ రిటర్న్ రికార్డ్ చేయబడింది, కానీ మేము బోనస్ చెల్లింపును స్వయంచాలకంగా "
+"పూర్తి చేయలేకపోయాము. పరిశోధకుడికి తెలియజేయబడింది మరియు చెల్లింపును ఏర్పాటు "
+"చేస్తారు. మీరు ఈ పేజీని మూసివేయవచ్చు."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"అది పనిచేయలేదు. మీరు ఈ అధ్యయనానికి సమర్పణను తిరిగి ఇచ్చారా? దయచేసి "
-"ప్రొలిఫిక్ ఇంటర్‌ఫేస్‌కు వెళ్లండి, మీరు సమర్పణను తిరిగి ఇచ్చారని "
-"నిర్ధారించుకోండి, ఆపై 'నెక్స్ట్' బటన్‌ను క్లిక్ చేయండి."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"మీరు ప్రధాన ప్రయోగానికి కొనసాగలేకపోయినందుకు మేము క్షమించండి, కానీ మీరు "
-"ఇప్పటివరకు గడిపిన సమయానికి మేము మీకు చెల్లిస్తాము. ఈ చెల్లింపును "
-"అందుకోవడానికి, మేము మీకు ప్రొలిఫిక్ ఇంటర్‌ఫేస్ ద్వారా ఈ అసైన్‌మెంట్‌ను "
-"తిరిగి ఇవ్వాలని మరియు క్రింద ఉన్న 'నెక్స్ట్' బటన్‌ను క్లిక్ చేయాలని మేము "
-"కోరుకుంటున్నాము."
+"అది పనిచేయలేదు. మీరు ఖచ్చితంగా సమర్పణను తిరిగి ఇచ్చారా? దయచేసి Prolific లో "
+"తిరిగి ఇవ్వండి, తరువాత తదుపరి క్లిక్ చేయండి."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"మీరు ప్రధాన ప్రయోగానికి కొనసాగలేకపోయినందుకు మేము క్షమించండి. మీ సమయానికి ఈ "
-"చెల్లింపును అందుకోవడానికి, దయచేసి ప్రొలిఫిక్‌లో మీ అసైన్‌మెంట్‌ను తిరిగి "
-"ఇవ్వండి మరియు ప్రొలిఫిక్ సందేశ వ్యవస్థ ద్వారా ప్రయోగకర్తకు సందేశం పంపండి. "
-"ప్రయోగకర్త మీ కేసును సమీక్షించి అవసరమైతే చెల్లింపును ఏర్పాటు చేస్తారు. మీ "
-"అవగాహనకు ధన్యవాదాలు. మీరు ఇప్పుడు ఈ బ్రౌజర్ విండోను మూసివేయవచ్చు."
+"మీరు ఖర్చు చేసిన సమయానికి చెల్లింపును పొందడానికి, Prolific లో మీ సమర్పణను "
+"తిరిగి ఇవ్వండి మరియు అక్కడ పరిశోధకుడికి సందేశం పంపండి. వారు మీ కేసును "
+"సమీక్షించి చెల్లింపు అవసరమైతే ఏర్పాటు చేస్తారు. మీరు ఈ పేజీని మూసివేయవచ్చు."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"మీరు ఇప్పుడు వెళ్లిపోతే, మీరు తరువాత కొనసాగించలేరు మరియు మీ ప్యానెల్ "
+"ప్రొవైడర్‌కు తిరిగి వెళతారు. ఈ సెషన్ చెల్లింపును జారీ చేయదు; ఏదైనా చెల్లింపు"
+" మీ ప్యానెల్ ప్రొవైడర్ యొక్క నియమాలపై ఆధారపడి ఉంటుంది. మీ సమాధానాలు "
+"ఇప్పటివరకు సేవ్ చేయబడతాయి."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "లూసిడ్ మార్కెట్‌ప్లేస్‌కు మళ్లించబడుతోంది..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "మేము కొన్ని సెకన్లలో మీ ప్యానెల్‌కు మిమ్మల్ని తిరిగి తీసుకువెళతాము."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "రద్దు చేయడం సాధ్యం కాదు."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "మేము కొన్ని సెకన్లలో మీ ప్యానెల్‌కు మిమ్మల్ని తిరిగి తీసుకువెళతాము."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"ప్రయోగాన్ని రద్దు చేయడం సాధ్యం కాదు ఎందుకంటే ప్రయోగకర్త దీనిని ఈ సమయంలో "
-"అనుమతించడం లేదు!"
+"మేము మిమ్మల్ని మీ ప్యానెల్‌కు తిరిగి తీసుకురాలేకపోయాము. దయచేసి మళ్లీ "
+"ప్రయత్నించండి. ఇది కొనసాగితే, మీ ప్యానెల్ ప్రొవైడర్‌ను సంప్రదించండి."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "మీ ప్యానెల్‌కు తిరిగి వెళ్ళండి."
+
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "ఇతర పాల్గొనేవారిని కోసం వేచి ఉండండి…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "సమయానికి మీకు భాగస్వామిని కనుగొనలేకపోయాం. దయచేసి కొనసాగండి."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "సమయానికి మీ కోసం ఒక బృందాన్ని ఏర్పాటు చేయలేకపోయాం. దయచేసి కొనసాగండి."
+
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Your group is ready. Moving on in {SECONDS} s."
+msgstr "మీ బృందం సిద్ధంగా ఉంది. {SECONDS} సెకన్లలో ముందుకు వెళ్తున్నాం."
+
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Moving on in {SECONDS} s."
+msgstr "{SECONDS} సెకన్లలో ముందుకు వెళ్తున్నాం."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "మీ భాగస్వామి ఇకపై మీ బృందంలో లేరు. దయచేసి కొనసాగండి."
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
 msgstr ""
-"మీకు పరిహారం అందించబడటానికి <strong>కనీసం "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> నజరానా "
-"సమీకరించాలి."
-
-#: psynet/templates/abort_not_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr "మీ ప్రస్తుత సమీకృత నజరానా పై దిగువ సమాచారం చూడండి."
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "అసైన్‌మెంట్ ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "HIT ID"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Accumulated reward"
-msgstr "సేకరించిన బహుమతి"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "విండోను మూసివేయండి"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "మీరు పరీక్షను రద్దు చేయాలనుకుంటున్నారా?"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"మీరు రద్దు బటన్‌ను క్లిక్ చేస్తే, పరీక్ష ముందుగానే ముగుస్తుంది మరియు మీరు "
-"ఇప్పటి వరకు సంపాదించిన పరిహారాన్ని స్వయంచాలకంగా చెల్లిస్తారు."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr ""
-"మీకు మీ చెల్లింపు అందుకోవడంలో ఇబ్బంది ఉంటే మాత్రమే మమ్మల్ని సంప్రదించండి."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "మీ పరిహారం వివరాలకు క్రింద ఉన్న సమాచారం చూడండి."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "ప్రయోగాన్ని రద్దు చేయండి"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "పాల్గొనదలచినవారికి పిలుపు"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "పాల్గొనడానికి అవసరమైన అర్హతలు ఈ క్రింది విధంగా ఉన్నాయి"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr "దయచేసి పై అమెజాన్ సైట్‌లో \"Accept HIT\" బటన్‌ను క్లిక్ చేయండి."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "ఈ HIT‌ను అంగీకరించినందుకు ధన్యవాదాలు."
+"మీ బృందంలో చాలా తక్కువ మంది సభ్యులు మాత్రమే మిగిలారు. దయచేసి కొనసాగండి."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -972,11 +2126,6 @@ msgstr "కొనసాగించే ముందు దయచేసి పా
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "ప్రయోగాన్ని ప్రారంభించండి"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr "లోపం వచ్చినప్పుడు పరిహారం పొందడానికి పై బటన్‌ను క్లిక్ చేయండి."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2396,8 +3545,42 @@ msgstr "పని చేయడం ద్వారా మీరు శాస్�
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "లూసిడ్ సర్వే సమర్పణ"
+msgid "Returning you to your panel"
+msgstr "మీ ప్యానెల్‌కు మిమ్మల్ని తిరిగి తీసుకెళ్తున్నాము"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "దయచేసి వేచి ఉండండి."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "ప్రొలిఫిక్‌కు సమర్పించండి"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"మీ సమర్పణను ప్రొలిఫిక్‌కు పంపడానికి దిగువన క్లిక్ చేయండి. మీరు పూర్తి "
+"కోడ్‌ను నమోదు చేయాల్సిన అవసరం లేదు."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "దయచేసి వేచి ఉండండి."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "మళ్లీ ప్రయత్నించండి"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2408,6 +3591,18 @@ msgstr "కీబోర్డ్ లేఅవుట్‌ను ఎంచుక�
 #, fuzzy
 msgid "You did not press all required keys."
 msgstr "మీరు అవసరమైన అన్ని కీలు నొక్కలేదు."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"మీ బ్రౌజర్ పాతది, ఈ ప్రయోగానికి అవసరమైన ఫీచర్‌లకు మద్దతు ఇవ్వడం లేదు. దయచేసి"
+" మీ బ్రౌజర్‌ను తాజా సంచికకు అప్‌డేట్ చేయండి లేదా Google Chrome ఇన్‌స్టాల్ "
+"చేయండి."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2431,16 +3626,12 @@ msgstr "దయచేసి కొనసాగించడానికి క్�
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"ప్రయోగంలో పాల్గొనడానికి మీరు Google Chrome యొక్క తాజా సంచికను ఉపయోగించాలి."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "మీరు ఉపయోగిస్తున్నారు:"
+"మీరు ప్రైవేట్ బ్రౌజింగ్ విండోను ఉపయోగిస్తున్నారో లేదో మేము "
+"నిర్ధారించలేకపోయాము. దయచేసి ఇన్‌కాగ్నిటో విండోను ఓపెన్ చేసి మళ్లీ "
+"ప్రయత్నించండి."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2632,11 +3823,6 @@ msgstr "నేను అంగీకరిస్తున్నాను"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "వద్దు, ధన్యవాదాలు (కర్తవ్యం తిరిగి ఇవ్వండి)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "మొత్తం పాఠ్యాన్ని చూడటానికి పైకి/కిందకు స్క్రోల్చండి"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2931,6 +4117,12 @@ msgstr "రీసెట్"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "మైక్రోఫోన్ స్థాయి"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "స్లైడర్లు"
@@ -3021,26 +4213,6 @@ msgstr "ప్రాంప్ట్ ప్లే చేయండి"
 msgid "Play recording"
 msgstr "రికార్డింగ్ ప్లే చేయండి"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "ఆపి వేయండి"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "ఆపి వేయండి"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "లూప్"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "లూప్"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3051,57 +4223,135 @@ msgstr "వీడియో కనబడలేదు"
 msgid "Image not found"
 msgstr "చిత్రం కనబడలేదు"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "వ్యాఖ్య నిల్వ చేయబడింది."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "దయచేసి పేజీ లోడ్ అయ్యే వరకు వేచి ఉండండి."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "కొన్ని సెకన్లలో మళ్లీ ప్రయత్నించండి."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "సిద్ధమవుతోంది, దయచేసి వేచి ఉండండి..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "బహుమతి"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "ఇప్పటివరకు సంపాదించిన బహుమతి"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "సమయానికి"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "ప్రదర్శనకు"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "వ్యాఖ్య"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "వదిలివేయండి"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "పూర్తి చేయకుండా వదిలివేయండి."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "లోపం!"
+msgid "An error occurred"
+msgstr "లోపం సంభవించింది"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr ""
-"మీరు <strong>MTurk ప్రకటన పేజీ</strong>లో <strong>ప్రయోగాన్ని రద్దు "
-"చేయండి</strong> బటన్ ఉపయోగించి ప్రయోగాన్ని రద్దు చేయగలరు."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "దయచేసి వేచి ఉండండి."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"రద్దు చేసిన తర్వాత, పరిహారం అందుకోవడానికి మమ్మల్ని సంప్రదించాల్సిన అవసరం "
-"లేదు; ఇది కొన్ని నిమిషాల తర్వాత MTurk ద్వారా స్వయంచాలకంగా మీకు "
-"అందించబడుతుంది."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "మళ్లీ ప్రయత్నించండి"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"ఇది అలా కాకపోతే, దయచేసి క్రింది సమాచారం పేర్కొంటూ %(EMAIL)s వద్ద మమ్మల్ని "
-"సంప్రదించండి:"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "లోపం రకం"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "మీరు వెళ్లిపోవాలని ఎంచుకున్నారు."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "వర్కర్ ID"
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "ఈ పేజీని మూసివేయవచ్చు."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "మీ సమాధానాలు సేవ్ చేయబడ్డాయి. ఈ పేజీని మూసివేయవచ్చు."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "సూచనా కోడ్"
 
 #: psynet/templates/start.html
 #, fuzzy
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr "ప్రయోగం ప్రారంభం..."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "ప్రస్తుతం చాలా మంది పాల్గొంటున్నారు."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"దయచేసి ఈ పేజీని తెరిచి ఉంచండి: అవకాశం అందుబాటులోకి రాగానే మీరు స్వయంచాలకంగా "
+"చేరతారు. మీరు తర్వాత మళ్లీ రావచ్చు."
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
@@ -3161,41 +4411,65 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "పునఃప్రారంభించు"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "బహుమతి"
+#: psynet/timeline.py
+#, fuzzy, python-brace-format
+msgctxt "time_limit"
+msgid "{SECONDS} s left"
+msgstr "ఇంకా {SECONDS} సెకన్లు"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "వ్యాఖ్య"
+msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "సమయానికి మిమ్మల్ని ఒక సమూహంలో చేర్చలేకపోయాము. దయచేసి కొనసాగించండి."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "ప్రయోగాన్ని ముందుగానే నిలిపివేయండి"
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "మీ భాగస్వామి సమయానికి చేరుకోలేదు. దయచేసి కొనసాగించండి."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "వ్యాఖ్య నిల్వ చేయబడింది."
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "మీ సమూహంలోని అందరూ సమయానికి చేరుకోలేదు. దయచేసి కొనసాగించండి."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "దయచేసి పేజీ లోడ్ అయ్యే వరకు వేచి ఉండండి."
+msgctxt "timeline_hold"
+msgid "Your partner went on without you. Please continue."
+msgstr "మీ భాగస్వామి మీతో లేకుండానే ముందుకు వెళ్లారు. దయచేసి కొనసాగించండి."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "కొన్ని సెకన్లలో మళ్లీ ప్రయత్నించండి."
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "మీ సమూహం మీతో లేకుండానే ముందుకు వెళ్లింది. దయచేసి కొనసాగించండి."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "మీ భాగస్వామి సిద్ధంగా ఉన్నారు."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "మీ సమూహంలో {TOTAL} లో {ARRIVED} సిద్ధంగా ఉన్నారు."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{TOTAL} లో {REMAINING} ఇంకా సిద్ధంగా లేరు"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "దయచేసి వేచి ఉండండి, ప్రయోగం త్వరలో కొనసాగుతుంది..."
 
 #: psynet/translation/countries.py
 #, fuzzy

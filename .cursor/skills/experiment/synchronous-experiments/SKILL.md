@@ -13,6 +13,7 @@ If participants exchange live actions or messages within a trial, also read
 Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `design/groups` — group design concepts
+- `design/rounds` — round-based experiments: cued trials, regrouping, slow players
 - `code/multiplayer/synchronization` — grouping, barriers, waiting, and release callbacks
 - `reference/api/sync` — synchronization API
 
@@ -95,8 +96,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   only written during the trial's pages and until a barrier there releases
   the group, so for a barrier after `show_trial`, or after an earlier
   release in it, check `participant.sync_group_removal_reason(...)` instead.
-- For deterministic roles or turn order, use `psynet.sync.group_seats(group)`
-  (seats in join order, stable while the group exists), as in
+- For deterministic roles or turn order, use `group.seats`
+  (`SyncGroup.seats`: seats in join order, stable while the group exists), as in
   `story_chain`; PsyNet does not guarantee the order of
   `sync_group.participants`.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
@@ -117,10 +118,13 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `code/multiplayer/writing_a_round_based_experiment`: use
   `late_action="leave_group"` with `also_leave=[<within group type>]` so
   that they also leave the `within` group; see the quorum caveat there.
-- A member on a timed page isn't treated as late until its limit plus 10 s,
-  so `late_after` need not cover the page (see "Timeouts" in
-  `code/multiplayer/synchronization`); the demos use 30 s so that a
-  background tab can notice the round has started.
+- Once a member has opened a timed page, `late_after` counts from its limit
+  plus 10 s, so it needs to cover only the untimed pages (see "Timeouts" in
+  `code/multiplayer/synchronization`). A member who closes their tab on a
+  30 s page with `late_after=20` is late about 60 s after the page opened,
+  and one who never opens it 20 s after the round started; keep
+  `late_after` short (the demos use 15-30 s) and long enough for a
+  background tab to notice the round has started.
 - The regrouper groups players at random, sits out whoever has played most,
   and counts rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]`
   (given out at random by default) and read `self.sync_group_role` in the
@@ -259,8 +263,7 @@ class PickTrial(Trial):
     @classmethod
     def score_room(cls, trials, group_round):
         # trial.answer holds each player's answer so far (None: timed out).
-        # String keys, since var is stored as JSON.
-        group_round.var.choices = {str(t.participant_id): t.answer for t in trials}
+        group_round.var.choices = {t.participant_id: t.answer for t in trials}
 
 # The Module gives the rounds a module_id to find them by when exporting.
 Module("game", for_loop(

@@ -1,0 +1,1 @@
+Changed `psynet.trial.getGlobalTime()` to return wall-clock seconds (`performance.now()`) instead of the AudioContext clock, so the trial progress display keeps running while the browser holds audio suspended. Custom code that compares its result with `psynet.media.audioContext.currentTime` should use the AudioContext clock directly.

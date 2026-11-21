@@ -71,9 +71,11 @@ has written, checking it, and changing it yourself.
    multiplayer/writing_a_round_based_experiment
    multiplayer/chatroom
    multiplayer/pseudonyms
-   multiplayer/realtime_interaction
    multiplayer/synchronization
    multiplayer/late_slow_and_leaving_players
+   multiplayer/live_game_tutorial
+   multiplayer/live_games
+   multiplayer/realtime_interaction
 
 .. toctree::
    :caption: Database
