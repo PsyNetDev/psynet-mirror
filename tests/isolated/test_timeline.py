@@ -2256,10 +2256,3 @@ def test_page_level_early_exit_setting_overrides_the_recruiter_and_config():
     experiment.recruiter_class.show_early_exit_button = False
     shown = InfoPage("Hello", time_estimate=1, show_early_exit_button=True)
     assert shown.early_exit_available(experiment, participant) is True
-
-
-def test_pages_before_a_trial_need_their_own_time_estimate():
-    break_page = PageMaker(lambda: InfoPage("Take a break."), time_estimate=0)
-    break_page._before_trial = True
-    with pytest.raises(RuntimeError, match="missing a time estimate"):
-        break_page.resolve(experiment=None, participant=MagicMock(), position=[0])

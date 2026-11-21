@@ -542,6 +542,7 @@
       psynet.setPageReady(false);
       psynet.pageLoaded = false;
       psynet.responseClockStart = null;
+      psynet.pageModuleUpdates = [];
       psynet.nextPagePending = false;
       psynet.media.audioRequired = false;
       psynet.media.otherAudioContexts = [];
@@ -604,6 +605,7 @@
     // Dependencies load once per document. Page code and page modules share
     // one activation/cleanup lifecycle and run for every hosting page.
     psynet.activeJSPageBehaviors = [];
+    psynet.pageModuleGeneration = 0;
     psynet.AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
     psynet.loadJSDependencies = async function () {
@@ -726,13 +728,16 @@
 
     // What a page module's update() receives as ``response``.
     psynet.createResponseHandle = function () {
+      // Late callbacks from an earlier page mustn't act on the next one.
+      const generation = psynet.pageModuleGeneration;
+      const current = () => psynet.pageModuleGeneration === generation;
       return {
         // time_taken then runs from this call rather than from page setup.
         startClock() {
-          psynet.responseClockStart = new Date();
+          if (current()) psynet.responseClockStart = new Date();
         },
         answer(value) {
-          return psynet.nextPage(value);
+          return current() ? psynet.nextPage(value) : Promise.resolve(false);
         },
       };
     };
@@ -740,6 +745,7 @@
     psynet.deactivatePageJavascript = async function (
       activations = psynet.activeJSPageBehaviors,
     ) {
+      psynet.pageModuleGeneration += 1;
       if (activations === psynet.activeJSPageBehaviors) {
         psynet.activeJSPageBehaviors = [];
       }

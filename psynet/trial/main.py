@@ -1697,22 +1697,21 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @classmethod
     def trial_logic(cls, trial_maker=None):
         time_estimate = cls._get_trial_time_estimate(trial_maker)
-        before_trial = None
+        after_trial = None
         if trial_maker is not None:
-            before_trial = PageMaker(
+            after_trial = PageMaker(
                 lambda experiment, participant: call_function_with_context(
-                    trial_maker.show_before_trial,
+                    trial_maker.show_after_trial,
                     experiment=experiment,
                     participant=participant,
                     trial=participant.current_trial,
                 ),
                 time_estimate=0,
-                label="show_before_trial",
+                label="show_after_trial",
             )
-            before_trial._before_trial = True
+            after_trial._after_trial = True
 
         return join(
-            before_trial,
             CodeBlock(cls._log_time_credit_before_trial),
             CodeBlock(cls._log_progress_before_trial),
             PageMaker(
@@ -1726,6 +1725,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             cls._construct_feedback_logic(trial_maker),
             CodeBlock(cls._log_time_credit_after_trial),
             CodeBlock(cls._log_progress_after_trial),
+            after_trial,
         )
 
     @classmethod
@@ -1866,7 +1866,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             time_estimate=0,
         )
         # Feedback pages' time limits don't count as running out of time.
-        feedback_pages._trial_feedback = True
+        feedback_pages._after_trial = True
 
         return conditional(
             label=label,
@@ -2969,14 +2969,15 @@ class TrialMaker(Module):
             corresponding to the current participant.
         """
 
-    def show_before_trial(self, experiment, participant, trial):
+    def show_after_trial(self, experiment, participant, trial):
         """
-        Return pages to show before ``trial``, such as a break, or ``None``.
+        Return pages to show after ``trial``, such as a break, or ``None``.
 
-        The pages belong to the sequence of trials rather than to ``trial``:
-        their answers aren't saved on the trial and don't count towards its
-        ``time_taken``. They do count towards its :attr:`response_timeout_sec`,
-        as the trial already exists. Like
+        The pages run once the trial is finalized and its feedback shown, and
+        before the next trial is prepared, so they don't affect either trial.
+        PsyNet can't tell yet whether another trial follows, so check
+        ``trial.position`` to avoid a break after the last trial. Pages
+        without a ``time_estimate`` count as taking no time. Like
         :meth:`~psynet.trial.main.Trial.show_trial`, the method may take any
         subset of its parameters.
 
@@ -2992,8 +2993,7 @@ class TrialMaker(Module):
             corresponding to the current participant.
 
         trial
-            The :class:`~psynet.trial.main.Trial` about to be shown, for
-            example to show a break before the trial at ``trial.position``.
+            The :class:`~psynet.trial.main.Trial` that just finished.
 
         Returns
         -------

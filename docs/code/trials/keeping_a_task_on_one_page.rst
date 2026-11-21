@@ -75,7 +75,8 @@ previous page's ``cleanup``, so don't keep elements from an earlier page.
 Keep anything specific to one trial in ``update``. A module without trials to
 show can still return just the cleanup function.
 
-The ``response`` handle has two methods:
+The ``response`` handle has two methods, which do nothing once its page has
+been replaced:
 
 ``response.startClock()``
     Starts the clock for the trial's ``time_taken``. Call it when the stimulus

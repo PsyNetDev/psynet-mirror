@@ -352,10 +352,9 @@ class Elt:
     expected_repetitions = None
     id = None
     created_within_page_maker = False
-    # Set on a trial's feedback page maker and everything it produces.
-    _trial_feedback = False
-    # Set on the show_before_trial page maker and everything it produces.
-    _before_trial = False
+    # Set on the page makers that run after a trial is finalized (feedback
+    # and show_after_trial) and everything they produce.
+    _after_trial = False
 
     def __init__(self):
         self.links = {}
@@ -2037,11 +2036,11 @@ class Page(Elt):
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
-            trial=_trial_owning_page(participant, self),
+            trial=_trial_owning_page(participant),
         )
         db.session.add(resp)
 
-        resp._recording_parent = _page_trial(self, participant) or participant
+        resp._background_parent = participant.current_trial or participant
 
         timed_out = self._time_limit_reached(metadata, participant)
         if timed_out:
@@ -2067,7 +2066,7 @@ class Page(Elt):
                 metadata=metadata,
                 experiment=experiment,
                 participant=participant,
-                trial=_page_trial(self, participant),
+                trial=participant.current_trial,
                 response=resp,
             )
 
@@ -2110,14 +2109,13 @@ class Page(Elt):
         """Whether this page's time limit updates the participant's and trial's timeout flags.
 
         Untimed pages, pages shown while waiting at a barrier, and the pages
-        before and after a trial, such as a break or a notice whose time limit
-        only moves it on, keep the flags from the last timed page.
+        after a trial, such as feedback or a break whose time limit only moves
+        it on, keep the flags from the last timed page.
         """
         return (
             self.time_limit is not None
             and participant.waiting_barrier_id is None
-            and not self._trial_feedback
-            and not self._before_trial
+            and not self._after_trial
         )
 
     def _reject_impossible_answer(self, answer):
@@ -2146,8 +2144,7 @@ class Page(Elt):
                 flag_modified(participant, "answer")
             else:
                 participant.answer = resp.answer
-            if not self._before_trial:
-                _update_unfinished_trial_answer(participant)
+            _update_unfinished_trial_answer(participant)
             participant.answer_is_fresh = True
             if isinstance(self.save_answer, str):
                 participant.var.set(self.save_answer, resp.answer)
@@ -2938,10 +2935,8 @@ class PageMaker(Elt):
             elt.id = position + [i]
             elt.created_within_page_maker = True
             elt.links = {**self.links, **elt.links}
-            if self._trial_feedback:
-                elt._trial_feedback = True
-            if self._before_trial:
-                elt._before_trial = True
+            if self._after_trial:
+                elt._after_trial = True
         return res
 
     def impute_time_estimates(self, elts):
@@ -2949,9 +2944,8 @@ class PageMaker(Elt):
         # basically, if all the elements are pages or page makers
         # and none of them have time estimates, then we compute
         # their time estimates by equally subdividing the time estimate
-        # for the parent page maker. The show_before_trial page maker's
-        # estimate is a placeholder 0, so its pages must give their own.
-        if not self._before_trial and all(
+        # for the parent page maker.
+        if all(
             [
                 isinstance(elt, (Page, PageMaker)) and elt.time_estimate is None
                 for elt in elts
@@ -3360,21 +3354,10 @@ def estimate_duration(logic):
     return CreditEstimate(elts).get_max("time")
 
 
-def _page_trial(page, participant):
-    """Return the participant's current trial unless ``page`` comes before it.
-
-    Pages from :meth:`~psynet.trial.main.TrialMaker.show_before_trial` are
-    shown once the trial exists, but belong to the sequence of trials.
-    """
-    return None if page._before_trial else participant.current_trial
-
-
-def _trial_owning_page(participant, page=None):
+def _trial_owning_page(participant):
     """Return the trial whose pages the participant is on, or ``None``."""
     from psynet.trial.main import Trial
 
-    if page is not None and page._before_trial:
-        return None
     trial = participant.current_trial
     # Pages after _finalize_trial (feedback, or pages before the next
     # trial is prepared) leave current_trial set but don't belong to it.
@@ -3462,8 +3445,7 @@ class Response(_Response):
         (:meth:`~psynet.trial.main.Trial.show_trial`) the participant
         submitted this response on, including submissions rejected by
         validation. ``None`` for pages outside a trial, including feedback
-        pages, pages from :meth:`~psynet.trial.main.TrialMaker.show_before_trial`
-        and pages submitted after the participant failed.
+        pages and pages submitted after the participant failed.
         Recordings follow a different rule: a recording made on a feedback
         page (:meth:`~psynet.trial.main.Trial.show_feedback`) is stored with
         the trial that just finished.

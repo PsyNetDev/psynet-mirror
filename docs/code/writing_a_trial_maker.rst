@@ -307,30 +307,25 @@ Pages between trials
 --------------------
 
 To show a page between trials, such as a break halfway through, override
-:meth:`~psynet.trial.main.TrialMaker.show_before_trial`. It receives the trial
-about to be shown and returns pages to show first, or ``None``:
+:meth:`~psynet.trial.main.TrialMaker.show_after_trial`. It receives the trial
+that just finished and returns pages to show next, or ``None``:
 
 .. code-block:: python
 
     class RatingTrialMaker(StaticTrialMaker):
-        def show_before_trial(self, trial):
-            if trial.position == 25:
+        def show_after_trial(self, trial):
+            if trial.position == 24:
                 return InfoPage("Take a break.", time_estimate=5)
 
-These pages belong to the sequence rather than to the trial: their responses
-aren't linked to it and don't count towards its ``time_taken``. Each page needs
-its own ``time_estimate``, which is paid as usual, but the progress bar doesn't
-move while they are shown, because the experiment's duration estimate doesn't
-include them. Use :class:`~psynet.page.InfoPage` or ``save_answer=False`` for
-pages that ask something: the trial takes the last saved answer, so a break's
-answer would become the trial's if the trial's own page doesn't save one.
-
-The trial already exists while these pages are shown, so the time spent on
-them counts towards its
-:attr:`~psynet.trial.main.TrialMaker.response_timeout_sec` (5 minutes by
-default). In trial makers that use sync groups, it also counts towards the
-``late_after`` of the next group barrier, unless the page has a
-``time_limit``. Raise these limits if breaks can be long.
+These pages run once the trial is finalized and its feedback shown, and before
+the next trial is prepared, so they don't affect either trial. The next trial
+can't be known yet, so check ``trial.position`` rather than showing a page
+after every trial, which would include the last one. Give the pages a
+``time_estimate`` to pay for them; it doesn't move the progress bar, because
+the experiment's duration estimate doesn't include them. In trial makers with
+sync groups, the rest of the group waits at the next barrier, and the break
+counts towards that barrier's ``late_after`` unless the page has a
+``time_limit``.
 
 .. _trial_after_the_response:
 

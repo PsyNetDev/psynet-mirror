@@ -146,15 +146,10 @@ def _browser_config(page, experiment, participant):
     """Require stored AV consent when the experiment uses a stock AV module."""
     from .bot import Bot
     from .consent import AudiovisualConsent, LabRecruiterAudiovisualConsent
-    from .timeline import _page_trial
 
     config = page.background_recording
     _check_environment(page, experiment)
-    if (
-        config is not None
-        and config.required
-        and _page_trial(page, participant) is None
-    ):
+    if config is not None and config.required and participant.current_trial is None:
         raise ValueError("Required background recording needs a parent trial.")
     if config is None or isinstance(participant, Bot):
         return None
@@ -224,7 +219,7 @@ def _accept_background_recordings(page, response, participant, experiment, page_
             reason = reason or "missing_recording"
         asset, receipt = _reserve_recording(
             response=response,
-            parent=response._recording_parent,
+            parent=response._background_parent,
             page_uuid=page_uuid,
             source=source,
             local_key=f"background_{page_uuid}_{source}",
@@ -242,7 +237,7 @@ def _accept_background_recordings(page, response, participant, experiment, page_
             "capture_outcome": outcomes.get(source),
         }
         if reason:
-            parent = response._recording_parent
+            parent = response._background_parent
             _resolve_unavailable(
                 asset, reason, parent if isinstance(parent, Trial) else None
             )

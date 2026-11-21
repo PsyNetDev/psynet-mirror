@@ -4641,7 +4641,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         not updated, but is marked as not fresh.
         """
         participant.answer_is_fresh = False
-        trial = _trial_owning_page(participant, page)
+        trial = _trial_owning_page(participant)
         response = Response(
             participant=participant,
             label=page.label,

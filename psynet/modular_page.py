@@ -821,9 +821,7 @@ class Control(JavaScriptContributor):
             5. ``trial``:
                An instantiation of :class:`psynet.trial.main.Trial`,
                corresponding to the participant's current trial,
-               or ``None`` if the participant is not currently taking a trial
-               or the page comes from
-               :meth:`~psynet.trial.main.TrialMaker.show_before_trial`.
+               or ``None`` if the participant is not currently taking a trial.
 
         Returns
         -------
@@ -4019,11 +4017,10 @@ class RecordControl(Control):
             _reserve_recording,
             _resolve_unavailable,
         )
-        from .trial.main import Trial
         from .trial.record import Recording
 
         sizes = response._recording_sizes
-        parent = response._recording_parent
+        parent = participant.current_trial or participant
         summary = dict(response.answer)
         uploads = []
         max_bytes = self._recording_max_bytes()
@@ -4049,9 +4046,7 @@ class RecordControl(Control):
             if reason:
                 # The browser already knows these bytes cannot be uploaded, so
                 # resolve now rather than waiting for the lease to expire.
-                _resolve_unavailable(
-                    asset, reason, parent if isinstance(parent, Trial) else None
-                )
+                _resolve_unavailable(asset, reason, participant.current_trial)
             id_key, url_key = self._answer_reference_keys(source)
             summary[id_key] = asset.id
             summary[url_key] = asset.url
