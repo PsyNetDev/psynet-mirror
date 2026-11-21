@@ -7,6 +7,10 @@ trials. Your page draws each stimulus and sends the participant's answer.
 If you're still choosing how to present the task, see
 :doc:`/design/presenting_trials`.
 
+For ordinary timeline submissions that preserve the interface across
+consecutive pages, give those pages the same ``session_id``. See
+:doc:`/developer/page_lifecycle` for the same-session transition behaviour.
+
 .. _single-page-prepared:
 
 Presenting prepared static trials
@@ -17,6 +21,8 @@ sequence from a :class:`~psynet.trial.static.StaticTrialMaker`. Put the
 :class:`~psynet.live_game.PlayLiveGame` step inside the maker's
 ``present_trials()`` timeline. When the group starts, PsyNet prepares or
 reloads the native trials for each player in seat order.
+
+:download:`Download the flanker experiment <../../../demos/features/live_trial_game/experiment.py>` for a complete example.
 
 Set ``settings={"stop": 25}`` to play up to position 25 (exclusive).
 A second step with its own game ID can omit ``stop`` to finish the full deck.
@@ -122,6 +128,8 @@ to a typed ``TrialAnswer`` and implement ``bot_answer(view)`` with that type.
 In the page, subscribe with ``game.onTrial(render)`` and call
 ``game.startResponseClock(view)`` when the renderer presents the stimulus.
 The same renderer can use ``onTrial`` for a prepared deck.
+
+:download:`Download the adaptive brightness experiment <../../../demos/features/live_trial_game_adaptive/experiment.py>` for a complete example.
 
 The active maker assigns one native trial at a time. Each answer is validated
 and completed in the transaction that selects its successor. By default the
