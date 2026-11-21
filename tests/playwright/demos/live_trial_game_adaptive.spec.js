@@ -35,7 +35,7 @@ test("a running staircase deals native trials and recovers a lost reply", { tag:
       expect(Math.abs(left - right)).toBe(gap);
       if (position === 1) {
         expect(answers).toEqual([firstRequest.response, firstRequest.response]);
-        expect(firstReply.definition).toEqual({ left, right });
+        expect(firstReply.definition).toEqual({ parameter: gap, left, right });
         const post = (data) => p.request.post(new URL("/live_game/trial", p.url()).href, {data});
         // Two tabs retry the acknowledged answer at the same time.
         const replies = await Promise.all([post(firstRequest), post(firstRequest)]);

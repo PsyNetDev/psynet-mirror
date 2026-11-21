@@ -59,7 +59,9 @@ class BrightnessGame(OnDemandTrialGame):
     def bot_answer(view):
         pair = view["definition"]
         return Choice(
-            position=view["completed"], answer=max(pair, key=pair.get), seconds=0.4
+            position=view["completed"],
+            answer="left" if pair["left"] > pair["right"] else "right",
+            seconds=0.4,
         )
 
 
@@ -84,9 +86,6 @@ def feedback(participant):
 
 
 class BrightnessMaker(GeometricStaircaseTrialMaker):
-    def live_trial_definition(self, trial):
-        return {side: trial.definition[side] for side in ("left", "right")}
-
     def present_trials(self):
         return join(
             PlayLiveGame(

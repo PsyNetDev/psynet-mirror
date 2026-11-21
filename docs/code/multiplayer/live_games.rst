@@ -1396,8 +1396,10 @@ In the page, subscribe with ``game.onTrial(render)`` and call
 The same renderer can use ``onTrial`` for a prepared deck.
 
 The active maker assigns one native trial at a time. Each answer is validated
-and completed in the transaction that selects its successor. Override
-``live_trial_definition(trial)`` to choose the fields the page receives.
+and completed in the transaction that selects its successor. By default the
+page receives the complete saved ``trial.definition``. A maker can override
+``live_trial_definition(trial)`` when presentation needs a different payload,
+such as a vocabulary image URL with the scoring key kept on the server.
 The runner manages presence and game ending. The page receives its private
 assignment in the HTTP response, with no timeline transition. The
 ``features/live_trial_game_adaptive`` demo grows a within-participant chain with the
