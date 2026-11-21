@@ -41,7 +41,6 @@ from .record import (
     _PSYNET_EFFECTS,
     _REWARD_EFFECT,
     _STARTED_EFFECT,
-    _TRIAL_EFFECT,
 )
 from .registry import _register_live_game
 from .reward import (
@@ -652,31 +651,6 @@ class LiveGame(RealtimeGame):
             ),
         )
         plan["answers"].append(answer)
-
-    def record_trial(self, *, player, slot, definition, answer, time_taken=None):
-        """Save an accepted item in a cued game as a native LiveGameItemTrial.
-
-        Call after validating the action, with the definition from the game's
-        assigned deck. Slots identify a player's items within this session.
-        Optional time_taken is the browser's presentation duration in seconds.
-        The event writer creates the row under the enclosing cued trial's module.
-        """
-        if type(player) is not int or player < 0 or type(slot) is not int or slot < 0:
-            raise ValueError("player and slot must be non-negative integers.")
-        if time_taken is not None and (not is_number(time_taken) or time_taken < 0):
-            raise ValueError("time_taken must be a finite non-negative duration.")
-        super().queue_effect(
-            _TRIAL_EFFECT,
-            to_jsonable_python(
-                dict(
-                    player=player,
-                    slot=slot,
-                    definition=definition,
-                    answer=answer,
-                    time_taken=time_taken,
-                )
-            ),
-        )
 
     def record(self, name, data=None):
         """Record a moment in the game, such as a round's result or a player

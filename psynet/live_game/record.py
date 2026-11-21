@@ -27,14 +27,12 @@ _REWARD_EFFECT = "psynet_performance_reward"
 _MOMENT_EFFECT = "psynet_moment"
 _CLOSED_EFFECT = "psynet_closed"
 _PREPARED_TRIAL_EFFECT = "psynet_prepared_trial"
-_TRIAL_EFFECT = "psynet_item_trial"
 _PSYNET_EFFECTS = (
     _STARTED_EFFECT,
     _REWARD_EFFECT,
     _MOMENT_EFFECT,
     _CLOSED_EFFECT,
     _PREPARED_TRIAL_EFFECT,
-    _TRIAL_EFFECT,
 )
 
 

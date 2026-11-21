@@ -1944,23 +1944,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         )
 
 
-class LiveGameItemTrial(Trial):
-    """One accepted response in a cued live game. Slot is zero-based per player."""
-
-    live_session_id = Column(Integer, ForeignKey("realtime_session.id"))
-    live_slot = Column(Integer)
-
-
-Index(
-    "uq_trial_live_game_slot",
-    LiveGameItemTrial.live_session_id,
-    Trial.participant_id,
-    LiveGameItemTrial.live_slot,
-    unique=True,
-    postgresql_where=text("live_session_id IS NOT NULL"),
-)
-
-
 # Keeps the finalize backstop poller cheap: a compact list of row IDs still
 # in the complete-but-not-finalized window (predicate columns are constant
 # inside that window, so we index id rather than complete/finalized/failed).
