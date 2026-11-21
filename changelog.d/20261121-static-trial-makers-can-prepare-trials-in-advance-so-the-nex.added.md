@@ -1,0 +1,1 @@
+Added `prepare_trials_in_advance` to `StaticTrialMaker`: the trial maker creates a participant's trials in order when they reach it, and a trial page whose modules return `update` shows the next trial as soon as the participant answers, sending the answers to the server in the background. Trial makers now also time out only their own trials.

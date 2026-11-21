@@ -1514,6 +1514,8 @@ class Page(Elt):
     requires_full_page_reload = False
     expect_scrolling = False
     skip_beforeunload = False
+    # Set by trial makers that prepare their trials in advance.
+    upcoming_contents = None
 
     def __init__(
         self,
@@ -1909,6 +1911,8 @@ class Page(Elt):
                 else None
             ),
         }
+        if self.upcoming_contents is not None:
+            attributes["upcoming_contents"] = self.upcoming_contents
         arrival_updates = _arrival_updates_for(self, participant)
         if arrival_updates is not None:
             attributes["arrival_updates"] = arrival_updates

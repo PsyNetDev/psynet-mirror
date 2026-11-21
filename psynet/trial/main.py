@@ -16,6 +16,7 @@ from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -68,6 +69,7 @@ from ..timeline import (
     DatabaseCheck,
     Module,
     ModuleState,
+    Page,
     PageMaker,
     ParticipantFailRoutine,
     PreDeployRoutine,
@@ -522,6 +524,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     n_repeat_trials = Column(Integer)
     time_taken = Column(Float)
     time_limit_reached = Column(Boolean)
+    # The response timeout of trials prepared in advance counts from here.
+    response_started_at = Column(DateTime)
     _initial_assets = deferred(Column(PythonDict))
 
     time_credit_before_trial = Column(Float)
@@ -1767,6 +1771,16 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             check_trial = getattr(barrier, "_check_trial", None)
             if check_trial is not None:
                 check_trial(self)
+        if self.response_started_at is None:
+            self.response_started_at = datetime.datetime.now()
+        if (
+            len(logic) == 1
+            and isinstance(logic[0], Page)
+            and self.trial_maker is not None
+        ):
+            logic[0].upcoming_contents = self.trial_maker._upcoming_contents(
+                self, experiment, participant
+            )
         return logic
 
     @classmethod
@@ -2843,9 +2857,17 @@ class TrialMaker(Module):
         time_threshold = datetime.datetime.now() - datetime.timedelta(
             seconds=self.response_timeout_sec
         )
+        # Trials prepared in advance wait unseen until their turn.
+        started = (
+            self.trial_class.response_started_at
+            if self.prepare_trials_in_advance
+            else self.trial_class.creation_time
+        )
         trials_to_fail = (
-            self.trial_class.query.filter_by(complete=False, failed=False)
-            .filter(self.trial_class.creation_time < time_threshold)
+            self.trial_class.query.filter_by(
+                complete=False, failed=False, trial_maker_id=self.id
+            )
+            .filter(started < time_threshold)
             .order_by(self.trial_class.id)
             # A locked trial belongs to an in-flight request that may complete
             # it; the next check retries it if not.
@@ -2997,7 +3019,16 @@ class TrialMaker(Module):
         -------
 
         Timeline logic, such as a page or a list of pages, or ``None``.
+        A trial maker that prepares its trials in advance also calls this
+        method for upcoming trials, to find where the next trials stop being
+        predictable, so it must not change anything itself.
         """
+        return None
+
+    prepare_trials_in_advance = False
+
+    def _upcoming_contents(self, trial, experiment, participant):
+        """Return the page contents of the trials after ``trial``, or ``None`` if unknown."""
         return None
 
     def finalize_trial(self, answer, trial, experiment, participant):

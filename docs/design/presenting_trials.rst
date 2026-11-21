@@ -51,7 +51,9 @@ should stay put between responses. Each trial still has a page of its own,
 but the pages share one layout and answer from the page's JavaScript, so only
 the painting changes. Each swipe goes to the server, which records it and
 sends the next painting, usually within a fraction of a second, depending on
-the participant's connection.
+the participant's connection. Because the paintings come in a fixed order, the
+trial maker can also send the next few paintings ahead, so that the next one
+appears at once while the server records the swipe.
 
 The cost is that you write more of the interface yourself. Here, you would
 handle the swipe, animate the painting and decide when the next one can take

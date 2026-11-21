@@ -18,7 +18,13 @@ from psynet.trial.chain import (
 )
 
 from ..sync import LateAction
-from ..utils import NoArgumentProvided, get_logger, is_method_overridden
+from ..timeline import Page, join
+from ..utils import (
+    NoArgumentProvided,
+    call_function_with_context,
+    get_logger,
+    is_method_overridden,
+)
 
 logger = get_logger()
 
@@ -244,8 +250,26 @@ class StaticTrialMaker(ChainTrialMaker):
         The message and time limits of the trial maker's own sync-group
         waits; see :class:`~psynet.trial.main.TrialMaker`.
 
+    prepare_trials_in_advance
+        If ``True``, create all of a participant's trials, in order, when they
+        reach the trial maker, and send each trial page with the contents of
+        the next :attr:`n_upcoming_trials` trials. A page whose modules
+        return an ``update`` function then shows the next trial as soon as
+        the participant answers, without waiting for the server; see
+        :doc:`/code/trials/keeping_a_task_on_one_page`. The response timeout
+        counts from when each trial is first shown. Can't be combined with
+        ``sync_group_type``, ``check_performance_every_trial``,
+        ``n_repeat_trials`` or ``recruit_mode="n_trials"``.
+        Defaults to ``False``.
+
     Attributes
     ----------
+
+    n_upcoming_trials : int
+        With ``prepare_trials_in_advance``, how many of the next trials'
+        contents each trial page carries (default = 5). The participant can
+        be up to this many answers ahead of the server, and a page can
+        preload this many trials' stimuli.
 
     check_timeout_interval_sec : float
         How often to check for trials that have timed out, in seconds (default = 30).
@@ -322,10 +346,23 @@ class StaticTrialMaker(ChainTrialMaker):
         sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
         sync_group_newcomer_max_wait: Optional[float] = None,
+        prepare_trials_in_advance: bool = False,
     ):
         _reject_removed_balance_argument(
             "balance_across_nodes", balance_across_nodes, "node_order"
         )
+        if prepare_trials_in_advance and (
+            sync_group_type
+            or check_performance_every_trial
+            or n_repeat_trials
+            or recruit_mode == "n_trials"
+        ):
+            raise ValueError(
+                "prepare_trials_in_advance=True can't be combined with "
+                "sync_group_type, check_performance_every_trial, "
+                "n_repeat_trials or recruit_mode='n_trials'."
+            )
+        self.prepare_trials_in_advance = prepare_trials_in_advance
 
         assert isinstance(expected_trials_per_participant, (int, float, str))
         if isinstance(expected_trials_per_participant, str):
@@ -434,6 +471,85 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_waiting_message=sync_group_waiting_message,
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
+
+    n_upcoming_trials = 5
+
+    def prepare_trial(self, experiment, participant):
+        if not self.prepare_trials_in_advance:
+            return super().prepare_trial(experiment, participant)
+        trials = self._prepared_trials(participant) or self._prepare_trials(
+            experiment, participant
+        )
+        trial = next((t for t in trials if not t.complete and not t.failed), None)
+        if trial is None:
+            return None, "exit"
+        return trial, "available"
+
+    def _prepared_trials(self, participant):
+        """Return the participant's trials in this run of the trial maker, in order."""
+        return (
+            self.trial_class.query.filter_by(
+                module_state_id=participant.module_state.id
+            )
+            .order_by(self.trial_class.id)
+            .all()
+        )
+
+    def _prepare_trials(self, experiment, participant):
+        """Create the participant's trials in the order that they will take them."""
+        trials = []
+        while (
+            self.max_trials_per_participant is None
+            or len(trials) < self.max_trials_per_participant
+        ):
+            trial, status = super().prepare_trial(experiment, participant)
+            if status == "wait":
+                raise RuntimeError(
+                    f"Trial maker {self.id!r} prepares trials in advance, "
+                    "so its node selection may not wait."
+                )
+            if trial is None:
+                break
+            trials.append(trial)
+        logger.info(
+            "Prepared %i trials for participant %i.", len(trials), participant.id
+        )
+        return trials
+
+    def _upcoming_contents(self, trial, experiment, participant):
+        if not self.prepare_trials_in_advance or trial.gives_feedback(
+            experiment, participant
+        ):
+            return None
+        contents = []
+        upcoming = [
+            t
+            for t in self._prepared_trials(participant)
+            if t.id > trial.id and not t.complete and not t.failed
+        ]
+        for following in upcoming[: self.n_upcoming_trials]:
+            if (
+                call_function_with_context(
+                    self.show_before_trial,
+                    experiment=experiment,
+                    participant=participant,
+                    trial=following,
+                )
+                is not None
+            ):
+                break
+            page = join(
+                call_function_with_context(
+                    following.show_trial,
+                    experiment=experiment,
+                    participant=participant,
+                    trial_maker=self,
+                )
+            )
+            if len(page) != 1 or not isinstance(page[0], Page):
+                break
+            contents.append(page[0].contents)
+        return contents
 
     def _selection_hook_overrides(self):
         return [

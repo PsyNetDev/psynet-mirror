@@ -638,6 +638,7 @@
     psynet.activatePageJavascript = async function () {
       let activated = [];
       psynet.pageModuleUpdates = [];
+      psynet.pageMarkup = psynet.getMainBodyMarkup(document);
       let context = psynet.getPageActivationContext();
       try {
         for (let src of psynetTemplateData.legacyJsLinks || []) {
@@ -692,12 +693,7 @@
                 `JS page module ${normalizedSrc} returned an update that is not a function.`,
               );
             }
-            psynet.pageModuleUpdates.push(() =>
-              update({
-                contents: psynet.page.contents,
-                response: psynet.createResponseHandle(),
-              }),
-            );
+            psynet.pageModuleUpdates.push(update);
           }
         }
       } catch (error) {
@@ -707,17 +703,191 @@
       psynet.activeJSPageBehaviors = activated;
     };
 
+    // ---- Predicted trial pages ----------------------------------------------
+    // Pages of a trial maker that prepares its trials in advance list the
+    // contents of the next trials in ``upcoming_contents``. Answering such a
+    // page through update()'s response handle shows the next trial at once,
+    // and the answers go to /response in the background, one at a time and in
+    // order. A reply that is the predicted page is adopted without rebuilding
+    // the page; any other reply drops the remaining answers and loads as
+    // usual. Indices count trials from the first page of this activation.
+    psynet.prediction = { queue: [], base: 0, shown: 0, sending: false };
+
+    psynet.resetPrediction = function () {
+      psynet.prediction = { queue: [], base: 0, shown: 0, sending: false };
+    };
+
+    psynet.predictsTrials = function () {
+      return (
+        Array.isArray(psynet.page.attributes?.upcoming_contents) &&
+        Boolean(psynetTemplateData.flags.inplaceTimelineTransitions)
+      );
+    };
+
+    // Contents from the last confirmed page onwards.
+    psynet.predictedContents = function () {
+      return [
+        psynet.page.contents,
+        ...(psynet.page.attributes?.upcoming_contents || []),
+      ];
+    };
+
+    // The markup that a predicted reply must repeat. Full-page loads and
+    // fragments render the same page with different script types, asset
+    // holders and whitespace, and the ready marker changes while it is shown.
+    psynet.getMainBodyMarkup = function (root) {
+      let mainBody = root.querySelector("#main-body");
+      if (!mainBody) return null;
+      let copy = mainBody.cloneNode(true);
+      copy.removeAttribute("data-page-ready");
+      copy.querySelector("#psynet-fragment-assets")?.remove();
+      copy.querySelectorAll("script").forEach((script) => script.removeAttribute("type"));
+      return copy.outerHTML.replace(/\s+/g, " ").replace(/> </g, "><");
+    };
+
+    // Show the trial ``offset`` trials after the last confirmed page.
+    psynet.updatePageModules = async function (offset) {
+      let prediction = psynet.prediction;
+      prediction.shown = prediction.base + offset;
+      let contents = psynet.predictedContents()[offset];
+      let response = psynet.createResponseHandle(prediction.shown);
+      for (let update of psynet.pageModuleUpdates) {
+        await update({ contents, response });
+      }
+    };
+
     // What a page module's update() receives as ``response``.
-    psynet.createResponseHandle = function () {
+    psynet.createResponseHandle = function (index = 0) {
+      let shownAt = new Date();
+      let clockStart = null;
       return {
         // time_taken then runs from this call rather than from page setup.
         startClock() {
-          psynet.responseClockStart = new Date();
+          clockStart = new Date();
+          psynet.responseClockStart = clockStart;
         },
         answer(value) {
-          return psynet.nextPage(value);
+          if (!psynet.predictsTrials()) {
+            return psynet.nextPage(value);
+          }
+          let timeTaken = (new Date() - (clockStart ?? shownAt)) / 1000;
+          return psynet.queuePredictedAnswer(index, value, timeTaken);
         },
       };
+    };
+
+    psynet.queuePredictedAnswer = function (index, value, timeTaken) {
+      let prediction = psynet.prediction;
+      if (
+        index !== prediction.shown ||
+        index !== prediction.base + prediction.queue.length
+      ) {
+        psynet.log.info("Ignored an answer to a trial that is no longer shown.");
+        return Promise.resolve(false);
+      }
+      prediction.queue.push({ value, metadata: { time_taken: timeTaken } });
+      psynet.showNextPredictedTrial();
+      psynet.sendPredictedAnswers();
+      // If the server rejects the answer later, update() shows the trial again.
+      return Promise.resolve(true);
+    };
+
+    // Move on to the first unanswered trial if its contents are known.
+    psynet.showNextPredictedTrial = function () {
+      let prediction = psynet.prediction;
+      let offset = prediction.queue.length;
+      let unanswered = prediction.base + offset;
+      if (
+        prediction.shown < unanswered &&
+        offset < psynet.predictedContents().length
+      ) {
+        psynet.updatePageModules(offset).catch((error) => {
+          psynet.log.error(error.stack || String(error));
+        });
+      }
+    };
+
+    psynet.sendPredictedAnswers = async function () {
+      let prediction = psynet.prediction;
+      if (prediction.sending) return;
+      prediction.sending = true;
+      try {
+        while (psynet.prediction === prediction && prediction.queue.length) {
+          let entry = prediction.queue[0];
+          let accepted = await psynet.nextPage(
+            entry.value,
+            entry.metadata,
+            undefined,
+            undefined,
+            { background: true },
+          );
+          if (!accepted) {
+            if (prediction.queue[0] === entry) {
+              await psynet.rollBackPrediction();
+            }
+            break;
+          }
+        }
+      } finally {
+        prediction.sending = false;
+      }
+    };
+
+    // The server rejected the oldest answer: show that trial again.
+    psynet.rollBackPrediction = async function () {
+      psynet.prediction.queue = [];
+      await psynet.updatePageModules(0);
+    };
+
+    // Return the reply's fragment if it shows the trial the participant was
+    // shown after the oldest queued answer.
+    psynet.predictedFragment = function (response) {
+      let prediction = psynet.prediction;
+      let expected = psynet.predictedContents()[1];
+      if (
+        !prediction.queue.length ||
+        expected === undefined ||
+        response.page?.attributes?.timeline_hold ||
+        !response.timeline_fragment?.html ||
+        JSON.stringify(response.page?.contents) !== JSON.stringify(expected)
+      ) {
+        return null;
+      }
+      let fragment = psynet.prepareTimelineFragment(response.timeline_fragment);
+      let data = JSON.parse(
+        fragment.template.content.querySelector("#psynet-template-data")
+          .textContent,
+      );
+      if (
+        psynet.getMainBodyMarkup(fragment.template.content) !==
+          psynet.pageMarkup ||
+        JSON.stringify(data.jsPageModules) !==
+          JSON.stringify(psynetTemplateData.jsPageModules)
+      ) {
+        return null;
+      }
+      return fragment;
+    };
+
+    psynet.adoptPredictedPage = function (fragment) {
+      let prediction = psynet.prediction;
+      prediction.queue.shift();
+      for (let { currentElement, nextElement } of fragment.replacements) {
+        if (["timeline-header", "psynet-template-data"].includes(currentElement.id)) {
+          currentElement.replaceWith(nextElement);
+        }
+      }
+      let { prompt, control, response } = psynet.page;
+      psynet.refreshTemplateData();
+      Object.assign(psynet.page, { prompt, control, response });
+      window.pageUuid = psynet.var.pageUuid;
+      psynet.pageLoadTime = new Date();
+      prediction.base += 1;
+      psynet.nextPagePending = false;
+      if (psynetTemplateData.flags.lucidRecruitment) {
+        psynet.addBeforeUnloadEventListener();
+      }
+      psynet.showNextPredictedTrial();
     };
 
     psynet.deactivatePageJavascript = async function (
@@ -1614,8 +1784,9 @@
       psynet.ensureArrivalUpdates(psynet.page.attributes?.arrival_updates);
       psynet.waiting.start(psynet.page.attributes?.waiting);
       // Page modules show the trial only once it can be answered.
-      for (let update of (psynet.pageModuleUpdates || []).splice(0)) {
-        await update();
+      psynet.resetPrediction();
+      if (psynet.pageModuleUpdates?.length) {
+        await psynet.updatePageModules(0);
       }
     };
 
@@ -3830,6 +4001,14 @@
       psynet.log.debug("Response received successfully.");
       psynet.pageReceivedAt = Date.now();
 
+      let predicted = psynet.predictedFragment(response);
+      if (predicted) {
+        psynet.adoptPredictedPage(predicted);
+        return true;
+      }
+      // Any other reply ends the prediction, dropping the later answers.
+      psynet.prediction.queue = [];
+
       if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
         psynet.stopTimelineHold();
         await psynet.loadNextTimelinePageWithReload();
@@ -4396,10 +4575,13 @@
       //       - Note that 'json' is not a permitted name for an attribute
       //
       // Returns true if the answer passed validation checks, false otherwise.
-      if (!options.timelineHoldResume) {
-        psynet.captureSubmissionControlState();
+      // Predicted answers are sent while the participant answers the next trial.
+      if (!options.background) {
+        if (!options.timelineHoldResume) {
+          psynet.captureSubmissionControlState();
+        }
+        $(" .response, .submit ").prop("disabled", true);
       }
-      $(" .response, .submit ").prop("disabled", true);
 
       let capturedRecordings = {};
       const submittedPageUuid = psynet.submissionPageUuid;
