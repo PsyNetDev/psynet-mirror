@@ -112,14 +112,16 @@ Open a PR to upstream, writing the description to a file first:
 - branch on the main repository: `gh pr create --repo Dallinger/Dallinger --base master --head <branch-name> --title "<title>" --body-file <file>`
 - branch on the fork: `gh pr create --repo Dallinger/Dallinger --base master --head <your-username>:<branch-name> --title "<title>" --body-file <file>`
 
-If your PsyNet PR depends on this new unmerged change to Dallinger, then
-after that Dallinger PR is open, replace the Dallinger entry in
+If your PsyNet PR depends on this new unmerged change to Dallinger, first
+make sure the Dallinger branch contains any Dallinger commit that the
+PsyNet target branch already pins (merge `master` into it if not) and push
+it. Then, once that Dallinger PR is open, replace the Dallinger entry in
 `pyproject.toml` with a pin on the full commit SHA of the branch head, not
-the branch name. PsyNet's bootstrap and CI tooling accept only
-a `>=X.Y.Z` lower bound whose `vX.Y.Z` tag exists, or a full
-40-character commit SHA on `github.com/Dallinger/Dallinger`. A commit on a fork branch can be fetched from
-`Dallinger/Dallinger` once its PR is open, so the URL is the same either
-way:
+the branch name. PsyNet's bootstrap and CI tooling accept only a
+`>=X.Y.Z` lower bound whose `vX.Y.Z` tag exists, or a full 40-character
+commit SHA on `github.com/Dallinger/Dallinger`. A commit on a fork branch
+can be fetched from `Dallinger/Dallinger` once its PR is open, so the URL
+is the same either way:
 
 ```toml
 # In [project.optional-dependencies], under experiment
@@ -128,10 +130,13 @@ way:
 
 Then, from the PsyNet repository root, refresh the vendored CI constraints
 with `psynet dev ci update-dallinger-constraints`. Repeat both steps after
-pushing new Dallinger commits that PsyNet needs. The pinned commit must
-also contain any Dallinger commit the target branch already pins. Return
-to a lower bound only once a Dallinger release contains everything PsyNet
-needs, and refresh the constraints again then.
+pushing new Dallinger commits that PsyNet needs.
+
+Return to a lower bound only once a Dallinger release contains every
+commit PsyNet needs, and make that release's version the bound: CI
+vendors the constraints of the `vX.Y.Z` tag named by the bound, so an
+older bound would test against an older Dallinger. Then refresh the
+constraints again.
 
 Use the GitHub CLI to find and read Dallinger job logs.
 Use the token `DALLINGER_GH_TOKEN` for all these commands (either via

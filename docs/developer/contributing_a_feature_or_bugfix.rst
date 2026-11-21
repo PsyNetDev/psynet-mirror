@@ -406,7 +406,8 @@ Depending on a custom branch of Dallinger
 -----------------------------------------
 
 Sometimes you may need to use a custom branch of Dallinger in a feature you are contributing to PsyNet.
-In order to do this, you will need to update the Dallinger entry in the ``experiment`` extra of ``pyproject.toml`` to point to a commit on your branch.
+First make sure your Dallinger branch contains any Dallinger commit that the PsyNet target branch already pins (merge Dallinger's ``master`` into it if not), and push it.
+Then update the Dallinger entry in the ``experiment`` extra of ``pyproject.toml`` to point to the head commit of your branch.
 You should write something like this:
 
 .. code-block:: toml
@@ -418,11 +419,12 @@ You should write something like this:
       # ...
   ]
 
-where ``<commit-hash>`` is the full 40-character hash of the commit you want to use.
-PsyNet's bootstrap and CI tooling accept only a ``>=X.Y.Z`` lower bound whose ``vX.Y.Z`` tag exists, or such a hash on ``github.com/Dallinger/Dallinger``; not a branch name.
+where ``<commit-hash>`` is the full 40-character hash of that commit.
+You can find it by clicking the "Copy" button next to the commit hash on the GitHub page for your branch.
+PsyNet's bootstrap and CI tooling accept only a ``>=X.Y.Z`` lower bound whose ``vX.Y.Z`` tag exists, or such a hash on ``github.com/Dallinger/Dallinger``, not a branch name.
 A commit on a fork can be used through the ``Dallinger/Dallinger`` URL once its pull request is open.
 Then run ``psynet dev ci update-dallinger-constraints`` from the PsyNet repository root to refresh the vendored CI constraints, and repeat both steps when you need newer Dallinger commits.
 
-You can find the commit hash by clicking the "Copy" button next to the commit hash on the GitHub page for the branch you want to use.
-The pinned commit must also contain any Dallinger commit that the target branch already pins.
-Return to a lower bound only once a Dallinger release contains everything PsyNet needs, and refresh the constraints again then.
+Return to a lower bound only once a Dallinger release contains every commit PsyNet needs, and make that release's version the bound:
+CI vendors the constraints of the ``vX.Y.Z`` tag named by the bound, so an older bound would test against an older Dallinger.
+Then refresh the constraints again.
