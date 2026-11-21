@@ -146,10 +146,15 @@ def _browser_config(page, experiment, participant):
     """Require stored AV consent when the experiment uses a stock AV module."""
     from .bot import Bot
     from .consent import AudiovisualConsent, LabRecruiterAudiovisualConsent
+    from .timeline import _page_trial
 
     config = page.background_recording
     _check_environment(page, experiment)
-    if config is not None and config.required and participant.current_trial is None:
+    if (
+        config is not None
+        and config.required
+        and _page_trial(page, participant) is None
+    ):
         raise ValueError("Required background recording needs a parent trial.")
     if config is None or isinstance(participant, Bot):
         return None

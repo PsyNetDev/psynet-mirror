@@ -60,7 +60,9 @@ class Exp(psynet.experiment.Experiment):
         assert [trial.answer for trial in trials] == ["yes"] * N_TRIALS
         assert bot.var.breaks == [BREAK_BEFORE]
         # The break page's time and response don't count towards its trial.
-        assert len({trial.time_taken for trial in trials}) == 1
+        assert [trial.time_taken for trial in trials] == [
+            RatingTrial.time_estimate
+        ] * N_TRIALS
         (break_response,) = Response.query.filter_by(
             participant_id=bot.id, question="trial_break"
         ).all()

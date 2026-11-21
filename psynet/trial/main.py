@@ -2975,9 +2975,10 @@ class TrialMaker(Module):
 
         The pages belong to the sequence of trials rather than to ``trial``:
         their answers aren't saved on the trial and don't count towards its
-        ``time_taken``. They do count towards its
-        :attr:`response_timeout_sec`, as the trial already exists. Like :meth:`~psynet.trial.main.Trial.show_trial`, the
-        method may take any subset of its parameters.
+        ``time_taken``. They do count towards its :attr:`response_timeout_sec`,
+        as the trial already exists. Like
+        :meth:`~psynet.trial.main.Trial.show_trial`, the method may take any
+        subset of its parameters.
 
         Parameters
         ----------

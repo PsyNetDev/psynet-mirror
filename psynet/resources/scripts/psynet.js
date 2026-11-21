@@ -681,6 +681,7 @@
           }
           let cleanup = await module.activate(context);
           let update;
+          let unknown = [];
           // Only a plain object is a result; a DOM node, say, would otherwise
           // pass as one without a cleanup.
           if (
@@ -688,19 +689,19 @@
             typeof cleanup === "object" &&
             Object.getPrototypeOf(cleanup) === Object.prototype
           ) {
-            let unknown = Object.keys(cleanup).filter(
+            unknown = Object.keys(cleanup).filter(
               (key) => !["cleanup", "update"].includes(key),
             );
-            if (unknown.length) {
-              throw new Error(
-                `JS page module ${normalizedSrc} returned unknown keys ` +
-                  `${unknown.join(", ")}; expected only cleanup and update.`,
-              );
-            }
             ({ cleanup, update } = cleanup);
           }
           psynet.validatePageCleanup(cleanup, `JS page module ${normalizedSrc}`);
           activated.push({ source: normalizedSrc, cleanup });
+          if (unknown.length) {
+            throw new Error(
+              `JS page module ${normalizedSrc} returned unknown keys ` +
+                `${unknown.join(", ")}; expected only cleanup and update.`,
+            );
+          }
           if (update !== undefined) {
             if (typeof update !== "function") {
               throw new Error(

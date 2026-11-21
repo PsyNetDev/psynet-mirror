@@ -2037,15 +2037,11 @@ class Page(Elt):
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
-            trial=None if self._before_trial else _trial_owning_page(participant),
+            trial=_trial_owning_page(participant, self),
         )
         db.session.add(resp)
 
-        resp._recording_parent = (
-            participant
-            if self._before_trial
-            else participant.current_trial or participant
-        )
+        resp._recording_parent = _page_trial(self, participant) or participant
 
         timed_out = self._time_limit_reached(metadata, participant)
         if timed_out:
@@ -2071,7 +2067,7 @@ class Page(Elt):
                 metadata=metadata,
                 experiment=experiment,
                 participant=participant,
-                trial=None if self._before_trial else participant.current_trial,
+                trial=_page_trial(self, participant),
                 response=resp,
             )
 
@@ -3364,10 +3360,21 @@ def estimate_duration(logic):
     return CreditEstimate(elts).get_max("time")
 
 
-def _trial_owning_page(participant):
+def _page_trial(page, participant):
+    """Return the participant's current trial unless ``page`` comes before it.
+
+    Pages from :meth:`~psynet.trial.main.TrialMaker.show_before_trial` are
+    shown once the trial exists, but belong to the sequence of trials.
+    """
+    return None if page._before_trial else participant.current_trial
+
+
+def _trial_owning_page(participant, page=None):
     """Return the trial whose pages the participant is on, or ``None``."""
     from psynet.trial.main import Trial
 
+    if page is not None and page._before_trial:
+        return None
     trial = participant.current_trial
     # Pages after _finalize_trial (feedback, or pages before the next
     # trial is prepared) leave current_trial set but don't belong to it.
