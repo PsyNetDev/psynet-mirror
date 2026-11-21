@@ -738,15 +738,18 @@
     };
 
     // What a page module's update() receives as ``response``.
+    // Times are performance.now() timestamps, such as an event's timeStamp
+    // or a requestAnimationFrame time, so reaction times can be measured from
+    // the frame that shows a stimulus to the key press.
     psynet.createResponseHandle = function () {
-      let shownAt = new Date();
+      let shownAt = performance.now();
       let clockStart = null;
       let handle = {
         // time_taken then runs from this call rather than from update().
-        startClock() {
-          clockStart = new Date();
+        startClock(at = performance.now()) {
+          clockStart = at;
         },
-        answer(value) {
+        answer(value, { at = performance.now() } = {}) {
           let answers = psynet.answers;
           if (answers.handle !== handle) {
             psynet.log.info("Ignored an answer to a trial that is no longer shown.");
@@ -754,7 +757,7 @@
           }
           answers.handle = null;
           let metadata = {
-            time_taken: (new Date() - (clockStart ?? shownAt)) / 1000,
+            time_taken: (at - (clockStart ?? shownAt)) / 1000,
             // The events of this trial only, as later trials share the page.
             event_log: psynet.trial.eventLog.splice(0),
           };

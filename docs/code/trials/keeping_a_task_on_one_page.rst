@@ -80,18 +80,30 @@ return just the cleanup function.
 
 The ``response`` handle has two methods:
 
-``response.startClock()``
+``response.startClock(at)``
     Starts the clock for the trial's ``time_taken``. Call it when the stimulus
-    is visible. Without it, ``time_taken`` runs from when ``update`` was
-    called.
+    is shown or starts playing; calling it again restarts the clock. Without
+    it, ``time_taken`` runs from when ``update`` was called. ``at`` is an
+    optional ``performance.now()`` timestamp to start from instead of now,
+    such as the time a ``requestAnimationFrame`` callback receives.
 
-``response.answer(value)``
-    Submits ``value`` as the trial's answer. Each handle answers once: it
+``response.answer(value, {at})``
+    Submits ``value`` as the trial's answer, with ``time_taken`` up to now or
+    to the optional ``performance.now()`` timestamp ``at``. Passing the key
+    press's ``event.timeStamp`` measures the reaction time to the press itself
+    rather than to when the code ran. Each handle answers once: it
     returns ``true`` the first time and ``false`` afterwards. PsyNet sends the
     answer in the background, so the page should stop accepting input until
     ``update`` is called with the next trial. If the server rejects the
     answer, PsyNet shows its error message and calls ``update`` again with the
     same trial.
+
+To measure reaction times, start the clock in a ``requestAnimationFrame``
+callback with the time it receives, after putting the stimulus on the page,
+and answer with the key press's ``event.timeStamp``. The trial's
+``time_taken`` is then the time from the frame that shows the stimulus to the
+press. :download:`The flanker demo <../../../demos/experiments/flanker/experiment.py>`
+measures reaction times this way.
 
 Showing the next trial without waiting
 --------------------------------------

@@ -1,0 +1,1 @@
+Added the `flanker` demo, an Eriksen flanker reaction time task whose trials follow each other without waiting for the server, and updated the documentation to describe how to measure reaction times in PsyNet.
