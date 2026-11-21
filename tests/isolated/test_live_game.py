@@ -30,6 +30,7 @@ import psynet
 from psynet.bot import Bot
 from psynet.experiment import Experiment, get_experiment
 from psynet.live_game import (
+    FAILED,
     FINISHED,
     NOT_STARTED_MESSAGE,
     PLAYERS_LEFT,
@@ -2682,7 +2683,7 @@ def test_a_step_without_a_game_has_a_record_that_says_so(pair, monkeypatch):
         _arrive(game_barrier, member)
 
     game = members[0].live_games[game_barrier.id]
-    assert (game.id, game.status) == (None, LiveGameStatus.NOT_STARTED)
+    assert game.id is None and game.status is LiveGameStatus.NOT_STARTED
     assert (game.answer, game.outcome, game.end_reason, game.player) == (None,) * 4
     assert (game.left_early, game.done_reason) == (False, None)
     assert (game.messages, game.moments, game.participant_ids) == ([], [], [])
@@ -2728,9 +2729,9 @@ def test_the_game_page_fails_once_its_game_can_no_longer_end(pair, monkeypatch):
 @pytest.mark.parametrize(
     "end_reason, outcome, record_complete",
     [
-        ("failed", [None, None], True),
+        (FAILED, [None, None], True),
         # The game's outcome raised an error too.
-        ("failed", None, True),
+        (FAILED, None, True),
         (None, None, False),
     ],
 )
@@ -2753,6 +2754,7 @@ def test_a_failed_game_fails_its_players_as_any_error_does(
     )
     result = LiveGameRecord(session_id)
     assert result.record_complete is record_complete
+    assert result.status is LiveGameStatus.FAILED
 
     notified = []
     monkeypatch.setattr(

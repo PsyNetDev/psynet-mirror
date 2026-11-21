@@ -153,7 +153,7 @@ class RockPaperScissors(LiveGame):
         whether the game was played to the end."""
         results = throws_seen_by(player, outcome["throws"])
         return {
-            "finished": reason == "finished",
+            "finished": reason == FINISHED,
             "throws": results,
             "wins": count(results, "win"),
             "partner_wins": count(results, "loss"),

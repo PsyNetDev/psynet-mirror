@@ -118,8 +118,8 @@ class LiveGameRecord:
 
     @property
     def status(self) -> LiveGameStatus:
-        """Where the game is, as a :class:`LiveGameStatus`: whether it
-        started, is running, has ended or failed. A game that ended for any
+        """Where the game is, as a :class:`LiveGameStatus`, which says
+        whether it started, is running, has ended or failed. A game that ended for any
         reason is :attr:`~LiveGameStatus.ENDED`, and :attr:`end_reason`
         says why. It's about the whole game, so it stays
         :attr:`~LiveGameStatus.RUNNING` for a participant who
@@ -130,7 +130,7 @@ class LiveGameRecord:
 
     @property
     def end_reason(self) -> Optional[str]:
-        """Why the game ended: the ``reason`` that the game's ``outcome``
+        """Why the game ended, as the ``reason`` that the game's ``outcome``
         received. That's :data:`~psynet.live_game.FINISHED` for a game whose
         ``is_over`` returned ``True`` or that reached its ``duration``,
         :data:`~psynet.live_game.TIMEOUT`,

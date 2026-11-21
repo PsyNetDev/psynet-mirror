@@ -1194,7 +1194,7 @@ PsyNet calls once ``is_over`` returns ``True``; the reason then isn't
 Dallinger's `outcome <dallinger-outcome_>`_ lists the other reasons, such as
 ``"not_joined"``. If the game's code raised an error, ``reason`` is
 ``"failed"``, and ``outcome`` is the outcome of the state just before the
-error. :mod:`psynet.live_game` has constants for PsyNet's reasons:
+error. :mod:`psynet.live_game` has constants for the common reasons:
 :data:`~psynet.live_game.FINISHED`, :data:`~psynet.live_game.TIMEOUT`,
 :data:`~psynet.live_game.PLAYERS_LEFT` and
 :data:`~psynet.live_game.FAILED`.

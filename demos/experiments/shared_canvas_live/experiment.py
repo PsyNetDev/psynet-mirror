@@ -312,7 +312,7 @@ class SharedCanvas(LiveGame):
         coins = outcome["coins"]
         others = coins[:player] + coins[player + 1 :]
         return {
-            "finished": reason == "finished",
+            "finished": reason == FINISHED,
             "score": coins[player],
             "best": all(coins[player] > n for n in others),
             "group_total": sum(coins),

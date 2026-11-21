@@ -244,7 +244,7 @@ class Snake(LiveGame):
         food = outcome["food"]
         others = food[:player] + food[player + 1 :]
         return {
-            "finished": reason == "finished",
+            "finished": reason == FINISHED,
             "score": food[player],
             "best": all(food[player] > n for n in others),
             "crashes": outcome["crashes"][player],
