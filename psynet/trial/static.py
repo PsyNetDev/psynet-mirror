@@ -6,7 +6,11 @@ authors customize node eligibility with ``custom_node_filter`` and ranking with
 ``select_node``; network adaptation remains an implementation detail.
 """
 
+import datetime
+import json
 from typing import Callable, List, Literal, Optional, Sequence, Union
+
+from dallinger import db
 
 from psynet.trial.chain import (
     Candidate,
@@ -18,7 +22,9 @@ from psynet.trial.chain import (
 )
 
 from ..sync import LateAction
+from ..timeline import ModuleState
 from ..utils import NoArgumentProvided, get_logger, is_method_overridden
+from .main import Selection
 
 logger = get_logger()
 
@@ -67,6 +73,85 @@ class StaticTrial(ChainTrial):
 
     def show_trial(self, experiment, participant):
         raise NotImplementedError
+
+    def _check_prepared_position(self, participant):
+        state = participant.module_state
+        if self.participant_id != participant.id or not self.prepared_in_advance:
+            raise ValueError("Trial does not belong to this player's plan.")
+        if (
+            state is None
+            or self.module_state != state
+            or self.failed
+            or participant.failed
+            or self.block_position != state.block_position
+            or self.position != state.n_completed_trials
+        ):
+            raise ValueError("Trial is outside the participant's active sequence.")
+
+    def _expire_if_overdue(self):
+        """Check the native response deadline while holding the trial lock."""
+        if self.complete or self.failed or self.response_started_at is None:
+            return False
+        from ..experiment import get_trial_maker
+
+        seconds = get_trial_maker(self.trial_maker_id).response_timeout_sec
+        if (
+            seconds is None
+            or datetime.datetime.now()
+            < self.response_started_at + datetime.timedelta(seconds=seconds)
+        ):
+            return False
+        self.fail(reason="response_timeout")
+        return True
+
+    def fail(self, reason=None):
+        already_failed = self.failed
+        super().fail(reason=reason)
+        if not already_failed and reason == "response_timeout":
+            session_id = self.var.get("solo_live_session")
+            if session_id is not None:
+                from ..live_game.play import _end_expired_session
+
+                db.run_after_commit(lambda: _end_expired_session(session_id))
+
+    def start_response(self, participant):
+        """Open the response clock once. The caller locks the participant and trial."""
+        if (
+            self.complete
+            and self.participant_id == participant.id
+            and self.prepared_in_advance
+        ):
+            return  # A redelivered start can follow the saved answer.
+        self._check_prepared_position(participant)
+        if self.response_started_at is None:
+            self.response_started_at = datetime.datetime.now()
+
+    def submit_response(self, participant, answer, time_taken=None):
+        """Record a JSON answer under the participant and trial locks.
+
+        Return True for a new answer, False for an exact redelivery.
+        """
+        from ..experiment import get_experiment, get_trial_maker
+
+        if self.participant_id != participant.id or not self.prepared_in_advance:
+            raise ValueError("Trial does not belong to this player's plan.")
+        if self.complete:
+            if (
+                json.dumps(self.var.prepared_raw_answer, sort_keys=True)
+                != json.dumps(answer, sort_keys=True)
+                or self.time_taken != time_taken
+            ):
+                raise ValueError("Conflicting replay of a completed trial.")
+            return False
+        self._check_prepared_position(participant)
+        if self.response_started_at is None:
+            raise ValueError("The trial is not open for a response.")
+        self.time_taken = time_taken
+        self.var.prepared_raw_answer = answer
+        self._complete_with_answer(
+            answer, get_experiment(), get_trial_maker(self.trial_maker_id)
+        )
+        return True
 
 
 class StaticTrialMaker(ChainTrialMaker):
@@ -433,6 +518,86 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_waiting_message=sync_group_waiting_message,
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
+
+    def trial_plan(self, participant):
+        """Prepare or reload the full ordered deck and its submitted answer prefix.
+
+        Keep this plan in server-side game state. A LiveTrialGame can present
+        any prefix of it by setting a stop position for that session.
+        """
+        trials = self.prepare_trials(participant)
+        return {
+            "definitions": [self.get_public_definition(trial) for trial in trials],
+            "answers": [
+                trial.var.prepared_raw_answer for trial in trials if trial.complete
+            ],
+            "_trial_ids": [trial.id for trial in trials],
+        }
+
+    def prepare_trials(self, participant):
+        """Create the fixed trials together, or reload the same rows on re-entry."""
+        from ..experiment import get_experiment
+
+        state = participant.module_state
+        if state is None or state.module_id != self.id:
+            raise ValueError("Prepare trials within the active trial maker.")
+        # Serialize concurrent attempts before deciding whether to allocate the deck.
+        db.session.query(ModuleState.id).filter_by(id=state.id).with_for_update().one()
+        existing = (
+            self.trial_class.query.filter_by(
+                module_state_id=state.id, block_position=state.block_position
+            )
+            .order_by(self.trial_class.position)
+            .all()
+        )
+        if existing:
+            if not all(trial.prepared_in_advance for trial in existing):
+                raise ValueError("This block already contains ordinary trials.")
+            return existing
+        if (
+            self.sync_group_type
+            or self.n_repeat_trials
+            or self.check_performance_every_trial
+            or self.recruit_mode == "n_trials"
+        ):
+            raise ValueError(
+                "Preparing trials in advance requires independent fixed trials without competitive quotas or per-trial checks."
+            )
+        if (
+            self.trial_class.make_definition != StaticTrial.make_definition
+            or self.trial_class.finalize_definition != StaticTrial.finalize_definition
+        ):
+            raise ValueError(
+                "Preparing trials in advance requires static node definitions."
+            )
+        experiment = get_experiment()
+        self._plan_block(participant, experiment)
+        planned = state.planned_network_ids
+        if planned is None or state.plan_position:
+            raise ValueError("Prepare trials with a listed or callable node order.")
+        limit = len(planned)
+        if self.max_trials_per_block is not None:
+            limit = min(limit, self.max_trials_per_block)
+        if self.max_trials_per_participant is not None:
+            limit = min(limit, self.max_trials_per_participant - state.n_created_trials)
+        network_ids = planned[: max(0, limit)]
+        nodes = {
+            node.network_id: node
+            for node in self.node_class.query.filter(
+                self.node_class.network_id.in_(network_ids)
+            ).all()
+        }
+        trials = [
+            self._create_selected_trial(
+                Selection(nodes[network_id]),
+                experiment,
+                participant,
+                prepared_in_advance=True,
+            )
+            for network_id in network_ids
+        ]
+        db.session.flush()
+        return trials
 
     def _selection_hook_overrides(self):
         return [

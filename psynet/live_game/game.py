@@ -37,9 +37,11 @@ from .psynet_entry import PlayerReady, _absences, _psynet_entry
 from .record import (
     _CLOSED_EFFECT,
     _MOMENT_EFFECT,
+    _PREPARED_TRIAL_EFFECT,
     _PSYNET_EFFECTS,
     _REWARD_EFFECT,
     _STARTED_EFFECT,
+    _TRIAL_EFFECT,
 )
 from .registry import _register_live_game
 from .reward import (
@@ -593,6 +595,88 @@ class LiveGame(RealtimeGame):
             game started.
         """
         return super().handle_player_ending(game, player, ending)
+
+    def start_trials(self, state):
+        """Open each player's current trial when this game starts."""
+        for player, plan in enumerate(state["plans"]):
+            position = len(plan["answers"])
+            ids = plan["_trial_ids"]
+            if position < len(ids):
+                super().queue_effect(
+                    _PREPARED_TRIAL_EFFECT,
+                    {"player": player, "trial_id": ids[position]},
+                )
+
+    def _open_trial(self, state, player, position):
+        plans = state["plans"]
+        if type(player) is not int or not 0 <= player < len(plans):
+            raise ValueError("Unknown player for these trial plans.")
+        plan = plans[player]
+        current = len(plan["answers"])
+        ids = plan["_trial_ids"]
+        if position is not None and (
+            type(position) is not int or position != current or current >= len(ids)
+        ):
+            raise Reject("This trial is no longer current.")
+        if current >= len(ids):
+            raise ValueError("This player's trial segment is complete.")
+        return plan, ids, current
+
+    def record_trial_presentation(self, state, *, player, position):
+        """Count a browser display of the current occurrence, including a redisplay."""
+        _, ids, position = self._open_trial(state, player, position)
+        super().queue_effect(
+            _PREPARED_TRIAL_EFFECT,
+            {
+                "player": player,
+                "trial_id": ids[position],
+                "presented": True,
+            },
+        )
+
+    def answer_trial(self, state, *, player, answer, position=None, time_taken=None):
+        """Answer the open trial and start the next one in the same event transaction."""
+        plan, ids, position = self._open_trial(state, player, position)
+        if time_taken is not None and (not is_number(time_taken) or time_taken < 0):
+            raise ValueError("Invalid presentation duration.")
+        super().queue_effect(
+            _PREPARED_TRIAL_EFFECT,
+            to_jsonable_python(
+                {
+                    "player": player,
+                    "trial_id": ids[position],
+                    "answer": answer,
+                    "time_taken": time_taken,
+                    "next_id": ids[position + 1] if position + 1 < len(ids) else None,
+                }
+            ),
+        )
+        plan["answers"].append(answer)
+
+    def record_trial(self, *, player, slot, definition, answer, time_taken=None):
+        """Save an accepted item in a cued game as a native LiveGameItemTrial.
+
+        Call after validating the action, with the definition from the game's
+        assigned deck. Slots identify a player's items within this session.
+        Optional time_taken is the browser's presentation duration in seconds.
+        The event writer creates the row under the enclosing cued trial's module.
+        """
+        if type(player) is not int or player < 0 or type(slot) is not int or slot < 0:
+            raise ValueError("player and slot must be non-negative integers.")
+        if time_taken is not None and (not is_number(time_taken) or time_taken < 0):
+            raise ValueError("time_taken must be a finite non-negative duration.")
+        super().queue_effect(
+            _TRIAL_EFFECT,
+            to_jsonable_python(
+                dict(
+                    player=player,
+                    slot=slot,
+                    definition=definition,
+                    answer=answer,
+                    time_taken=time_taken,
+                )
+            ),
+        )
 
     def record(self, name, data=None):
         """Record a moment in the game, such as a round's result or a player

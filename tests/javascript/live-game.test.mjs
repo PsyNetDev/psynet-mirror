@@ -906,6 +906,60 @@ describe("psynet.liveGame", () => {
     assert.deepEqual(plain(notices.at(-1)), [AWAY_NOTICE, null]);
   });
 
+  it("times an open occurrence without a deck, retries refusals and ignores duplicate input", () => {
+    let now = 100;
+    context.performance = { now: () => now };
+    liveGame.onChange(() => {});
+    const socket = sockets[0];
+    const current = { ...view(0), completed: 2, definition: "left" };
+    socket.view(current);
+    const clock = liveGame.startResponseClock(current);
+    const send = socket.send.bind(socket);
+    socket.send = () => undefined;
+    assert.equal(clock.answer("left"), undefined);
+    now += 350;
+    socket.send = send;
+    assert.equal(clock.answer("left"), 1);
+    assert.equal(clock.answer("right"), undefined);
+    assert.deepEqual(plain(socket.sent), [
+      ["pick_numbers", { type: "trial_answer", message: { position: 2, answer: "left", seconds: 0.35 } }],
+    ]);
+    socket.fire("onRejected", 1, "Invalid answer");
+    assert.equal(clock.answer("right"), 2);
+    const next = { ...current, completed: 3 }; // Same stimulus, different occurrence.
+    socket.view(next);
+    const nextClock = liveGame.startResponseClock(next);
+    assert.equal(clock.answer("left"), undefined);
+    assert.equal(nextClock.answer("left"), 3);
+    changePage();
+    socket.fire("onRejected", 3, "late rejection");
+    assert.equal(nextClock.answer("left"), undefined);
+    assert.equal(sockets.length, 1);
+  });
+
+  it("predicts trial answers only for the matching occurrence of a public deck", () => {
+    liveGame.predict(liveGame.predictTrialAnswer);
+    const predict = sockets[0].options.predict;
+    const item = { ...view(0), completed: 0, stop: 2, definition: false };
+    const answer = { type: "trial_answer", message: { position: 0 } };
+    predict(item, answer);
+    assert.equal(item.completed, 0);
+    item.deck = [false];
+    predict(item, answer); // The next occurrence has not arrived.
+    assert.equal(item.completed, 0);
+    item.deck.push(false);
+    predict(item, { ...answer, type: "hint" });
+    assert.equal(item.completed, 0);
+    predict(item, answer);
+    predict(item, answer);
+    assert.equal(item.completed, 1);
+    assert.equal(item.definition, false);
+    predict(item, { ...answer, message: { position: 1 } });
+    assert.equal(item.completed, 2);
+    assert.equal(item.definition, null);
+    assert.throws(() => liveGame.startResponseClock(item), /open trial/);
+  });
+
   it("predicts with the page's predict callback, leaving out PsyNet's own messages", () => {
     const seen = [];
     assert.equal(

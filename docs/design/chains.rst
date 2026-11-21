@@ -105,6 +105,8 @@ the stimuli and the page:
 - **Graph chains**, where each node draws on several neighbors rather than a
   single predecessor.
 
+For a staircase presented on one continuous page, see :doc:`presenting_trials`.
+
 When a trial fails
 ------------------
 

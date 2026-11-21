@@ -63,7 +63,7 @@ from psynet.sync import (
     check_group_dropout_policies,
 )
 from psynet.timeline import Response, ResponseNotReady, Timeline
-from psynet.trial.main import Trial
+from psynet.trial.main import GenericTrialNode, LiveGameItemTrial, Trial
 
 _ISOLATED_DIR = Path(__file__).resolve().parent
 if str(_ISOLATED_DIR) not in sys.path:
@@ -1358,6 +1358,37 @@ def test_two_play_live_games_with_one_id_are_refused_when_the_experiment_loads(
         RuntimeError, match="more than one PlayLiveGame with the id 'practice'"
     ):
         Twice.check_live_games()
+
+
+def test_solo_game_needs_no_group_and_keys_must_be_unique(registry):
+    class Solo(LiveGame):
+        name = "one_player"
+        min_players = max_players = 1
+
+        def bot(self, view, player, now):
+            return None
+
+    def step(**kwargs):
+        return PlayLiveGame(
+            game_class=Solo,
+            page=LiveGamePage("solo", "Play.", time_estimate=1),
+            **kwargs,
+        )
+
+    class Once(Experiment):
+        timeline = Timeline(step())
+
+    Once.check_live_games()
+
+    class Twice(Experiment):
+        timeline = Timeline(step(), step())
+
+    with pytest.raises(RuntimeError, match="more than one PlayLiveGame"):
+        Twice.check_live_games()
+    with pytest.raises(TypeError, match="require group_type"):
+        step(max_wait_time=1)
+    with pytest.raises(ValueError, match="exactly one player"):
+        PlayLiveGame(game_class=type(_pick_numbers()), page=None)
 
 
 def test_live_games_need_their_bots_to_play_together(pair):
@@ -3959,3 +3990,117 @@ def test_a_newcomer_waits_at_the_barrier_once_the_running_game_is_full(
 
     assert _game_id(members[2], "growing") == session_id
     assert _game_id(members[3], "growing") is None
+
+
+def test_record_trial_saves_distinct_players_and_ignores_matching_replay(pair):
+    members, _ = pair
+    session_id = _pair_session(pair)
+    row = db.session.get(RealtimeSession, session_id)
+    group_round = SyncGroupRound(
+        sync_group_id=members[0].sync_group_links[0].sync_group_id,
+        module_id="game",
+        number=0,
+        live_game_id=session_id,
+    )
+    experiment = get_experiment()
+    node = GenericTrialNode("game", experiment)
+    for member in members:
+        enclosing = Trial(experiment, node, member, False, False, definition={})
+        enclosing.group_round = group_round
+    db.session.flush()
+    game = _pick_numbers()
+    effects = []
+    token = queued_effects.set(effects)
+    try:
+        for player in range(2):
+            game.record_trial(
+                player=player,
+                slot=0,
+                definition={"item": "A"},
+                answer=bool(player),
+                time_taken=1.25,
+            )
+    finally:
+        queued_effects.reset(token)
+
+    for name, payload in effects:
+        game.handle_effect(name, payload, row)
+        game.handle_effect(name, payload, row)
+    trials = LiveGameItemTrial.query.filter_by(live_session_id=session_id).all()
+    assert {t.participant_id: t.answer for t in trials} == {
+        int(member): bool(i) for i, member in enumerate(row.members)
+    }
+    assert all(
+        t.live_slot == 0 and t.time_taken == 1.25 and t.finalized for t in trials
+    )
+    name, payload = effects[0]
+    with pytest.raises(ValueError, match="Conflicting responses"):
+        game.handle_effect(name, {**payload, "answer": True}, row)
+
+
+def test_live_trial_game_owns_segment_progress():
+    from psynet.live_game import LiveTrialGame
+    from psynet.live_game.testing import LocalGame
+
+    plans = [
+        {"definitions": ["a", "b", "c"], "_trial_ids": [1, 2, 3], "answers": [False]},
+        {
+            "definitions": ["c", "b", "a"],
+            "_trial_ids": [4, 5, 6],
+            "answers": [None, True],
+        },
+    ]
+    session = LocalGame(LiveTrialGame, players=2, settings={"plans": plans, "stop": 2})
+    assert session.view(0)["definition"] == "b"
+    assert session.view(1)["definition"] is None
+    assert not {"plans", "answers", "_trial_ids"} & session.view(0).keys()
+    session.game.answer_trial(session.state, player=0, answer=False)
+    assert session.is_over()
+    assert session.outcome() == session.answer(0) == session.answer(1) == {}
+    assert session.outcome("timeout") == {}
+    assert "deck" not in session.view(0)
+    assert session.view(0)["completed"] == session.view(0)["stop"] == 2
+    with pytest.raises(ValueError, match="segment is complete"):
+        session.game.answer_trial(session.state, player=0, answer=True)
+    assert plans[0]["answers"] == [False]
+    assert plans[0]["_trial_ids"] == [1, 2, 3]
+    resumed = LocalGame(LiveTrialGame, players=2, settings={"plans": plans})
+    assert resumed.view(1)["definition"] == "a"
+    assert resumed.view(1)["stop"] == 3
+    with pytest.raises(ValueError, match="beyond this segment"):
+        LocalGame(LiveTrialGame, players=2, settings={"plans": plans, "stop": 1})
+
+
+def test_typed_trial_answer_without_a_public_deck():
+    from typing import Literal
+
+    from psynet.live_game import LiveTrialGame, TrialAnswer
+
+    class Choice(TrialAnswer):
+        answer: Literal["left", "right"]
+
+    class Game(LiveTrialGame):
+        messages = [Choice]
+
+    plan = {"definitions": ["a", "a"], "_trial_ids": [1, 2], "answers": []}
+    session = LocalGame(Game, players=1, settings={"plans": [plan]})
+    assert "deck" not in session.view(0)
+    answer = {"position": 0, "answer": "left", "seconds": 0.25}
+
+    def send(**changes):
+        session.send(0, {"type": "trial_answer", "message": {**answer, **changes}})
+
+    for invalid in [
+        {"position": True},
+        {"answer": "pass"},
+        {"seconds": -1},
+        {"player": 0},
+    ]:
+        with pytest.raises(Reject):
+            send(**invalid)
+    send()
+    assert session.view(0)["completed"] == 1
+    with pytest.raises(Reject, match="no longer current"):
+        send()
+    session.send(0, Choice(position=1, answer="right"))
+    assert session.is_over()

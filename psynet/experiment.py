@@ -3441,6 +3441,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if isinstance(barrier, _LiveGameBarrier):
                 barriers[id(barrier)] = barrier
         ids = [barrier.id for barrier in barriers.values()]
+        ids.extend(
+            elt.links["solo_live_game"]
+            for elt in cls.timeline.all_elts
+            if "solo_live_game" in (getattr(elt, "links", None) or {})
+        )
         repeated = sorted({id_ for id_ in ids if ids.count(id_) > 1})
         if repeated:
             raise RuntimeError(
@@ -3451,7 +3456,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         serial = cls.test_mode != "parallel" and not cls._subclass_overridden_names(
             "test_serial_run_bots"
         )
-        if live_game_classes() and cls.test_n_bots > 1 and serial:
+        if (
+            cls.test_n_bots > 1
+            and serial
+            and any(game.max_players != 1 for game in live_game_classes())
+        ):
             raise RuntimeError(
                 "The experiment plays live games, whose bots have to play "
                 "together, but psynet test runs its bots one at a time. Set "
@@ -5089,6 +5098,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 (
                     resources.files("psynet") / "resources/scripts/live-game.js",
                     "/static/scripts/live-game.js",
+                ),
+                (
+                    resources.files("psynet") / "resources/scripts/vocabtest.js",
+                    "/static/scripts/vocabtest.js",
                 ),
                 (
                     resources.files("psynet")
@@ -7867,6 +7880,26 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             request.args.get("uniqueId"),
             request.args.get("barrierId"),
         )
+
+    @experiment_route("/live_game/trial", methods=["POST"])
+    @classmethod
+    @with_transaction
+    def route_live_game_trial(cls):
+        from flask import abort
+        from sqlalchemy.orm.exc import NoResultFound
+
+        from .live_game.on_demand import page_step
+
+        body = request.get_json()
+        if not isinstance(body, dict) or not isinstance(body.get("uniqueId"), str):
+            abort(400)
+        try:
+            participant = cls._get_request_participant_from_unique_id(
+                body["uniqueId"], for_update=True
+            )
+        except NoResultFound:
+            abort(404)
+        return page_step(get_experiment(), participant, body)
 
     @experiment_route("/live_game/players", methods=["GET"])
     @classmethod

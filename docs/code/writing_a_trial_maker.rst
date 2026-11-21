@@ -32,6 +32,12 @@ The :class:`~psynet.trial.static.StaticTrialMaker` goes in the timeline:
 .. literalinclude:: ../../demos/pipelines/simple_rating/experiment.py
    :pyobject: get_timeline
 
+To collect several responses in one trial, return the pages together from
+``show_trial()`` with ``join(...)``. Give each page a distinct label and set
+``accumulate_answers = True`` on the trial class. The trial's answer then
+contains a value for each page label, as in
+:download:`the two-rating example <../../demos/features/accumulate_answers/experiment.py>`.
+
 What the trial adds
 -------------------
 
@@ -368,6 +374,8 @@ To change what failing participants see, override
 ``fail_trials_on_participant_performance_check`` (default ``True``) controls
 whether a failed check also fails the participant's trials in this trial
 maker. See :doc:`/code/trials/participant_and_trial_failure`.
+
+.. _present-trials-cue:
 
 Trials without a trial maker
 ----------------------------

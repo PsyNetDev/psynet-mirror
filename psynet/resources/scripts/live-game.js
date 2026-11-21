@@ -3,6 +3,7 @@
 
   // The type of PsyNet's PlayerReady message.
   const READY = "psynet_ready";
+  const TRIAL_ANSWER = "trial_answer";
 
   // How long a player must have been away before onPlayersAway reports them,
   // so that a player whose page reloads isn't reported.
@@ -172,6 +173,9 @@
         currentPage = null;
         if (state !== null) {
           state.left = true;
+          state.trialRequest?.abort();
+          clearTimeout(state.trialTimer);
+          page.showNotice("psynet-trial-status", null);
           state.socket?.close();
           state.away.stop();
           clearTimeout(state.connectionTimer);
@@ -212,6 +216,7 @@
         interpolate: null,
         receiveCallbacks: [],
         changeCallbacks: [],
+        responseClock: null,
         awayCallbacks: [],
         connectionTimer: null,
         moveOnTimer: null,
@@ -359,6 +364,10 @@
       socket.onOpen(() => {
         readyDue = true;
       });
+      socket.onRejected((number) => {
+        const clock = state.responseClock;
+        if (clock && clock.messageNumber === number) clock.messageNumber = undefined;
+      });
       socket.onClock(() => {
         if (readyDue) {
           readyDue = false;
@@ -489,6 +498,98 @@
         callEach(state.statusCallbacks);
       }
       return number;
+    }
+
+    /**
+     * Start timing the occurrence the experiment has just displayed. The
+     * handle sends at most one queued answer until the server rejects it.
+     * A new clock or leaving the page invalidates the previous handle.
+     */
+    function startResponseClock(view) {
+      if (!Number.isSafeInteger(view?.completed) || view.completed < 0 || view.definition == null) {
+        throw new TypeError("Start the response clock with the view of an open trial.");
+      }
+      const state = pageState();
+      const position = view.completed;
+      const shownAt = performance.now();
+      const clock = { messageNumber: undefined };
+      state.responseClock = clock;
+      return {
+        answer(value) {
+          if (
+            state.left || state.ended || !state.startedView ||
+            state.responseClock !== clock || clock.messageNumber !== undefined
+          ) return;
+
+          // send can synchronously invoke an onChange handler. Reserve the
+          // clock before sending, then unlock it if the message wasn't queued.
+          let number;
+          clock.messageNumber = null;
+          try {
+            const response = {position, answer: value, seconds: (performance.now() - shownAt) / 1000};
+            if (state.advanceTrial) {
+              state.advanceTrial(response);
+              number = position;
+            } else {
+              number = send(TRIAL_ANSWER, response);
+            }
+            return number;
+          } finally {
+            clock.messageNumber = number;
+          }
+        },
+      };
+    }
+
+    // An on-demand assignment lives in SQL. Retransmit the exact answer (and
+    // original RT) if its acknowledgement is lost. A second tab can win the
+    // race; ask for its current assignment after a conflicting response.
+    function onTrial(callback) {
+      if (!session().onDemand) return onChange(callback);
+      const state = pageState();
+      if (state.trialRequest) throw new Error("Register one onTrial renderer per game page.");
+      state.trialRequest = new AbortController();
+      const identity = page.trialIdentity(state.session.liveGameId);
+      async function advance(response = null) {
+        if (state.left || state.ended) return;
+        let reply;
+        let view;
+        try {
+          reply = await fetch("/live_game/trial", {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            signal: state.trialRequest.signal,
+            body: JSON.stringify({...identity, response}),
+          });
+          if (reply.status >= 500) throw new Error("Temporary server error");
+          if (reply.ok) view = await reply.json();
+        } catch (error) {
+          if (state.left || state.ended) return;
+          page.showNotice("psynet-trial-status", "Reconnecting to your trial…");
+          state.trialTimer = setTimeout(() => advance(response), 1000);
+          return;
+        }
+        if (state.left || state.ended) return;
+        if (reply.status === 409 && response !== null) return advance();
+        if (!reply.ok) {
+          page.showNotice("psynet-trial-status", "This trial could not continue. Reload the page to resume.");
+          return;
+        }
+        page.showNotice("psynet-trial-status", view.status === "wait" ? "Waiting for the next trial…" : null);
+        if (view.status === "available") callback(view);
+        else state.trialTimer = setTimeout(() => advance(), 1000);
+      }
+      state.advanceTrial = advance;
+      return onStarted(() => advance());
+    }
+
+    /** Optional prediction for a complete public deck, up to its segment boundary. */
+    function predictTrialAnswer(view, type, message) {
+      if (type !== TRIAL_ANSWER || !Array.isArray(view.deck) ||
+          view.definition == null || view.completed !== message.position) return;
+      const next = view.completed + 1;
+      if (next >= view.deck.length && next !== view.stop) return;
+      view.completed = next;
+      view.definition = view.deck[next] ?? null;
     }
 
     // Asks the server how to show the game's players, while the latest view
@@ -941,6 +1042,8 @@
       secondsLeft: secondsLeft,
       gameTime: gameTime,
       send: send,
+      startResponseClock,
+      predictTrialAnswer,
       showRejections: showRejections,
       showStatus: showStatus,
       onTimeLeft: onTimeLeft,
@@ -948,6 +1051,7 @@
       onStarted: onStarted,
       enableWhilePlaying: enableWhilePlaying,
       onChange: onChange,
+      onTrial,
       onReceive: onReceive,
       onPlayersAway: onPlayersAway,
       predict: predict,
@@ -996,6 +1100,8 @@
     // hasGame first. What a method returns then, if not psynet.liveGame.
     const WITHOUT_GAME = {
       send: undefined,
+      startResponseClock: null,
+      predictTrialAnswer: undefined,
       predictedView: null,
       interpolatedView: null,
       secondsLeft: null,
@@ -1049,6 +1155,7 @@
             element.hidden = true;
           });
         },
+        trialIdentity: (session) => ({session, uniqueId: window.psynetTemplateData.uniqueId, page: psynet.var.pageUuid}),
         fetchPlayers: async (playId) => {
           let params = new URLSearchParams({ uniqueId: psynet.uniqueId, playId });
           let response = await fetch(`/live_game/players?${params}`, {

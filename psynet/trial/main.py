@@ -16,6 +16,7 @@ from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -520,6 +521,16 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     response_id = Column(Integer, ForeignKey("response.id"), index=True)
     repeat_trial_index = Column(Integer)
     n_repeat_trials = Column(Integer)
+    prepared_in_advance = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        doc="Whether the maker created this trial as part of a fixed deck before presentation.",
+    )
+    response_started_at = Column(
+        DateTime, doc="When the server began expecting this response."
+    )
     time_taken = Column(Float)
     time_limit_reached = Column(Boolean)
     _initial_assets = deferred(Column(PythonDict))
@@ -742,12 +753,15 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         assets=None,
         definition=NoArgumentProvided,  # If provided, overrides make definition
         position=None,
+        module_state=NoArgumentProvided,
+        prepared_in_advance=False,
     ):
         self.node = node
         self.network = node.network
         db.session.add(self)
 
         self.complete = False
+        self.prepared_in_advance = prepared_in_advance
         self.finalized = False
         self.participant = participant
         self.participant_id = participant.id
@@ -761,7 +775,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         self.response_id = None
         self.time_taken = None
         self.trial_maker_id = node.trial_maker_id
-        self.module_state = participant.module_state
+        self.module_state = (
+            participant.module_state
+            if module_state is NoArgumentProvided
+            else module_state
+        )
         self.position = (
             position
             if position is not None
@@ -808,10 +826,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
 
         if (
             not is_repeat_trial
-            and participant.module_state is not None
-            and hasattr(participant.module_state, "n_created_trials")
+            and self.module_state is not None
+            and hasattr(self.module_state, "n_created_trials")
         ):
-            participant.module_state.n_created_trials += 1
+            self.module_state.n_created_trials += 1
 
     def _next_position(self, participant, is_repeat_trial, repeat_trial_index):
         """Return the next zero-based position in this participant's trial maker."""
@@ -1727,6 +1745,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
 
     def _show_trial(self, experiment, participant):
+        if self.response_started_at is None:
+            self.response_started_at = datetime.datetime.now()
         logic = call_function_with_context(
             self.show_trial,
             experiment=experiment,
@@ -1817,24 +1837,26 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 trial.complete = True
                 return
 
-            answer = participant.answer
-
-            trial.answer = trial.format_answer(answer)
-            trial.complete = True
-
-            if trial_maker:
-                with forbid_commits(f"{type(trial_maker).__name__}.finalize_trial"):
-                    trial_maker.finalize_trial(
-                        answer=trial.answer,
-                        trial=trial,
-                        experiment=experiment,
-                        participant=participant,
-                    )
-
-            trial.check_if_can_run_async_post_trial()
-            trial.check_if_can_mark_as_finalized()
+            trial._complete_with_answer(participant.answer, experiment, trial_maker)
 
         return CodeBlock(f)
+
+    def _complete_with_answer(self, answer, experiment, trial_maker=None):
+        """Complete this trial in the caller's transaction."""
+        self.answer = self.format_answer(answer)
+        self.complete = True
+
+        if trial_maker:
+            with forbid_commits(f"{type(trial_maker).__name__}.finalize_trial"):
+                trial_maker.finalize_trial(
+                    answer=self.answer,
+                    trial=self,
+                    experiment=experiment,
+                    participant=self.participant,
+                )
+
+        self.check_if_can_run_async_post_trial()
+        self.check_if_can_mark_as_finalized()
 
     @classmethod
     def _construct_feedback_logic(cls, trial_maker):
@@ -1920,6 +1942,23 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             )
             .exists()
         )
+
+
+class LiveGameItemTrial(Trial):
+    """One accepted response in a cued live game. Slot is zero-based per player."""
+
+    live_session_id = Column(Integer, ForeignKey("realtime_session.id"))
+    live_slot = Column(Integer)
+
+
+Index(
+    "uq_trial_live_game_slot",
+    LiveGameItemTrial.live_session_id,
+    Trial.participant_id,
+    LiveGameItemTrial.live_slot,
+    unique=True,
+    postgresql_where=text("live_session_id IS NOT NULL"),
+)
 
 
 # Keeps the finalize backstop poller cheap: a compact list of row IDs still
@@ -2172,8 +2211,9 @@ class TrialMaker(Module):
         How often to check for timeouts, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300).
+        Set to None to allow an open-ended response window
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
@@ -2438,7 +2478,7 @@ class TrialMaker(Module):
             conditional(
                 "not_left_before_any_trial",
                 lambda participant: not self._left_before_any_trial(participant),
-                join(self.introduction, self._trial_loop()),
+                join(self.introduction, self.present_trials()),
                 log_chosen_branch=False,
             ),
             conditional(
@@ -2823,12 +2863,27 @@ class TrialMaker(Module):
         ]
 
     def check_old_trials(self):
+        if self.response_timeout_sec is None:
+            return
         time_threshold = datetime.datetime.now() - datetime.timedelta(
             seconds=self.response_timeout_sec
         )
         trials_to_fail = (
-            self.trial_class.query.filter_by(complete=False, failed=False)
-            .filter(self.trial_class.creation_time < time_threshold)
+            self.trial_class.query.filter_by(
+                trial_maker_id=self.id, complete=False, failed=False
+            )
+            .filter(
+                or_(
+                    self.trial_class.response_started_at < time_threshold,
+                    # Preserve the timeout for ordinary trials awaiting their first
+                    # page, and for historical rows without a response start.
+                    and_(
+                        self.trial_class.prepared_in_advance.is_(False),
+                        self.trial_class.response_started_at.is_(None),
+                        self.trial_class.creation_time < time_threshold,
+                    ),
+                )
+            )
             .order_by(self.trial_class.id)
             # A locked trial belongs to an in-flight request that may complete
             # it; the next check retries it if not.
@@ -3054,6 +3109,10 @@ class TrialMaker(Module):
         """
         return join(UnsuccessfulEndPage(failure_tags=["performance_check"]))
 
+    def check_performance(self):
+        """Timeline step applying this maker’s screening check at the current position."""
+        return self._check_performance_logic(type="trial")
+
     def _check_performance_logic(self, type):
         assert type in ["trial", "end"]
 
@@ -3254,6 +3313,14 @@ class TrialMaker(Module):
                 log_chosen_branch=False,
             ),
         )
+
+    def get_public_definition(self, trial):
+        """Return the trial definition sent to the participant's browser."""
+        return trial.definition
+
+    def present_trials(self):
+        """Build the presentation timeline inside this maker's normal setup and wrap-up."""
+        return self._trial_loop()
 
     def _trial_loop(self):
         return join(
@@ -3588,8 +3655,9 @@ class NetworkTrialMaker(TrialMaker):
         How often to check for trials that have timed out, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300).
+        Set to None to allow an open-ended response window
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
@@ -3814,10 +3882,14 @@ class NetworkTrialMaker(TrialMaker):
             node.network_id,
             participant.id,
         )
+        return self._create_selected_trial(
+            selection, experiment, participant
+        ), "available"
+
+    def _create_selected_trial(self, selection, experiment, participant, **kwargs):
+        node = selection.value
         trial = self._create_trial(
-            node=node,
-            participant=participant,
-            experiment=experiment,
+            node=node, participant=participant, experiment=experiment, **kwargs
         )
         self._on_node_claimed(node, participant)
         self.on_trial_created(
@@ -3826,7 +3898,7 @@ class NetworkTrialMaker(TrialMaker):
             participant=participant,
             selection_context=selection.context,
         )
-        return trial, "available"
+        return trial
 
     def on_trial_created(
         self,
@@ -3979,6 +4051,7 @@ class NetworkTrialMaker(TrialMaker):
         participant,
         experiment,
         trial_class=None,
+        **trial_kwargs,
     ):
         if trial_class is None:
             trial_class = self.get_trial_class(node, participant, experiment)
@@ -3994,6 +4067,7 @@ class NetworkTrialMaker(TrialMaker):
             participant=participant,
             propagate_failure=self.propagate_failure,
             is_repeat_trial=False,
+            **trial_kwargs,
         )
         self._finalize_created_trial(trial)
         db.session.add(trial)

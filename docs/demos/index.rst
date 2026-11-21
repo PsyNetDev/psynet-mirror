@@ -211,6 +211,18 @@ Trials
     A 1-up/1-down staircase written with ``Trial.cue`` and ``while_loop``,
     with the adaptive rule in a separate, testable module.
 
+`features/live_trial_game <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game>`__
+    An eight-trial arrow flanker task on one page, with prepared static trials,
+    keyboard response times and feedback from the saved scores.
+
+`features/live_trial_game_images <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game_images>`__
+    A keyboard task using six bird photographs. The page preloads the fixed image
+    set with ``MediaSpec`` before the first bird appears.
+
+`features/live_trial_game_adaptive <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game_adaptive>`__
+    A geometric staircase chooses the brightness gap after each response. One
+    live page presents all eight native trials from the participant’s chain.
+
 Chains
 ------
 

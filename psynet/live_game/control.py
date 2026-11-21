@@ -52,6 +52,8 @@ class LiveGameControl(NullControl):
     """The control of a :class:`LiveGamePage`, which plays the group's live
     game. The page makes it from its own options, which it describes."""
 
+    on_demand = False
+
     def __init__(
         self,
         auto_advance=True,
@@ -116,6 +118,20 @@ class LiveGameControl(NullControl):
             raise LiveGameFailed(game)
         if game.status != "running":
             return None
+        if self.on_demand:
+            from ..bot import Bot
+
+            if isinstance(participant, Bot):
+                game = _session_game_class(session_id)
+                view = game.step(experiment, participant, session_id)
+                if view["status"] == "available":
+                    answer = game.bot_answer(view)
+                    game.step(
+                        experiment,
+                        participant,
+                        session_id,
+                        answer.model_dump(mode="json"),
+                    )
         _check_session_can_still_end(session_id)
         _p = get_translator(context=True)
         return ResponseNotReady(
@@ -217,6 +233,7 @@ class LiveGameControl(NullControl):
         return {
             "liveGame": {
                 "playId": self.play_id,
+                **({"onDemand": True} if self.on_demand else {}),
                 "liveGameId": session_id,
                 "gameChannel": (
                     None if session_id is None else _session_channel(session_id)
