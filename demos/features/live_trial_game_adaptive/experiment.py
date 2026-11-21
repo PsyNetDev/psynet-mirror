@@ -86,6 +86,8 @@ def feedback(participant):
 
 
 class BrightnessMaker(GeometricStaircaseTrialMaker):
+    # The inherited get_public_definition sends the whole saved definition:
+    # the gap ("parameter") and the two patch values ("left" and "right").
     def present_trials(self):
         return join(
             PlayLiveGame(

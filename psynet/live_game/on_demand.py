@@ -117,7 +117,7 @@ class OnDemandTrialGame(LiveGame):
         return {
             "status": "available",
             "completed": current.position,
-            "definition": maker.live_trial_definition(current),
+            "definition": maker.get_public_definition(current),
         }
 
 

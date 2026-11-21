@@ -1299,7 +1299,7 @@ the player's current ``definition``, number ``completed``, ``total`` and
 ``stop``. To send trial definitions up front, set ``preload_fields`` to the
 public keys of each definition. The view then includes a ``deck`` up to the
 segment boundary and applies the same field selection to the current item.
-Override ``StaticTrialMaker.live_trial_definition(trial)`` to present a
+Override ``StaticTrialMaker.get_public_definition(trial)`` to present a
 different representation, such as the URL of a node's image asset. Sending a URL
 does not fetch the image. Declare a small fixed set of page images using
 :class:`~psynet.timeline.MediaSpec` as in the ``features/live_trial_game_images``
@@ -1398,7 +1398,7 @@ The same renderer can use ``onTrial`` for a prepared deck.
 The active maker assigns one native trial at a time. Each answer is validated
 and completed in the transaction that selects its successor. By default the
 page receives the complete saved ``trial.definition``. A maker can override
-``live_trial_definition(trial)`` when presentation needs a different payload,
+``get_public_definition(trial)`` when presentation needs a different payload,
 such as a vocabulary image URL with the scoring key kept on the server.
 The runner manages presence and game ending. The page receives its private
 assignment in the HTTP response, with no timeline transition. The

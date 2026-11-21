@@ -3284,8 +3284,8 @@ class TrialMaker(Module):
             ),
         )
 
-    def live_trial_definition(self, trial):
-        """Return participant-facing display data for an assigned live trial."""
+    def get_public_definition(self, trial):
+        """Return the trial definition sent to the participant's browser."""
         return trial.definition
 
     def present_trials(self):

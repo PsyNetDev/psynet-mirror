@@ -500,7 +500,7 @@ class VocabTest(StaticTrialMaker):
         )
         return StaticNode(definition=item, assets={"image": image})
 
-    def live_trial_definition(self, trial):
+    def get_public_definition(self, trial):
         if self.present_as_image:
             return {"image": trial.node.assets["image"].url}
         return {"stimulus": trial.definition["stimulus"]}

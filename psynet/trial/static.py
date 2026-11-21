@@ -527,7 +527,7 @@ class StaticTrialMaker(ChainTrialMaker):
         """
         trials = self.prepare_trials(participant)
         return {
-            "definitions": [self.live_trial_definition(trial) for trial in trials],
+            "definitions": [self.get_public_definition(trial) for trial in trials],
             "answers": [
                 trial.var.prepared_raw_answer for trial in trials if trial.complete
             ],
