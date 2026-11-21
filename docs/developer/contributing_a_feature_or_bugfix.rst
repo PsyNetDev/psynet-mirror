@@ -406,7 +406,7 @@ Depending on a custom branch of Dallinger
 -----------------------------------------
 
 Sometimes you may need to use a custom branch of Dallinger in a feature you are contributing to PsyNet.
-First make sure your Dallinger branch contains any Dallinger commit that the PsyNet target branch already pins (merge Dallinger's ``master`` into it if not), and push it.
+First make sure your Dallinger branch contains any Dallinger commit that the PsyNet target branch already pins (merge Dallinger's updated ``master`` into it if not), and push it.
 Then update the Dallinger entry in the ``experiment`` extra of ``pyproject.toml`` to point to the head commit of your branch.
 You should write something like this:
 
@@ -423,8 +423,6 @@ where ``<commit-hash>`` is the full 40-character hash of that commit.
 You can find it by clicking the "Copy" button next to the commit hash on the GitHub page for your branch.
 PsyNet's bootstrap and CI tooling accept only a ``>=X.Y.Z`` lower bound whose ``vX.Y.Z`` tag exists, or such a hash on ``github.com/Dallinger/Dallinger``, not a branch name.
 A commit on a fork can be used through the ``Dallinger/Dallinger`` URL once its pull request is open.
-Then run ``psynet dev ci update-dallinger-constraints`` from the PsyNet repository root to refresh the vendored CI constraints, and repeat both steps when you need newer Dallinger commits.
+Then run ``psynet dev ci update-dallinger-constraints`` from the PsyNet repository root to refresh the vendored CI constraints, and update the pin and refresh the constraints again when you need newer Dallinger commits.
 
-Return to a lower bound only once a Dallinger release contains every commit PsyNet needs, and make that release's version the bound:
-CI vendors the constraints of the ``vX.Y.Z`` tag named by the bound, so an older bound would test against an older Dallinger.
-Then refresh the constraints again.
+Return to a lower bound only once a Dallinger release contains every commit PsyNet needs, using that release's version as the bound, and refresh the constraints again.
