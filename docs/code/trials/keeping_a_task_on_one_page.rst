@@ -41,37 +41,38 @@ change.
 The page module
 ---------------
 
-The page module answers on a key press instead of a Next button. Split it
-into two functions:
+The page module answers on a key press instead of a Next button. Its
+``activate`` function sets up what stays the same from trial to trial, such as
+listeners, and returns an object with two functions:
 
-- ``activate`` sets up what stays the same from trial to trial, such as
-  listeners, and returns a function that removes them.
 - ``update`` shows one trial. It receives the trial's ``contents`` and a
   ``response`` handle for answering it.
+- ``cleanup`` removes what ``activate`` set up.
 
 .. code-block:: javascript
 
-    let response = null;
-
     export function activate({root}) {
+        let response = null;
         function keydown(event) {
             if (response === null) return;
             // On the left arrow key:
             response.answer("left");
         }
         document.addEventListener("keydown", keydown);
-        return () => document.removeEventListener("keydown", keydown);
+        return {
+            update({contents, response: handle}) {
+                // Draw contents.left and contents.right.
+                response = handle;
+                handle.startClock();
+            },
+            cleanup: () => document.removeEventListener("keydown", keydown),
+        };
     }
 
-    export function update({root, contents, response: handle}) {
-        // Draw contents.left and contents.right.
-        response = handle;
-        handle.startClock();
-    }
-
-PsyNet calls ``activate`` and then ``update`` when the page appears. Keep
-anything specific to one trial in ``update``, and don't assume ``activate``
-runs again before each trial.
+PsyNet calls ``activate``, and then ``update`` once the page accepts answers.
+Keep anything specific to one trial in ``update``, and don't assume
+``activate`` runs again before each trial. A module without trials to show
+can still return just the cleanup function.
 
 The ``response`` handle has two methods:
 

@@ -1336,7 +1336,9 @@ class Page(Elt):
 
     js_page_modules:
         Optional JavaScript files activated for each page. Each file must export
-        an ``activate(context)`` function and may return a cleanup function.
+        an ``activate(context)`` function, which may return a cleanup function,
+        or ``{update, cleanup}`` to show a trial's ``contents`` (see
+        :doc:`/code/trials/keeping_a_task_on_one_page`).
 
     js_page_code:
         Optional inline JavaScript activation code, supplied as a string, list,
@@ -2907,7 +2909,8 @@ class PageMaker(Elt):
             experiment=experiment,
             participant=participant,
         )
-        res = join(res)
+        # The timeline needs an element to advance past.
+        res = join(res) or [NullElt()]
 
         for elt in res:
             if isinstance(elt, StartModule):

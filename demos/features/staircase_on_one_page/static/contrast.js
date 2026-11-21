@@ -1,7 +1,6 @@
-let response = null;
-
 export function activate({root}) {
     const patches = root.querySelector("#patches");
+    let response = null;
 
     async function keydown(event) {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -17,15 +16,16 @@ export function activate({root}) {
     }
 
     document.addEventListener("keydown", keydown);
-    return () => document.removeEventListener("keydown", keydown);
-}
-
-export function update({root, contents, response: handle}) {
-    for (const side of ["left", "right"]) {
-        const grey = contents[side];
-        root.querySelector(`#${side}-patch`).style.backgroundColor = `rgb(${grey}, ${grey}, ${grey})`;
-    }
-    root.querySelector("#patches").style.visibility = "visible";
-    response = handle;
-    handle.startClock();
+    return {
+        update({contents, response: handle}) {
+            for (const side of ["left", "right"]) {
+                const grey = contents[side];
+                root.querySelector(`#${side}-patch`).style.backgroundColor = `rgb(${grey}, ${grey}, ${grey})`;
+            }
+            patches.style.visibility = "visible";
+            response = handle;
+            handle.startClock();
+        },
+        cleanup: () => document.removeEventListener("keydown", keydown),
+    };
 }

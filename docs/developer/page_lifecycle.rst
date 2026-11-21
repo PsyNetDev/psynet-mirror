@@ -321,7 +321,9 @@ named ``activate(context)`` export. Modules are imported and cached normally,
 while ``activate()`` runs for every hosting page.
 
 The activation context contains ``root``, ``trial``, ``vars``, ``page``, and
-``psynet``. ``activate()`` may return an asynchronous cleanup function.
+``psynet``. ``activate()`` may return an asynchronous cleanup function, or
+an object ``{update, cleanup}``. PsyNet calls ``update({contents, response})``
+after the page is ready; see :doc:`/code/trials/keeping_a_task_on_one_page`.
 
 Most page code and modules do not require cleanup because PsyNet already
 removes page DOM, stops trial-owned resources, and resets response state.

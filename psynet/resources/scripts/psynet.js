@@ -680,12 +680,20 @@
             );
           }
           let cleanup = await module.activate(context);
+          let update;
+          if (cleanup !== null && typeof cleanup === "object") {
+            ({ cleanup, update } = cleanup);
+          }
           psynet.validatePageCleanup(cleanup, `JS page module ${normalizedSrc}`);
           activated.push({ source: normalizedSrc, cleanup });
-          if (typeof module.update === "function") {
+          if (update !== undefined) {
+            if (typeof update !== "function") {
+              throw new Error(
+                `JS page module ${normalizedSrc} returned an update that is not a function.`,
+              );
+            }
             psynet.pageModuleUpdates.push(() =>
-              module.update({
-                ...context,
+              update({
                 contents: psynet.page.contents,
                 response: psynet.createResponseHandle(),
               }),

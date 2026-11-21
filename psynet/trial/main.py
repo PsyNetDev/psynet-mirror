@@ -1699,6 +1699,20 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         time_estimate = cls._get_trial_time_estimate(trial_maker)
 
         return join(
+            (
+                PageMaker(
+                    lambda experiment, participant: call_function_with_context(
+                        trial_maker.show_before_trial,
+                        experiment=experiment,
+                        participant=participant,
+                        trial=participant.current_trial,
+                    ),
+                    time_estimate=0,
+                    label="show_before_trial",
+                )
+                if trial_maker is not None
+                else None
+            ),
             CodeBlock(cls._log_time_credit_before_trial),
             CodeBlock(cls._log_progress_before_trial),
             PageMaker(
@@ -2172,8 +2186,9 @@ class TrialMaker(Module):
         How often to check for timeouts, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300),
+        or ``None`` for no limit
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
@@ -2823,6 +2838,8 @@ class TrialMaker(Module):
         ]
 
     def check_old_trials(self):
+        if self.response_timeout_sec is None:
+            return
         time_threshold = datetime.datetime.now() - datetime.timedelta(
             seconds=self.response_timeout_sec
         )
@@ -2951,6 +2968,37 @@ class TrialMaker(Module):
             An instantiation of :class:`psynet.participant.Participant`,
             corresponding to the current participant.
         """
+
+    def show_before_trial(self, experiment, participant, trial):
+        """
+        Return pages to show before ``trial``, such as a break, or ``None``.
+
+        The pages belong to the sequence of trials rather than to ``trial``:
+        their answers aren't saved on the trial and don't count towards its
+        ``time_taken``. Like :meth:`~psynet.trial.main.Trial.show_trial`, the
+        method may take any subset of its parameters.
+
+        Parameters
+        ----------
+
+        experiment
+            An instantiation of :class:`psynet.experiment.Experiment`,
+            corresponding to the current experiment.
+
+        participant
+            An instantiation of :class:`psynet.participant.Participant`,
+            corresponding to the current participant.
+
+        trial
+            The :class:`~psynet.trial.main.Trial` about to be shown, for
+            example to show a break before the trial at ``trial.position``.
+
+        Returns
+        -------
+
+        Timeline logic, such as a page or a list of pages, or ``None``.
+        """
+        return None
 
     def finalize_trial(self, answer, trial, experiment, participant):
         """
@@ -3588,8 +3636,9 @@ class NetworkTrialMaker(TrialMaker):
         How often to check for trials that have timed out, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300),
+        or ``None`` for no limit
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
