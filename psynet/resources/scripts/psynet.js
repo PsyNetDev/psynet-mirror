@@ -681,7 +681,13 @@
           }
           let cleanup = await module.activate(context);
           let update;
-          if (psynet.utils.isDict(cleanup)) {
+          // Only a plain object is a result; a DOM node, say, would otherwise
+          // pass as one without a cleanup.
+          if (
+            cleanup !== null &&
+            typeof cleanup === "object" &&
+            Object.getPrototypeOf(cleanup) === Object.prototype
+          ) {
             let unknown = Object.keys(cleanup).filter(
               (key) => !["cleanup", "update"].includes(key),
             );
@@ -1623,6 +1629,8 @@
       }
       psynet.ensureArrivalUpdates(psynet.page.attributes?.arrival_updates);
       psynet.waiting.start(psynet.page.attributes?.waiting);
+      // An in-place page stays dimmed until here, not while update() awaits.
+      psynet.setTimelineTransitionBusy(false);
       // Page modules show the trial only once it can be answered.
       for (let update of (psynet.pageModuleUpdates || []).splice(0)) {
         await update();
@@ -1758,11 +1766,8 @@
       psynet.initLucidTermination();
       psynet.initEarlyExitButton();
       await psynet.initPage();
-      // Before page ready, which runs page modules' update() and can submit:
-      // the page must not stay dimmed while update() awaits, and a submission
-      // it starts must keep nextPagePending set.
+      // Before page ready, so that a submission update() starts stays pending.
       psynet.nextPagePending = false;
-      psynet.setTimelineTransitionBusy(false);
       await psynet.finalizePageReady();
       psynet.log.info("Timeline fragment activation complete.");
     };

@@ -2041,7 +2041,7 @@ class Page(Elt):
         )
         db.session.add(resp)
 
-        resp._background_parent = (
+        resp._recording_parent = (
             participant
             if self._before_trial
             else participant.current_trial or participant
@@ -2071,7 +2071,7 @@ class Page(Elt):
                 metadata=metadata,
                 experiment=experiment,
                 participant=participant,
-                trial=participant.current_trial,
+                trial=None if self._before_trial else participant.current_trial,
                 response=resp,
             )
 

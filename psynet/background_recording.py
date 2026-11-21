@@ -219,7 +219,7 @@ def _accept_background_recordings(page, response, participant, experiment, page_
             reason = reason or "missing_recording"
         asset, receipt = _reserve_recording(
             response=response,
-            parent=response._background_parent,
+            parent=response._recording_parent,
             page_uuid=page_uuid,
             source=source,
             local_key=f"background_{page_uuid}_{source}",
@@ -237,7 +237,7 @@ def _accept_background_recordings(page, response, participant, experiment, page_
             "capture_outcome": outcomes.get(source),
         }
         if reason:
-            parent = response._background_parent
+            parent = response._recording_parent
             _resolve_unavailable(
                 asset, reason, parent if isinstance(parent, Trial) else None
             )

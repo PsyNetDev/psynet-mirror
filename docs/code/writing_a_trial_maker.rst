@@ -322,6 +322,9 @@ aren't saved on it and don't count towards its ``time_taken``. The trial
 already exists while they are shown, so its
 :attr:`~psynet.trial.main.TrialMaker.response_timeout_sec` (5 minutes by
 default) includes the time spent on them. Raise it if breaks can be long.
+Their ``time_estimate`` is paid as usual, but the progress bar doesn't move
+while they are shown, because the experiment's duration estimate doesn't
+include them.
 
 .. _trial_after_the_response:
 
