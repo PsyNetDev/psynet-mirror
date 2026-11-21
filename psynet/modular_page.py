@@ -821,7 +821,9 @@ class Control(JavaScriptContributor):
             5. ``trial``:
                An instantiation of :class:`psynet.trial.main.Trial`,
                corresponding to the participant's current trial,
-               or ``None`` if the participant is not currently taking a trial.
+               or ``None`` if the participant is not currently taking a trial
+               or the page comes from
+               :meth:`~psynet.trial.main.TrialMaker.show_before_trial`.
 
         Returns
         -------

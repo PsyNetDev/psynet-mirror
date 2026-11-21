@@ -317,14 +317,20 @@ about to be shown and returns pages to show first, or ``None``:
             if trial.position == 25:
                 return InfoPage("Take a break.", time_estimate=5)
 
-These pages belong to the sequence rather than to the trial, so their answers
-aren't saved on it and don't count towards its ``time_taken``. The trial
-already exists while they are shown, so its
+These pages belong to the sequence rather than to the trial: their responses
+aren't linked to it and don't count towards its ``time_taken``. Each page needs
+its own ``time_estimate``, which is paid as usual, but the progress bar doesn't
+move while they are shown, because the experiment's duration estimate doesn't
+include them. Use :class:`~psynet.page.InfoPage` or ``save_answer=False`` for
+pages that ask something: the trial takes the last saved answer, so a break's
+answer would become the trial's if the trial's own page doesn't save one.
+
+The trial already exists while these pages are shown, so the time spent on
+them counts towards its
 :attr:`~psynet.trial.main.TrialMaker.response_timeout_sec` (5 minutes by
-default) includes the time spent on them. Raise it if breaks can be long.
-Their ``time_estimate`` is paid as usual, but the progress bar doesn't move
-while they are shown, because the experiment's duration estimate doesn't
-include them.
+default). In trial makers that use sync groups, it also counts towards the
+``late_after`` of the next group barrier, unless the page has a
+``time_limit``. Raise these limits if breaks can be long.
 
 .. _trial_after_the_response:
 

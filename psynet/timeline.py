@@ -2914,7 +2914,6 @@ class PageMaker(Elt):
             participant=participant,
         )
         # The timeline needs an element to advance past.
-        # The timeline steps into the first element, so it can't be empty.
         res = join(res) or [NullElt()]
 
         for elt in res:
@@ -2950,8 +2949,9 @@ class PageMaker(Elt):
         # basically, if all the elements are pages or page makers
         # and none of them have time estimates, then we compute
         # their time estimates by equally subdividing the time estimate
-        # for the parent page maker.
-        if all(
+        # for the parent page maker. The show_before_trial page maker's
+        # estimate is a placeholder 0, so its pages must give their own.
+        if not self._before_trial and all(
             [
                 isinstance(elt, (Page, PageMaker)) and elt.time_estimate is None
                 for elt in elts
@@ -3462,7 +3462,8 @@ class Response(_Response):
         (:meth:`~psynet.trial.main.Trial.show_trial`) the participant
         submitted this response on, including submissions rejected by
         validation. ``None`` for pages outside a trial, including feedback
-        pages and pages submitted after the participant failed.
+        pages, pages from :meth:`~psynet.trial.main.TrialMaker.show_before_trial`
+        and pages submitted after the participant failed.
         Recordings follow a different rule: a recording made on a feedback
         page (:meth:`~psynet.trial.main.Trial.show_feedback`) is stored with
         the trial that just finished.

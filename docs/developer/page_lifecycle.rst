@@ -254,7 +254,8 @@ PsyNet then:
 7. imports and activates ``js_page_modules``;
 8. initializes trial progress, media, controls, and ``trialConstruct`` behavior;
 9. marks the page ready and registers the ``pageReady`` trial event;
-10. prepares and starts the trial, then enables response and submission.
+10. stops dimming an in-place page and calls page modules' ``update``;
+11. prepares and starts the trial, then enables response and submission.
 
 Readiness and trial startup
 ---------------------------

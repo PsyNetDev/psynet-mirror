@@ -70,9 +70,10 @@ listeners, and returns an object with two functions:
     }
 
 PsyNet calls ``activate``, and then ``update`` once the page accepts answers.
-Keep anything specific to one trial in ``update``, and don't assume
-``activate`` runs again before each trial. A module without trials to show
-can still return just the cleanup function.
+Each trial's page runs ``activate`` again with its own ``root``, after the
+previous page's ``cleanup``, so don't keep elements from an earlier page.
+Keep anything specific to one trial in ``update``. A module without trials to
+show can still return just the cleanup function.
 
 The ``response`` handle has two methods:
 
