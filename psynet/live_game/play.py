@@ -58,7 +58,6 @@ from ..sync import (
 from ..timeline import CodeBlock, EltCollection, conditional, join, while_loop
 from ..utils import get_logger
 from .game import LiveGame
-from .on_demand import OnDemandTrialGame
 from .psynet_entry import _new_session
 from .record import LiveGameRecord, _player_ending
 from .trials import LiveTrialGame
@@ -256,9 +255,6 @@ class PlayLiveGame(EltCollection):
                 f"of the PlayLiveGame {page.control.play_id!r}. Give each "
                 "PlayLiveGame a page of its own."
             )
-        page.control.on_demand = issubclass(game_class, OnDemandTrialGame)
-        if page.control.on_demand and not solo:
-            raise ValueError("OnDemandTrialGame currently supports solo sessions.")
         page.control.play_id = id_
         self.page = page
         self.solo = _SoloLiveGame(id_, game_class, settings, page) if solo else None
@@ -551,9 +547,7 @@ class _SoloLiveGame:
         )
 
     def _start(self, participant):
-        session_id = self._open(participant, self._settings(participant))
-        if issubclass(self.game_class, OnDemandTrialGame):
-            self.game_class.start(participant, session_id)
+        self._open(participant, self._settings(participant))
 
     def _open(self, participant, settings):
         session_id = _create_game_session(self.game_class, [participant], settings)
@@ -608,18 +602,6 @@ class _SoloLiveGame:
         if not issubclass(self.game_class, LiveTrialGame):
             start = CodeBlock(self._start)
             start.links["solo_live_game"] = self.id
-            if issubclass(self.game_class, OnDemandTrialGame):
-                return join(
-                    start,
-                    self.page,
-                    conditional(
-                        f"{self.id}_incomplete",
-                        lambda participant: (
-                            participant.module_state.var.on_demand_ending != "finished"
-                        ),
-                        UnsuccessfulEndPage(failure_tags=["incomplete_live_trials"]),
-                    ),
-                )
             return join(start, self.page)
         prepare = CodeBlock(self._prepare)
         prepare.links["solo_live_game"] = self.id

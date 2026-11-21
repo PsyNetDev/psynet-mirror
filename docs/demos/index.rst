@@ -220,9 +220,10 @@ Trials
     The same kind of task with six bird photographs, which the page downloads
     with ``MediaSpec`` before the first bird appears.
 
-`features/live_trial_game_adaptive <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/live_trial_game_adaptive>`__
-    A brightness staircase on one page. After each answer, a
-    ``GeometricStaircaseTrialMaker`` chooses the next brightness difference.
+`features/staircase_on_one_page <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/staircase_on_one_page>`__
+    A brightness staircase whose trial pages share a ``session_id``, so the
+    page stays on screen while a ``GeometricStaircaseTrialMaker`` chooses the
+    next brightness difference after each answer.
 
 Chains
 ------
