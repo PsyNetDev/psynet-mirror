@@ -27,11 +27,15 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     trials = Trial.query.filter_by(participant_id=bot.id).order_by(Trial.position)
     trials = trials.all()
     assert len(trials) == 8
+    trial_maker = trials[0].trial_maker
+    # A time limit is set up for each page, so such pages aren't predicted.
+    page.time_limit = 10
+    assert trial_maker._upcoming_contents(trials[0], page, None, bot) is None
+
     month_ago = datetime.datetime.now() - datetime.timedelta(days=30)
     for trial in trials:
         trial.creation_time = month_ago
     db.session.commit()
-    trial_maker = trials[0].trial_maker
     trial_maker.check_old_trials()
     assert not any(trial.failed for trial in trials)
 

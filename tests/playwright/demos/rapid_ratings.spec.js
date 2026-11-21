@@ -12,8 +12,9 @@ const STEP_TIMEOUT_MS = 120000;
 
 // hold() delays /response requests until release() is called; with
 // {reject: message}, the first held request is answered with that rejection.
+// eventLogs records the length of each submitted metadata.event_log.
 async function responseGate(page) {
-  const gate = { held: null, release: null, posted: 0, reject: null };
+  const gate = { held: null, release: null, posted: 0, reject: null, eventLogs: [] };
   gate.hold = ({ reject = null } = {}) => {
     gate.posted = 0;
     gate.reject = reject;
@@ -21,6 +22,8 @@ async function responseGate(page) {
   };
   await page.route("**/response", async (route) => {
     gate.posted += 1;
+    const json = route.request().postData().match(/name="json"\r\n\r\n(.*)\r\n/);
+    gate.eventLogs.push(JSON.parse(json[1]).metadata.event_log.length);
     await gate.held;
     if (gate.reject) {
       const message = gate.reject;
@@ -69,6 +72,10 @@ test("ratings advance while the server's replies are held back", { tag: "@inplac
     expect(gate.posted).toBe(1);
     gate.release();
     await waitForMainBodyContains(participant, "Take a short break.", STEP_TIMEOUT_MS);
+    // Each answer carries only its own trial's events.
+    const [first, ...later] = gate.eventLogs;
+    expect(later).toHaveLength(3);
+    expect(Math.max(...later)).toBeLessThan(first);
     await participant.getByRole("button", { name: "Next", exact: true }).click();
 
     // A rejected answer brings its trial back and drops the later answers.

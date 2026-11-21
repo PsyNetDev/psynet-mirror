@@ -258,7 +258,7 @@ class StaticTrialMaker(ChainTrialMaker):
         return an ``update`` function then shows the next trial as soon as
         the participant answers, without waiting for the server; see
         :doc:`/code/trials/keeping_a_task_on_one_page`. The response timeout
-        counts from when each trial is first shown. Can't be combined with
+        counts from when the server first sends each trial's page. Can't be combined with
         ``sync_group_type``, ``check_performance_every_trial``,
         ``n_repeat_trials`` or ``recruit_mode="n_trials"``.
         Defaults to ``False``.
@@ -269,8 +269,8 @@ class StaticTrialMaker(ChainTrialMaker):
     n_upcoming_trials : int
         With ``prepare_trials_in_advance``, how many of the next trials'
         contents each trial page carries (default = 5). The participant can
-        be up to this many answers ahead of the server, and a page can
-        preload this many trials' stimuli.
+        be up to one more than this many answers ahead of the server, and a
+        page can preload this many trials' stimuli.
 
     check_timeout_interval_sec : float
         How often to check for trials that have timed out, in seconds (default = 30).
@@ -478,41 +478,46 @@ class StaticTrialMaker(ChainTrialMaker):
     def prepare_trial(self, experiment, participant):
         if not self.prepare_trials_in_advance:
             return super().prepare_trial(experiment, participant)
-        trials = self.get_participant_trials(participant) or self._prepare_trials(
-            experiment, participant
-        )
+        trials = self.get_participant_trials(participant)
         trial = next((t for t in trials if not t.complete and not t.failed), None)
-        if trial is None:
-            return None, "exit"
-        return trial, "available"
+        if trial is not None:
+            return trial, "available"
+        new_trials, status = self._prepare_trials(experiment, participant, len(trials))
+        if new_trials:
+            return new_trials[0], "available"
+        return None, status
 
-    def _prepare_trials(self, experiment, participant):
-        """Create the participant's trials in the order that they will take them."""
+    def _prepare_trials(self, experiment, participant, n_existing):
+        """Create the participant's next trials in the order that they will take them.
+
+        Stops early if node selection has to wait, for example for a busy node;
+        :meth:`prepare_trial` prepares the rest once these trials are done.
+        Returns the new trials and the status that ended preparation.
+        """
         trials = []
+        status = "exit"
         while (
             self.max_trials_per_participant is None
-            or len(trials) < self.max_trials_per_participant
+            or n_existing + len(trials) < self.max_trials_per_participant
         ):
             trial, status = super().prepare_trial(experiment, participant)
-            if status == "wait":
-                raise RuntimeError(
-                    f"Trial maker {self.id!r} prepares trials in advance, "
-                    "so its node selection may not wait."
-                )
             if trial is None:
                 break
             trials.append(trial)
         logger.info(
             "Prepared %i trials for participant %i.", len(trials), participant.id
         )
-        return trials
+        return trials, status
 
-    def _upcoming_contents(self, trial, experiment, participant):
+    def _upcoming_contents(self, trial, page, experiment, participant):
         # Without in-place transitions each reply reloads the page, which would
-        # drop the answers given ahead.
+        # drop the answers given ahead. A time limit and background recording
+        # are set up for each page, which a predicted page skips.
         if (
             not self.prepare_trials_in_advance
             or not get_config().get("inplace_timeline_transitions")
+            or page.time_limit is not None
+            or page.background_recording is not None
             or trial.gives_feedback(experiment, participant)
         ):
             return None
@@ -544,6 +549,8 @@ class StaticTrialMaker(ChainTrialMaker):
             if len(page) != 1 or not isinstance(page[0], Page):
                 break
             contents.append(page[0].contents)
+            if following.gives_feedback(experiment, participant):
+                break
         return contents
 
     def _selection_hook_overrides(self):

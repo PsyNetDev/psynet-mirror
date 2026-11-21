@@ -72,8 +72,11 @@ listeners, and returns an object with two functions:
 
 PsyNet calls ``activate``, and then ``update`` once the page accepts answers.
 Keep anything specific to one trial in ``update``, and don't assume
-``activate`` runs again before each trial. A module without trials to show
-can still return just the cleanup function.
+``activate`` runs again before each trial. PsyNet doesn't wait for an
+asynchronous ``update`` to finish before calling it again, for example after a
+rejected answer, so an ``update`` that awaits an image should check afterwards
+that it is still the latest call. A module without trials to show can still
+return just the cleanup function.
 
 The ``response`` handle has two methods:
 
@@ -128,13 +131,28 @@ Without ``prepare_trials_in_advance``, ``upcoming`` is empty.
 rates pictures this way, with a break halfway through.
 
 Each answer is still checked and saved as usual. If the server rejects one,
-PsyNet also drops the answers given after it. The browser only runs ahead while
-the next page would be another trial page with the same HTML: it waits for the
-server before pages from
-:meth:`~psynet.trial.main.TrialMaker.show_before_trial`, before feedback
-pages, and at the end of the trials.
+PsyNet also drops the answers given after it. The browser stops running ahead
+before pages from :meth:`~psynet.trial.main.TrialMaker.show_before_trial`,
+after a trial with feedback, and at the end of the trials. If the participant
+reloads the page, the answers not yet sent are lost, and they continue from
+the first trial the server hasn't saved.
+
+For this to work:
+
+- Every trial page must render the same HTML and JavaScript, with everything
+  that changes between trials in ``contents`` rather than in the HTML or
+  ``js_vars``. The browser checks this when the server's reply arrives; if
+  the HTML differs, it drops the answers given ahead, loads the server's page
+  and logs a warning in the browser console.
+- ``show_trial`` and ``show_before_trial`` must not change anything or
+  choose at random, because PsyNet also calls them for upcoming trials.
+  Choose random values in
+  :meth:`~psynet.trial.main.Trial.finalize_definition` instead.
+- Pages with a ``time_limit`` or background recording aren't shown in
+  advance, because both are set up for each page.
 
 Trials prepared in advance can't use sync groups, repeat trials, performance
 checks after every trial, or ``recruit_mode="n_trials"``. The browser only runs
-ahead with in-place timeline transitions, which are on by default. The response timeout
-of each trial counts from when it is first shown.
+ahead with in-place timeline transitions, which are on by default. The response
+timeout of each trial counts from when the server first sends its page, and
+the participant can be one more answer ahead than ``n_upcoming_trials``.
