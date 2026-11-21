@@ -81,7 +81,7 @@ run individual tests locally and only run the full test suite on GitLab.
 
 Each shard job publishes per-test logs in ``public/test-logs`` and its measured
 durations in ``public/ci_durations_<python>_<shard>.json``; each Playwright
-shard publishes ``public/playwright-<mode>-<shard>-junit.xml``. Stale estimates
+shard publishes ``public/playwright-<mode>-<project>-<shard>-junit.xml``. Stale estimates
 only make shards less even, so the release process refreshes them once per
 minor release. To refresh them from the latest passing ``master`` push pipeline
 (the artifacts are public, so no token is needed; requires ``jq``), run this
