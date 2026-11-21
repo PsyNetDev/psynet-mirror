@@ -1697,22 +1697,22 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @classmethod
     def trial_logic(cls, trial_maker=None):
         time_estimate = cls._get_trial_time_estimate(trial_maker)
+        before_trial = None
+        if trial_maker is not None:
+            before_trial = PageMaker(
+                lambda experiment, participant: call_function_with_context(
+                    trial_maker.show_before_trial,
+                    experiment=experiment,
+                    participant=participant,
+                    trial=participant.current_trial,
+                ),
+                time_estimate=0,
+                label="show_before_trial",
+            )
+            before_trial._before_trial = True
 
         return join(
-            (
-                PageMaker(
-                    lambda experiment, participant: call_function_with_context(
-                        trial_maker.show_before_trial,
-                        experiment=experiment,
-                        participant=participant,
-                        trial=participant.current_trial,
-                    ),
-                    time_estimate=0,
-                    label="show_before_trial",
-                )
-                if trial_maker is not None
-                else None
-            ),
+            before_trial,
             CodeBlock(cls._log_time_credit_before_trial),
             CodeBlock(cls._log_progress_before_trial),
             PageMaker(
@@ -2975,7 +2975,8 @@ class TrialMaker(Module):
 
         The pages belong to the sequence of trials rather than to ``trial``:
         their answers aren't saved on the trial and don't count towards its
-        ``time_taken``. Like :meth:`~psynet.trial.main.Trial.show_trial`, the
+        ``time_taken``. They do count towards its
+        :attr:`response_timeout_sec`, as the trial already exists. Like :meth:`~psynet.trial.main.Trial.show_trial`, the
         method may take any subset of its parameters.
 
         Parameters

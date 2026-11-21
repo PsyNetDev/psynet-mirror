@@ -681,7 +681,16 @@
           }
           let cleanup = await module.activate(context);
           let update;
-          if (cleanup !== null && typeof cleanup === "object") {
+          if (psynet.utils.isDict(cleanup)) {
+            let unknown = Object.keys(cleanup).filter(
+              (key) => !["cleanup", "update"].includes(key),
+            );
+            if (unknown.length) {
+              throw new Error(
+                `JS page module ${normalizedSrc} returned unknown keys ` +
+                  `${unknown.join(", ")}; expected only cleanup and update.`,
+              );
+            }
             ({ cleanup, update } = cleanup);
           }
           psynet.validatePageCleanup(cleanup, `JS page module ${normalizedSrc}`);
@@ -701,6 +710,7 @@
           }
         }
       } catch (error) {
+        psynet.pageModuleUpdates = [];
         await psynet.deactivatePageJavascript(activated);
         throw error;
       }
@@ -1748,9 +1758,12 @@
       psynet.initLucidTermination();
       psynet.initEarlyExitButton();
       await psynet.initPage();
-      await psynet.finalizePageReady();
+      // Before page ready, which runs page modules' update() and can submit:
+      // the page must not stay dimmed while update() awaits, and a submission
+      // it starts must keep nextPagePending set.
       psynet.nextPagePending = false;
       psynet.setTimelineTransitionBusy(false);
+      await psynet.finalizePageReady();
       psynet.log.info("Timeline fragment activation complete.");
     };
 

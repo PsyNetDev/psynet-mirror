@@ -354,6 +354,8 @@ class Elt:
     created_within_page_maker = False
     # Set on a trial's feedback page maker and everything it produces.
     _trial_feedback = False
+    # Set on the show_before_trial page maker and everything it produces.
+    _before_trial = False
 
     def __init__(self):
         self.links = {}
@@ -2035,11 +2037,15 @@ class Page(Elt):
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
-            trial=_trial_owning_page(participant),
+            trial=None if self._before_trial else _trial_owning_page(participant),
         )
         db.session.add(resp)
 
-        resp._background_parent = participant.current_trial or participant
+        resp._background_parent = (
+            participant
+            if self._before_trial
+            else participant.current_trial or participant
+        )
 
         timed_out = self._time_limit_reached(metadata, participant)
         if timed_out:
@@ -2107,14 +2113,15 @@ class Page(Elt):
     def _time_limit_counts(self, participant):
         """Whether this page's time limit updates the participant's and trial's timeout flags.
 
-        Untimed pages, pages shown while waiting at a barrier, and a trial's
-        feedback pages, such as a notice whose time limit only moves it on,
-        keep the flags from the last timed page.
+        Untimed pages, pages shown while waiting at a barrier, and the pages
+        before and after a trial, such as a break or a notice whose time limit
+        only moves it on, keep the flags from the last timed page.
         """
         return (
             self.time_limit is not None
             and participant.waiting_barrier_id is None
             and not self._trial_feedback
+            and not self._before_trial
         )
 
     def _reject_impossible_answer(self, answer):
@@ -2143,7 +2150,8 @@ class Page(Elt):
                 flag_modified(participant, "answer")
             else:
                 participant.answer = resp.answer
-            _update_unfinished_trial_answer(participant)
+            if not self._before_trial:
+                _update_unfinished_trial_answer(participant)
             participant.answer_is_fresh = True
             if isinstance(self.save_answer, str):
                 participant.var.set(self.save_answer, resp.answer)
@@ -2910,6 +2918,7 @@ class PageMaker(Elt):
             participant=participant,
         )
         # The timeline needs an element to advance past.
+        # The timeline steps into the first element, so it can't be empty.
         res = join(res) or [NullElt()]
 
         for elt in res:
@@ -2936,6 +2945,8 @@ class PageMaker(Elt):
             elt.links = {**self.links, **elt.links}
             if self._trial_feedback:
                 elt._trial_feedback = True
+            if self._before_trial:
+                elt._before_trial = True
         return res
 
     def impute_time_estimates(self, elts):

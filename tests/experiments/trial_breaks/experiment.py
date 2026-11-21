@@ -1,7 +1,6 @@
 import psynet.experiment
 from psynet.modular_page import ModularPage, PushButtonControl
-from psynet.page import InfoPage
-from psynet.timeline import CodeBlock, Timeline, join
+from psynet.timeline import CodeBlock, Response, Timeline, join
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
 N_TRIALS = 4
@@ -30,9 +29,16 @@ class RatingTrialMaker(StaticTrialMaker):
                 trial.position
             ]
 
+        # Saves its answer, unlike an InfoPage, which mustn't reach the trial.
         return join(
             CodeBlock(record),
-            InfoPage("Take a break.", label="trial_break", time_estimate=3),
+            ModularPage(
+                "trial_break",
+                "Take a break.",
+                PushButtonControl(["rested"]),
+                bot_response="rested",
+                time_estimate=3,
+            ),
         )
 
 
@@ -53,3 +59,9 @@ class Exp(psynet.experiment.Experiment):
         trials = sorted(bot.all_trials, key=lambda trial: trial.position)
         assert [trial.answer for trial in trials] == ["yes"] * N_TRIALS
         assert bot.var.breaks == [BREAK_BEFORE]
+        # The break page's time and response don't count towards its trial.
+        assert len({trial.time_taken for trial in trials}) == 1
+        (break_response,) = Response.query.filter_by(
+            participant_id=bot.id, question="trial_break"
+        ).all()
+        assert break_response.trial_id is None

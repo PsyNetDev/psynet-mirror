@@ -318,7 +318,10 @@ about to be shown and returns pages to show first, or ``None``:
                 return InfoPage("Take a break.", time_estimate=5)
 
 These pages belong to the sequence rather than to the trial, so their answers
-aren't saved on it and don't count towards its ``time_taken``.
+aren't saved on it and don't count towards its ``time_taken``. The trial
+already exists while they are shown, so its
+:attr:`~psynet.trial.main.TrialMaker.response_timeout_sec` (5 minutes by
+default) includes the time spent on them. Raise it if breaks can be long.
 
 .. _trial_after_the_response:
 
