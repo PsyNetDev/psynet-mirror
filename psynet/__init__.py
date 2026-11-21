@@ -5,7 +5,7 @@ Importing this package is intentionally lightweight so that the minimal
 bootstrap commands such as ``psynet setup`` and ``psynet scripts …`` without
 pulling in dallinger, flask, or other heavy runtime dependencies.
 
-Full experiment-runtime initialisation (dominate patch, gevent env var, etc.)
+Full experiment-runtime initialisation (Dallinger config patch, gevent env var, etc.)
 is deferred to :func:`psynet.runtime_init.ensure_runtime`, which is called
 automatically when ``psynet.command_line`` is imported (i.e. for every
 experiment-runtime CLI command).

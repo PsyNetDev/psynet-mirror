@@ -22,7 +22,7 @@ Prolific participants see an ad in their Prolific interface. This ad looks somet
   :alt: Prolific ad example
 
 The content of this ad is initially populated by PsyNet with reference to your experiment config,
-in particular fields like ``title``, ``config``, ``wage_per_hour``, and so on.
+in particular fields like ``title``, ``description``, ``wage_per_hour``, and so on.
 You can customize the content via the Prolific interface.
 
 Lab recruiter

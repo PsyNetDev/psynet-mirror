@@ -9,7 +9,7 @@ allow-direct-references = true
 
 [project]
 name = "psynet"
-version = "14.0.0a0"
+version = "14.0.0"
 authors = [
   {name="Peter Harrison", email="pmch2@cam.ac.uk"},
   {name="Frank Höger", email="frank.hoeger@ae.mpg.de"},
@@ -48,64 +48,69 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Full experiment runtime.  Contains everything that was previously in the
-# unconditional `dependencies` list.  Install with:
-#   pip install psynet[experiment]
-# or (recommended) let `psynet setup` install it via constraints.txt.
-# PsyNet source/docs installs should prefer the ``dev`` extra, which includes
-# this runtime.
+# Experiment runtime, which `psynet setup` installs via constraints.txt.
+# PsyNet source and docs installs use ``dev``, which includes it.
+# List every package that PsyNet's runtime imports, even when Dallinger already
+# installs it, so that PsyNet doesn't break if Dallinger drops one.
 experiment = [
+    "arabic-reshaper",  # VocabTest
     "babel",
-    # Dallinger#10287 (participant socket admission and scope check), first
-    # released in 13.0.0, is a security requirement for directed timeline-hold
-    # wakes: never lower this bound below it. Pinned to the Dallinger master
-    # commit that merged Dallinger#10431 (live game runner stats) until it is
-    # released.
+    "beautifulsoup4",
+    "boto3",
+    "botocore",
+    # 13.1.0 runs local PostgreSQL 18, which `psynet services ensure` matches.
+    # Pinned to the Dallinger master commit after 13.1.0 that merged
+    # Dallinger#10431 (live game runner stats) until it is released.
     "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@966e4688549c110f8519ee38221a65f0031a6799",
-    # Unpin dominate once a new version is released which includes the following
-    # fix for the Python 3.12 event loop warning:
-    # https://github.com/Knio/dominate/commit/bdbdb8e5ddcf3213518dba0c7d054f14933460bf
     "debugpy",
-    "dominate==2.9.1",
+    "dominate>=3.1",
+    "flask",
+    "flask-login",
+    "gevent",
     "html2text",
+    "itsdangerous",
+    "jinja2",
     "joblib",
     "jsonpickle",
+    "markdown-it-py",  # Audit reports
+    "markupsafe",
+    "numpy",
     "pandas",
+    "paramiko",
+    "pexpect",
+    "pillow",  # VocabTest
     "polib",
-    "progress",
+    "psutil",
+    "psycopg2",
     "pydantic>=2.12,<3",
+    "pygments>=2.20.0",  # Audit reports; minimum excludes CVE-2026-4539
     "pytest",
-    "pytest-dependency",
-    "pytest-mock",
-    "pytest-timeout",
-    "python-gettext",
-    "rich>=13",
-    "rpdb",
-    "slack_sdk",  # For Slack notifications
+    "redis",
+    "requests",
+    "rich",
+    "rpdb",  # For `import rpdb; rpdb.set_trace()` in experiment code
+    "rq",
+    "selenium",
+    "slack-sdk",  # Slack notifier
+    "sqlalchemy",
     "tabulate",
     "tenacity",
     "tomlkit",
     "tqdm",
+    "urllib3",
+    "werkzeug",
     "yaspin",
-    "arabic-reshaper",  # Used by VocabTest
-    "pillow",  # Used by VocabTest
-    # Experiment audit render/validate (shipped with experiment runtime)
-    "markdown-it-py>=3,<5",  # Dallinger 12.3 pins 4.x; keep an explicit compatible bound
-    "pygments>=2.20.0",
 ]
 # PsyNet source development and docs: runtime plus tooling.
 # Demo-only packages stay in ``demos`` so docs/CI installs stay lean.
 dev = [
-    "psynet[experiment]",
+    "psynet[experiment,test]",
     "asv",
-    "beautifulsoup4",
     "citeproc-py",
-    "google-cloud-translate",
     "myst-parser",
     "openai",
     "pre-commit",
     "pydata-sphinx-theme",
-    "pytest-test-groups",
     "ruff",
     "sphinx",
     "sphinx-autobuild",
@@ -116,12 +121,15 @@ dev = [
     "sphinx-reredirects",
     "virtualenv",
 ]
-slack = [
-    "slack_sdk",
+# Pytest plugins for PsyNet's own test suite, which the CI image installs
+# without the rest of ``dev``.
+test = [
+    "pytest-dependency",
+    "pytest-mock",
+    "pytest-timeout",
 ]
 demos = [
     "music21",
-    "numpy",
     "praat-parselmouth",
     "psynet-step==0.1.0",
     "repp-tapping",

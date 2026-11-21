@@ -1,1 +1,0 @@
-Added an `extend_while` option to `while_loop`. It is checked at the start of each pass through the loop, and whenever it returns `True` the loop does not time out and the `max_loop_time` clock restarts from zero. Trial makers use it so that waiting for the next trial cannot time out until the participant's last required recording has been stored or has failed.

@@ -1,1 +1,0 @@
-`psynet destroy ssh <app> --remove-data` now succeeds, saying "Nothing left to delete", when the app and its data are already gone, for a single app as well as several. With `--remove-data`, the destroy confirmation now says that the apps' data is deleted too and cannot be undone.

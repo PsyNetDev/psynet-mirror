@@ -65,12 +65,24 @@ def test_build_blocks_release_candidate():
     joined = "\n".join(texts)
 
     assert "Release Candidate" in texts[0]
+    assert texts[1].startswith(":warning: *This is a release candidate.*")
     assert "pip install psynet==13.2.0rc1" in joined
 
     urls = _button_urls(blocks)
     assert "https://psynetdev.gitlab.io/PsyNet/rc/v13.2.0rc1/" in urls
     # RCs are tag-only on GitLab; release notes link to the CHANGELOG at the tag.
     assert "https://gitlab.com/PsyNetDev/PsyNet/-/blob/v13.2.0rc1/CHANGELOG.md" in urls
+
+
+def test_build_blocks_links_upgrade_guide_for_major_releases():
+    rc_urls = _button_urls(slack_announcement.build_blocks("14.0.0rc4")[0])
+    final_urls = _button_urls(slack_announcement.build_blocks("14.0.0")[0])
+    minor_urls = _button_urls(slack_announcement.build_blocks("13.2.0")[0])
+
+    guide = "whats_new/upgrading_to_psynet_14.html"
+    assert rc_urls[0] == f"https://psynetdev.gitlab.io/PsyNet/rc/v14.0.0rc4/{guide}"
+    assert final_urls[0] == f"https://psynetdev.gitlab.io/PsyNet/v14.0.0/{guide}"
+    assert not any("upgrading_to_psynet" in url for url in minor_urls)
 
 
 def test_build_blocks_without_summary_omits_highlights():

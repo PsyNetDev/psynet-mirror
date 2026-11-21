@@ -1,1 +1,0 @@
-Fixed the researcher not being notified when a Prolific return-for-bonus payment does not finish within 60 seconds, for example because the worker queue is stalled. The participant was already told that the researcher had been notified.

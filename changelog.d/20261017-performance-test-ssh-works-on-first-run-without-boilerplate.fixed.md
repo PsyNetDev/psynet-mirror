@@ -1,1 +1,0 @@
-`psynet performance-test ssh` now works on the first run in an experiment without generated boilerplate, such as a bundled demo, instead of failing with "The experiment needs a title". `psynet debug ssh --use-local-psynet` and `--use-local-dallinger` likewise no longer ask for `psynet scripts update` when the Dockerfile hasn't been generated yet.

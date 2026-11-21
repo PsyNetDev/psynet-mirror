@@ -88,7 +88,7 @@ Otherwise, activate your virtual environment and run:
 
 .. code-block:: console
 
-  uv pip install -e ".[dev,demos,slack]"  # installs PsyNet in local editable mode
+  uv pip install -e ".[dev,demos]"  # installs PsyNet in local editable mode
 
 Try running ``which psynet`` in your terminal; it should return a path inside your PsyNet checkout's virtual environment.
 
