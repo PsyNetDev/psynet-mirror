@@ -4761,7 +4761,7 @@
     let recordingUploadMessage;
     // Lets the participant leave while recordings or answers are still being
     // sent, for example to exit the experiment.
-    psynet.allowRecordingUnload = function () {
+    psynet.allowUnload = function () {
       recordingUploadQueue?.allowUnload();
       answersMayBeLost = false;
     };
@@ -5365,7 +5365,7 @@
       clearInterval(clockIntervalID);
       // Termination ends the session like early exit, so it abandons pending
       // uploads instead of holding the participant until their deadlines.
-      psynet.allowRecordingUnload();
+      psynet.allowUnload();
       return window.location.replace(
         "/terminate_participant?" +
           new URLSearchParams({ unique_id: psynetTemplateData.uniqueId, reason }),
