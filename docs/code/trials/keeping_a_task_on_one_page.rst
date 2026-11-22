@@ -168,11 +168,14 @@ plays it, so ``update`` can start the next trial's sound at once:
 .. code-block:: javascript
 
     async update({contents, upcomingContents, response: handle}) {
+        latest = handle;  // declared in activate
         for (const next of upcomingContents) {
             // A failed download shows up when that trial loads its sound.
             psynet.media.loadAudio(next.sound_url).catch(() => {});
         }
         const sound = await psynet.media.loadAudio(contents.sound_url);
+        // A rejected answer can show the trial again while the sound loads.
+        if (latest !== handle) return;
         sound.play();
         handle.startClock();
     },
@@ -211,8 +214,13 @@ For this to work:
   before they are answered.
   Choose random values in
   :meth:`~psynet.trial.main.Trial.finalize_definition` instead.
-- Pages with a ``time_limit`` or background recording aren't shown in
-  advance, because both are set up for each page.
+- Pages with a ``time_limit``, background recording, ``media`` (such as an
+  :class:`~psynet.modular_page.AudioPrompt`) or a full page reload aren't
+  shown in advance, because PsyNet sets these up for each page. Their files
+  are still downloaded early.
+- The browser doesn't run ahead after a trial whose class overrides
+  :meth:`~psynet.trial.main.Trial.show_feedback`, even if it sometimes
+  returns ``None``, as whether it does depends on the answer.
 
 Also keep in mind:
 

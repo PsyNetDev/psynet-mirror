@@ -488,7 +488,17 @@ class StaticTrialMaker(ChainTrialMaker):
         trial = next((t for t in trials if not t.complete and not t.failed), None)
         if trial is not None:
             return trial, "available"
-        new_trials, status = self._prepare_trials(experiment, participant, len(trials))
+        # As without preparation, failed trials are replaced: they don't count
+        # towards the limit, and their nodes can be chosen again.
+        kept = [t for t in trials if not t.failed]
+        failed_networks = {t.network_id for t in trials if t.failed} - {
+            t.network_id for t in kept
+        }
+        state = participant.module_state
+        state.participated_networks = [
+            n for n in state.participated_networks if n not in failed_networks
+        ]
+        new_trials, status = self._prepare_trials(experiment, participant, len(kept))
         if new_trials:
             return new_trials[0], "available"
         return None, status

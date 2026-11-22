@@ -734,7 +734,14 @@
     // shows its trial again.
     psynet.resetAnswers = function () {
       // ``handle`` belongs to the trial on screen until it is answered.
-      psynet.answers = { queue: [], handle: null, sending: false };
+      // ``showAgain`` is set when the server turns an answer down, as opposed
+      // to the page failing or moving on.
+      psynet.answers = {
+        queue: [],
+        handle: null,
+        sending: false,
+        showAgain: false,
+      };
     };
     psynet.resetAnswers();
 
@@ -822,6 +829,7 @@
       try {
         while (psynet.answers === answers && answers.queue.length) {
           let entry = answers.queue[0];
+          answers.showAgain = false;
           let accepted = await psynet.nextPage(
             entry.value,
             entry.metadata,
@@ -830,7 +838,10 @@
             { background: true },
           );
           if (!accepted) {
-            retry = psynet.answers === answers && answers.queue[0] === entry;
+            retry =
+              answers.showAgain &&
+              psynet.answers === answers &&
+              answers.queue[0] === entry;
             break;
           }
         }
@@ -3520,7 +3531,9 @@
         }
         initStimulus(id, "audio");
         psynet.media.initAudioContext();
-        await createAudioStimulus(data, id, generation);
+        if (!(await createAudioStimulus(data, id, generation))) {
+          throw new Error("The page changed while " + url + " was loading.");
+        }
         return psynet.audio[id];
       })();
       let entry = { load, generation };
@@ -4256,6 +4269,7 @@
         // The page's controls stay enabled for background answers, so the
         // trial is shown again only once the participant has read the message.
         psynet.answers.handle = null;
+        psynet.answers.showAgain = true;
         await psynet.alert(response.message);
       } else {
         psynet.alert(response.message);
@@ -4498,6 +4512,7 @@
       psynet.log.warn("The experiment was busy: " + message);
       if (options.background) {
         psynet.answers.handle = null;
+        psynet.answers.showAgain = true;
         await psynet.alert(message);
         return false;
       }
