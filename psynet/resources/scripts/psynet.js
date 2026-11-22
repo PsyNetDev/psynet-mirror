@@ -928,25 +928,7 @@
     // sent it, while the answer is sent in the background with the UUID of
     // the page it was given on. A reply for the trial already shown is
     // adopted without touching the page.
-    psynet.renderedPages = [];
-
-    // Fill in the HTML the server left out for pages the browser holds. A
-    // page whose HTML is missing ends the pages that can be shown in advance.
-    psynet.receiveRenderedPages = function (entries) {
-      let held = new Map(
-        psynet.renderedPages.map((page) => [page.trial_id, page.html]),
-      );
-      let pages = [];
-      for (let entry of entries ?? []) {
-        let html = entry.html ?? held.get(entry.trial_id);
-        if (html === undefined) break;
-        pages.push({ ...entry, html });
-      }
-      return pages;
-    };
-    psynet.renderedPages = psynet.receiveRenderedPages(
-      psynetTemplateData.upcomingPages,
-    );
+    psynet.renderedPages = psynetTemplateData.upcomingPages ?? [];
 
     psynet.answerWithRenderedPage = async function (rawAnswer, metadata) {
       let page = psynet.renderedPages.shift();
@@ -984,8 +966,8 @@
       }
       answers.queue.shift();
       // The first pages are already shown, one for each answer still queued.
-      psynet.renderedPages = psynet.receiveRenderedPages(
-        (response.timeline_fragment?.upcoming_pages || []).slice(answers.queue.length),
+      psynet.renderedPages = (response.timeline_fragment?.upcoming_pages ?? []).slice(
+        answers.queue.length,
       );
       psynet.nextPagePending = false;
       psynet.media.prefetch(response.page.attributes?.upcoming_media);
@@ -4283,9 +4265,7 @@
       }
       // Any other reply ends the prediction, dropping the later answers.
       psynet.resetAnswers();
-      psynet.renderedPages = psynet.receiveRenderedPages(
-        response.timeline_fragment?.upcoming_pages,
-      );
+      psynet.renderedPages = response.timeline_fragment?.upcoming_pages ?? [];
 
       if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
         psynet.stopTimelineHold();
@@ -4727,7 +4707,6 @@
         metadata: allMetadata,
         include_timeline_fragment: !psynet.page.attributes
           ?.requires_full_page_reload,
-        held_trial_ids: psynet.renderedPages.map((page) => page.trial_id),
         timeline_hold_resume: Boolean(options.timelineHoldResume),
         interrupted: Boolean(options.interrupted),
       });

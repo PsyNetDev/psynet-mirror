@@ -2783,24 +2783,17 @@ class Page(Elt):
             return self._page_uuid
         return participant.page_uuid
 
-    def _render_upcoming_pages(self, experiment, participant, held_trial_ids=()):
-        """Render ``upcoming_pages`` for the browser.
-
-        Parameters
-        ----------
-        held_trial_ids
-            Trials whose pages the browser already holds, which are sent
-            without their HTML.
-        """
+    def _render_upcoming_pages(self, experiment, participant):
+        """Render ``upcoming_pages`` for the browser."""
         if not self.upcoming_pages:
             return None
-        rendered = []
-        for page in self.upcoming_pages:
-            item = {"trial_id": page._trial_id}
-            if page._trial_id not in held_trial_ids:
-                item["html"] = page.render(experiment, participant, partial_mode=True)
-            rendered.append(item)
-        return rendered
+        return [
+            {
+                "trial_id": page._trial_id,
+                "html": page.render(experiment, participant, partial_mode=True),
+            }
+            for page in self.upcoming_pages
+        ]
 
     def _swap_in_advance(self):
         """Whether a rendered copy of the page can be swapped in before the server confirms it.
