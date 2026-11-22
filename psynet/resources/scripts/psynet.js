@@ -760,8 +760,13 @@
       psynet.answers.handle = response;
       let generation = psynet.pageModuleGeneration;
       for (let update of psynet.pageModuleUpdates) {
-        // An earlier update() may have moved the participant to another page.
-        if (psynet.pageModuleGeneration !== generation) break;
+        // An earlier update() may have answered, or moved to another page.
+        if (
+          psynet.pageModuleGeneration !== generation ||
+          psynet.answers.handle !== response
+        ) {
+          break;
+        }
         await update({ contents, upcomingContents, response });
       }
     };
@@ -795,6 +800,8 @@
           let metadata = {
             time_taken: elapsed(at),
             marks: { ...marks },
+            // Comments made since the last answer, as later trials share the page.
+            comments: psynet.comments.splice(0),
             // The events of this trial only, as later trials share the page.
             event_log: psynet.trial.eventLog.splice(0),
           };
@@ -890,6 +897,7 @@
       psynet.refreshTemplateData();
       Object.assign(psynet.page, { prompt, control, response });
       psynet.initEarlyExitButton();
+      initModal("comment-modal", "comment-button");
       psynet.pageLoadTime = new Date();
       psynet.nextPagePending = false;
       if (psynetTemplateData.flags.lucidRecruitment) {
@@ -2643,8 +2651,13 @@
       );
     };
 
+    // Sounds that loadAudio has loaded or is loading, by id.
+    let audioLoads = new Map();
+
     psynet.media.invalidateActiveLoads = function () {
       psynet.media.loadGeneration += 1;
+      // Sounds loaded for an earlier page belong to that page.
+      audioLoads.clear();
       Array.from(psynet.media.activeRequests).forEach(function (request) {
         try {
           request.abort();
@@ -3506,12 +3519,10 @@
     // module's update(), and resolves with psynet.audio[id]. Each URL is
     // downloaded once, sharing the copies of upcoming pages' files. Rejects
     // if the file can't be downloaded or decoded, so callers can retry.
-    let audioLoads = new Map();
     psynet.media.loadAudio = function (url, id = url) {
       let generation = psynet.media.loadGeneration;
       let pending = audioLoads.get(id);
-      // A load from an earlier page made a sound that page has released.
-      if (pending && pending.generation === generation) {
+      if (pending && pending.url === url && pending.generation === generation) {
         return pending.load;
       }
       let load = (async function () {
@@ -3536,7 +3547,7 @@
         }
         return psynet.audio[id];
       })();
-      let entry = { load, generation };
+      let entry = { load, generation, url };
       audioLoads.set(id, entry);
       load.catch(() => {
         if (audioLoads.get(id) === entry) audioLoads.delete(id);
@@ -4015,7 +4026,9 @@
       if (metadata === undefined) {
         metadata = psynet.response.staged.metadata;
       }
-      metadata.comments = psynet.comments;
+      if (metadata.comments === undefined) {
+        metadata.comments = psynet.comments;
+      }
       if (blobs === undefined) {
         blobs = psynet.response.staged.blobs;
       }

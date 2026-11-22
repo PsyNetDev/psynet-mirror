@@ -7,6 +7,7 @@ from dallinger import db
 from psynet.bot import BotDriver
 from psynet.participant import Participant
 from psynet.trial.main import Trial
+from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
 EXPERIMENT = str(Path(__file__).parents[2] / "demos/features/rapid_ratings")
 
@@ -58,3 +59,24 @@ def test_a_break_does_not_count_towards_the_next_trial():
     bot.take_page()
     trial = Trial.query.filter_by(participant_id=bot.id, position=4).one()
     assert trial.complete and trial.time_taken == 2
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        {"sync_group_type": "pairs"},
+        {"check_performance_every_trial": True},
+        {"n_repeat_trials": 1},
+        {"recruit_mode": "n_trials"},
+    ],
+)
+def test_prepared_trials_reject_options_they_cant_support(option):
+    with pytest.raises(ValueError, match="prepare_trials_in_advance"):
+        StaticTrialMaker(
+            id_="ratings",
+            trial_class=StaticTrial,
+            nodes=[StaticNode(definition={})],
+            expected_trials_per_participant=1,
+            prepare_trials_in_advance=True,
+            **option,
+        )
