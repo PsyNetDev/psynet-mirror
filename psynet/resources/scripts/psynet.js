@@ -746,6 +746,16 @@
     };
     psynet.resetAnswers();
 
+    // Leaving would lose the answers not yet saved, so the browser asks
+    // first, as it does while recordings upload.
+    let answersMayBeLost = true;
+    window.addEventListener("beforeunload", (event) => {
+      if (answersMayBeLost && psynet.answers.queue.length) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
+
     // The trials after the last page the server confirmed, as
     // ``{trial_id, contents}`` for page modules or ``{trial_id, html}`` for
     // pages swapped in whole. Every approved reply replaces them.
@@ -4749,8 +4759,11 @@
     };
     let recordingUploadQueue;
     let recordingUploadMessage;
+    // Lets the participant leave while recordings or answers are still being
+    // sent, for example to exit the experiment.
     psynet.allowRecordingUnload = function () {
       recordingUploadQueue?.allowUnload();
+      answersMayBeLost = false;
     };
     psynet.drainRecordingUploads = async function () {
       if (!recordingUploadQueue?.pendingBytes) return;

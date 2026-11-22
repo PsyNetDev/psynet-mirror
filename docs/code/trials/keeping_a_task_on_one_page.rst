@@ -220,7 +220,8 @@ page after every trial, it never runs ahead, and the participant waits for
 the server twice per trial. To give feedback straight away, show it from the
 page module instead, which needs the correct answer in ``contents``. Answers
 are sent as soon as they are given, so only the answers waiting behind a slow
-reply can be lost. If the participant reloads or closes the page, those
+reply can be lost. While answers are waiting, the browser asks the
+participant before the page reloads or closes. If they leave anyway, those
 answers are lost, and when they come back they continue from
 the first trial the server hasn't saved; anything entered for that trial is
 lost and its clock starts again.
