@@ -33,7 +33,7 @@ from .background_recording import VideoRecordConfig  # noqa: F401
 from .bot import BotResponse, _as_browser_json
 from .chatroom import ChatRoom  # noqa: F401
 from .javascript_hooks import JavaScriptContributor
-from .static_resources import package_static_url
+from .static_resources import cacheable_static_url, package_static_url
 from .timeline import (
     Event,
     FailedValidation,
@@ -627,8 +627,17 @@ class ImagePrompt(Prompt):
     macro = "image"
 
     @property
+    def src(self):
+        """The URL the page loads, content-versioned for a local static file.
+
+        A versioned URL is cached without revalidation, so an image downloaded
+        in advance shows at once.
+        """
+        return cacheable_static_url(self.url)
+
+    @property
     def prefetch_urls(self):
-        return {"image": [self.url]}
+        return {"image": [self.src]}
 
     @property
     def metadata(self):

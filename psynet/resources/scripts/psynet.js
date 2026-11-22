@@ -4760,8 +4760,11 @@
 
       let capturedRecordings = {};
       const submittedPageUuid = psynet.submissionPageUuid;
-      const background = options.timelineHoldResume ? null : psynet.var.backgroundRecording;
-      const sources = options.timelineHoldResume ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
+      // Answers sent in the background carry no recordings, and the page's
+      // settings may already be the next trial's.
+      const withoutRecordings = options.timelineHoldResume || options.background;
+      const background = withoutRecordings ? null : psynet.var.backgroundRecording;
+      const sources = withoutRecordings ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
       const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;
       let json;
       if (resend) {

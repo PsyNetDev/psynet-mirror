@@ -355,7 +355,11 @@ page's media, such as an :class:`~psynet.modular_page.AudioPrompt` or
 :class:`~psynet.modular_page.ImagePrompt`. A custom page lists any other files
 it shows in :attr:`~psynet.timeline.Page.prefetch_urls`. The downloaded files
 stay in the browser's memory, so this needs in-place timeline transitions,
-which are on by default.
+which are on by default. An image shows without asking the server again only
+if the browser may cache it: files that PsyNet serves as assets are, and so
+are files in the experiment's ``static`` folder that an
+:class:`~psynet.modular_page.ImagePrompt` shows, whose URLs it gives a content
+version (``?v=...``).
 
 Some trial makers can't prepare trials in advance; see the
 ``prepare_trials_in_advance`` parameter of

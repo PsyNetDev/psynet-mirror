@@ -1,0 +1,1 @@
+`ImagePrompt` now adds a content version (`?v=...`) to the URLs of files in the experiment's `static` folder, so the browser caches them instead of checking with the server each time a picture is shown, and a picture downloaded in advance appears at once.
