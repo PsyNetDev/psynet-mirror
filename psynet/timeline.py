@@ -1532,6 +1532,9 @@ class Page(Elt):
     # Set by trial makers that prepare their trials in advance.
     upcoming_contents = None
     upcoming_media = None
+    upcoming_pages = None
+    # The trial whose show_trial returned the page, if it was the only page.
+    _trial_id = None
     _full_page_layout_key = None
 
     def __init__(
@@ -2453,6 +2456,12 @@ class Page(Elt):
             "trial_progress_display_config": self.progress_display,
             "attributes": self.attributes,
             "contents": self.contents,
+            # A reply carries these beside its fragment.
+            "upcoming_pages": (
+                None
+                if partial_mode
+                else self._render_upcoming_pages(experiment, participant)
+            ),
             "locale": locale,
             "partial_mode": partial_mode,
             "inplace_timeline_transitions": inplace_timeline_transitions,
@@ -2760,6 +2769,33 @@ class Page(Elt):
             and self.background_recording is None
             and not self.requires_full_page_reload
             and not self.media.urls
+        )
+
+    def _render_upcoming_pages(self, experiment, participant):
+        """Render ``upcoming_pages`` for the browser, leaving out the pages it holds."""
+        if not self.upcoming_pages:
+            return None
+        rendered = []
+        for entry in self.upcoming_pages:
+            item = {"trial_id": entry["trial_id"]}
+            if entry["page"] is not None:
+                item["html"] = entry["page"].render(
+                    experiment, participant, partial_mode=True
+                )
+            rendered.append(item)
+        return rendered
+
+    def _swap_in_advance(self):
+        """Whether a rendered copy of the page can be swapped in before the server confirms it.
+
+        The browser runs the copy's usual page lifecycle, so this excludes only
+        what the server sets up as it serves each page: a time limit,
+        background recording and a full page reload.
+        """
+        return (
+            self.time_limit is None
+            and self.background_recording is None
+            and not self.requires_full_page_reload
         )
 
     def layout_key(self, fragment_html):

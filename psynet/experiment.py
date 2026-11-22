@@ -4265,10 +4265,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
 
     def _approved_payload(self, participant, page):
-        return {
+        payload = {
             "submission": "approved",
             "page": page.__json__(participant),
         }
+        if page._trial_id is not None:
+            payload["trial_id"] = page._trial_id
+        return payload
 
     @staticmethod
     def _stale_page_payload():
@@ -7831,6 +7834,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         payload = {"html": html, "page_uuid": participant.page_uuid}
         if page.upcoming_contents is not None:
             payload["layout_key"] = page.layout_key(html)
+        upcoming_pages = page._render_upcoming_pages(experiment, participant)
+        if upcoming_pages:
+            payload["upcoming_pages"] = upcoming_pages
         return payload
 
     @experiment_route("/timeline/arrival_notice", methods=["GET"])
@@ -8069,6 +8075,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         metadata = get_arg_from_dict(json_data, "metadata")
         include_timeline_fragment = get_arg_from_dict(
             json_data, "include_timeline_fragment", use_default=True, default=True
+        )
+        flask_app_globals.held_trial_ids = frozenset(
+            get_arg_from_dict(json_data, "held_trial_ids", use_default=True, default=[])
         )
         timeline_hold_resume = bool(
             get_arg_from_dict(

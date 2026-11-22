@@ -227,6 +227,12 @@ Trials
     rated, with ``prepare_trials_in_advance`` and a page module that preloads
     the upcoming pictures. :doc:`/code/trials/keeping_a_task_on_one_page`.
 
+`features/rapid_ratings_built_in <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/rapid_ratings_built_in>`__
+    The same picture ratings with a built-in ``ImagePrompt`` and
+    ``PushButtonControl``: the browser swaps in each trial's page, rendered in
+    advance, as soon as the previous picture is rated.
+    :ref:`showing_the_next_trials_without_waiting`.
+
 Chains
 ------
 

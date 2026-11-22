@@ -8,6 +8,8 @@ authors customize node eligibility with ``custom_node_filter`` and ranking with
 
 from typing import Callable, List, Literal, Optional, Sequence, Union
 
+from flask import g, has_request_context
+
 from psynet.trial.chain import (
     Candidate,
     ChainNetwork,
@@ -28,6 +30,13 @@ from ..utils import (
 )
 
 logger = get_logger()
+
+
+def _held_trial_ids():
+    """The trials whose rendered pages the browser held when it sent the answer."""
+    if not has_request_context():
+        return frozenset()
+    return g.get("held_trial_ids", frozenset())
 
 
 class StaticTrial(ChainTrial):
@@ -257,11 +266,15 @@ class StaticTrialMaker(ChainTrialMaker):
         the next :attr:`n_upcoming_trials` trials. A page whose modules
         return an ``update`` function then shows the next trial as soon as
         the participant answers, without waiting for the server; see
-        :doc:`/code/trials/keeping_a_task_on_one_page`. Any trial page, such
-        as one with an :class:`~psynet.modular_page.AudioPrompt`, also lists
-        the files of the next trials' pages (their media and
+        :doc:`/code/trials/keeping_a_task_on_one_page`. Other trial pages,
+        such as built-in prompts and controls, carry the next trials' pages
+        rendered in advance, which the browser swaps in as the participant
+        answers. Any trial page, such as one with an
+        :class:`~psynet.modular_page.AudioPrompt`, also lists the files of
+        the next trials' pages (their media and
         :attr:`~psynet.timeline.Page.prefetch_urls`), which the browser
-        downloads while the participant works on the current trial. Both need
+        downloads while the participant works on the current trial; see
+        :ref:`showing_the_next_trials_without_waiting`. All of this needs
         in-place timeline transitions, which are on by default. The response
         timeout counts from when the server first sends each trial's page.
         Can't be combined with
@@ -274,7 +287,7 @@ class StaticTrialMaker(ChainTrialMaker):
 
     n_upcoming_trials : int
         With ``prepare_trials_in_advance``, how many of the next trials'
-        contents each trial page carries (default = 5). The participant can
+        contents or rendered pages each trial page carries (default = 5). The participant can
         be up to one more than this many answers ahead of the server, and
         this many trials' files are downloaded early.
 
@@ -537,13 +550,19 @@ class StaticTrialMaker(ChainTrialMaker):
         if not self.prepare_trials_in_advance or not get_config().get(
             "inplace_timeline_transitions"
         ):
-            return None, None
+            return None, None, None
         # A page that can be adopted as a predicted page gets a layout key,
-        # even if its own feedback stops it from showing later trials.
+        # even if its own feedback stops it from showing later trials. Other
+        # pages get the rendered pages of the next trials, which the browser
+        # swaps in as each trial is answered.
         adoptable = page._show_in_advance()
-        predict = adoptable and not trial.gives_feedback(experiment, participant)
+        swappable = not adoptable and page._swap_in_advance()
         contents = [] if adoptable else None
+        rendered = [] if swappable else None
         media = {}
+        ahead = not trial.gives_feedback(experiment, participant)
+        # Pages the browser already holds are sent without their HTML.
+        held = _held_trial_ids()
         upcoming = [
             t
             for t in self.get_participant_trials(participant)
@@ -573,18 +592,23 @@ class StaticTrialMaker(ChainTrialMaker):
                     for media_type, urls in elt.prefetch_urls.items():
                         known = media.setdefault(media_type, [])
                         known.extend(url for url in urls if url not in known)
-            if (
-                predict
-                and not between
-                and len(pages) == 1
-                and isinstance(pages[0], Page)
-                and pages[0]._show_in_advance()
-            ):
+            single = not between and len(pages) == 1 and isinstance(pages[0], Page)
+            if ahead and single and adoptable and pages[0]._show_in_advance():
                 contents.append(pages[0].contents)
-                predict = not following.gives_feedback(experiment, participant)
+            elif ahead and single and swappable and pages[0]._swap_in_advance():
+                held_page = following.id in held
+                if not held_page:
+                    pages[0].pre_render()
+                rendered.append(
+                    {
+                        "trial_id": following.id,
+                        "page": None if held_page else pages[0],
+                    }
+                )
             else:
-                predict = False
-        return contents, media
+                ahead = False
+            ahead = ahead and not following.gives_feedback(experiment, participant)
+        return contents, media, rendered or None
 
     def _selection_hook_overrides(self):
         return [

@@ -328,13 +328,15 @@ sync groups, the rest of the group waits at the next barrier, and the break
 counts towards that barrier's ``late_after`` unless the page has a
 ``time_limit``.
 
-Downloading the next trials' files early
-----------------------------------------
+.. _showing_the_next_trials_without_waiting:
 
-Each trial page normally downloads its sound, video or image when it opens,
-so the participant waits for the file after every response. When the trial
-order doesn't depend on the participant's answers, pass
-``prepare_trials_in_advance=True``:
+Showing the next trials without waiting
+---------------------------------------
+
+After each response, the browser normally waits for the server to send the
+next trial's page, and then for that page's sound, video or image to
+download. When the trial order doesn't depend on the participant's answers,
+pass ``prepare_trials_in_advance=True``:
 
 .. code-block:: python
 
@@ -357,13 +359,31 @@ it shows in :attr:`~psynet.timeline.Page.prefetch_urls`. The downloaded files
 stay in the browser's memory, so this needs in-place timeline transitions,
 which are on by default.
 
+Each trial page also carries the next trials' pages, rendered in advance. When
+the participant answers, the browser swaps in the next trial's page at once,
+and sends the answers to the server in the background, one at a time and in
+order. The swapped-in page runs as usual, so built-in prompts and controls,
+trial events and page scripts need no changes. The server still checks each
+answer: if it turns one down, the browser shows its message and loads that
+trial again, and drops the answers given after it.
+
+The browser waits for the server as before when:
+
+* a trial's ``show_trial`` returns more than one page, or a page with a
+  ``time_limit``, background recording or a full page reload;
+* an answer includes a recording or another file to upload;
+* a trial gives feedback, or ``show_after_trial`` returns a page; the trial
+  after it waits for the server.
+
 Some trial makers can't prepare trials in advance; see the
 ``prepare_trials_in_advance`` parameter of
-:class:`~psynet.trial.static.StaticTrialMaker`. If trials share one page
-layout, they can also skip waiting for the server altogether; see
+:class:`~psynet.trial.static.StaticTrialMaker`. A page module can keep one
+page on screen for all the trials instead; see
 :doc:`/code/trials/keeping_a_task_on_one_page`.
 :download:`The simple audio rating demo <../../demos/experiments/simple_audio_rating/experiment.py>`
-downloads its sounds this way.
+downloads its sounds this way, and
+:download:`the rapid ratings with built-in pages demo <../../demos/features/rapid_ratings_built_in/experiment.py>`
+swaps in each picture at once.
 
 .. _trial_after_the_response:
 

@@ -1,0 +1,1 @@
+With `prepare_trials_in_advance=True`, trial pages built from built-in prompts and controls (or any page without page modules) now show the next trial as soon as the participant answers: each trial page carries the next trials' pages rendered in advance, the browser swaps the next one in, and the answers are sent to the server in the background.
