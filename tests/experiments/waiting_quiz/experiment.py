@@ -11,6 +11,8 @@ quiz questions while waiting includes this file.
 import math
 from typing import List
 
+from markupsafe import Markup
+
 import psynet.experiment
 from psynet.bot import BotDriver
 from psynet.modular_page import ModularPage, PushButtonControl
@@ -38,6 +40,7 @@ QUESTIONS = [
     },
 ]
 REWARD_PER_POINT = 0.05  # In the experiment's currency.
+EXPECTED_WAIT = 30  # Seconds.
 
 
 class QuizTrial(StaticTrial):
@@ -49,23 +52,35 @@ class QuizTrial(StaticTrial):
             f"While you wait ({points_text(participant)} so far): "
             f"{self.definition['question']}",
             PushButtonControl(self.definition["choices"]),
+            time_limit=20,
             time_estimate=7,
             bot_response=self.definition["answer"],
         )
 
     def score_answer(self, answer, definition):
+        # The answer is None if time ran out.
         return int(answer == definition["answer"])
 
     def compute_performance_reward(self, score):
         return score * REWARD_PER_POINT
 
     def show_feedback(self, experiment, participant):
+        if self.answer is None:
+            return None  # Time ran out: go straight to the next question.
         if self.score:
             verdict = "Correct!"
         else:
             verdict = f"Not quite: the answer is {self.definition['answer']}."
-        return InfoPage(
-            f"{verdict} You have {points_text(participant)}.", time_estimate=3
+        # Moves on by itself, counting down in the span.
+        return ModularPage(
+            "waiting_quiz_feedback",
+            Markup(
+                "{} You have {}. Next question in "
+                "<span data-psynet-seconds-left></span> s."
+            ).format(verdict, points_text(participant)),
+            show_next_button=False,
+            time_limit=3,
+            time_estimate=3,
         )
 
 
@@ -86,7 +101,7 @@ quiz = StaticTrialMaker(
     id_="waiting_quiz",
     trial_class=QuizTrial,
     nodes=[StaticNode(definition=question) for question in QUESTIONS],
-    expected_trials_per_participant=len(QUESTIONS),
+    expected_trials_per_participant=EXPECTED_WAIT // QuizTrial.time_estimate,
 )
 
 
@@ -103,7 +118,7 @@ class Exp(psynet.experiment.Experiment):
                 waiting_logic=PageMaker(
                     quiz.cue_trial, time_estimate=QuizTrial.time_estimate
                 ),
-                expected_wait=len(QUESTIONS) * QuizTrial.time_estimate,
+                expected_wait=EXPECTED_WAIT,
                 max_wait_time=300,
             ),
         ),

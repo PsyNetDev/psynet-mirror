@@ -1788,16 +1788,19 @@ repeat often enough to fill that time, rounded up to whole passes; here,
 Keep ``waiting_logic`` atomic, as in ``sync_quorum``: one short trial or
 page per pass, letting the loop repeat it, rather than several trials per
 pass. A release then fails at most the trial on screen and creates no
-unseen trials (see below).
+unseen trials (see below). A participant whose arrival releases them at
+once, such as the one who completes a group, doesn't start
+``waiting_logic``.
 
 If a pass of ``waiting_logic`` has nothing to show, for example because a
 trial maker has no trial left for the participant or a
 :func:`~psynet.timeline.conditional` in it is false, PsyNet shows a
 waiting page ("Waiting for other participants…") for about 2 seconds
 and then runs the waiting logic again, so that trials that become
-available later are shown. Each of these waiting pages is a request and
-a stored response, so give the waiting logic enough to do for the
-expected wait. A release ends the waiting page at once.
+available later are shown. Each of these waiting pages costs a request
+and stores a response (leaving ``participant.answer`` unchanged), so give
+the waiting logic enough to do for the expected wait. A release ends the
+waiting page at once.
 
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
@@ -1883,23 +1886,65 @@ up for each participant before it cues their first question:
    :end-before: InfoPage("Your group is ready."
    :dedent: 8
 
+``custom()`` takes any timeline elements, so later parts of the
+experiment, even other trial makers, may go inside it too. Keeping only
+the grouper inside is simplest: the quiz's module then finishes, and the
+trial maker's ``on_complete`` runs, when the wait ends.
+
 How the pieces fit:
 
 - **Scoring and feedback.** :meth:`~psynet.trial.main.Trial.score_answer`
   scores each answer, and :meth:`~psynet.trial.main.Trial.show_feedback`
-  then shows a page with the trial's ``score`` already set.
+  then shows a page with the trial's ``score`` already set. The feedback
+  page has a ``time_limit`` and no Next button, so it moves on by itself;
+  the ``data-psynet-seconds-left`` span shows its countdown in place of
+  PsyNet's "N s left" chip. An :class:`~psynet.page.InfoPage` would need a
+  click instead. Each question then takes two page loads, one for the
+  question and one for the feedback. Feedback on the question page
+  itself would need your own JavaScript and route.
+- **Time limits.** When a question's ``time_limit`` runs out, its answer
+  is ``None`` (the page's ``time_limit_answer``), so ``score_answer``
+  receives ``None``, here scoring 0. ``show_feedback`` still runs: return
+  ``None`` from it to skip the feedback, as here. Test ``self.answer``
+  rather than ``self.time_limit_reached``, which pages shown while
+  waiting at a barrier don't set.
+- **Answers stay on the server.** The browser only receives the page that
+  ``show_trial`` builds, here the question and its choices. The correct
+  answer stays in the trial's definition on the server.
 - **Points and bonus.** :meth:`~psynet.trial.main.Trial.compute_performance_reward`
   adds each trial's reward to the participant's performance reward, which
   is paid with the rest of their bonus. Count points from the participant's
   finalized trials, as ``quiz_points`` does, rather than keeping a separate
   total. Don't use ``check_performance_at_end``, since interrupted trials
   count in performance checks (see above).
-- **No repeated questions.** A static trial maker doesn't give a
-  participant a node they have answered again, unless you pass
-  ``allow_repeated_nodes=True``.
-- **Running out of questions.** Once a participant has answered every
-  question, ``cue_trial`` finds no trial and shows nothing, so PsyNet shows
-  its waiting page instead until the group forms (see above).
+- **Expected trials.** Progress and time credit for the wait come from the
+  barrier's ``expected_wait``, not from the trial maker, so here
+  ``expected_trials_per_participant`` only feeds trial-based recruitment,
+  the timeline overview and performance tests. Set it to the number of questions a typical
+  wait fills, as the example does, not to the size of the pool.
+- **Running out of questions.** A static trial maker doesn't give a
+  participant a question they have answered again. Once a participant has
+  answered every question, ``cue_trial`` finds no trial and shows nothing,
+  so PsyNet shows its waiting page instead until the group forms (see
+  above). To avoid this, give the pool at least ``max_wait_time`` divided by
+  the time of the fastest question and its feedback. Or reuse questions:
+  pass ``allow_repeated_nodes=True``, a ``max_trials_per_participant``, and
+  a planned ``node_order`` that lists the pool several times, reshuffled
+  each time (see :ref:`trial_order`). The default ``"balanced"`` order
+  counts every participant's trials, so it doesn't stop a question from
+  coming back soon.
+
+  .. code-block:: python
+
+     StaticTrialMaker(
+         ...,
+         allow_repeated_nodes=True,
+         max_trials_per_participant=3 * len(QUESTIONS),
+         node_order=lambda nodes: [
+             node for _ in range(3) for node in random.sample(nodes, len(nodes))
+         ],
+     )
+
 - **When the group forms.** The participant whose arrival completes the
   group skips the quiz. Anyone else who is on a question has
   ``release_grace`` seconds (default 3) to answer it: their answer is then
@@ -1907,8 +1952,8 @@ How the pieces fit:
   unanswered is failed with ``failed_reason="interrupted_by_release"``,
   earns nothing, and isn't counted as answered. Raise ``release_grace`` for
   questions that take longer to answer. Someone on a feedback page has
-  already been scored and paid; the page stays for the grace period unless
-  they move on.
+  already been scored and paid; the page ends after the grace period or
+  its own time limit, whichever comes first.
 
 Time credit
 ~~~~~~~~~~~
