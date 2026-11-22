@@ -52,10 +52,10 @@ export function activate({psynet, root}) {
             timers.push(setTimeout(() => {
                 stimulus.textContent = "+";
                 timers.push(setTimeout(() => {
-                    stimulus.textContent = contents.arrows;
                     // The callback runs at the start of the frame that paints
                     // the arrows, and receives that frame's time.
                     frame = requestAnimationFrame((shownAt) => {
+                        stimulus.textContent = contents.arrows;
                         response = handle;
                         handle.startClock(shownAt);
                         timers.push(setTimeout(

@@ -42,9 +42,9 @@ test("the next sounds download while the participant rates this one", { tag: "@i
     for (let trial = 0; trial < SOUNDS.length; trial++) {
       const questions = participant.locator(".sd-question");
       await expect(questions).toHaveCount(2, { timeout: STEP_TIMEOUT_MS });
-      if (trial > 0) {
-        // This trial's sound came from the copy downloaded on an earlier page.
-        expect(downloads.length).toBeGreaterThan(trial);
+      if (trial === 0) {
+        // The next trials' sounds download while the first is shown.
+        await expect.poll(() => downloads.length).toBeGreaterThan(1);
       }
       for (const index of [0, 1]) {
         await questions.nth(index).locator(".sd-rating__item").nth(2).click();

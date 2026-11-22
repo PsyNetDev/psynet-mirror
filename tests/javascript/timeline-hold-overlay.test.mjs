@@ -194,6 +194,8 @@ describe("approved response into a waiting screen", () => {
       },
       isSameSessionPageUpdate: () => false,
       requiresFullPageReloadTransition: () => false,
+      predictedFragment: () => null,
+      resetAnswers() {},
       endPageRecording: record("endPageRecording"),
       updatePageForTimelineHold: record("updatePageForTimelineHold"),
       beginTimelineHold: record("beginTimelineHold"),

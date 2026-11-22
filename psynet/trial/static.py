@@ -528,15 +528,11 @@ class StaticTrialMaker(ChainTrialMaker):
             "inplace_timeline_transitions"
         ):
             return None, None
-        # Only page modules show trials in advance. A time limit and background
-        # recording are set up for each page, which a predicted page skips.
-        predict = (
-            bool(page.js_page_modules)
-            and page.time_limit is None
-            and page.background_recording is None
-            and not trial.gives_feedback(experiment, participant)
-        )
-        contents = [] if predict else None
+        # A page that can be adopted as a predicted page gets a layout key,
+        # even if its own feedback stops it from showing later trials.
+        adoptable = page._show_in_advance()
+        predict = adoptable and not trial.gives_feedback(experiment, participant)
+        contents = [] if adoptable else None
         media = {}
         upcoming = [
             t
@@ -572,6 +568,7 @@ class StaticTrialMaker(ChainTrialMaker):
                 and not between
                 and len(pages) == 1
                 and isinstance(pages[0], Page)
+                and pages[0]._show_in_advance()
             ):
                 contents.append(pages[0].contents)
                 predict = not following.gives_feedback(experiment, participant)

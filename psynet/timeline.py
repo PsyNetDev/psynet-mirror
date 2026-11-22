@@ -2060,7 +2060,6 @@ class Page(Elt):
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
-            # Pages before a trial don't count towards its time_taken.
             trial=_trial_owning_page(participant),
         )
         db.session.add(resp)
@@ -2747,6 +2746,21 @@ class Page(Elt):
         trials' pages, so the browser can download them early.
         """
         return self.media.urls
+
+    def _show_in_advance(self):
+        """Whether the page can show trials before the server confirms them.
+
+        Only page modules can, as their ``update`` shows each trial, and only
+        on pages that need nothing PsyNet sets up for each page: a time limit,
+        background recording, media or a full page reload.
+        """
+        return (
+            bool(self.js_page_modules)
+            and self.time_limit is None
+            and self.background_recording is None
+            and not self.requires_full_page_reload
+            and not self.media.urls
+        )
 
     def layout_key(self, fragment_html):
         """Identify the page's ``#main-body`` and JavaScript in a partial render.

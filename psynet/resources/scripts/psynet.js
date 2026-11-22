@@ -787,12 +787,13 @@
           answers.handle = null;
           let metadata = {
             time_taken: elapsed(at),
-            marks,
+            marks: { ...marks },
             // The events of this trial only, as later trials share the page.
             event_log: psynet.trial.eventLog.splice(0),
           };
           answers.queue.push({ value, metadata });
-          psynet.showNextPredictedTrial();
+          // After the caller's own code, which may still tidy up this trial.
+          queueMicrotask(psynet.showNextPredictedTrial);
           psynet.sendAnswers();
           return true;
         },
@@ -817,6 +818,7 @@
       let answers = psynet.answers;
       if (answers.sending) return;
       answers.sending = true;
+      let retry = false;
       try {
         while (psynet.answers === answers && answers.queue.length) {
           let entry = answers.queue[0];
@@ -828,16 +830,17 @@
             { background: true },
           );
           if (!accepted) {
-            if (psynet.answers === answers && answers.queue[0] === entry) {
-              // Show the rejected trial again.
-              answers.queue = [];
-              await psynet.updatePageModules(0);
-            }
+            retry = psynet.answers === answers && answers.queue[0] === entry;
             break;
           }
         }
       } finally {
         answers.sending = false;
+      }
+      if (retry) {
+        // Show the rejected trial again.
+        answers.queue = [];
+        await psynet.updatePageModules(0);
       }
     };
 
@@ -3058,7 +3061,8 @@
     psynet.media.prefetchedImages = new Map();
 
     psynet.media.prefetch = function (urls) {
-      urls = urls || {};
+      // Pages between trials, such as a break, keep the files for later trials.
+      if (!urls) return;
       let files = new Set(
         ["audio", "video", "html"].flatMap((type) => urls[type] || []),
       );
@@ -3493,9 +3497,11 @@
     // if the file can't be downloaded or decoded, so callers can retry.
     let audioLoads = new Map();
     psynet.media.loadAudio = function (url, id = url) {
+      let generation = psynet.media.loadGeneration;
       let pending = audioLoads.get(id);
-      if (pending && psynet.audio?.[id]) {
-        return pending;
+      // A load from an earlier page made a sound that page has released.
+      if (pending && pending.generation === generation) {
+        return pending.load;
       }
       let load = (async function () {
         let data = await prefetchedData(url, "arraybuffer");
@@ -3506,16 +3512,22 @@
           }
           data = await response.arrayBuffer();
         }
+        if (!psynet.media.isCurrentLoadGeneration(generation)) {
+          throw new Error("The page changed while " + url + " was loading.");
+        }
         if (!psynet.media.data.audio) {
           initMediaType("audio");
         }
         initStimulus(id, "audio");
         psynet.media.initAudioContext();
-        await createAudioStimulus(data, id, psynet.media.loadGeneration);
+        await createAudioStimulus(data, id, generation);
         return psynet.audio[id];
       })();
-      audioLoads.set(id, load);
-      load.catch(() => audioLoads.delete(id));
+      let entry = { load, generation };
+      audioLoads.set(id, entry);
+      load.catch(() => {
+        if (audioLoads.get(id) === entry) audioLoads.delete(id);
+      });
       return load;
     };
 
@@ -4130,7 +4142,7 @@
         return true;
       }
       // Any other reply ends the prediction, dropping the later answers.
-      psynet.answers.queue = [];
+      psynet.resetAnswers();
 
       if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
         psynet.stopTimelineHold();
@@ -4243,6 +4255,7 @@
       } else if (options.background) {
         // The page's controls stay enabled for background answers, so the
         // trial is shown again only once the participant has read the message.
+        psynet.answers.handle = null;
         await psynet.alert(response.message);
       } else {
         psynet.alert(response.message);
@@ -4483,6 +4496,11 @@
         return false;
       }
       psynet.log.warn("The experiment was busy: " + message);
+      if (options.background) {
+        psynet.answers.handle = null;
+        await psynet.alert(message);
+        return false;
+      }
       psynet.alert(message);
       psynet.restoreSubmissionControlState();
       return false;

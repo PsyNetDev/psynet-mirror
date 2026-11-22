@@ -168,7 +168,10 @@ plays it, so ``update`` can start the next trial's sound at once:
 .. code-block:: javascript
 
     async update({contents, upcomingContents, response: handle}) {
-        for (const next of upcomingContents) psynet.media.loadAudio(next.sound_url);
+        for (const next of upcomingContents) {
+            // A failed download shows up when that trial loads its sound.
+            psynet.media.loadAudio(next.sound_url).catch(() => {});
+        }
         const sound = await psynet.media.loadAudio(contents.sound_url);
         sound.play();
         handle.startClock();
