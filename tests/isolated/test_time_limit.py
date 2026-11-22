@@ -249,9 +249,9 @@ def test_bots_can_let_the_time_limit_run_out(
 
         # Accepted at once, long before the deadline, as the page's time-out.
         submission = bot.get_current_page().call__get_bot_response(exp, bot)
-        assert _submit(exp, bot, None, **submission.metadata)["submission"] == (
-            "approved"
-        )
+        assert _submit(exp, bot, submission.raw_answer, **submission.metadata)[
+            "submission"
+        ] == ("approved")
         response = bot.response
         assert (response.answer, response.time_limit_reached) == ("timeout", True)
 

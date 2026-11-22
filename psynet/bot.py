@@ -215,6 +215,9 @@ class BotResponse:
         if metadata == NoArgumentProvided:
             metadata = {}
 
+        time_limit_reached = bool(time_limit_reached) or (
+            metadata.get("time_limit_reached") is True
+        )
         if time_limit_reached:
             metadata = {**metadata, "time_limit_reached": True}
 
