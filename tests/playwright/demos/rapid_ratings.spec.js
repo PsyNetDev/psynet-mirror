@@ -70,8 +70,17 @@ test("ratings advance while the server's replies are held back", { tag: "@inplac
     await expectPicture("green square");
     await rate(2);
     expect(gate.posted).toBe(1);
+    const leavingIsQuestioned = () =>
+      participant.evaluate(() => {
+        const event = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+    // Answers not yet saved make the browser ask before the page closes.
+    expect(await leavingIsQuestioned()).toBe(true);
     gate.release();
     await waitForMainBodyContains(participant, "Take a short break.", STEP_TIMEOUT_MS);
+    expect(await leavingIsQuestioned()).toBe(false);
     // Each answer carries only its own trial's events.
     const [first, ...later] = gate.eventLogs;
     expect(later).toHaveLength(3);
