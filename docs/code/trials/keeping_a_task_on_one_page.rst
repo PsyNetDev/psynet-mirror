@@ -89,7 +89,19 @@ answering.
 PsyNet waits for ``cleanup`` before replacing the page. A ``cleanup`` that
 returns a promise can therefore let feedback on the last answer finish
 before the next page appears, for example
-``cleanup: () => feedbackShown.then(removeListeners)``.
+``cleanup: () => feedbackShown.then(removeListeners)``. When the browser
+shows trials in advance, ``cleanup`` doesn't run between trials and the next
+trial's ``update`` follows the answer at once, so play the feedback before
+answering, and pass the time of the input as ``at`` so that it doesn't count
+towards ``time_taken``:
+
+.. code-block:: javascript
+
+    async function choose(choice, event) {
+        accepting = false;
+        await showFeedback(choice);  // for example a card leaving the screen
+        response.answer(choice, {at: event.timeStamp});
+    }
 
 The ``response`` handle has three methods:
 
@@ -147,6 +159,10 @@ it holds, such as a game's state. Pass ``prepare_trials_in_advance=True`` to a
         expected_trials_per_participant=len(nodes),
         prepare_trials_in_advance=True,
     )
+
+Only :class:`~psynet.trial.static.StaticTrialMaker` can do this. Adaptive
+trial makers, such as chains and staircases, choose each trial from the
+answers before it, so their pages always wait for the server.
 
 The trial maker then creates all of a participant's trials, in order, when they
 reach it, and each trial page also carries the ``contents`` of the next few
