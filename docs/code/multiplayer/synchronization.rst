@@ -1444,8 +1444,10 @@ settings together decide both fates:
 ``"fail"`` stops a pair or group from carrying on short-handed. Combined
 with ``late_action="leave_group"`` it would let the late member carry on
 while failing the partner who was on time, so the experiment rejects that
-combination when it loads; for a barrier it can't see then, such as one
-built in ``show_trial``, PsyNet logs a warning when it happens. To let the
+combination when it loads. A barrier built in ``show_trial`` is checked when
+the trial is shown, which raises the same error; for one built in a
+``for_loop`` or another ``PageMaker``, PsyNet logs a warning when it
+happens. To let the
 members who were on time carry on, set
 ``below_quorum="continue_without_group"`` on the grouper:
 

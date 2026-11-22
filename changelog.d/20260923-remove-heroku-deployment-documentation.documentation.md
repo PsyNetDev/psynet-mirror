@@ -1,1 +1,0 @@
-Removed Heroku deployment documentation.

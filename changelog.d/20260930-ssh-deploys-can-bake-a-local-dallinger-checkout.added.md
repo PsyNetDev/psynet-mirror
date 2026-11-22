@@ -1,1 +1,0 @@
-Added ``--use-local-dallinger`` to ``psynet debug ssh`` to bake an unreleased Dallinger checkout into the experiment image. Without the flag, an exported ``DALLINGER_SOURCE`` is ignored, and ``psynet deploy ssh`` always installs the Dallinger version pinned in ``requirements.txt``.

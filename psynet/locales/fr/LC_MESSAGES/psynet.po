@@ -7,6 +7,64 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"Cette page peut enregistrer une vidéo facultative de la caméra ou de "
+"l’écran. Vous pouvez continuer sans enregistrer."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"Cet essai nécessite une vidéo de la caméra ou de l’écran. Si vous continuez "
+"sans enregistrer, votre réponse sera sauvegardée, mais l’essai ne pourra pas"
+" être mené à bien."
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "Activer la caméra"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "Enregistrement"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "Enregistrement arrêté"
+
+#: psynet/chatroom.py
+#, fuzzy
+msgctxt "chat sender"
+msgid "You"
+msgstr "Vous"
+
+#: psynet/chatroom.py
+#, fuzzy, python-brace-format
+msgctxt "chat participant list"
+msgid "{NAME} (you)"
+msgstr "{NAME} (vous)"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "Votre partenaire"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "Un autre joueur"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -269,7 +327,7 @@ msgstr "Je ne danse jamais"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
 msgstr ""
 "Quand avez-vous dansé pour la dernière fois ? (choisissez la réponse la plus"
@@ -277,39 +335,39 @@ msgstr ""
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
 msgstr "Cette semaine"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
 msgstr "Ce mois-ci"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
 msgstr "Cette année"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
 msgstr "Il y a quelques années"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
 msgstr "Il y a de nombreuses années"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "Je n'ai jamais dansé"
+msgstr "Je n’ai jamais dansé"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -440,35 +498,52 @@ msgstr "Terminer"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
 "Vous recevrez une récompense de <strong>{CURRENCY}{TIME_REWARD}</strong> "
-"pour le temps passé sur l'expérience. Vous avez également reçu une "
-"récompense de performance de "
-"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"pour le temps que vous avez passé."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"Vous avez également reçu une récompense de performance de "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "Cliquez sur Terminer pour retourner à votre panneau."
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "Cliquez sur Terminer pour finaliser la session."
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgid "This page continues by itself in {SECONDS} s."
+msgstr "Cette page se poursuivra automatiquement dans {SECONDS} s."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "C'est la fin de l'expérience!"
+msgid "That's the end!"
+msgstr "C'est la fin !"
 
-#: psynet/end.py
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
 msgid "Thank you for taking part."
 msgstr "Merci de votre participation."
 
 #: psynet/end.py
 #, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "Veuillez cliquer sur \"Terminer\" pour compléter le HIT."
-
-#: psynet/end.py
-#, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "Malheureusement, l'expérience doit se terminer prématurément."
+msgid "Unfortunately we have to stop early."
+msgstr "Malheureusement, nous devons arrêter tôt."
 
 #: psynet/end.py
 #, fuzzy
@@ -478,20 +553,46 @@ msgstr "Cependant, vous serez toujours payé pour le temps déjà passé."
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "Vous serez redirigé."
+msgctxt "final_page_unsuccessful"
+msgid "You took too long to reach the next step, so we ended your session."
+msgstr ""
+"Vous avez mis trop de temps à atteindre l’étape suivante, nous avons donc "
+"mis fin à votre session."
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid ""
+"Too few members of your group remained to continue, so we ended your "
+"session."
+msgstr ""
+"Il ne restait pas assez de membres de votre groupe pour continuer, nous "
+"avons donc mis fin à votre session."
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid "We waited too long for other participants, so we ended your session."
+msgstr ""
+"Nous avons attendu trop longtemps les autres participants, nous avons donc "
+"mis fin à votre session."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "Le consentement a été rejeté."
+msgid "You chose not to continue."
+msgstr "Vous avez choisi de ne pas continuer."
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "Fin de l'expérience."
+msgid "You may close this page."
+msgstr "Vous pouvez fermer cette page."
+
+#: psynet/end.py
+#, fuzzy
+msgid "We will return you to your panel in a few seconds."
+msgstr "Nous vous ramènerons à votre panneau dans quelques secondes."
 
 #: psynet/equipment.py
 #, fuzzy
@@ -504,44 +605,6 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "Une erreur s'est produite et vous ne pouvez pas continuer, désolé !"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"Pour demander une compensation, veuillez contacter le chercheur à {EMAIL} et"
-" décrire ce qui a conduit à cette erreur."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "Veuillez également citer les informations suivantes :"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "Ne vous inquiétez pas, vos progrès ont été enregistrés."
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"Pour demander une compensation, veuillez envoyer un message au chercheur via"
-" le site Prolific et décrire ce qui a conduit à votre erreur."
-
-#: psynet/experiment.py
-#, fuzzy
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
@@ -551,16 +614,89 @@ msgstr ""
 "plusieurs onglets de navigateur ? Veuillez fermer tous les autres onglets et"
 " actualiser la page."
 
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "Cette session est déjà terminée. Veuillez recharger la page."
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "L'expérience est temporairement occupée. Veuillez réessayer."
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
+msgstr ""
+"Cette session n'est plus disponible. Elle a peut-être pris fin, ou l'étude a"
+" peut-être redémarré depuis que vous avez ouvert cette page."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "has answered"
+msgstr "a répondu"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} has answered."
+msgstr "{NAME} a répondu."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "n’a plus de temps"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} n’a plus de temps."
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your group"
+msgstr "Votre groupe"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Group"
+msgstr "Groupe"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "You"
+msgstr "Vous"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (left)"
+msgstr "{NAME} (a quitté le groupe)"
+
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"
 msgstr "Jouer"
 
-#: psynet/modular_page.py
+#: psynet/modular_page.py psynet/templates/macros/control.html
 #, fuzzy
-msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "Vous devez cocher au moins une réponse !"
+msgid "Stop"
+msgstr "Arrêter"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "Boucle"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -571,8 +707,68 @@ msgstr "Vous devez sélectionner une réponse !"
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
+msgid "You need to check at least one answer!"
+msgstr "Vous devez cocher au moins une réponse !"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "Vous devez fournir un nombre !"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"Partagez votre écran pour enregistrer cette réponse. Si vous continuez sans "
+"enregistrer, cet essai risque d'échouer."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "Partagez votre écran pour enregistrer cette réponse."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "Partager l’écran"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "Continuer sans enregistrer"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr ""
+"Envoi de votre enregistrement en cours. Veuillez laisser cette page ouverte."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"L’enregistrement de votre réponse a échoué. Vérifiez que votre navigateur "
+"peut accéder à votre caméra ou à votre écran, puis rechargez la page."
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"Nous n’avons pas pu confirmer la réception de votre réponse. Vérifiez votre "
+"connexion, puis appuyez de nouveau sur Suivant."
+
+#: psynet/page.py psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "En cours..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -619,6 +815,104 @@ msgstr "Quel son est différent des deux autres : 1, 2 ou 3 ?"
 msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr "Votre tâche sera de juger <strong>quel son est l'intrus</strong>."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"Cette expérience doit vérifier que votre microphone et votre caméra "
+"fonctionnent."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"Votre navigateur vous demandera l’autorisation d’accéder à votre microphone "
+"et à votre caméra."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr "Cette expérience doit vérifier que votre microphone fonctionne."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr ""
+"Votre navigateur vous demandera l’autorisation d’accéder à votre microphone."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "Cette expérience doit vérifier que votre caméra fonctionne."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr ""
+"Votre navigateur vous demandera l’autorisation d’accéder à votre caméra."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "Veuillez cliquer sur « Autoriser » lorsque le message s’affiche."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Nous n’avons pas pu accéder à votre microphone. Il est peut-être utilisé par"
+" une autre application, indisponible sur votre appareil ou l’autorisation "
+"d’accès n’a pas été accordée."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"Nous n’avons pas pu accéder à votre caméra. Elle est peut-être utilisée par "
+"une autre application, indisponible sur votre appareil ou l’autorisation "
+"d’accès n’a pas été accordée."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "Votre navigateur ne prend pas en charge la capture d’écran."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "Votre navigateur ne prend pas en charge l’enregistrement vidéo."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "Votre navigateur ne prend pas en charge la lecture audio."
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr ""
+"Votre navigateur ne répond pas aux exigences techniques de cette expérience."
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -748,220 +1042,1092 @@ msgstr ""
 msgid "The test will start on the next page."
 msgstr "Le test commencera à la page suivante."
 
-#: psynet/recruiters.py
+#: psynet/pseudonym.py
 #, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "Communication avec le recruteur..."
+msgctxt "pseudonym"
+msgid "Orange fox"
+msgstr "Renard orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange owl"
+msgstr "Hibou orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange otter"
+msgstr "Loutre orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange panda"
+msgstr "Panda orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange tiger"
+msgstr "Tigre orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange frog"
+msgstr "Grenouille orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange koala"
+msgstr "Koala orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange penguin"
+msgstr "Pingouin orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange rabbit"
+msgstr "Lapin orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange whale"
+msgstr "Baleine orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange cat"
+msgstr "Chat orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue fox"
+msgstr "Renard bleu clair"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue owl"
+msgstr "Hibou bleu clair"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue otter"
+msgstr "Loutre bleue claire"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue panda"
+msgstr "Panda bleu clair"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue tiger"
+msgstr "Tigre bleu clair"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue frog"
+msgstr "Grenouille bleue claire"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue koala"
+msgstr "Koala bleu clair"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue penguin"
+msgstr "Pingouin bleu clair"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue rabbit"
+msgstr "Lapin bleu clair"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue whale"
+msgstr "Baleine bleue claire"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue cat"
+msgstr "Chat bleu clair"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green fox"
+msgstr "Renard vert"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green owl"
+msgstr "Hibou vert"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green otter"
+msgstr "Loutre verte"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green panda"
+msgstr "Panda vert"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green tiger"
+msgstr "Tigre vert"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green frog"
+msgstr "Grenouille verte"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green koala"
+msgstr "Koala vert"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green penguin"
+msgstr "Pingouin vert"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green rabbit"
+msgstr "Lapin vert"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green whale"
+msgstr "Baleine verte"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green cat"
+msgstr "Chat vert"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow fox"
+msgstr "Renard jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow owl"
+msgstr "Hibou jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow otter"
+msgstr "Loutre jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow panda"
+msgstr "Panda jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow tiger"
+msgstr "Tigre jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow frog"
+msgstr "Grenouille jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow koala"
+msgstr "Koala jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow penguin"
+msgstr "Pingouin jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow rabbit"
+msgstr "Lapin jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow whale"
+msgstr "Baleine jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow cat"
+msgstr "Chat jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue fox"
+msgstr "Renard bleu"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue owl"
+msgstr "Hibou bleu"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue otter"
+msgstr "Loutre bleue"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue panda"
+msgstr "Panda bleu"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue tiger"
+msgstr "Tigre bleu"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue frog"
+msgstr "Grenouille bleue"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue koala"
+msgstr "Koala bleu"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue penguin"
+msgstr "Pingouin bleu"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue rabbit"
+msgstr "Lapin bleu"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue whale"
+msgstr "Baleine bleue"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue cat"
+msgstr "Chat bleu"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red fox"
+msgstr "Renard rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red owl"
+msgstr "Hibou rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red otter"
+msgstr "Loutre rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red panda"
+msgstr "Panda rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red tiger"
+msgstr "Tigre rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red frog"
+msgstr "Grenouille rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red koala"
+msgstr "Koala rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red penguin"
+msgstr "Pingouin rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red rabbit"
+msgstr "Lapin rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red whale"
+msgstr "Baleine rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red cat"
+msgstr "Chat rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink fox"
+msgstr "Renard rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink owl"
+msgstr "Hibou rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink otter"
+msgstr "Loutre rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink panda"
+msgstr "Panda rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink tiger"
+msgstr "Tigre rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink frog"
+msgstr "Grenouille rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink koala"
+msgstr "Koala rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink penguin"
+msgstr "Pingouin rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink rabbit"
+msgstr "Lapin rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink whale"
+msgstr "Baleine rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink cat"
+msgstr "Chat rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black fox"
+msgstr "Renard noir"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black owl"
+msgstr "Hibou noir"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black otter"
+msgstr "Loutre noire"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black panda"
+msgstr "Panda noir"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black tiger"
+msgstr "Tigre noir"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black frog"
+msgstr "Grenouille noire"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black koala"
+msgstr "Koala noir"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black penguin"
+msgstr "Pingouin noir"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black rabbit"
+msgstr "Lapin noir"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black whale"
+msgstr "Baleine noire"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black cat"
+msgstr "Chat noir"
+
+#: psynet/pseudonym.py
+#, fuzzy, psynet-kept-source
+msgctxt "pseudonym color"
+msgid "orange"
+msgstr "orange"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "light blue"
+msgstr "bleu clair"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "green"
+msgstr "vert"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "yellow"
+msgstr "jaune"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "blue"
+msgstr "bleu"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "red"
+msgstr "rouge"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "pink"
+msgstr "rose"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "black"
+msgstr "noir"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "fox"
+msgstr "renard"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "owl"
+msgstr "hibou"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "otter"
+msgstr "loutre"
+
+#: psynet/pseudonym.py
+#, fuzzy, psynet-kept-source
+msgctxt "pseudonym animal"
+msgid "panda"
+msgstr "panda"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "tiger"
+msgstr "tigre"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "frog"
+msgstr "grenouille"
+
+#: psynet/pseudonym.py
+#, fuzzy, psynet-kept-source
+msgctxt "pseudonym animal"
+msgid "koala"
+msgstr "koala"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "penguin"
+msgstr "pingouin"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "rabbit"
+msgstr "lapin"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "whale"
+msgstr "baleine"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "cat"
+msgstr "chat"
+
+#: psynet/pseudonym.py
+#, fuzzy, python-brace-format, psynet-kept-source
+msgctxt "pseudonym"
+msgid "{COLOR} {ANIMAL}"
+msgstr "{COLOR} {ANIMAL}"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"Si vous devez contacter le chercheur à propos de cette erreur, écrivez à "
+"{EMAIL} et indiquez le code de référence {REFERENCE_CODE}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+"Si vous devez contacter le chercheur à propos de cette erreur, écrivez à "
+"{EMAIL}."
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
-msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "Vous pouvez fermer cette page."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
 msgstr ""
-"Vous avez été crédité pour le temps passé sur l'expérience. Comme vous "
-"n'avez pas pu progresser vers l'expérience principale, votre soumission "
-"apparaîtra comme 'exclue' sur Prolific. Vous pouvez maintenant fermer cette "
-"fenêtre de navigateur."
+"Malheureusement, une erreur s'est produite et nous ne pouvons pas continuer."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "Cependant, vos réponses jusqu'à présent ont été enregistrées."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid ""
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
+msgstr ""
+"Si vous partez maintenant, vous ne pourrez pas continuer plus tard. Vos "
+"réponses jusqu'à présent seront toujours enregistrées."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"Vous avez gagné {EARNED} jusqu'à présent. Vous avez besoin d'au moins "
+"{THRESHOLD} pour partir avec paiement. Si vous partez sans paiement, vous ne"
+" pourrez pas continuer plus tard. Vos réponses jusqu'à présent seront "
+"toujours enregistrées."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "Partir sans paiement"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "Partir"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "Partir sans terminer ?"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "Annuler"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "Vous pouvez fermer cette page."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"Si vous partez maintenant, vous ne pourrez pas continuer plus tard. Vous "
+"recevrez un paiement fixe de 'screen-out' de {FIXED}. Comme vous avez gagné "
+"{EARNED} jusqu'à présent, un montant supplémentaire de {REMAINDER} sera payé"
+" en tant que bonus. Vos réponses jusqu'à présent seront toujours "
+"enregistrées."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"Si vous partez maintenant, vous ne pourrez pas continuer plus tard. Vous "
+"recevrez un paiement fixe de 'screen-out' de {FIXED}. Vos réponses jusqu'à "
+"présent seront toujours enregistrées."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"Si vous partez maintenant, vous ne pourrez pas continuer plus tard. Vous "
+"recevrez un paiement fixe de 'screen-out' de {FIXED} plus un bonus de "
+"performance de {PERFORMANCE}. Vous ne serez pas payé pour le temps "
+"supplémentaire. Vos réponses jusqu'à présent seront toujours enregistrées."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"Si vous partez maintenant, vous ne pourrez pas continuer plus tard. Vous "
+"recevrez un paiement fixe de 'screen-out' de {FIXED}. Vous ne serez pas payé"
+" pour le temps supplémentaire. Vos réponses jusqu'à présent seront toujours "
+"enregistrées."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"Si vous partez maintenant, vous ne pourrez pas continuer plus tard. Vous "
+"devrez retourner votre soumission Prolific. Vous serez ensuite payé {EARNED}"
+" en tant que bonus pour le travail que vous avez complété jusqu'à présent. "
+"Vos réponses jusqu'à présent seront toujours enregistrées."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr ""
+"Si vous aviez déjà commencé, envoyez un message au chercheur via Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"Veuillez envoyer un message au chercheur via Prolific et décrire ce qui a "
+"conduit à cette erreur."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"Nous vous paierons pour vos progrès jusqu'à présent : vous recevrez {FIXED} "
+"via Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr ""
+"Nous paierons également {BONUS} en tant que bonus, portant votre paiement "
+"total à {TOTAL}."
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "Nous paierons également votre bonus de performance de {BONUS}."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr ""
+"Tout montant supplémentaire que vous avez gagné sera payé en tant que bonus."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "Sélectionnez Soumettre à Prolific pour compléter votre soumission."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "Soumettre à Prolific"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"Pour recevoir {EARNED} pour le travail que vous avez complété, vous devrez "
+"retourner votre soumission sur Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"Pour recevoir le paiement pour le travail que vous avez complété, vous "
+"devrez retourner votre soumission sur Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr ""
+"Sélectionnez Continuer vers les instructions de paiement pour compléter ces "
+"étapes."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"Nous n'avons pas pu ouvrir les instructions de paiement. Veuillez réessayer."
+" Si cela continue, envoyez un message au chercheur via Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "Continuer vers les instructions de paiement"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"Vos réponses jusqu'à présent ont été enregistrées. Veuillez retourner votre "
+"soumission sur Prolific. Vous ne recevrez pas de paiement. Vous pouvez "
+"fermer cette page."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "Votre soumission a été envoyée à Prolific."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "Vous pouvez fermer cette page."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"Nous n'avons pas pu envoyer votre soumission à Prolific. Veuillez réessayer."
+" Si cela continue, contactez le chercheur via Prolific."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
-"Veuillez retourner votre soumission via l'interface Prolific et cliquer sur "
-"Suivant. Nous vous paierons alors automatiquement un bonus pour votre temps."
+"Veuillez retourner votre soumission via l'interface Prolific et cliquez sur "
+"Suivant. Nous vous paierons alors automatiquement un bonus."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"Ça a marché ! Vous avez été crédité pour le temps passé sur l'expérience. "
-"Merci de votre participation. Vous pouvez maintenant fermer cette fenêtre de"
-" navigateur."
+"Cela a fonctionné. Vous avez été crédité pour le temps passé. Merci de votre"
+" participation. Vous pouvez fermer cette page."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"Votre retour a été enregistré, mais nous n'avons pas pu compléter le "
+"paiement du bonus automatiquement. Le chercheur a été informé et organisera "
+"le paiement. Vous pouvez fermer cette page."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"Cela n'a pas fonctionné. Êtes-vous sûr d'avoir retourné la soumission pour "
-"cette étude ? Veuillez aller sur l'interface Prolific, assurez-vous d'avoir "
-"retourné la soumission, puis cliquez sur le bouton 'Suivant'."
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"Nous sommes désolés que vous n'ayez pas pu participer à l'expérience "
-"principale, mais nous vous paierons tout de même pour le temps passé jusqu'à"
-" présent. Pour recevoir ce paiement, nous avons besoin que vous retourniez "
-"cette tâche via l'interface Prolific, puis cliquez sur le bouton 'Suivant' "
-"ci-dessous."
+"Cela n'a pas fonctionné. Êtes-vous sûr d'avoir retourné la soumission ? "
+"Retournez-la sur Prolific, puis cliquez sur Suivant."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"Nous sommes désolés que vous n'ayez pas pu participer à l'expérience "
-"principale. Pour recevoir ce paiement pour votre temps, veuillez retourner "
-"votre tâche sur Prolific et envoyer un message à l'expérimentateur via le "
-"système de messagerie Prolific. L'expérimentateur examinera votre cas et "
-"arrangera le paiement si nécessaire. Merci de votre compréhension. Vous "
-"pouvez maintenant fermer cette fenêtre de navigateur."
+"Pour recevoir un paiement pour le temps passé, retournez votre soumission "
+"sur Prolific et contactez le chercheur là-bas. Ils examineront votre cas et "
+"organiseront le paiement si nécessaire. Vous pouvez fermer cette page."
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"Si vous partez maintenant, vous ne pourrez pas continuer plus tard, et vous "
+"retournerez à votre fournisseur de panel. Cette session n'émettra pas de "
+"paiement ; tout paiement dépend des règles de votre fournisseur de panel. "
+"Vos réponses jusqu'à présent seront toujours enregistrées."
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "Redirection vers Lucid Marketplace..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "Nous vous renverrons à votre panel dans quelques secondes."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "Interruption impossible."
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "Nous vous renverrons à votre panel dans quelques secondes."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"Interrompre l'expérience n'est pas possible car l'expérimentateur ne le "
-"permet pas pour le moment!"
+"Nous n'avons pas pu vous renvoyer à votre panel. Veuillez réessayer. Si cela"
+" continue, contactez votre fournisseur de panel."
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "Retourner à votre panel"
+
+#: psynet/sync.py psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "En attente des autres participants…"
+
+#: psynet/sync.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
 msgstr ""
-"Vous devez accumuler <strong>au moins "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> de récompense pour"
-" pouvoir être compensé."
+"Nous n’avons pas trouvé de partenaire pour vous à temps. Veuillez continuer."
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/sync.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
 msgstr ""
-"Voir ci-dessous les informations sur votre récompense actuellement "
-"accumulée."
+"Nous n’avons pas pu former un groupe pour vous à temps. Veuillez continuer."
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Assignment ID"
-msgstr "ID d'affectation"
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Your group is ready. Moving on in {SECONDS} s."
+msgstr "Votre groupe est prêt. Passage à la suite dans {SECONDS} s."
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "HIT ID"
-msgstr "ID HIT"
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Moving on in {SECONDS} s."
+msgstr "Passage à la suite dans {SECONDS} s."
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
+#: psynet/sync.py
 #, fuzzy
-msgid "Accumulated reward"
-msgstr "Récompense accumulée"
-
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "Fermer la fenêtre"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "Êtes-vous sûr de vouloir abandonner l'expérience ?"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
 msgstr ""
-"Si vous cliquez sur le bouton Abandonner, l'expérience se terminera plus tôt"
-" et vous serez automatiquement payé la compensation que vous avez gagnée "
-"jusqu'à présent."
+"Votre partenaire ne fait plus partie de votre groupe. Veuillez continuer."
 
-#: psynet/templates/abort_possible.html
+#: psynet/sync.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
 msgstr ""
-"Veuillez nous contacter uniquement si vous avez des problèmes pour recevoir "
-"votre paiement."
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr ""
-"Voir les informations ci-dessous pour les détails de votre compensation."
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "Annuler l'expérience"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "Appel à participants"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "Les conditions pour participer sont les suivantes"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-"Veuillez cliquer sur le bouton \"Accepter le HIT\" sur le site Amazon ci-"
-"dessus pour commencer la tâche."
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "Merci d'avoir accepté ce HIT."
+"Il ne reste plus assez de membres dans votre groupe. Veuillez continuer."
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -996,11 +2162,6 @@ msgstr "Veuillez désactiver les bloqueurs de pop-up avant de continuer."
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "Commencer l'expérience"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr "Cliquez sur le bouton ci-dessus pour être compensé en cas d'erreur."
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2244,7 +3405,7 @@ msgstr ""
 #, fuzzy
 msgctxt "consent-compensation"
 msgid "Compensation"
-msgstr "Compensation"
+msgstr "Dédommagement"
 
 #: psynet/templates/consents/main_consent.html
 #, fuzzy
@@ -2472,8 +3633,42 @@ msgstr "En effectuant la tâche, vous aidez la science, merci !"
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "Soumission de l'enquête Lucid"
+msgid "Returning you to your panel"
+msgstr "Retour à votre panneau"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "Veuillez patienter."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "Soumettre à Prolific"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"Cliquez ci-dessous pour envoyer votre soumission à Prolific. Vous n'aurez "
+"pas besoin de saisir un code de complétion."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "Veuillez patienter."
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "Réessayer"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2484,6 +3679,18 @@ msgstr "Sélectionnez une disposition de clavier :"
 #, fuzzy
 msgid "You did not press all required keys."
 msgstr "Vous n'avez pas appuyé sur toutes les touches requises."
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"Votre navigateur n'est pas à jour et ne prend pas en charge les "
+"fonctionnalités requises pour cette expérience. Veuillez mettre à jour votre"
+" navigateur vers la dernière version ou installer Google Chrome."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2507,17 +3714,11 @@ msgstr "Veuillez suivre les instructions ci-dessous pour continuer."
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"Vous devez utiliser la dernière version de Google Chrome pour participer à "
-"l'expérience."
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "Vous utilisez :"
+"Nous n'avons pas pu vérifier si vous utilisez une fenêtre de navigation "
+"privée. Veuillez ouvrir une fenêtre de navigation privée et réessayer."
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2715,11 +3916,6 @@ msgstr "Je suis d'accord"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "Non, merci (retourner à la tâche)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "Faites défiler vers le haut/bas pour voir tout le texte"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -3023,12 +4219,18 @@ msgstr "Réinitialiser"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "Niveau du microphone"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "Curseurs"
 
 #: psynet/templates/macros/control.html
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "audio_meter_calibrate"
 msgid "Documentation"
 msgstr "Documentation"
@@ -3114,26 +4316,6 @@ msgstr "Lire l'invite"
 msgid "Play recording"
 msgstr "Lire l'enregistrement"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "Arrêter"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "Arrêter"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "Boucle"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "Boucle"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3144,58 +4326,135 @@ msgstr "Vidéo non trouvée"
 msgid "Image not found"
 msgstr "Image non trouvée"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "Commentaire enregistré."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "Veuillez attendre que la page se charge."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "Réessayez dans quelques secondes."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "Préparation en cours, veuillez patienter..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "Récompense"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "Récompense gagnée jusqu'à présent"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "pour le temps"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "pour la performance"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "Commentaire"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "Quitter"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "Quitter sans terminer."
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "Erreur !"
+msgid "An error occurred"
+msgstr "Une erreur s'est produite"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
-msgstr ""
-"Vous pouvez être en mesure d'abandonner l'expérience en utilisant le bouton "
-"<strong>Abandonner l'expérience</strong> <strong>sur la page de l'annonce "
-"MTurk</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "Veuillez patienter."
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"Une fois abandonné, il n'est pas nécessaire de nous contacter pour recevoir "
-"la compensation ; cela devrait vous être attribué automatiquement via MTurk "
-"quelques minutes après."
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "Réessayez"
 
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"Si ce n'est pas le cas, veuillez nous contacter à %(EMAIL)s en citant les "
-"informations suivantes :"
-
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Error type"
-msgstr "Type d'erreur"
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "Vous avez choisi de partir."
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgid "Worker ID"
-msgstr "ID de travailleur"
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "Vous pouvez fermer cette page."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
+msgstr "Vos réponses ont été enregistrées. Vous pouvez fermer cette page."
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Reference code"
+msgstr "Code de référence"
 
 #: psynet/templates/start.html
 #, fuzzy
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr "Démarrage de l'expérience..."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "Beaucoup de personnes participent actuellement."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"Veuillez garder cette page ouverte : vous pourrez participer automatiquement"
+" dès qu’une place se libérera. Vous pouvez également revenir plus tard."
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
@@ -3216,7 +4475,7 @@ msgid "Send comment"
 msgstr "Envoyer le commentaire"
 
 #: psynet/templates/timeline-page.html
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "alert_ok"
 msgid "OK"
 msgstr "OK"
@@ -3256,44 +4515,71 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "Reprendre"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "Récompense"
+#: psynet/timeline.py
+#, fuzzy, python-brace-format
+msgctxt "time_limit"
+msgid "{SECONDS} s left"
+msgstr "Il reste {SECONDS} s"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "Commentaire"
+msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr ""
+"Nous n’avons pas pu vous intégrer à un groupe à temps. Veuillez continuer."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "Terminer l'expérience prématurément"
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "Votre partenaire n’est pas arrivé à temps. Veuillez continuer."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "Commentaire enregistré."
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr ""
+"Tous les membres de votre groupe ne sont pas arrivés à temps. Veuillez "
+"continuer."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "Veuillez attendre que la page se charge."
+msgctxt "timeline_hold"
+msgid "Your partner went on without you. Please continue."
+msgstr "Votre partenaire est passé à la suite sans vous. Veuillez continuer."
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "Réessayez dans quelques secondes."
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "Votre groupe est passé à la suite sans vous. Veuillez continuer."
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "Votre partenaire est prêt."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "{ARRIVED}/{TOTAL} de votre groupe sont prêts."
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} sur {TOTAL} ne sont pas encore prêts"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "Veuillez patienter, l'expérience devrait reprendre sous peu..."
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Afghanistan"
 msgstr "Afghanistan"
@@ -3323,13 +4609,13 @@ msgid "Andorra"
 msgstr "Andorre"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Angola"
 msgstr "Angola"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Anguilla"
 msgstr "Anguilla"
@@ -3359,7 +4645,7 @@ msgid "Armenia"
 msgstr "Arménie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Aruba"
 msgstr "Aruba"
@@ -3383,7 +4669,7 @@ msgid "Azerbaijan"
 msgstr "Azerbaïdjan"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Bahamas"
 msgstr "Bahamas"
@@ -3395,7 +4681,7 @@ msgid "Bahrain"
 msgstr "Bahreïn"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Bangladesh"
 msgstr "Bangladesh"
@@ -3419,7 +4705,7 @@ msgid "Belgium"
 msgstr "Belgique"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Belize"
 msgstr "Belize"
@@ -3461,7 +4747,7 @@ msgid "Bosnia and Herzegovina"
 msgstr "Bosnie-Herzégovine"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Botswana"
 msgstr "Botswana"
@@ -3488,7 +4774,7 @@ msgstr "Territoire britannique de l'océan Indien"
 #, fuzzy
 msgctxt "country_name"
 msgid "Brunei Darussalam"
-msgstr "Brunei Darussalam"
+msgstr "Brunéi Darussalam"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3497,13 +4783,13 @@ msgid "Bulgaria"
 msgstr "Bulgarie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Burkina Faso"
 msgstr "Burkina Faso"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Burundi"
 msgstr "Burundi"
@@ -3512,7 +4798,7 @@ msgstr "Burundi"
 #, fuzzy
 msgctxt "country_name"
 msgid "Cabo Verde"
-msgstr "Cabo Verde"
+msgstr "Cap-Vert"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3527,7 +4813,7 @@ msgid "Cameroon"
 msgstr "Cameroun"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Canada"
 msgstr "Canada"
@@ -3587,7 +4873,7 @@ msgid "Comoros"
 msgstr "Comores"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Congo"
 msgstr "Congo"
@@ -3605,7 +4891,7 @@ msgid "Cook Islands"
 msgstr "Îles Cook"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Costa Rica"
 msgstr "Costa Rica"
@@ -3617,13 +4903,13 @@ msgid "Croatia"
 msgstr "Croatie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Cuba"
 msgstr "Cuba"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Curaçao"
 msgstr "Curaçao"
@@ -3644,7 +4930,7 @@ msgstr "Tchéquie"
 #, fuzzy
 msgctxt "country_name"
 msgid "Côte d'Ivoire"
-msgstr "Côte d'Ivoire"
+msgstr "Côte d’Ivoire"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -3653,7 +4939,7 @@ msgid "Denmark"
 msgstr "Danemark"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Djibouti"
 msgstr "Djibouti"
@@ -3707,7 +4993,7 @@ msgid "Estonia"
 msgstr "Estonie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Eswatini"
 msgstr "Eswatini"
@@ -3743,7 +5029,7 @@ msgid "Finland"
 msgstr "Finlande"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "France"
 msgstr "France"
@@ -3767,7 +5053,7 @@ msgid "French Southern Territories"
 msgstr "Terres australes françaises"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Gabon"
 msgstr "Gabon"
@@ -3791,13 +5077,13 @@ msgid "Germany"
 msgstr "Allemagne"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Ghana"
 msgstr "Ghana"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Gibraltar"
 msgstr "Gibraltar"
@@ -3821,19 +5107,19 @@ msgid "Grenada"
 msgstr "Grenade"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Guadeloupe"
 msgstr "Guadeloupe"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Guam"
 msgstr "Guam"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Guatemala"
 msgstr "Guatemala"
@@ -3857,7 +5143,7 @@ msgid "Guinea-Bissau"
 msgstr "Guinée-Bissau"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Guyana"
 msgstr "Guyana"
@@ -3881,13 +5167,13 @@ msgid "Vatican City State"
 msgstr "État de la Cité du Vatican"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Honduras"
 msgstr "Honduras"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Hong Kong"
 msgstr "Hong Kong"
@@ -3917,7 +5203,7 @@ msgid "Indonesia"
 msgstr "Indonésie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Iran"
 msgstr "Iran"
@@ -3965,7 +5251,7 @@ msgid "Japan"
 msgstr "Japon"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Jersey"
 msgstr "Jersey"
@@ -3977,19 +5263,19 @@ msgid "Jordan"
 msgstr "Jordanie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Kazakhstan"
 msgstr "Kazakhstan"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Kenya"
 msgstr "Kenya"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Kiribati"
 msgstr "Kiribati"
@@ -4037,7 +5323,7 @@ msgid "Lebanon"
 msgstr "Liban"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Lesotho"
 msgstr "Lesotho"
@@ -4055,7 +5341,7 @@ msgid "Libya"
 msgstr "Libye"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Liechtenstein"
 msgstr "Liechtenstein"
@@ -4067,25 +5353,25 @@ msgid "Lithuania"
 msgstr "Lituanie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Luxembourg"
 msgstr "Luxembourg"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Macao"
 msgstr "Macao"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Madagascar"
 msgstr "Madagascar"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Malawi"
 msgstr "Malawi"
@@ -4097,13 +5383,13 @@ msgid "Malaysia"
 msgstr "Malaisie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Maldives"
 msgstr "Maldives"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Mali"
 msgstr "Mali"
@@ -4121,7 +5407,7 @@ msgid "Marshall Islands"
 msgstr "Îles Marshall"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Martinique"
 msgstr "Martinique"
@@ -4139,7 +5425,7 @@ msgid "Mauritius"
 msgstr "Maurice"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Mayotte"
 msgstr "Mayotte"
@@ -4163,7 +5449,7 @@ msgid "Moldova"
 msgstr "Moldavie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Monaco"
 msgstr "Monaco"
@@ -4181,7 +5467,7 @@ msgid "Montenegro"
 msgstr "Monténégro"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Montserrat"
 msgstr "Montserrat"
@@ -4193,13 +5479,13 @@ msgid "Morocco"
 msgstr "Maroc"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Mozambique"
 msgstr "Mozambique"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Myanmar"
 msgstr "Myanmar"
@@ -4211,7 +5497,7 @@ msgid "Namibia"
 msgstr "Namibie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Nauru"
 msgstr "Nauru"
@@ -4241,13 +5527,13 @@ msgid "New Zealand"
 msgstr "Nouvelle-Zélande"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Nicaragua"
 msgstr "Nicaragua"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Niger"
 msgstr "Niger"
@@ -4259,7 +5545,7 @@ msgid "Nigeria"
 msgstr "Nigéria"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Niue"
 msgstr "Niue"
@@ -4289,13 +5575,13 @@ msgid "Norway"
 msgstr "Norvège"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Oman"
 msgstr "Oman"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Pakistan"
 msgstr "Pakistan"
@@ -4307,13 +5593,13 @@ msgid "Palau"
 msgstr "Palaos"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Palestine"
 msgstr "Palestine"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Panama"
 msgstr "Panama"
@@ -4325,7 +5611,7 @@ msgid "Papua New Guinea"
 msgstr "Papouasie-Nouvelle-Guinée"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Paraguay"
 msgstr "Paraguay"
@@ -4337,7 +5623,7 @@ msgid "Peru"
 msgstr "Pérou"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Philippines"
 msgstr "Philippines"
@@ -4346,7 +5632,7 @@ msgstr "Philippines"
 #, fuzzy
 msgctxt "country_name"
 msgid "Pitcairn"
-msgstr "Pitcairn"
+msgstr "Îles Pitcairn"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4355,7 +5641,7 @@ msgid "Poland"
 msgstr "Pologne"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Portugal"
 msgstr "Portugal"
@@ -4367,7 +5653,7 @@ msgid "Puerto Rico"
 msgstr "Porto Rico"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Qatar"
 msgstr "Qatar"
@@ -4385,7 +5671,7 @@ msgid "Russian Federation"
 msgstr "Fédération de Russie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Rwanda"
 msgstr "Rwanda"
@@ -4394,7 +5680,7 @@ msgstr "Rwanda"
 #, fuzzy
 msgctxt "country_name"
 msgid "Réunion"
-msgstr "Réunion"
+msgstr "La Réunion"
 
 #: psynet/translation/countries.py
 #, fuzzy
@@ -4433,7 +5719,7 @@ msgid "Saint Vincent and the Grenadines"
 msgstr "Saint-Vincent-et-les-Grenadines"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Samoa"
 msgstr "Samoa"
@@ -4469,13 +5755,13 @@ msgid "Serbia"
 msgstr "Serbie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Seychelles"
 msgstr "Seychelles"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Sierra Leone"
 msgstr "Sierra Leone"
@@ -4541,7 +5827,7 @@ msgid "Spain"
 msgstr "Espagne"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Sri Lanka"
 msgstr "Sri Lanka"
@@ -4553,7 +5839,7 @@ msgid "Sudan"
 msgstr "Soudan"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Suriname"
 msgstr "Suriname"
@@ -4610,10 +5896,10 @@ msgstr "Thaïlande"
 #, fuzzy
 msgctxt "country_name"
 msgid "Timor-Leste"
-msgstr "Timor-Leste"
+msgstr "Timor oriental"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Togo"
 msgstr "Togo"
@@ -4622,10 +5908,10 @@ msgstr "Togo"
 #, fuzzy
 msgctxt "country_name"
 msgid "Tokelau"
-msgstr "Tokelau"
+msgstr "Tokélaou"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Tonga"
 msgstr "Tonga"
@@ -4661,7 +5947,7 @@ msgid "Turks and Caicos Islands"
 msgstr "Îles Turques-et-Caïques"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Tuvalu"
 msgstr "Tuvalu"
@@ -4673,7 +5959,7 @@ msgid "Uganda"
 msgstr "Ouganda"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Ukraine"
 msgstr "Ukraine"
@@ -4703,7 +5989,7 @@ msgid "United States Minor Outlying Islands"
 msgstr "Îles mineures éloignées des États-Unis"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Uruguay"
 msgstr "Uruguay"
@@ -4715,19 +6001,19 @@ msgid "Uzbekistan"
 msgstr "Ouzbékistan"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Vanuatu"
 msgstr "Vanuatu"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Venezuela"
 msgstr "Venezuela"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Vietnam"
 msgstr "Vietnam"
@@ -4769,7 +6055,7 @@ msgid "Zambia"
 msgstr "Zambie"
 
 #: psynet/translation/countries.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "country_name"
 msgid "Zimbabwe"
 msgstr "Zimbabwe"
@@ -4787,19 +6073,19 @@ msgid "Abkhazian"
 msgstr "Abkhaze"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Afar"
 msgstr "Afar"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Afrikaans"
 msgstr "Afrikaans"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Akan"
 msgstr "Akan"
@@ -4853,7 +6139,7 @@ msgid "Avestan"
 msgstr "Avestique"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Aymara"
 msgstr "Aymara"
@@ -4865,7 +6151,7 @@ msgid "Azerbaijani"
 msgstr "Azerbaïdjanais"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Bambara"
 msgstr "Bambara"
@@ -4877,7 +6163,7 @@ msgid "Bashkir"
 msgstr "Bachkir"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Basque"
 msgstr "Basque"
@@ -4889,7 +6175,7 @@ msgid "Belarusian"
 msgstr "Biélorusse"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Bengali"
 msgstr "Bengali"
@@ -4907,7 +6193,7 @@ msgid "Bosnian"
 msgstr "Bosniaque"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Breton"
 msgstr "Breton"
@@ -4925,7 +6211,7 @@ msgid "Burmese"
 msgstr "Birman"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Catalan"
 msgstr "Catalan"
@@ -4937,7 +6223,7 @@ msgid "Central Khmer"
 msgstr "Khmer central"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Chamorro"
 msgstr "Chamorro"
@@ -4982,7 +6268,7 @@ msgstr "Corse"
 #, fuzzy
 msgctxt "language_name"
 msgid "Cree"
-msgstr "Cree"
+msgstr "Cri"
 
 #: psynet/translation/languages.py
 #, fuzzy
@@ -4991,7 +6277,7 @@ msgid "Croatian"
 msgstr "Croate"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Cebuano"
 msgstr "Cebuano"
@@ -5003,7 +6289,7 @@ msgid "Czech"
 msgstr "Tchèque"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Dogri"
 msgstr "Dogri"
@@ -5027,7 +6313,7 @@ msgid "Dutch"
 msgstr "Néerlandais"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Dzongkha"
 msgstr "Dzongkha"
@@ -5093,7 +6379,7 @@ msgid "Galician"
 msgstr "Galicien"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Ganda"
 msgstr "Ganda"
@@ -5117,13 +6403,13 @@ msgid "Gothic"
 msgstr "Gothique"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Guarani"
 msgstr "Guarani"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Gujarati"
 msgstr "Gujarati"
@@ -5159,19 +6445,19 @@ msgid "Herero"
 msgstr "Héréro"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Hindi"
 msgstr "Hindi"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Hiri Motu"
 msgstr "Hiri Motu"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Hmong"
 msgstr "Hmong"
@@ -5189,13 +6475,13 @@ msgid "Icelandic"
 msgstr "Islandais"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Ido"
 msgstr "Ido"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Igbo"
 msgstr "Igbo"
@@ -5207,25 +6493,25 @@ msgid "Indonesian"
 msgstr "Indonésien"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Interlingua"
 msgstr "Interlingua"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Interlingue"
 msgstr "Interlingue"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Inuktitut"
 msgstr "Inuktitut"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Inupiaq"
 msgstr "Inupiaq"
@@ -5261,7 +6547,7 @@ msgid "Kalaallisut"
 msgstr "Groenlandais"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Kannada"
 msgstr "Kannada"
@@ -5279,43 +6565,43 @@ msgid "Kashmiri"
 msgstr "Cachemiri"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Kazakh"
 msgstr "Kazakh"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Kikuyu"
 msgstr "Kikuyu"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Kinyarwanda"
 msgstr "Kinyarwanda"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Kirghiz"
 msgstr "Kirghiz"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Komi"
 msgstr "Komi"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Kongo"
 msgstr "Kongo"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Konkani"
 msgstr "Konkani"
@@ -5327,7 +6613,7 @@ msgid "Korean"
 msgstr "Coréen"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Kuanyama"
 msgstr "Kuanyama"
@@ -5345,7 +6631,7 @@ msgid "Lao"
 msgstr "Laotien"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Latin"
 msgstr "Latin"
@@ -5363,7 +6649,7 @@ msgid "Limburgan"
 msgstr "Limbourgeois"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Lingala"
 msgstr "Lingala"
@@ -5375,7 +6661,7 @@ msgid "Lithuanian"
 msgstr "Lituanien"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Luba-Katanga"
 msgstr "Luba-Katanga"
@@ -5411,7 +6697,7 @@ msgid "Malay"
 msgstr "Malais"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Malayalam"
 msgstr "Malayalam"
@@ -5423,7 +6709,7 @@ msgid "Maltese"
 msgstr "Maltais"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Manipuri"
 msgstr "Manipuri"
@@ -5435,7 +6721,7 @@ msgid "Manx"
 msgstr "Mannois"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Maori"
 msgstr "Maori"
@@ -5471,13 +6757,13 @@ msgid "Nauru"
 msgstr "Nauruan"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Navajo"
 msgstr "Navajo"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Ndonga"
 msgstr "Ndonga"
@@ -5519,31 +6805,31 @@ msgid "Norwegian Nynorsk"
 msgstr "Norvégien Nynorsk"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Nyanja"
 msgstr "Nyanja"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Occitan"
 msgstr "Occitan"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Odia"
 msgstr "Odia"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Ojibwa"
 msgstr "Ojibwa"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Oromo"
 msgstr "Oromo"
@@ -5555,7 +6841,7 @@ msgid "Ossetian"
 msgstr "Ossète"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Pali"
 msgstr "Pali"
@@ -5591,7 +6877,7 @@ msgid "Pushto"
 msgstr "Pachto"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Quechua"
 msgstr "Quechua"
@@ -5609,7 +6895,7 @@ msgid "Romansh"
 msgstr "Romanche"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Rundi"
 msgstr "Rundi"
@@ -5621,19 +6907,19 @@ msgid "Russian"
 msgstr "Russe"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Samoan"
 msgstr "Samoan"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Sango"
 msgstr "Sango"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Sanskrit"
 msgstr "Sanskrit"
@@ -5645,7 +6931,7 @@ msgid "Sardinian"
 msgstr "Sarde"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Santali"
 msgstr "Santali"
@@ -5669,7 +6955,7 @@ msgid "Serbo-Croatian"
 msgstr "Serbo-croate"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Shona"
 msgstr "Shona"
@@ -5681,7 +6967,7 @@ msgid "Sichuan Yi"
 msgstr "Nuosu"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Sindhi"
 msgstr "Sindhi"
@@ -5705,7 +6991,7 @@ msgid "Slovenian"
 msgstr "Slovène"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Somali"
 msgstr "Somali"
@@ -5735,13 +7021,13 @@ msgid "Sundanese"
 msgstr "Soundanais"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Swahili"
 msgstr "Swahili"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Swati"
 msgstr "Swati"
@@ -5759,7 +7045,7 @@ msgid "Taiwanese"
 msgstr "Taïwanais"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Tagalog"
 msgstr "Tagalog"
@@ -5783,7 +7069,7 @@ msgid "Tamil"
 msgstr "Tamoul"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Tatar"
 msgstr "Tatar"
@@ -5819,13 +7105,13 @@ msgid "Tonga"
 msgstr "Tongien"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Tsonga"
 msgstr "Tsonga"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Tswana"
 msgstr "Tswana"
@@ -5843,7 +7129,7 @@ msgid "Turkmen"
 msgstr "Turkmène"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Twi"
 msgstr "Twi"
@@ -5873,7 +7159,7 @@ msgid "Uzbek"
 msgstr "Ouzbek"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Venda"
 msgstr "Venda"
@@ -5885,7 +7171,7 @@ msgid "Vietnamese"
 msgstr "Vietnamien"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Volapük"
 msgstr "Volapük"
@@ -5915,31 +7201,31 @@ msgid "Western Frisian"
 msgstr "Frison occidental"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Wolof"
 msgstr "Wolof"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Xhosa"
 msgstr "Xhosa"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Yiddish"
 msgstr "Yiddish"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Yoruba"
 msgstr "Yoruba"
 
 #: psynet/translation/languages.py
-#, fuzzy
+#, fuzzy, psynet-kept-source
 msgctxt "language_name"
 msgid "Zhuang"
 msgstr "Zhuang"

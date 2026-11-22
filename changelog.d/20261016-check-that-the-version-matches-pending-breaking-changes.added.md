@@ -1,1 +1,0 @@
-Added `psynet dev changelog next-alpha`, which prints the development version `master` should carry (the next major alpha while breaking-change fragments are pending, otherwise the next minor alpha) and sets it with `--write`. A `changelog-version` pre-commit hook, which also runs in CI, now rejects a version that names too low a major while breaking-change fragments are pending.

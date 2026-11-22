@@ -67,6 +67,9 @@ few tokens rather than overriding rules.
    * - ``--psynet-accent-hover-rgb``
      - ``39, 91, 164``
      - Comma-separated channels of the hover color, for Bootstrap.
+   * - ``--psynet-accent-soft``
+     - ``#eaf1fb``
+     - Light tint behind selected and hovered response options.
    * - ``--psynet-accent-contrast``
      - ``#ffffff``
      - Text drawn on the accent, for example primary-button labels.
@@ -102,10 +105,12 @@ few tokens rather than overriding rules.
      - ``10px``
      - Height of the microphone-level track.
 
-To recolor an experiment, redefine the tokens in your own stylesheet.
-Buttons, progress, and focus follow ``--psynet-accent``. Links and Bootstrap
-utilities such as ``text-primary`` also need the matching ``-rgb`` tokens,
-because Bootstrap composes those colors from RGB triples:
+To recolor an experiment, redefine the tokens in your own stylesheet. In the
+light palette, buttons, progress and focus follow ``--psynet-accent``, but
+hover states and the tint behind selected response options have their own
+tokens (``--psynet-accent-hover`` and ``--psynet-accent-soft``). Links and
+Bootstrap utilities such as ``text-primary`` also need the matching ``-rgb``
+tokens, because Bootstrap composes those colors from RGB triples:
 
 .. code-block:: css
 
@@ -115,6 +120,7 @@ because Bootstrap composes those colors from RGB triples:
         --psynet-accent-rgb: 122, 79, 163;
         --psynet-accent-hover: #623e84;
         --psynet-accent-hover-rgb: 98, 62, 132;
+        --psynet-accent-soft: #f1eaf7;
         --psynet-page-bg: #f5f2f8;
     }
 
@@ -157,12 +163,25 @@ lengthen lines of text.
 Color and stimuli
 -----------------
 
-When color is part of the measurement, set the accent to a neutral gray so
+When color is part of the measurement, set the accent, its hover and tint
+tokens, and the blue-tinted page and chrome backgrounds to neutral grays so
 that no saturated color appears near the stimuli:
 
 .. code-block:: python
 
-    Exp.css.append(":root { --psynet-accent: #44556b; --psynet-accent-rgb: 68, 85, 107; }")
+    Exp.css.append(
+        ":root {"
+        " --psynet-accent: #44556b; --psynet-accent-rgb: 68, 85, 107;"
+        " --psynet-accent-hover: #333f50; --psynet-accent-hover-rgb: 51, 63, 80;"
+        " --psynet-accent-soft: #eceef1;"
+        " --psynet-page-bg: #f0f1f2; --psynet-chrome-bg: #e0e1e3;"
+        " }"
+    )
+
+With ``color_mode`` set to ``dark`` or ``auto``, also override the dark
+palette, as described in the next section, and set gray
+``--psynet-page-bg`` and ``--psynet-chrome-bg`` there too: the dark
+backgrounds are blue-tinted as well.
 
 Named colors on trial progress stages (``red``, ``green``, ``blue``)
 follow ``--psynet-danger``, ``--psynet-success``, and ``--psynet-accent``
@@ -176,17 +195,27 @@ Dark mode
 Setting ``color_mode`` to ``dark`` or ``auto`` in ``config.txt`` switches the
 tokens to a dark palette (see :doc:`/reference/configuration`). If you
 override tokens and support dark mode, define your overrides for both
-schemes:
+schemes. The dark palette sets ``--psynet-accent-solid`` (solid buttons) and
+``--psynet-rail-fill`` (the progress rail) to fixed blues instead of deriving
+them from the accent, so override those too:
 
 .. code-block:: css
 
     :root {
         --psynet-accent: #7a4fa3;
         --psynet-accent-rgb: 122, 79, 163;
+        --psynet-accent-hover: #623e84;
+        --psynet-accent-hover-rgb: 98, 62, 132;
+        --psynet-accent-soft: #f1eaf7;
     }
     [data-bs-theme="dark"] {
         --psynet-accent: #b48ad4;
         --psynet-accent-rgb: 180, 138, 212;
+        --psynet-accent-hover: #c9a8e2;
+        --psynet-accent-hover-rgb: 201, 168, 226;
+        --psynet-accent-soft: #33283d;
+        --psynet-accent-solid: #7a4fa3;
+        --psynet-rail-fill: #8a63b0;
     }
 
 Response options

@@ -14,6 +14,7 @@ from .psynet_entry import (
     _UNCHANGED,
     PLAYERS_LEFT,
     TIMEOUT,
+    TOO_LATE,
     PlayerReady,
     _player,
     _psynet_entry,
@@ -24,8 +25,17 @@ from .record import _game_time
 # The game methods that can change the state, which is converted after each.
 _STATE_METHODS = ("apply", "tick", "on_join", "on_leave", "on_add", "on_start")
 
+# The parts of PsyNet's entry in the state that views leave out.
+_NOT_IN_VIEWS = (
+    "participant_ids",
+    "last_tick",
+    "last_event",
+    "group_id",
+    "stop_top_ups_at_end",
+)
+
 # The game methods that get neither a participant id nor a session time.
-_GAME_CODE_METHODS = ("outcome", "answer", "performance_reward")
+_GAME_CODE_METHODS = ("answer", "performance_reward")
 
 
 # Set while the game's own code runs. A call it makes to another of the
@@ -102,6 +112,8 @@ def _converts_outermost_call(method, name, convert):
             return None
         if not outermost:
             return result
+        if name in _STATE_METHODS:
+            self._close_unless_accepting(args[0] if args else kwargs["state"])
         if not self.convert_state_to_json:
             return result
         return convert(self, result, args, kwargs)
@@ -159,14 +171,37 @@ def _waits_for_start(self, game_code, state):
 @_outermost
 def _player_done(self, game_code, state, player_id):
     entry = _psynet_entry(state)
+    player = _player(entry, player_id)
+    if player in entry["too_late"]:
+        return True
     if entry["started_at"] is None:
         return False
-    return game_code(state, _player(entry, player_id))
+    return game_code(state, player)
 
 
 @_outermost
 def _player_done_reason(self, game_code, state, player_id):
-    return game_code(state, _player(_psynet_entry(state), player_id))
+    entry = _psynet_entry(state)
+    player = _player(entry, player_id)
+    if player in entry["too_late"]:
+        return TOO_LATE
+    reason = game_code(state, player)
+    if reason == TOO_LATE:
+        raise ValueError(
+            f"{type(self).__name__}.done_reason returned {TOO_LATE!r}, which is "
+            "PsyNet's reason for a player who joined too late. Give another "
+            "reason."
+        )
+    return reason
+
+
+@_outermost
+def _skips_too_late_outcome(self, game_code, state, reason):
+    """Return the game's outcome, except as Dallinger ends the game of a
+    player who came too late, which the game never sees."""
+    if reason == TOO_LATE:
+        return None
+    return game_code(state, reason)
 
 
 def _psynet_end_reason(self, state):
@@ -210,7 +245,8 @@ def _gives_psynet_end_reason(method):
 def _shows_psynet_entry(self, game_code, state, player_id):
     entry = _psynet_entry(state)
     player = _player(entry, player_id)
-    shown = game_code(state, player)
+    # The game never sees a player who came too late.
+    shown = {} if player in entry["too_late"] else game_code(state, player)
     if not isinstance(shown, dict):
         raise TypeError(
             f"{type(self).__name__}.view must return a dict, not "
@@ -225,11 +261,7 @@ def _shows_psynet_entry(self, game_code, state, player_id):
     # Pages get player numbers only, so no player learns another's
     # participant id, and with it who they've played before. last_tick
     # and last_event would change the view at every tick.
-    public = {
-        key: value
-        for key, value in entry.items()
-        if key not in ("participant_ids", "last_tick", "last_event")
-    }
+    public = {key: value for key, value in entry.items() if key not in _NOT_IN_VIEWS}
     return {**shown, "psynet": {**public, "you": player}}
 
 

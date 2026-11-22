@@ -10,7 +10,7 @@ also adds tools for developing experiments with coding agents.
 Some of these changes break existing experiments. Each section below says
 what to change, and :doc:`upgrading_to_psynet_14` gives the step-by-step
 checklist. The
-`changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_
+`changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/release-14.0/CHANGELOG.md>`_
 lists every change.
 
 Participant pages
@@ -21,14 +21,20 @@ the page content instead of loading a new page. Transitions are faster, and
 audio, video and custom front ends keep their state between pages. Custom
 pages must follow the new page lifecycle: fragment templates, page data read
 from ``psynet.var``, and setup code in a page module's ``activate()``
-function. Pages that don't raise an error that names the problem. While you
+function. Pages that don't comply raise an error that names the problem. While you
 migrate, ``requires_full_page_reload=True`` exempts a single page and
 ``inplace_timeline_transitions = false`` exempts the whole experiment. See
 :doc:`/code/pages/custom_front_ends`.
 
+**Recordings upload in the background.** Audio and video answers now upload
+after the participant moves on, so slow connections no longer hold up the
+next page. A later page that plays back a recording must wait for it; see
+step 18 of :doc:`upgrading_to_psynet_14`.
+
 **A new default theme.** Pages sit on a content panel with a readable line
-length, a blue accent and a matching footer and progress bar, and have a dark
-palette; ``color_mode = auto`` follows the participant's system setting.
+length, a blue accent and a matching footer and progress bar. The theme is
+light by default; ``color_mode = dark`` switches to a dark palette, and
+``color_mode = auto`` follows the participant's system setting.
 Radio buttons and checkboxes are full-width
 rows that are easy to tap. If your CSS targeted bare ``label`` or ``input``
 elements, check how those controls look.
@@ -40,6 +46,12 @@ set ``allow_mobile_devices = false`` to keep a study desktop-only.
 Firefox 121+, Safari 15.4+), not only Chrome. Declare the browser features
 your experiment needs, such as ``browser_capabilities = {"microphone"}``, and
 PsyNet screens participants for them at the start of the timeline.
+
+**jQuery 4.** Timeline pages now load jQuery 4.0.0, and PsyNet no longer
+bundles jQuery UI. Custom JavaScript that uses utilities jQuery 4 removed,
+such as ``$.trim`` or ``$.isArray``, must switch to native JavaScript, and
+pages that use jQuery UI must ship their own copy in ``static/``. See
+:doc:`upgrading_to_psynet_14` (step 3).
 
 **Leaving and errors.** The **Leave** button now explains what leaving means
 for the participant's payment on each recruiter, and error pages are shorter
@@ -55,15 +67,19 @@ be reached. Pages meant to be taller than the window declare
 Setting up experiments
 ----------------------
 
-**One setup command.** ``pip install psynet`` now installs only a small
-command-line tool. ``psynet setup``, run in the experiment directory, creates
-the virtual environment, installs the full PsyNet runtime from
+**One setup command.** ``uv pip install psynet`` now installs only a small
+command-line tool. ``psynet setup``, run in the experiment directory with the
+experiment's ``.venv`` active, installs the full PsyNet runtime from
 ``constraints.txt`` and adds the boilerplate files. ``psynet services ensure``
 starts PostgreSQL and Redis in Docker. See :doc:`/install` and
 :doc:`/code/project/creating_an_experiment`.
 
-**Python.** PsyNet supports Python 3.11 to 3.14, and 3.13 is recommended.
+**Python.** PsyNet supports Python 3.11 to 3.14, and 3.14 is recommended.
 Python 3.10 is no longer supported.
+
+**Translation.** ``psynet translate`` translates with ChatGPT only; Google
+Translate support is removed. See
+:doc:`/code/participants/internationalization`.
 
 **Coding agents.** ``psynet setup`` adds an ``AGENTS.md`` file and PsyNet's
 :doc:`Agent Skills </skills/index>` to the experiment, which tell a coding
@@ -165,11 +181,11 @@ that the new ``deploy.toml`` does not exclude, the next debug, test or deploy
 command stops once and lists them, because they would now be deployed. Remote deployments need a Git commit, and stop early if
 ``constraints.txt`` is out of date. See :doc:`/deploy/how_deployment_works`.
 
-**MTurk is gone.** Amazon is `closing MTurk on September 30, 2026
+**MTurk is gone.** Amazon `closed MTurk on September 30, 2026
 <https://docs.aws.amazon.com/sagemaker/latest/dg/sms-workforce-management-public.html>`_,
 and PsyNet no longer supports it. Experiments configured with the ``mturk``,
-``bots`` or ``multi`` recruiter stop with an error; move active studies to
-another recruiter before upgrading.
+``bots`` or ``multi`` recruiter stop with an error; switch them to another
+recruiter.
 
 **Prolific.** Participants who fail or hit an error are now paid a small
 fixed amount through Prolific by default (``prolific_pay_unsuccessful``).
