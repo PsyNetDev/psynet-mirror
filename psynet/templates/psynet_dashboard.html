@@ -29,7 +29,7 @@ function makeCopyIcon(value) {
     `;
 }
 
-// Global handler for copy-to-clipboard icons (Bootstrap 4 compatible)
+// Global handler for copy-to-clipboard icons
 $(document).on('click', '.copy-icon', function () {
     const $icon = $(this);
     const value = $icon.attr('id');

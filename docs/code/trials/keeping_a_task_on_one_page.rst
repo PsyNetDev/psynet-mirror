@@ -91,7 +91,7 @@ returns a promise can therefore let feedback on the last answer finish
 before the next page appears, for example
 ``cleanup: () => feedbackShown.then(removeListeners)``.
 
-The ``response`` handle has two methods:
+The ``response`` handle has three methods:
 
 ``response.startClock(at)``
     Starts the clock for the trial's ``time_taken``. Call it when the stimulus
@@ -113,7 +113,8 @@ The ``response`` handle has two methods:
     to the optional ``performance.now()`` timestamp ``at``. Passing the key
     press's ``event.timeStamp`` measures the reaction time to the press itself
     rather than to when the code ran. Each handle answers once: it
-    returns ``true`` the first time and ``false`` afterwards. PsyNet sends the
+    returns ``true`` the first time, and ``false`` afterwards or once its
+    trial is no longer shown. PsyNet sends the
     answer in the background, so the page should stop accepting input until
     ``update`` is called with the next trial. If the server rejects the
     answer, PsyNet shows its error message and calls ``update`` again with the
@@ -185,8 +186,9 @@ rates pictures this way, with a break halfway through.
 
 Each answer is still checked and saved as usual. If the server rejects one,
 PsyNet also drops the answers given after it. The browser stops running ahead
-before pages from :meth:`~psynet.trial.main.TrialMaker.show_before_trial`,
-after a trial with feedback, and at the end of the trials. With a feedback
+after a trial with feedback or with pages from
+:meth:`~psynet.trial.main.TrialMaker.show_after_trial`, and at the end of the
+trials. With a feedback
 page after every trial, it never runs ahead, and the participant waits for
 the server twice per trial. To give feedback straight away, show it from the
 page module instead, which needs the correct answer in ``contents``. If the participant
@@ -201,8 +203,9 @@ For this to work:
   ``js_vars``. The browser checks this when the server's reply arrives; if
   the HTML differs, it drops the answers given ahead, loads the server's page
   and logs a warning in the browser console.
-- ``show_trial`` and ``show_before_trial`` must not change anything or
-  choose at random, because PsyNet also calls them for upcoming trials.
+- ``show_trial`` and ``show_after_trial`` must not change anything or
+  choose at random, because PsyNet also calls them for upcoming trials,
+  before they are answered.
   Choose random values in
   :meth:`~psynet.trial.main.Trial.finalize_definition` instead.
 - Pages with a ``time_limit`` or background recording aren't shown in

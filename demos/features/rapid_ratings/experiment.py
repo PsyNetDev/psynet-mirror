@@ -17,7 +17,7 @@ PICTURES = [
     "pink cross",
 ]
 RATINGS = range(1, 6)
-BREAK_BEFORE = 4
+BREAK_AFTER = 3
 
 
 class RatingTrial(StaticTrial):
@@ -61,8 +61,8 @@ class RatingTrial(StaticTrial):
 
 
 class RatingTrialMaker(StaticTrialMaker):
-    def show_before_trial(self, trial):
-        if trial.position == BREAK_BEFORE:
+    def show_after_trial(self, trial):
+        if trial.position == BREAK_AFTER:
             return InfoPage("Halfway there. Take a short break.", time_estimate=5)
 
 

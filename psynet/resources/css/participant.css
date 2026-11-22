@@ -272,8 +272,6 @@ body {
     background-color: var(--psynet-page-bg);
     color: var(--psynet-text);
     font-family: var(--psynet-font-sans);
-    /* Dallinger's stylesheet sets 300/13pt, which renders thin and small. */
-    font-weight: 400;
     font-size: 1.0625rem;
     line-height: 1.6;
     letter-spacing: -0.011em;

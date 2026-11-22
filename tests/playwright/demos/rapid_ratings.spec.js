@@ -59,7 +59,7 @@ test("ratings advance while the server's replies are held back", { tag: "@inplac
     await expectPicture("red circle", STEP_TIMEOUT_MS);
     const gate = await responseGate(participant);
 
-    // Answers go one at a time; the break before the fifth trial stops the
+    // Answers go one at a time; the break after the fourth trial stops the
     // prediction after "green square".
     gate.hold();
     await rate(5);

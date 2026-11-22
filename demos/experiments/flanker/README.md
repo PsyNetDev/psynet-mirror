@@ -4,7 +4,7 @@ Run `psynet debug local` in this directory, then report which way the middle arr
 
 ## How it works
 
-[experiment.py](experiment.py) uses a `StaticTrialMaker` with `node_order="random"` and `prepare_trials_in_advance=True`, so it creates all of a participant's trials in random order when they reach it, and each trial page also carries the arrows of the next few trials. `FlankerTrialMaker.show_before_trial` adds the break.
+[experiment.py](experiment.py) uses a `StaticTrialMaker` with `node_order="random"` and `prepare_trials_in_advance=True`, so it creates all of a participant's trials in random order when they reach it, and each trial page also carries the arrows of the next few trials. `FlankerTrialMaker.show_after_trial` adds the break.
 
 In [flanker.js](static/flanker.js), `update` shows a blank gap, a fixation cross and then the arrows. It starts the response clock with the time of the frame that shows the arrows and answers with the key press's or tap's timestamp, so each trial's `time_taken` is its reaction time. If nobody answers within 1.5 seconds, the trial is answered with `"timeout"`. PsyNet sends the answers to the server in the background and calls `update` with the next trial straight away, so the timing between trials doesn't depend on the server.
 

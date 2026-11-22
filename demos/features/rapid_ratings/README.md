@@ -4,7 +4,7 @@ Run `psynet debug local` in this directory, then rate eight pictures by clicking
 
 ## How it works
 
-[experiment.py](experiment.py) uses an ordinary `StaticTrialMaker` with `prepare_trials_in_advance=True`. The trial maker then creates all of a participant's trials when they reach it, and each trial page also carries the `contents` of the next few trials. `RatingTrialMaker.show_before_trial` adds the break, so the browser waits for the server before it.
+[experiment.py](experiment.py) uses an ordinary `StaticTrialMaker` with `prepare_trials_in_advance=True`. The trial maker then creates all of a participant's trials when they reach it, and each trial page also carries the `contents` of the next few trials. `RatingTrialMaker.show_after_trial` adds the break, so the browser waits for the server after the fourth picture.
 
 In [rate-picture.js](static/rate-picture.js), `activate` listens for clicks and key presses and returns an `update` function. `update` preloads the pictures of the upcoming trials, shows the current picture once it's decoded, starts the response clock and answers through the `response` handle. PsyNet sends the answers to the server in the background, in order, and calls `update` with the next trial straight away. If the server rejects an answer, PsyNet shows the error and calls `update` again with that trial.
 

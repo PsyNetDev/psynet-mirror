@@ -85,8 +85,8 @@ class FlankerTrial(StaticTrial):
 
 
 class FlankerTrialMaker(StaticTrialMaker):
-    def show_before_trial(self, trial):
-        if trial.position == N_TRIALS // 2:
+    def show_after_trial(self, trial):
+        if trial.position == N_TRIALS // 2 - 1:
             return InfoPage(
                 "Halfway there. Take a short break, then press Next to continue.",
                 time_estimate=10,
@@ -195,5 +195,5 @@ class Exp(psynet.experiment.Experiment):
         assert len(trials) == N_TRIALS
         assert sum(t.definition["congruent"] for t in trials) == N_TRIALS // 2
         assert all(t.answer in ANSWERS for t in trials)
-        # The break doesn't count towards the trial after it.
+        # The break doesn't count towards the trials around it.
         assert all(0.2 <= t.time_taken < 1 for t in trials)

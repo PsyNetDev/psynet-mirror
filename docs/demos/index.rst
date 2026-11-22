@@ -499,8 +499,9 @@ Groups
     filter them by room. The experiment's ``receive_message`` stores each
     message in a custom table, ``publish_to_subscribers`` sends room
     occupancy to every client, and a custom route returns a room's history
-    to late joiners. ``config.txt`` sets ``num_chatrooms``,
-    ``chatroom_max_occupancy`` and ``chatroom_show_history``.
+    to late joiners. The experiment registers the config keys
+    ``num_chatrooms``, ``chatroom_max_occupancy`` and
+    ``chatroom_show_history``, which you can set in ``config.txt``.
     :doc:`/code/multiplayer/realtime_interaction`.
     :doc:`/code/pages/custom_routes`.
 

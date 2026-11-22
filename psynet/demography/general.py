@@ -648,7 +648,7 @@ class LastTimeDanced(ModularPage):
         _p = get_translator(context=True)
         self.label = label
         self.prompt = _p(
-            "dance",
+            "last_time_danced",
             "When was the last time you danced? (choose the most accurate answer):",
         )
         self.time_estimate = 5
@@ -663,12 +663,12 @@ class LastTimeDanced(ModularPage):
                 "never_danced",
             ],
             [
-                _p("dance", "This week"),
-                _p("dance", "This month"),
-                _p("dance", "This year"),
-                _p("dance", "Some years ago"),
-                _p("dance", "Many years ago"),
-                _p("dance", "I never danced"),
+                _p("last_time_danced", "This week"),
+                _p("last_time_danced", "This month"),
+                _p("last_time_danced", "This year"),
+                _p("last_time_danced", "Some years ago"),
+                _p("last_time_danced", "Many years ago"),
+                _p("last_time_danced", "I never danced"),
             ],
             name="last_time_danced",
         )

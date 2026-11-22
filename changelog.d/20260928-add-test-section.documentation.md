@@ -1,1 +1,0 @@
-Added a Test section on testing back-end logic (bots, simulated participants and practice data), testing front-end logic (browser layout checks), testing scalability (performance tests), and audits, including design simulation and power analysis, with the audit format reference alongside.

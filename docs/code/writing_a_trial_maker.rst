@@ -307,18 +307,26 @@ Pages between trials
 --------------------
 
 To show a page between trials, such as a break halfway through, override
-:meth:`~psynet.trial.main.TrialMaker.show_before_trial`. It receives the trial
-about to be shown and returns pages to show first, or ``None``:
+:meth:`~psynet.trial.main.TrialMaker.show_after_trial`. It receives the trial
+that just finished and returns pages to show next, or ``None``:
 
 .. code-block:: python
 
     class RatingTrialMaker(StaticTrialMaker):
-        def show_before_trial(self, trial):
-            if trial.position == 25:
+        def show_after_trial(self, trial):
+            if trial.position == 24:
                 return InfoPage("Take a break.", time_estimate=5)
 
-These pages belong to the sequence rather than to the trial, so their answers
-aren't saved on it and don't count towards its ``time_taken``.
+These pages run once the trial is finalized and its feedback shown, and before
+the next trial is prepared, so they don't affect either trial, and recordings
+made on them belong to the participant. They are skipped after a failed trial.
+The next trial can't be known yet, so check ``trial.position`` rather than showing a page
+after every trial, which would include the last one. Give the pages a
+``time_estimate`` to pay for them; it doesn't move the progress bar, because
+the experiment's duration estimate doesn't include them. In trial makers with
+sync groups, the rest of the group waits at the next barrier, and the break
+counts towards that barrier's ``late_after`` unless the page has a
+``time_limit``.
 
 Downloading the next trials' files early
 ----------------------------------------

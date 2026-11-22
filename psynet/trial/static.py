@@ -543,15 +543,17 @@ class StaticTrialMaker(ChainTrialMaker):
             for t in self.get_participant_trials(participant)
             if t.id > trial.id and not t.complete and not t.failed
         ]
+        previous = trial
         for following in upcoming[: self.n_upcoming_trials]:
-            before = join(
+            between = join(
                 call_function_with_context(
-                    self.show_before_trial,
+                    self.show_after_trial,
                     experiment=experiment,
                     participant=participant,
-                    trial=following,
+                    trial=previous,
                 )
             )
+            previous = following
             pages = join(
                 call_function_with_context(
                     following.show_trial,
@@ -560,14 +562,14 @@ class StaticTrialMaker(ChainTrialMaker):
                     trial_maker=self,
                 )
             )
-            for elt in before + pages:
+            for elt in between + pages:
                 if isinstance(elt, Page):
                     for media_type, urls in elt.prefetch_urls.items():
                         known = media.setdefault(media_type, [])
                         known.extend(url for url in urls if url not in known)
             if (
                 predict
-                and not before
+                and not between
                 and len(pages) == 1
                 and isinstance(pages[0], Page)
             ):

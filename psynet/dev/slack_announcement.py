@@ -17,7 +17,7 @@ envelope wording (stable release description, summary intro, upgrade
 instructions), so editing the announcement style should not require code
 changes.
 
-Posting requires the ``[slack]`` extra and a ``SLACK_BOT_TOKEN`` environment
+Posting requires the ``[dev]`` extra and a ``SLACK_BOT_TOKEN`` environment
 variable with ``chat:write`` access to the target channel. The message
 flavour (release candidate vs. final) is auto-detected from the version
 string.
@@ -140,7 +140,7 @@ def build_blocks(version: str, summary: str | None = None) -> tuple[list[dict], 
         )
         final_version = PRERELEASE_RE.sub("", version)
         title = f":test_tube: PsyNet {version} — Release Candidate :test_tube:"
-        subtitle = "A new release candidate is ready for testing!"
+        subtitle = None
         docs_url = f"https://psynetdev.gitlab.io/PsyNet/rc/v{version}/"
         notice = (
             ":warning: *This is a release candidate.* "
@@ -167,15 +167,21 @@ def build_blocks(version: str, summary: str | None = None) -> tuple[list[dict], 
     ]
     if not is_prerelease(version):
         buttons.insert(2, ("Versioned docs", versioned_docs_url))
+    guide_url = _upgrade_guide_url(
+        version, docs_url if is_prerelease(version) else versioned_docs_url
+    )
+    if guide_url:
+        buttons.insert(0, ("Upgrade guide", guide_url))
 
     blocks: list[dict] = [
         {
             "type": "header",
             "text": {"type": "plain_text", "text": title, "emoji": True},
         },
-        _mrkdwn_block(f"_{subtitle}_"),
     ]
 
+    if subtitle:
+        blocks.append(_mrkdwn_block(f"_{subtitle}_"))
     if notice:
         blocks.append(_mrkdwn_block(notice))
 
@@ -226,6 +232,21 @@ def _summary_sections(summary: str) -> list[str]:
     return [s for s in ("\n".join(sec).strip() for sec in sections) if s]
 
 
+MAJOR_RELEASE_RE = re.compile(r"^(\d+)\.0\.0(?:(?:rc|a|b)\d+)?$", re.IGNORECASE)
+DOCS_SOURCE_DIR = Path(__file__).resolve().parents[2] / "docs"
+
+
+def _upgrade_guide_url(version: str, docs_url: str) -> str | None:
+    """Return the upgrade guide URL for a major release that has one."""
+    match = MAJOR_RELEASE_RE.match(version)
+    if not match:
+        return None
+    page = f"whats_new/upgrading_to_psynet_{match.group(1)}"
+    if not (DOCS_SOURCE_DIR / f"{page}.rst").exists():
+        return None
+    return f"{docs_url}{page}.html"
+
+
 def _footer_text(version: str) -> str:
     from datetime import date
 
@@ -237,20 +258,21 @@ def _footer_text(version: str) -> str:
 
 
 def _actions_block(buttons: list[tuple[str, str]]) -> dict:
-    """Render URL buttons. Clicking one opens the link directly; note that
-    Slack may show an 'app cannot handle interactive responses' toast if the
-    posting app has no interactivity endpoint configured."""
-    return {
-        "type": "actions",
-        "elements": [
-            {
-                "type": "button",
-                "text": {"type": "plain_text", "text": label, "emoji": True},
-                "url": url,
-            }
-            for label, url in buttons
-        ],
-    }
+    """Render URL buttons, highlighting the upgrade guide. Clicking one opens
+    the link directly; note that Slack may show an 'app cannot handle
+    interactive responses' toast if the posting app has no interactivity
+    endpoint configured."""
+    elements = []
+    for label, url in buttons:
+        element = {
+            "type": "button",
+            "text": {"type": "plain_text", "text": label, "emoji": True},
+            "url": url,
+        }
+        if label == "Upgrade guide":
+            element["style"] = "primary"
+        elements.append(element)
+    return {"type": "actions", "elements": elements}
 
 
 LOGO_URL = (
@@ -370,8 +392,8 @@ def announce_command(
         from slack_sdk.errors import SlackApiError
     except ImportError as exc:
         raise ValueError(
-            "slack_sdk is not installed. Install the [slack] extra:\n"
-            "    uv pip install -e '.[slack]'"
+            "slack_sdk is not installed. Install the [dev] extra:\n"
+            "    uv pip install -e '.[dev]'"
         ) from exc
 
     token = os.environ.get("SLACK_BOT_TOKEN")
@@ -384,6 +406,9 @@ def announce_command(
             channel=channel,
             text=fallback,
             blocks=blocks,
+            # Otherwise Slack appends preview cards for the summary's first links.
+            unfurl_links=False,
+            unfurl_media=False,
         )
     except SlackApiError as exc:
         raise RuntimeError(f"Slack error: {exc.response['error']}") from exc

@@ -109,11 +109,14 @@ for it. In one test on the server described in :ref:`choosing_server_size`,
 1,000 participants waiting at once made no measurable difference to
 response times. At about 2,000, a few web processes reached their limit of
 1,024 open files and refused new websockets and ordinary requests.
-`Dallinger#10102 <https://github.com/Dallinger/Dallinger/pull/10102>`_
-raises that limit. Without `Dallinger#10052
-<https://github.com/Dallinger/Dallinger/pull/10052>`_, which gives
-websockets their own Redis connections, Redis requests already failed with
-about 500 participants waiting. Neither is released yet.
+Dallinger 13, which PsyNet 14 requires, raises that limit to 65,536 for
+Docker deployments
+(`Dallinger#10102 <https://github.com/Dallinger/Dallinger/pull/10102>`_), so
+this ceiling no longer applies there; the higher limit hasn't been load-tested
+yet. Dallinger 13 also gives websockets their own Redis connections
+(`Dallinger#10052 <https://github.com/Dallinger/Dallinger/pull/10052>`_);
+before that, Redis requests already failed with about 500 participants
+waiting.
 
 If response times are high, profile the database queries with ``psynet test
 local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
@@ -263,8 +266,8 @@ config variables (see :doc:`/reference/configuration`) set how many run at
 once:
 
 - ``worker_processes`` (default 1): the number of worker processes, the
-  ``worker_N`` containers on an SSH server or the worker dynos on Heroku.
-  It replaces ``num_dynos_worker``.
+  ``worker_N`` containers on an SSH server. Heroku sizes its worker dynos
+  with ``num_dynos_worker`` instead.
 - ``worker_greenlets_per_process`` (default 20): how many jobs each process
   runs at once.
 

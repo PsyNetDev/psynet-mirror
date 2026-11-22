@@ -177,7 +177,9 @@ def _start_filler_trial(experiment, participant):
 
 class _CountingTrialMaker:
     n_finalized = 0
-    show_before_trial = TrialMaker.show_before_trial
+    sync_group_type = None
+    show_after_trial = TrialMaker.show_after_trial
+    _left_sync_group = TrialMaker._left_sync_group
 
     def with_namespace(self, name):
         return f"counting__{name}"
