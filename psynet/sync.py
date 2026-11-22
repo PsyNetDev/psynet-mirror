@@ -4123,9 +4123,10 @@ class Regrouper(Grouper):
         are the active members of the ``within`` group, or without
         ``within``, everyone waiting at this regrouper (including those who
         arrived after an ``every`` tick) plus those still active in a group
-        this regrouper formed; players who leave their group, for example with
-        :func:`leave_group` after their last round or a barrier's
-        ``late_action="leave_group"``, stop counting. A newcomer who is left
+        this regrouper formed. Players who leave that group (the ``within``
+        group if there is one), for example with :func:`leave_group` after
+        their last round or a barrier's ``late_action="leave_group"``, stop
+        counting. A newcomer who is left
         over stays without a role, so :meth:`role` returns ``None`` for them,
         and gets one again at the next split. Members of a role with too few
         partners are left over, those who have played the most rounds first,

@@ -252,10 +252,10 @@ group's members. Two options change this:
   have: the active members of the ``within`` group, or without ``within``,
   everyone waiting at the regrouper (including those who arrived after an
   ``every`` tick) plus those still active in a group the regrouper formed.
-  After a player's last round, put :func:`~psynet.sync.leave_group` with
-  the regrouper's group type, for example ``leave_group("pair")``, or with
-  the ``within`` group type, for example ``leave_group("cohort")``, so that
-  they stop counting. Players of a role with
+  After a player's last round, put :func:`~psynet.sync.leave_group` so
+  that they stop counting: with the ``within`` group type if there is one,
+  for example ``leave_group("cohort")``, otherwise with the regrouper's
+  group type, for example ``leave_group("pair")``. Players of a role with
   too few partners are left over, those who have played most first, so a
   player of a scarce role still plays even if players of another role with
   fewer rounds sit out. Use ``left_over="sit_out"`` if a role can run out:
