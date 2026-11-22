@@ -542,15 +542,14 @@ class StaticTrialMaker(ChainTrialMaker):
         if not self.prepare_trials_in_advance or not get_config().get(
             "inplace_timeline_transitions"
         ):
-            return None, None, None
+            return None, None
         # A page that can be adopted as a predicted page gets a layout key,
         # even if its own feedback stops it from showing later trials. Other
         # pages get the rendered pages of the next trials, which the browser
         # swaps in as each trial is answered.
         adoptable = page._show_in_advance()
         swappable = not adoptable and page._swap_in_advance()
-        contents = [] if adoptable else None
-        rendered = [] if swappable else None
+        shown = [] if adoptable or swappable else None
         media = {}
         ahead = not trial.gives_feedback(experiment, participant)
         upcoming = [
@@ -584,17 +583,19 @@ class StaticTrialMaker(ChainTrialMaker):
                         known.extend(url for url in urls if url not in known)
             single = not between and len(pages) == 1 and isinstance(pages[0], Page)
             if ahead and single and adoptable and pages[0]._show_in_advance():
-                contents.append(pages[0].contents)
+                pages[0]._trial_id = following.id
+                shown.append(pages[0])
             elif ahead and single and swappable and pages[0]._swap_in_advance():
                 pages[0]._trial_id = following.id
                 pages[0]._page_uuid = following.page_uuid
                 pages[0]._rendered_in_advance = True
                 pages[0].pre_render()
-                rendered.append(pages[0])
+                shown.append(pages[0])
             else:
                 ahead = False
             ahead = ahead and not following.gives_feedback(experiment, participant)
-        return contents, media, rendered or None
+        # Page modules need the list, even if empty, to show the page itself.
+        return (shown if adoptable else shown or None), media
 
     def _selection_hook_overrides(self):
         return [

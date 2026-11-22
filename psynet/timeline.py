@@ -1529,10 +1529,11 @@ class Page(Elt):
     requires_full_page_reload = False
     expect_scrolling = False
     skip_beforeunload = False
-    # Set by trial makers that prepare their trials in advance.
-    upcoming_contents = None
+    # Set by trial makers that prepare their trials in advance: the pages of
+    # the next trials that the browser can show before the server confirms
+    # them, and the URLs of the next trials' files by media type.
+    upcoming_trials = None
     upcoming_media = None
-    upcoming_pages = None
     # The trial whose show_trial returned the page, if it was the only page.
     _trial_id = None
     # The page UUID the participant gets on reaching the page, if it was
@@ -1937,8 +1938,6 @@ class Page(Elt):
                 else None
             ),
         }
-        if self.upcoming_contents is not None:
-            attributes["upcoming_contents"] = self.upcoming_contents
         if self.upcoming_media:
             attributes["upcoming_media"] = self.upcoming_media
         if self._full_page_layout_key is not None:
@@ -2373,7 +2372,7 @@ class Page(Elt):
             raise NotImplementedError(
                 f"{type(self).__name__} delegates rendering and must override render()."
             )
-        if not partial_mode and self.upcoming_contents is not None:
+        if not partial_mode and self.upcoming_trials is not None:
             # Fragments carry their key beside the HTML; a full page needs a
             # partial render to compute the same key.
             self._full_page_layout_key = self.layout_key(
@@ -2463,10 +2462,10 @@ class Page(Elt):
             "attributes": self.attributes,
             "contents": self.contents,
             # A reply carries these beside its fragment.
-            "upcoming_pages": (
+            "upcoming_trials": (
                 None
                 if partial_mode
-                else self._render_upcoming_pages(experiment, participant)
+                else self._upcoming_trials_payload(experiment, participant)
             ),
             "locale": locale,
             "partial_mode": partial_mode,
@@ -2783,16 +2782,24 @@ class Page(Elt):
             return self._page_uuid
         return participant.page_uuid
 
-    def _render_upcoming_pages(self, experiment, participant):
-        """Render ``upcoming_pages`` for the browser."""
-        if not self.upcoming_pages:
+    def _upcoming_trials_payload(self, experiment, participant):
+        """Describe ``upcoming_trials`` for the browser.
+
+        Page modules show a trial from its ``contents``; other pages are sent
+        rendered, for the browser to swap in.
+        """
+        if self.upcoming_trials is None:
             return None
         return [
-            {
-                "trial_id": page._trial_id,
-                "html": page.render(experiment, participant, partial_mode=True),
-            }
-            for page in self.upcoming_pages
+            (
+                {
+                    "trial_id": page._trial_id,
+                    "html": page.render(experiment, participant, partial_mode=True),
+                }
+                if page._rendered_in_advance
+                else {"trial_id": page._trial_id, "contents": page.contents}
+            )
+            for page in self.upcoming_trials
         ]
 
     def _swap_in_advance(self):

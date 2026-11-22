@@ -7832,11 +7832,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         html = page.render(experiment, participant, partial_mode=True)
         payload = {"html": html, "page_uuid": participant.page_uuid}
-        if page.upcoming_contents is not None:
+        if page.upcoming_trials is not None:
             payload["layout_key"] = page.layout_key(html)
-        upcoming_pages = page._render_upcoming_pages(experiment, participant)
-        if upcoming_pages:
-            payload["upcoming_pages"] = upcoming_pages
+            payload["upcoming_trials"] = page._upcoming_trials_payload(
+                experiment, participant
+            )
         return payload
 
     @experiment_route("/timeline/arrival_notice", methods=["GET"])
