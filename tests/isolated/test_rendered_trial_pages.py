@@ -1,11 +1,9 @@
 from pathlib import Path
 
 import pytest
-from flask import Flask, g
 
 from psynet.bot import BotDriver
 from psynet.participant import Participant
-from psynet.trial.main import Trial
 
 BUILT_IN = str(Path(__file__).parents[2] / "demos/features/rapid_ratings_built_in")
 
@@ -15,19 +13,18 @@ BUILT_IN = str(Path(__file__).parents[2] / "demos/features/rapid_ratings_built_i
 def test_built_in_pages_carry_the_next_trials_pages():
     bot = BotDriver()
     bot.take_page()
-    page = bot.get_current_page()
+    upcoming = bot.get_current_page().upcoming_pages
     # The break after the fourth trial ends the pages sent in advance.
-    assert [entry["page"].prompt.url for entry in page.upcoming_pages] == [
+    assert [page.prompt.url for page in upcoming] == [
         "/static/pictures/orange-triangle.svg",
         "/static/pictures/yellow-star.svg",
         "/static/pictures/green-square.svg",
     ]
 
-    # Pages the browser already holds aren't rendered again.
-    trial = Trial.query.filter_by(participant_id=bot.id, position=0).one()
+    # A page rendered in advance has the page UUID the participant gets on
+    # reaching it, so the browser can answer it before the server is there.
     participant = Participant.query.get(bot.id)
-    held = page.upcoming_pages[0]["trial_id"]
-    with Flask(__name__).test_request_context():
-        g.held_trial_ids = {held}
-        *_, upcoming = trial.trial_maker._upcoming(trial, page, None, participant)
-    assert [entry["page"] is None for entry in upcoming] == [True, False, False]
+    assert upcoming[0]._browser_page_uuid(participant) != participant.page_uuid
+    bot.take_page()
+    participant = Participant.query.get(bot.id)
+    assert participant.page_uuid == upcoming[0]._browser_page_uuid(participant)

@@ -526,6 +526,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     time_limit_reached = Column(Boolean)
     # The response timeout of trials prepared in advance counts from here.
     response_started_at = Column(DateTime)
+    # Issued when the trial is prepared in advance, so that its page can be
+    # rendered before the participant reaches it.
+    page_uuid = Column(String)
     _initial_assets = deferred(Column(PythonDict))
 
     time_credit_before_trial = Column(Float)
@@ -1790,6 +1793,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         ):
             page = logic[0]
             page._trial_id = self.id
+            page._page_uuid = self.page_uuid
             (
                 page.upcoming_contents,
                 page.upcoming_media,
@@ -3054,9 +3058,8 @@ class TrialMaker(Module):
 
         Returns the contents of the trials that page modules can show in
         advance, the URLs of the next trials' files by media type, and the
-        pages of the trials that the browser can swap in in advance, as
-        ``{"trial_id": ..., "page": ...}`` with ``page=None`` for pages the
-        browser already holds; each is ``None`` if unknown.
+        pages of the trials that the browser can swap in in advance; each is
+        ``None`` if unknown.
         """
         return None, None, None
 

@@ -45,7 +45,7 @@ test("built-in rating pages advance while the server's replies are held back", {
     const rate = (rating) =>
       participant.getByRole("button", { name: String(rating), exact: true }).click();
     const expectPicture = async (name, timeout) => {
-      await expect(picture).toHaveAttribute("src", new RegExp(`${name.replace(" ", "-")}\\.svg$`), {
+      await expect(picture).toHaveAttribute("src", new RegExp(`${name.replace(" ", "-")}\\.svg\\?v=`), {
         timeout
       });
       await expect(picture).toHaveCSS("opacity", "1", { timeout });

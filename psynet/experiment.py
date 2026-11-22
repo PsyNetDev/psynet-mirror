@@ -7140,7 +7140,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     @classmethod
     def _render_page_read_only(
-        cls, *, page, experiment, participant_id, page_uuid, kind
+        cls, *, page, experiment, participant_id, page_uuid, kind, held_trial_ids=()
     ):
         with read_only_transaction():
             participant = (
@@ -7158,6 +7158,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     page,
                     experiment,
                     participant,
+                    held_trial_ids,
                 )
             elif kind == "full":
                 rendered = page.render(experiment, participant)
@@ -7822,19 +7823,24 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 return participant
 
     @staticmethod
-    def _render_prepared_partial_timeline_payload(page, experiment, participant):
+    def _render_prepared_partial_timeline_payload(
+        page, experiment, participant, held_trial_ids=()
+    ):
         """
         Render a prepared page as the internal inplace fragment payload.
 
         ``pre_render()`` must already have run in the committed write phase.
         Leave-button plans are also stored in that write phase so this helper
-        can stay read-only.
+        can stay read-only. ``held_trial_ids`` are the trials whose rendered
+        pages the browser already holds.
         """
         html = page.render(experiment, participant, partial_mode=True)
         payload = {"html": html, "page_uuid": participant.page_uuid}
         if page.upcoming_contents is not None:
             payload["layout_key"] = page.layout_key(html)
-        upcoming_pages = page._render_upcoming_pages(experiment, participant)
+        upcoming_pages = page._render_upcoming_pages(
+            experiment, participant, held_trial_ids
+        )
         if upcoming_pages:
             payload["upcoming_pages"] = upcoming_pages
         return payload
@@ -8076,7 +8082,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         include_timeline_fragment = get_arg_from_dict(
             json_data, "include_timeline_fragment", use_default=True, default=True
         )
-        flask_app_globals.held_trial_ids = frozenset(
+        held_trial_ids = frozenset(
             get_arg_from_dict(json_data, "held_trial_ids", use_default=True, default=[])
         )
         timeline_hold_resume = bool(
@@ -8208,6 +8214,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                     participant_id=participant_id,
                     page_uuid=page_uuid_after_response,
                     kind="fragment",
+                    held_trial_ids=held_trial_ids,
                 )
             except Exception as err:
                 clock.close("render")

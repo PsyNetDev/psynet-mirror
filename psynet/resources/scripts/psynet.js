@@ -353,10 +353,6 @@
       Object.assign(psynetTemplateData, refreshedTemplateData);
       window.psynetTemplateData = psynetTemplateData;
       psynet.var = psynetTemplateData.jsVars || {};
-      if (psynet.renderedPages?.swapping) {
-        psynet.var.pageUuid = psynet.renderedPages.uuid;
-        window.pageUuid = psynet.renderedPages.uuid;
-      }
       psynet.submissionPageUuid = psynet.var.pageUuid;
       psynet.page = {
         ...(psynetTemplateData.page || {}),
@@ -868,7 +864,7 @@
           entry.metadata,
           undefined,
           undefined,
-          { background: true },
+          { background: true, pageUuid: entry.pageUuid },
         );
         if (!accepted) {
           let showAgain =
@@ -927,82 +923,34 @@
     };
 
     // Pages without page modules are shown in advance differently: the
-    // server sends the rendered pages of the next trials, and answering swaps
-    // the next one in through the usual page lifecycle while the answer is
-    // sent in the background. A reply for the trial already swapped in is
+    // server sends the rendered pages of the next trials, each with the page
+    // UUID it will have. Answering shows the next one as if the server had
+    // sent it, while the answer is sent in the background with the UUID of
+    // the page it was given on. A reply for the trial already shown is
     // adopted without touching the page.
-    //
-    // ``uuid`` is the page UUID of the server's latest page, which answers
-    // are sent with; a rendered page carries the UUID current when it was
-    // rendered.
-    psynet.renderedPages = { pages: [], uuid: null, swapping: false };
-    // The upcoming pages of a reply that is loaded as usual.
-    let replyRenderedPages = null;
-
-    psynet.resetRenderedPages = function () {
-      let pages = replyRenderedPages ?? psynetTemplateData.upcomingPages ?? [];
-      replyRenderedPages = null;
-      psynet.renderedPages = {
-        pages: psynet.receiveRenderedPages(pages),
-        uuid: psynet.submissionPageUuid,
-        swapping: false,
-      };
-    };
+    psynet.renderedPages = [];
 
     // Fill in the HTML the server left out for pages the browser holds. A
-    // page whose HTML is missing ends the pages that can be swapped in.
+    // page whose HTML is missing ends the pages that can be shown in advance.
     psynet.receiveRenderedPages = function (entries) {
       let held = new Map(
-        psynet.renderedPages.pages.map((page) => [page.trial_id, page.html]),
+        psynet.renderedPages.map((page) => [page.trial_id, page.html]),
       );
       let pages = [];
-      for (let entry of entries) {
+      for (let entry of entries ?? []) {
         let html = entry.html ?? held.get(entry.trial_id);
         if (html === undefined) break;
         pages.push({ ...entry, html });
       }
       return pages;
     };
-
-    psynet.swapInRenderedPage = async function (page) {
-      // A new <img> would download its file again, as static files are
-      // served with no-cache, so the image downloaded in advance takes its
-      // place. It is looked up now, as a reply may stop keeping it.
-      let selector = "#main-body img[src]";
-      let parsed = document.createElement("template");
-      parsed.innerHTML = page.html;
-      let images = new Map();
-      for (let img of parsed.content.querySelectorAll(selector)) {
-        let src = img.getAttribute("src");
-        let image = psynet.media.prefetchedImages.get(src);
-        if (image) images.set(src, image);
-      }
-      await Promise.all([...images.values()].map((image) => image.ready));
-      psynet.setPageReady(false);
-      await psynet.deactivateTimelineFragmentLifecycle();
-      let fragment = psynet.prepareTimelineFragment(page);
-      for (let img of fragment.template.content.querySelectorAll(selector)) {
-        if (images.has(img.getAttribute("src"))) {
-          img.dataset.prefetchedSrc = img.getAttribute("src");
-          img.removeAttribute("src");
-        }
-      }
-      psynet.commitTimelineFragment(fragment);
-      // Images reload when moved between documents, so they are put in
-      // after the commit.
-      for (let img of document.querySelectorAll("#main-body img[data-prefetched-src]")) {
-        let image = images.get(img.dataset.prefetchedSrc);
-        img.removeAttribute("data-prefetched-src");
-        for (let { name, value } of img.attributes) image.setAttribute(name, value);
-        img.replaceWith(image);
-      }
-      await psynet.activateTimelineFragmentLifecycle();
-    };
+    psynet.renderedPages = psynet.receiveRenderedPages(
+      psynetTemplateData.upcomingPages,
+    );
 
     psynet.answerWithRenderedPage = async function (rawAnswer, metadata) {
-      let rendered = psynet.renderedPages;
-      let page = rendered.pages.shift();
-      let entry = {
+      let page = psynet.renderedPages.shift();
+      psynet.answers.queue.push({
         value: rawAnswer,
         metadata: {
           ...metadata,
@@ -1010,22 +958,20 @@
           event_log: psynet.trial.eventLog.splice(0),
           comments: psynet.comments.splice(0),
         },
+        pageUuid: psynet.submissionPageUuid,
         trialId: page.trial_id,
-      };
-      // finalizePageReady leaves the answers alone during the swap.
-      let answers = psynet.answers;
-      rendered.swapping = true;
+      });
       try {
-        await psynet.swapInRenderedPage(page);
-      } finally {
-        rendered.swapping = false;
+        await psynet.showTimelineFragment(page);
+      } catch (error) {
+        await psynet.handleTimelineTransitionFailure(error);
+        return true;
       }
-      answers.queue.push(entry);
       psynet.sendAnswers();
       return true;
     };
 
-    // Return true if the reply shows the trial swapped in after its answer.
+    // Return true if the reply shows the trial shown after its answer.
     psynet.adoptRenderedReply = function (response) {
       let answers = psynet.answers;
       let entry = answers.queue[0];
@@ -1037,15 +983,10 @@
         return false;
       }
       answers.queue.shift();
-      let rendered = psynet.renderedPages;
-      rendered.uuid = response.page.attributes.page_uuid;
       // The first pages are already shown, one for each answer still queued.
-      rendered.pages = psynet.receiveRenderedPages(
+      psynet.renderedPages = psynet.receiveRenderedPages(
         (response.timeline_fragment?.upcoming_pages || []).slice(answers.queue.length),
       );
-      psynet.submissionPageUuid = rendered.uuid;
-      psynet.var.pageUuid = rendered.uuid;
-      window.pageUuid = rendered.uuid;
       psynet.nextPagePending = false;
       psynet.media.prefetch(response.page.attributes?.upcoming_media);
       return true;
@@ -1952,9 +1893,6 @@
       // Stop once the participant has moved on to another page, whose own
       // finalizePageReady shows its trial.
       if (psynet.pageModuleGeneration !== generation) return;
-      if (psynet.renderedPages.swapping) return;
-      psynet.resetAnswers();
-      psynet.resetRenderedPages();
       if (psynet.pageModuleUpdates?.length) {
         await psynet.updatePageModules(0);
       }
@@ -2098,11 +2036,16 @@
 
     psynet.loadNextTimelinePageFromResponse = async function (payload) {
       psynet.log.info("Applying next timeline fragment directly from /response.");
-      psynet.setPageReady(false);
       psynet.setTimelineTransitionBusy(true);
       // Failure presentation belongs to the response boundary, which catches
       // errors from this function and invokes handleTimelineTransitionFailure
       // exactly once.
+      await psynet.showTimelineFragment(payload);
+    };
+
+    // Replace the page with a fragment, from a reply or rendered in advance.
+    psynet.showTimelineFragment = async function (payload) {
+      psynet.setPageReady(false);
       await psynet.deactivateTimelineFragmentLifecycle();
       let fragment = psynet.prepareTimelineFragment(payload);
       await psynet.preloadTimelineFragmentAssets(fragment);
@@ -3270,7 +3213,7 @@
         }
         let image = new Image();
         image.src = url;
-        image.ready = image.decode().catch((error) => warn(url, error));
+        image.decode().catch((error) => warn(url, error));
         psynet.media.prefetchedImages.set(url, image);
       });
     };
@@ -4157,8 +4100,7 @@
         let staged = psynet.response.staged;
         let uploads = Object.keys(blobs ?? staged.blobs ?? {}).length;
         if (
-          psynet.renderedPages.pages.length &&
-          !psynet.renderedPages.swapping &&
+          psynet.renderedPages.length &&
           !uploads &&
           !psynet.var.asynchronousUploadSources?.length
         ) {
@@ -4341,6 +4283,9 @@
       }
       // Any other reply ends the prediction, dropping the later answers.
       psynet.resetAnswers();
+      psynet.renderedPages = psynet.receiveRenderedPages(
+        response.timeline_fragment?.upcoming_pages,
+      );
 
       if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
         psynet.stopTimelineHold();
@@ -4401,7 +4346,6 @@
       }
 
       if (psynetTemplateData.flags.inplaceTimelineTransitions) {
-        replyRenderedPages = response.timeline_fragment?.upcoming_pages ?? [];
         try {
           await psynet.loadNextTimelinePageFromResponse(
             psynet.requireTimelineFragmentPayload(response),
@@ -4776,14 +4720,14 @@
 
       return JSON.stringify({
         participant_id: psynet.participantId,
-        page_uuid: psynet.submissionPageUuid,
+        page_uuid: options.pageUuid ?? psynet.submissionPageUuid,
         assignment_id: psynet.assignmentId,
         unique_id: psynet.uniqueId,
         raw_answer: rawAnswer,
         metadata: allMetadata,
         include_timeline_fragment: !psynet.page.attributes
           ?.requires_full_page_reload,
-        held_trial_ids: psynet.renderedPages.pages.map((page) => page.trial_id),
+        held_trial_ids: psynet.renderedPages.map((page) => page.trial_id),
         timeline_hold_resume: Boolean(options.timelineHoldResume),
         interrupted: Boolean(options.interrupted),
       });
@@ -4933,9 +4877,12 @@
       }
 
       let capturedRecordings = {};
-      const submittedPageUuid = psynet.submissionPageUuid;
-      const background = options.timelineHoldResume ? null : psynet.var.backgroundRecording;
-      const sources = options.timelineHoldResume ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
+      const submittedPageUuid = options.pageUuid ?? psynet.submissionPageUuid;
+      // Answers sent in the background carry no recordings, and the page's
+      // settings may already be the next trial's.
+      const withoutRecordings = options.timelineHoldResume || options.background;
+      const background = withoutRecordings ? null : psynet.var.backgroundRecording;
+      const sources = withoutRecordings ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
       const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;
       let json;
       if (resend) {

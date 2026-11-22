@@ -119,11 +119,13 @@ def cacheable_static_url(url):
     """Add a content version to a local static URL.
 
     Experiment authors may continue to provide paths such as
-    ``static/theme.css``. External URLs and missing files are returned
-    unchanged.
+    ``static/theme.css``. External URLs, missing files and URLs built outside
+    an app context are returned unchanged.
     """
-    from flask import current_app
+    from flask import current_app, has_app_context
 
+    if not has_app_context():
+        return url
     parsed = urlsplit(url)
     if parsed.scheme or parsed.netloc:
         return url

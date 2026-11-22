@@ -1535,6 +1535,12 @@ class Page(Elt):
     upcoming_pages = None
     # The trial whose show_trial returned the page, if it was the only page.
     _trial_id = None
+    # The page UUID the participant gets on reaching the page, if it was
+    # issued in advance; otherwise a new one is drawn then.
+    _page_uuid = None
+    # Whether the page is rendered for the browser to swap in later, so it
+    # carries its own page UUID rather than the participant's current one.
+    _rendered_in_advance = False
     _full_page_layout_key = None
 
     def __init__(
@@ -1921,7 +1927,7 @@ class Page(Elt):
             "session_id": self.session_id,
             "type": type(self).__name__,
             "unique_id": participant.unique_id,
-            "page_uuid": participant.page_uuid,
+            "page_uuid": self._browser_page_uuid(participant),
             "is_unity_page": isinstance(self, UnityPage),
             "requires_full_page_reload": self.requires_full_page_reload,
             "expect_scrolling": self.expect_scrolling,
@@ -1966,7 +1972,7 @@ class Page(Elt):
         return ""
 
     def consume(self, experiment, participant):
-        participant.page_uuid = new_page_uuid()
+        participant.page_uuid = self._page_uuid or new_page_uuid()
         participant.page_count += 1
         notice = participant.group_removal_notice
         if notice is not None and notice.get("next_page"):
@@ -2384,7 +2390,7 @@ class Page(Elt):
         internal_js_vars = {
             "backgroundRecording": _browser_config(self, experiment, participant),
             "uniqueId": participant.unique_id,
-            "pageUuid": participant.page_uuid,
+            "pageUuid": self._browser_page_uuid(participant),
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
             "recordingCaptureSources": self._recording_capture_sources(),
         }
@@ -2771,17 +2777,28 @@ class Page(Elt):
             and not self.media.urls
         )
 
-    def _render_upcoming_pages(self, experiment, participant):
-        """Render ``upcoming_pages`` for the browser, leaving out the pages it holds."""
+    def _browser_page_uuid(self, participant):
+        """The page UUID that the browser submits the page's answer with."""
+        if self._rendered_in_advance:
+            return self._page_uuid
+        return participant.page_uuid
+
+    def _render_upcoming_pages(self, experiment, participant, held_trial_ids=()):
+        """Render ``upcoming_pages`` for the browser.
+
+        Parameters
+        ----------
+        held_trial_ids
+            Trials whose pages the browser already holds, which are sent
+            without their HTML.
+        """
         if not self.upcoming_pages:
             return None
         rendered = []
-        for entry in self.upcoming_pages:
-            item = {"trial_id": entry["trial_id"]}
-            if entry["page"] is not None:
-                item["html"] = entry["page"].render(
-                    experiment, participant, partial_mode=True
-                )
+        for page in self.upcoming_pages:
+            item = {"trial_id": page._trial_id}
+            if page._trial_id not in held_trial_ids:
+                item["html"] = page.render(experiment, participant, partial_mode=True)
             rendered.append(item)
         return rendered
 

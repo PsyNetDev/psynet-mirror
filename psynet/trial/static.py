@@ -8,8 +8,6 @@ authors customize node eligibility with ``custom_node_filter`` and ranking with
 
 from typing import Callable, List, Literal, Optional, Sequence, Union
 
-from flask import g, has_request_context
-
 from psynet.trial.chain import (
     Candidate,
     ChainNetwork,
@@ -20,7 +18,7 @@ from psynet.trial.chain import (
 )
 
 from ..sync import LateAction
-from ..timeline import Page, join
+from ..timeline import Page, join, new_page_uuid
 from ..utils import (
     NoArgumentProvided,
     call_function_with_context,
@@ -30,13 +28,6 @@ from ..utils import (
 )
 
 logger = get_logger()
-
-
-def _held_trial_ids():
-    """The trials whose rendered pages the browser held when it sent the answer."""
-    if not has_request_context():
-        return frozenset()
-    return g.get("held_trial_ids", frozenset())
 
 
 class StaticTrial(ChainTrial):
@@ -532,6 +523,7 @@ class StaticTrialMaker(ChainTrialMaker):
             trial, status = super().prepare_trial(experiment, participant)
             if trial is None:
                 break
+            trial.page_uuid = new_page_uuid()
             trials.append(trial)
             # Selection skips nodes once their trials are finalized, which
             # trials waiting their turn aren't yet.
@@ -561,8 +553,6 @@ class StaticTrialMaker(ChainTrialMaker):
         rendered = [] if swappable else None
         media = {}
         ahead = not trial.gives_feedback(experiment, participant)
-        # Pages the browser already holds are sent without their HTML.
-        held = _held_trial_ids()
         upcoming = [
             t
             for t in self.get_participant_trials(participant)
@@ -596,15 +586,11 @@ class StaticTrialMaker(ChainTrialMaker):
             if ahead and single and adoptable and pages[0]._show_in_advance():
                 contents.append(pages[0].contents)
             elif ahead and single and swappable and pages[0]._swap_in_advance():
-                held_page = following.id in held
-                if not held_page:
-                    pages[0].pre_render()
-                rendered.append(
-                    {
-                        "trial_id": following.id,
-                        "page": None if held_page else pages[0],
-                    }
-                )
+                pages[0]._trial_id = following.id
+                pages[0]._page_uuid = following.page_uuid
+                pages[0]._rendered_in_advance = True
+                pages[0].pre_render()
+                rendered.append(pages[0])
             else:
                 ahead = False
             ahead = ahead and not following.gives_feedback(experiment, participant)
