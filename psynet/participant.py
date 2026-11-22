@@ -2110,9 +2110,7 @@ class ParticipantDriver:
         self._sleep(max(0.0, (deadline - timenow()).total_seconds()))
         page = {
             **self.status["page"],
-            "bot_response": BotResponse(
-                raw_answer=None, metadata={"time_limit_reached": True}
-            ).__json__(),
+            "bot_response": BotResponse(time_limit_reached=True).__json__(),
         }
         self._submit_response({**self.status, "page": page}, {})
         return self.is_working
