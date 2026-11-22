@@ -4119,10 +4119,14 @@ class Regrouper(Grouper):
         example a proposer who stays a proposer; read it with :meth:`role`. A
         participant without a role yet gets the role fewest of the waiting
         members have, so that as many as possible can play, then the one
-        fewest current members have (the active members of the ``within``
-        group, or without ``within``, the working participants this regrouper
-        has grouped), ties broken at random; if they are left over, they stay
-        without a role and get one again at the next split. Members of a role with too few
+        fewest current members have, ties broken at random. Current members
+        are the active members of the ``within`` group, or without
+        ``within``, those waiting plus those still active in a group this
+        regrouper formed; players who leave their group, for example with
+        :func:`leave_group` after their last round or a barrier's
+        ``late_action="leave_group"``, stop counting. A newcomer who is left
+        over stays without a role, so :meth:`role` returns ``None`` for them,
+        and gets one again at the next split. Members of a role with too few
         partners are left over, those who have played the most rounds first,
         and follow ``left_over``; so a member of a scarce role still plays
         even if members of another role who have played fewer rounds sit
@@ -4135,7 +4139,9 @@ class Regrouper(Grouper):
     avoid_repeats
         If ``True``, the default grouping keeps members apart from those they
         were grouped with in their latest group from this regrouper, where it
-        can. It never changes how many rounds decide who sits out, or the
+        can. It looks back only one group, so a pair can meet again two
+        rounds later; with two players per role, for example, pairs simply
+        alternate. It never changes how many rounds decide who sits out, or the
         roles: a member who has played more rounds still sits out before one
         who has played fewer (with ``keep_roles``, one of the same role, see
         above), but among members with equal rounds, who sits out may be
@@ -4188,9 +4194,9 @@ class Regrouper(Grouper):
         Optional callback ``on_release(within_group, groups, left_over, barrier)``
         run after each split that forms at least one group, after roles are
         given out; ``barrier`` is this regrouper. The new ``groups`` already
-        have their ``id``, for example to save as a pair ID. A late member can make a split
-        of their own in the same round, so count rounds per participant (see
-        :meth:`rounds_played`) rather than here.
+        have their ``id``, for example to save as a pair ID. A late member
+        can make a split of their own in the same round, so count rounds per
+        participant (see :meth:`rounds_played`) rather than here.
 
     stop_top_ups_after_rounds
         Optional number of rounds during which newcomers can still join the
@@ -4209,8 +4215,9 @@ class Regrouper(Grouper):
     max_wait_time
         Longest a participant waits at the regrouper before ``max_wait_action``
         applies: being failed by default, or carrying on without a group with
-        ``max_wait_action="continue_without_group"``. Defaults to 300 seconds, or to twice the ``deadline`` (or ``every``
-        period) plus 60 seconds if that is longer. With ``left_over="sit_out"``
+        ``max_wait_action="continue_without_group"``. Defaults to 300
+        seconds, or to twice the ``deadline`` (or ``every`` period) plus 60
+        seconds if that is longer. With ``left_over="sit_out"``
         and ``within``, a value you pass must be longer than twice the
         period, so that a player waiting alone sits out instead of being
         failed.
@@ -4457,10 +4464,10 @@ class Regrouper(Grouper):
             return roles
         waiting = Counter(roles.values())
         if within_group is not None:
-            current_ids = [p.id for p in within_group.active_participants]
-            current = Counter(self._kept_roles(current_ids).values())
+            current_ids = {p.id for p in within_group.active_participants}
         else:
-            current = Counter(self._kept_roles().values())
+            current_ids = self._playing_ids() | {m.id for m in members}
+        current = Counter(self._kept_roles(current_ids).values())
         for member in random.sample(newcomers, len(newcomers)):
             role = min(
                 self.roles, key=lambda r: (waiting[r], current[r], random.random())
@@ -4470,38 +4477,53 @@ class Regrouper(Grouper):
             current[role] += 1
         return roles
 
-    def _kept_roles(self, participant_ids=None) -> Dict[int, str]:
-        """Return each participant's first role in this regrouper's groups, keyed by ID.
-
-        Without ``participant_ids``, of every working participant this
-        regrouper has grouped. One row per participant is read.
-        """
+    def _playing_ids(self) -> set:
+        """Return the IDs of working participants still active in a group this regrouper formed."""
         link = ParticipantLinkSyncGroup
-        query = (
+        rows = (
+            db.session.query(link.participant_id)
+            .join(SyncGroup, SyncGroup.id == link.sync_group_id)
+            .join(Participant, Participant.id == link.participant_id)
+            .filter(
+                SyncGroup.grouper_id == self.id,
+                SyncGroup.active.is_(True),
+                link.active.is_(True),
+                Participant.status == "working",
+                Participant.failed.is_(False),
+            )
+        )
+        return {participant_id for (participant_id,) in rows}
+
+    def _kept_roles(self, participant_ids) -> Dict[int, str]:
+        """Return these participants' first roles in this regrouper's groups, keyed by ID.
+
+        One row per participant is read.
+        """
+        if not participant_ids:
+            return {}
+        link = ParticipantLinkSyncGroup
+        rows = (
             db.session.query(link.participant_id, link.role)
             .join(SyncGroup, SyncGroup.id == link.sync_group_id)
-            .filter(SyncGroup.grouper_id == self.id, link.role.isnot(None))
-        )
-        if participant_ids is None:
-            query = query.join(
-                Participant, Participant.id == link.participant_id
-            ).filter(Participant.status == "working", Participant.failed.is_(False))
-        elif not participant_ids:
-            return {}
-        else:
-            query = query.filter(link.participant_id.in_(participant_ids))
-        rows = query.distinct(link.participant_id).order_by(
-            link.participant_id, link.id
+            .filter(
+                SyncGroup.grouper_id == self.id,
+                link.role.isnot(None),
+                link.participant_id.in_(participant_ids),
+            )
+            .distinct(link.participant_id)
+            .order_by(link.participant_id, link.id)
         )
         return dict(rows.all())
 
     def role(self, participant) -> Optional[str]:
         """Return the role ``participant`` had in the latest group this regrouper formed with them.
 
-        This is ``None`` without ``roles`` and before their first group. A
+        This is ``None`` without ``roles`` and before their first group,
+        including for a newcomer left over at their first split. A
         participant who sat out or is waiting for the next split still has
         their previous group's role. With ``keep_roles``, it is the role they
-        keep.
+        keep. Each call queries the database, so when calling it in a loop,
+        for example over a cohort, read each role once.
         """
         link = ParticipantLinkSyncGroup
         return (

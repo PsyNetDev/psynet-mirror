@@ -845,10 +845,10 @@ def test_regrouper_gives_a_newcomer_the_scarcer_kept_role(
 
 
 @in_consents_experiment
-def test_keep_roles_without_within_counts_working_participants(
+def test_keep_roles_without_within_counts_players_still_in_a_group(
     in_experiment_directory, db_session
 ):
-    """Waiting roles are balanced, but more proposers are still working, so the newcomer responds."""
+    """Waiting roles are balanced, but a responder has left their pair, so the newcomer responds."""
     exp = get_experiment()
     pairs = Regrouper(
         "pair",
@@ -865,7 +865,8 @@ def test_keep_roles_without_within_counts_working_participants(
         [p for p in players if pairs.role(p) == role]
         for role in ("proposer", "responder")
     ]
-    r2.status = "returned"
+    # Still working, for example on a final survey, but no longer playing.
+    r2.active_sync_groups["pair"].remove_participant(r2, reason="finished")
     (newcomer,) = _working_participants(exp, 1)
     present = [p1, r1, newcomer]
     _arrive(exp, pairs, present)

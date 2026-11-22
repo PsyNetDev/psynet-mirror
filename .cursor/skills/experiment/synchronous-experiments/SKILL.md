@@ -131,7 +131,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   cued trial instead of assigning roles yourself. Pass `avoid_repeats=True`
   to avoid last round's partners where possible, and `keep_roles=True` for
   players who keep the role of their first group (read it with
-  `regrouper.role(participant)`); who sits out is then decided per role.
+  `regrouper.role(participant)`, which is `None` until their first group);
+  who sits out is then decided per role. Put `leave_group(...)` after a
+  player's last round so newcomers' roles aren't balanced against them.
   To alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
   demo's `pairing.py`, which overrides `assign_roles`; override `form_groups`
   or `assign_roles` likewise for other rules. With `left_over="sit_out"`, odd

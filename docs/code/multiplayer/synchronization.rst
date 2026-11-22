@@ -237,26 +237,31 @@ rounds sit out when not everyone fits, and roles are shuffled across each
 group's members. Two options change this:
 
 - ``avoid_repeats=True`` keeps players apart from their last group's
-  members where it can. A player who has played more rounds still sits out
+  members where it can. It looks back only one group, so a pair can meet
+  again two rounds later; with two players per role, for example, pairs
+  simply alternate. A player who has played more rounds still sits out
   before one who has played fewer (with ``keep_roles``, one of the same
-  role); among players with equal rounds, who sits
-  out may be chosen to avoid a repeat. It is a search heuristic: in
-  simulations of pairs, trios and groups with roles, including pools where
-  some players sit out, it found a grouping without repeats whenever one
-  existed, but that isn't guaranteed.
+  role); among players with equal rounds, who sits out may be chosen to
+  avoid a repeat. It is a search heuristic: in simulations of pairs, trios
+  and groups with roles, including pools where some players sit out, it
+  found a grouping without repeats whenever one existed, but that isn't
+  guaranteed.
 - ``keep_roles=True`` lets each player keep the role of their first group,
   for example a proposer who stays a proposer. A newcomer gets the role
   fewest of the waiting players have, then the one fewest current members
-  have (without ``within``, the working participants the regrouper has
-  grouped, including those who have played their last round). Players of a
-  role with too few partners are left over, those who have played most
-  first, so a player of a scarce role still plays even if players of
-  another role with fewer rounds sit out. Use ``left_over="sit_out"`` if a role can run out: with
-  ``"wait"``, players whose role has no partner wait until one comes, up to
-  ``max_wait_time``.
+  have: without ``within``, those waiting plus those still active in a
+  group the regrouper formed. Put :func:`~psynet.sync.leave_group` after a
+  player's last round so that they stop counting. Players of a role with
+  too few partners are left over, those who have played most first, so a
+  player of a scarce role still plays even if players of another role with
+  fewer rounds sit out. Use ``left_over="sit_out"`` if a role can run out:
+  with ``"wait"``, players whose role has no partner wait until one comes,
+  up to ``max_wait_time``.
 
 :meth:`~psynet.sync.Regrouper.role` returns a player's role from their
-latest group, which with ``keep_roles`` is the role they keep:
+latest group, which with ``keep_roles`` is the role they keep. It is
+``None`` until a player's first group, for example for a newcomer who sits
+out their first split, so check for that before branching on the role:
 
 .. code-block:: python
 
@@ -269,15 +274,26 @@ latest group, which with ``keep_roles`` is the role they keep:
         left_over="sit_out",
     )
 
-    def is_proposer(participant):
-        return pairing.role(participant) == "proposer"
+    def role_text(participant):
+        role = pairing.role(participant)
+        if role is None:
+            return "You will get your role in your first round."
+        return f"You are the {role}."
+
+The kept role is not a participant column. The export has it per group, as
+``role`` in ``participant_link_sync_group.csv``, and per trial, as
+``sync_group_role``. To export it per participant, add
+``pairing.role(participant)`` to a participant table in ``get_basic_data``
+yourself (see :ref:`basic_data_regrouper`). ``role()`` queries the
+database each call, so read each role once when looping over many players.
 
 Override :meth:`~psynet.sync.Regrouper.form_groups` for other grouping
 rules and :meth:`~psynet.sync.Regrouper.assign_roles` for other role rules.
-The ``ultimatum_pairing`` demo keeps last round's partners apart with
-``avoid_repeats=True`` and overrides ``assign_roles`` to give each role to
-whoever has held it least often, so that roles alternate. Its ``pairing.py``
-defines:
+The ``ultimatum_pairing`` demo alternates roles rather than keeping them:
+it keeps last round's partners apart with ``avoid_repeats=True`` and
+overrides ``assign_roles`` to give each role to whoever has held it least
+often. For fixed roles you need only ``keep_roles=True``, as above, not the
+demo's ``PairingRegrouper``. Its ``pairing.py`` defines:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
    :pyobject: PairingRegrouper
