@@ -97,6 +97,27 @@ it("resumes the countdown when the server's deadline is still to come", async ()
   deactivate();
 });
 
+it("hides its chip while the group release notice counts down", async () => {
+  globalThis.window = { setTimeout, clearTimeout };
+  const element = () => ({ append() {}, setAttribute() {}, remove() {} });
+  globalThis.document = {
+    dispatchEvent: () => true,
+    createElement: element,
+    getElementById: () => null,
+  };
+  let chip;
+  const root = { querySelectorAll: () => [], isConnected: true, append: (node) => (chip = node) };
+  const psynet = { pageReady: true, waiting: { released: false } };
+
+  const vars = { timeLimit: { secondsLeft: 10, text: "{SECONDS} s left" } };
+  const deactivate = activate({ root, vars, psynet });
+  assert.equal(chip.hidden, false);
+  psynet.waiting.released = true;
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(chip.hidden, true);
+  deactivate();
+});
+
 it("does not retry a submission the server refused with a message", async () => {
   globalThis.window = { setTimeout, clearTimeout };
   const root = { querySelectorAll: () => [{ textContent: "" }], isConnected: true };
