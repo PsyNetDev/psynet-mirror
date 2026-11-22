@@ -232,6 +232,48 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
 
 
 @in_consents_experiment
+def test_simultaneous_arrivals_can_leave_one_unseen_trial_failed(
+    in_experiment_directory, db_session
+):
+    """Two arrivals that complete a trio before either release check runs.
+
+    The first of them can't yet see the other's arrival, so it starts the
+    waiting logic; the release fails that unseen trial, unpaid, and nobody
+    is held up. The second sees the full group and gets no trial.
+    """
+    exp = get_experiment()
+    original = exp.timeline
+    _CountingTrialMaker.n_finalized = 0
+    filler = join(
+        CodeBlock(_start_filler_trial),
+        FillerTrial.trial_logic(trial_maker=_CountingTrialMaker()),
+    )
+    _use_timeline(exp, filler, initial_group_size=3, quorum=3)
+    try:
+        waiting, second, third = _working_participants(exp, 3)
+        second_id, third_id = second.id, third.id
+        _json_timeline(exp, waiting)
+        for participant in (second, third):
+            exp.timeline.advance_page(exp, participant)
+        db.session.commit()
+        _json_timeline(exp, Participant.query.get(second_id))
+        db.session.expire_all()
+        # The third's short wait page ends at its first status check.
+        _post_response(Participant.query.get(third_id), interrupted=True)
+        db.session.expire_all()
+        for participant_id in (second_id, third_id):
+            participant = Participant.query.get(participant_id)
+            assert exp.timeline.get_current_elt(exp, participant).label == "after"
+        (unseen,) = FillerTrial.query.filter_by(participant_id=second_id).all()
+        assert unseen.failed_reason == "interrupted_by_release"
+        assert not unseen.finalized
+        assert FillerTrial.query.filter_by(participant_id=third_id).count() == 0
+        assert _CountingTrialMaker.n_finalized == 0
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
 def test_a_release_ends_while_loops_inside_the_pass(
     in_experiment_directory, db_session
 ):

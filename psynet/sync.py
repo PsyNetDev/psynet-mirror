@@ -1022,9 +1022,12 @@ class Barrier(EltCollection):
         demo: a release then fails at most the trial on screen and creates
         no unseen trials (see ``release_grace``). A participant whose
         arrival releases them at once, such as the one who completes a
-        group, doesn't start ``waiting_logic``. A pass that shows no
-        page, for example because the trial maker has no trial left for
-        the participant, shows a short waiting page instead. A barrier with
+        group, normally doesn't start ``waiting_logic``. When several
+        participants arrive at the same moment, one of them may still
+        start it, and the release then fails that unseen trial. A pass
+        that shows no page, for example because the trial maker has no
+        trial left for the participant, shows a short waiting page
+        instead. A barrier with
         ``waiting_logic`` can't be inside a trial's own pages, such as in
         ``Trial.show_trial``; use ``waiting_screen`` there.
 
@@ -1312,7 +1315,10 @@ class Barrier(EltCollection):
         completes a group would otherwise start a pass of ``waiting_logic``,
         such as a trial, that the release then fails unseen. Their pass
         shows the short wait page instead, which the release skips. A wrong
-        guess only costs that wait page.
+        "yes" only costs that wait page. The peek can't see arrivals that
+        other requests haven't committed yet, so simultaneous arrivals may
+        each get "no"; the release then fails the unseen trial as usual.
+        Waiting for those requests would serialise every arrival.
         """
         link = participant.active_barriers.get(self.id)
         if link is None or link.barrier_instance is None:

@@ -1789,8 +1789,10 @@ Keep ``waiting_logic`` atomic, as in ``sync_quorum``: one short trial or
 page per pass, letting the loop repeat it, rather than several trials per
 pass. A release then fails at most the trial on screen and creates no
 unseen trials (see below). A participant whose arrival releases them at
-once, such as the one who completes a group, doesn't start
-``waiting_logic``.
+once, such as the one who completes a group, normally doesn't start
+``waiting_logic``. When several participants arrive at the same moment,
+one of them may still start it, and the release then fails that unseen
+trial.
 
 If a pass of ``waiting_logic`` has nothing to show, for example because a
 trial maker has no trial left for the participant or a
@@ -1947,7 +1949,11 @@ How the pieces fit:
      )
 
 - **When the group forms.** The participant whose arrival completes the
-  group skips the quiz. Anyone else who is on a question has
+  group normally skips the quiz. Rarely, when several participants arrive
+  at the same moment, one of them gets a question they never see, failed
+  with ``failed_reason="interrupted_by_release"`` and not paid, so count
+  only trials that aren't failed in analyses, as ``quiz_points`` does.
+  Anyone else who is on a question has
   ``release_grace`` seconds (default 3) to answer it: their answer is then
   scored and paid, and the feedback page is skipped. A question left
   unanswered is failed with ``failed_reason="interrupted_by_release"``,
