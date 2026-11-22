@@ -5,10 +5,9 @@
 // it; without one, the module adds a "N s left" chip where timeline holds
 // show their status, hidden while the page is being submitted or held, while
 // a barrier's release counts down (see psynet.waiting), and once it reaches
-// zero. At
-// zero the module dispatches psynet:timeLimitReached on document, so custom
-// scripts can stage their state, then submits with time_limit_reached in its
-// metadata. The server records the page's time_limit_answer, or with
+// zero. At zero the module dispatches psynet:timeLimitReached on document, so
+// custom scripts can stage their state, then submits with time_limit_reached
+// in its metadata. The server records the page's time_limit_answer, or with
 // CURRENT_ANSWER (config.currentAnswer) the answer the page's controls hold.
 // If the server's deadline is still some way off, it returns the seconds
 // left and the countdown resumes.

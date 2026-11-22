@@ -1022,9 +1022,10 @@ class Barrier(EltCollection):
         demo: a release then fails at most the trial on screen and creates
         no unseen trials (see ``release_grace``). A participant whose
         arrival releases them at once, such as the one who completes a
-        group, normally doesn't start ``waiting_logic``. When several
-        participants arrive at the same moment, one of them may still
-        start it, and the release then fails that unseen trial. A pass
+        group, normally doesn't start ``waiting_logic``. Participants who
+        arrive at the same moment don't see each other's arrivals yet, so
+        each of them may still start it, and the release then fails those
+        unseen trials. A pass
         that shows no page, for example because the trial maker has no
         trial left for the participant, shows a short waiting page
         instead. A barrier with
@@ -1231,7 +1232,10 @@ class Barrier(EltCollection):
         """Return whether evaluating this visit would release anyone.
 
         ``GET /timeline`` uses this to decide whether to wait for the visit
-        claim. It must not mutate participants, groups, or the session.
+        claim, and a barrier with ``waiting_logic`` uses it on each arrival
+        to decide whether to skip the first pass of ``waiting_logic``
+        (showing a short wait page instead). It must not mutate
+        participants, groups, or the session.
         Last-arrival skip-in-one-GET waits only when this is true. Custom
         barriers that override :meth:`choose_who_to_release` should override
         this too. The default is ``True`` whenever anyone is waiting, so a
@@ -1323,10 +1327,11 @@ class Barrier(EltCollection):
         link = participant.active_barriers.get(self.id)
         if link is None or link.barrier_instance is None:
             return False
-        db.session.flush()
         instance_id = link.barrier_instance.id
         if instance_id not in _pending_barrier_checks.peek():
             return False
+        # The peek rolls back a savepoint, which must not undo the arrival.
+        db.session.flush()
         return _visit_check_would_release(instance_id)
 
     def _waiting_pass_showed_no_page(self, participant):

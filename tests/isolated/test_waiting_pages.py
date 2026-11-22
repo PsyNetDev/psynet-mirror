@@ -1,5 +1,6 @@
 import json
 import sys
+import threading
 import uuid
 from pathlib import Path
 
@@ -232,14 +233,13 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
 
 
 @in_consents_experiment
-def test_simultaneous_arrivals_can_leave_one_unseen_trial_failed(
+def test_simultaneous_arrivals_can_each_leave_an_unseen_trial_failed(
     in_experiment_directory, db_session
 ):
-    """Two arrivals that complete a trio before either release check runs.
+    """Two arrivals that complete a trio in overlapping transactions.
 
-    The first of them can't yet see the other's arrival, so it starts the
-    waiting logic; the release fails that unseen trial, unpaid, and nobody
-    is held up. The second sees the full group and gets no trial.
+    Neither sees the other's uncommitted arrival, so both start the waiting
+    logic; the release fails both unseen trials, unpaid, and nobody is held up.
     """
     exp = get_experiment()
     original = exp.timeline
@@ -251,23 +251,36 @@ def test_simultaneous_arrivals_can_leave_one_unseen_trial_failed(
     _use_timeline(exp, filler, initial_group_size=3, quorum=3)
     try:
         waiting, second, third = _working_participants(exp, 3)
-        second_id, third_id = second.id, third.id
+        arrivers = [second.id, third.id]
         _json_timeline(exp, waiting)
-        for participant in (second, third):
-            exp.timeline.advance_page(exp, participant)
+        exp.timeline.advance_page(exp, second)
+        errors = []
+
+        def arrive_in_another_session():
+            try:
+                exp.timeline.advance_page(exp, Participant.query.get(arrivers[1]))
+                db.session.commit()
+            except Exception as err:  # pragma: no cover - surfaced below
+                errors.append(err)
+            finally:
+                db.session.remove()
+
+        thread = threading.Thread(target=arrive_in_another_session, daemon=True)
+        thread.start()
+        thread.join(timeout=30)
+        assert not thread.is_alive() and not errors
         db.session.commit()
-        _json_timeline(exp, Participant.query.get(second_id))
+        _json_timeline(exp, Participant.query.get(arrivers[0]))
+        for participant_id in arrivers:
+            db.session.expire_all()
+            _post_response(Participant.query.get(participant_id), interrupted=True)
         db.session.expire_all()
-        # The third's short wait page ends at its first status check.
-        _post_response(Participant.query.get(third_id), interrupted=True)
-        db.session.expire_all()
-        for participant_id in (second_id, third_id):
+        for participant_id in arrivers:
             participant = Participant.query.get(participant_id)
             assert exp.timeline.get_current_elt(exp, participant).label == "after"
-        (unseen,) = FillerTrial.query.filter_by(participant_id=second_id).all()
-        assert unseen.failed_reason == "interrupted_by_release"
-        assert not unseen.finalized
-        assert FillerTrial.query.filter_by(participant_id=third_id).count() == 0
+            (unseen,) = FillerTrial.query.filter_by(participant_id=participant_id).all()
+            assert unseen.failed_reason == "interrupted_by_release"
+            assert not unseen.finalized
         assert _CountingTrialMaker.n_finalized == 0
     finally:
         exp.timeline = original
@@ -562,6 +575,31 @@ def test_waiting_logic_without_a_page_shows_a_wait_page(
         db.session.expire_all()
         first = Participant.query.get(first_id)
         assert exp.timeline.get_current_elt(exp, first).label == "after"
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_an_arrival_left_over_after_the_release_gets_the_waiting_logic_next(
+    in_experiment_directory, db_session
+):
+    """The third arrival lets a pair form without them: a wait page, then the waiting logic."""
+    exp = get_experiment()
+    original = exp.timeline
+    _use_timeline(exp, _filler("filler"), batch_size=3)
+    try:
+        participants = _working_participants(exp, 3)
+        third_id = participants[2].id
+        for participant in participants:
+            _json_timeline(exp, participant)
+            db.session.expire_all()
+        third = Participant.query.get(third_id)
+        assert exp.timeline.get_current_elt(exp, third).label == "wait"
+        assert third.waiting_barrier_id is not None
+        _post_response(third)
+        db.session.expire_all()
+        third = Participant.query.get(third_id)
+        assert exp.timeline.get_current_elt(exp, third).label == "filler"
     finally:
         exp.timeline = original
 

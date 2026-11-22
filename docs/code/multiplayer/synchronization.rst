@@ -1790,9 +1790,9 @@ page per pass, letting the loop repeat it, rather than several trials per
 pass. A release then fails at most the trial on screen and creates no
 unseen trials (see below). A participant whose arrival releases them at
 once, such as the one who completes a group, normally doesn't start
-``waiting_logic``. When several participants arrive at the same moment,
-one of them may still start it, and the release then fails that unseen
-trial.
+``waiting_logic``. Participants who arrive at the same moment don't see
+each other's arrivals yet, so each of them may still start it, and the
+release then fails those unseen trials.
 
 If a pass of ``waiting_logic`` has nothing to show, for example because a
 trial maker has no trial left for the participant or a
@@ -1917,14 +1917,16 @@ How the pieces fit:
   adds each trial's reward to the participant's performance reward, which
   is paid with the rest of their bonus. Count points from the participant's
   finalized trials, as ``quiz_points`` does, rather than keeping a separate
-  total. Don't use ``check_performance_at_end``, since interrupted trials
-  count in performance checks (see above).
+  total. ``custom()`` doesn't run the trial maker's performance checks, so
+  ``check_performance_at_end`` has no effect here. A check or summary of
+  your own should leave out failed trials, as ``quiz_points`` does, since
+  interrupted trials are among the participant's trials (see above).
 - **Expected trials.** Progress and time credit for the wait come from the
-  barrier's ``expected_wait``, not from the trial maker, so here
-  ``expected_trials_per_participant`` only feeds trial-based recruitment,
-  the timeline overview and performance tests. Set it to the number of
-  questions a typical wait fills, as the example does, not to the size of
-  the pool.
+  barrier's ``expected_wait``, not from the trial maker. With ``custom()``,
+  ``expected_trials_per_participant`` plays no part in recruitment and
+  isn't shown in the timeline overview, but a static trial maker requires
+  it and performance tests report it. Set it to the number of questions a
+  typical wait fills, as the example does, not to the size of the pool.
 - **Running out of questions.** A static trial maker doesn't give a
   participant a question they have answered again. Once a participant has
   answered every question, ``cue_trial`` finds no trial and shows nothing,
@@ -1935,7 +1937,8 @@ How the pieces fit:
   a planned ``node_order`` that lists the pool several times, reshuffled
   each time (see :ref:`trial_order`). The default ``"balanced"`` order
   counts every participant's trials, so it doesn't stop a question from
-  coming back soon.
+  coming back soon. The trial maker then logs a warning that the plan is
+  longer than ``expected_trials_per_participant``, which is harmless here.
 
   .. code-block:: python
 
@@ -1950,8 +1953,8 @@ How the pieces fit:
 
 - **When the group forms.** The participant whose arrival completes the
   group normally skips the quiz. Rarely, when several participants arrive
-  at the same moment, one of them gets a question they never see, failed
-  with ``failed_reason="interrupted_by_release"`` and not paid, so count
+  at the same moment, each of them can get a question they never see,
+  failed with ``failed_reason="interrupted_by_release"`` and not paid, so count
   only trials that aren't failed in analyses, as ``quiz_points`` does.
   Anyone else who is on a question has
   ``release_grace`` seconds (default 3) to answer it: their answer is then
