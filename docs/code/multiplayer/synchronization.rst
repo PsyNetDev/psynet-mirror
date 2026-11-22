@@ -1918,7 +1918,8 @@ How the pieces fit:
   is paid with the rest of their bonus. Count points from the participant's
   finalized trials, as ``quiz_points`` does, rather than keeping a separate
   total. ``custom()`` doesn't run the trial maker's performance checks, so
-  ``check_performance_at_end`` has no effect here. A check or summary of
+  ``check_performance_at_end`` and ``check_performance_every_trial`` have
+  no effect here. A check or summary of
   your own should leave out failed trials, as ``quiz_points`` does, since
   interrupted trials are among the participant's trials (see above).
 - **Expected trials.** Progress and time credit for the wait come from the

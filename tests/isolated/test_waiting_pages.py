@@ -271,9 +271,13 @@ def test_simultaneous_arrivals_can_each_leave_an_unseen_trial_failed(
         assert not thread.is_alive() and not errors
         db.session.commit()
         _json_timeline(exp, Participant.query.get(arrivers[0]))
-        for participant_id in arrivers:
-            db.session.expire_all()
-            _post_response(Participant.query.get(participant_id), interrupted=True)
+        db.session.expire_all()
+        assert (
+            exp.timeline.get_current_elt(exp, Participant.query.get(arrivers[0])).label
+            == "after"
+        )
+        response = _post_response(Participant.query.get(arrivers[1]), interrupted=True)
+        assert response.get_json()["submission"] == "approved"
         db.session.expire_all()
         for participant_id in arrivers:
             participant = Participant.query.get(participant_id)

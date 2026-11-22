@@ -111,11 +111,14 @@ it("hides its chip while the group release notice counts down", async () => {
 
   const vars = { timeLimit: { secondsLeft: 10, text: "{SECONDS} s left" } };
   const deactivate = activate({ root, vars, psynet });
-  assert.equal(chip.hidden, false);
-  psynet.waiting.released = true;
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  assert.equal(chip.hidden, true);
-  deactivate();
+  try {
+    assert.equal(chip.hidden, false);
+    psynet.waiting.released = true;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(chip.hidden, true);
+  } finally {
+    deactivate();
+  }
 });
 
 it("does not retry a submission the server refused with a message", async () => {
