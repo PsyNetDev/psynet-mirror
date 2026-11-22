@@ -1920,8 +1920,9 @@ How the pieces fit:
 - **Expected trials.** Progress and time credit for the wait come from the
   barrier's ``expected_wait``, not from the trial maker, so here
   ``expected_trials_per_participant`` only feeds trial-based recruitment,
-  the timeline overview and performance tests. Set it to the number of questions a typical
-  wait fills, as the example does, not to the size of the pool.
+  the timeline overview and performance tests. Set it to the number of
+  questions a typical wait fills, as the example does, not to the size of
+  the pool.
 - **Running out of questions.** A static trial maker doesn't give a
   participant a question they have answered again. Once a participant has
   answered every question, ``cue_trial`` finds no trial and shows nothing,
