@@ -862,10 +862,8 @@ def test_keep_roles_without_within_counts_players_still_in_a_group(
     _backdate_arrivals(pairs, players, 31)
     for player in pairs.choose_who_to_release(players):
         pairs.release(player)
-    (p1, p2), (r1, r2) = [
-        [p for p in players if pairs.role(p) == role]
-        for role in ("proposer", "responder")
-    ]
+    p1, p2 = [p for p in players if pairs.role(p) == "proposer"]
+    r1, r2 = _partner(p1), _partner(p2)
     # Still working, for example on a final survey, but no longer playing.
     r2.active_sync_groups["pair"].remove_participant(r2, reason="finished")
     (newcomer,) = _working_participants(exp, 1)
@@ -873,6 +871,8 @@ def test_keep_roles_without_within_counts_players_still_in_a_group(
     _arrive(exp, pairs, present)
     _backdate_splits(pairs, None, 31)
     _backdate_arrivals(pairs, present, 31)
+    assert p2.active_sync_groups["pair"].active
+    assert r2.id not in pairs._playing_or_waiting_ids()
     pairs.choose_who_to_release(present)
     assert pairs.role(newcomer) == "responder"
     assert _partner(newcomer) is p1
