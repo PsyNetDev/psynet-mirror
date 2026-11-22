@@ -570,6 +570,15 @@ async function clickNext(page, timeoutMs) {
   const oldUuid = await getPageUuid(page);
   await page.click("#next-button");
   await waitForPageChange(page, oldUuid, timeoutMs);
+  await waitForAnswersSent(page, timeoutMs);
+}
+
+// A page rendered in advance appears before the answer to the previous page
+// reaches the server, which sends it in the background.
+async function waitForAnswersSent(page, timeoutMs) {
+  await page.waitForFunction(() => !window.psynet?.answers?.queue?.length, null, {
+    timeout: timeoutMs
+  });
 }
 
 async function clickNextAndWait(page, timeoutMs = 60000) {
