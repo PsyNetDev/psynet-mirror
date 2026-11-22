@@ -1020,7 +1020,9 @@ class Barrier(EltCollection):
         one short trial or page per pass (the loop repeats it), such as
         ``PageMaker(trial_maker.cue_trial, ...)`` in the ``sync_quorum``
         demo: a release then fails at most the trial on screen and creates
-        no unseen trials (see ``release_grace``). A pass that shows no
+        no unseen trials (see ``release_grace``). A participant whose
+        arrival releases them at once, such as the one who completes a
+        group, doesn't start ``waiting_logic``. A pass that shows no
         page, for example because the trial maker has no trial left for
         the participant, shows a short waiting page instead. A barrier with
         ``waiting_logic`` can't be inside a trial's own pages, such as in
@@ -1251,7 +1253,14 @@ class Barrier(EltCollection):
                 ),
                 logic=join(
                     CodeBlock(self._start_waiting_pass),
-                    self.waiting_logic,
+                    conditional(
+                        "waiting_pass_runs_logic",
+                        lambda participant: (
+                            not self._arrival_releases_at_once(participant)
+                        ),
+                        logic_if_true=self.waiting_logic,
+                        log_chosen_branch=False,
+                    ),
                     conditional(
                         "waiting_pass_showed_no_page",
                         self._waiting_pass_showed_no_page,
@@ -1295,6 +1304,24 @@ class Barrier(EltCollection):
         """Remember how many pages the participant had seen when this pass of ``waiting_logic`` began."""
         counts = participant.__dict__.setdefault(_WAITING_PASS_PAGE_COUNTS, {})
         counts[self.id] = participant.page_count
+
+    def _arrival_releases_at_once(self, participant):
+        """Return whether the release check queued by this request's arrival is expected to release.
+
+        The check runs after the arrival commits, so the participant who
+        completes a group would otherwise start a pass of ``waiting_logic``,
+        such as a trial, that the release then fails unseen. Their pass
+        shows the short wait page instead, which the release skips. A wrong
+        guess only costs that wait page.
+        """
+        link = participant.active_barriers.get(self.id)
+        if link is None or link.barrier_instance is None:
+            return False
+        db.session.flush()
+        instance_id = link.barrier_instance.id
+        if instance_id not in _pending_barrier_checks.peek():
+            return False
+        return _visit_check_would_release(instance_id)
 
     def _waiting_pass_showed_no_page(self, participant):
         """Return whether this pass of ``waiting_logic`` showed no page and the participant still waits.

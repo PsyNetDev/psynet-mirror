@@ -190,10 +190,10 @@ class _CountingTrialMaker:
 def test_a_release_fails_the_unanswered_filler_trials_it_ends(
     in_experiment_directory, db_session
 ):
-    """The first's trial page is interrupted, the last's is skipped.
+    """The first's trial page is interrupted; the last, who completes the pair, gets no trial.
 
-    The rest of each pass, here a long ``for_loop`` of trials, is walked
-    through, so its unseen trials are created and failed too.
+    The rest of the first's pass, here a long ``for_loop`` of trials, is
+    walked through, so its unseen trials are created and failed too.
     """
     exp = get_experiment()
     original = exp.timeline
@@ -216,7 +216,8 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
         assert exp.timeline.get_current_elt(exp, first).label == "after"
         assert first.for_loops == {}
         trials = FillerTrial.query.all()
-        assert len(trials) == 2 * 40
+        assert len(trials) == 40
+        assert {trial.participant_id for trial in trials} == {first_id}
         for trial in trials:
             assert trial.failed_reason == "interrupted_by_release"
             assert trial.complete and not trial.finalized
@@ -257,7 +258,7 @@ def test_a_release_ends_while_loops_inside_the_pass(
         for trial in FillerTrial.query.all():
             assert trial.failed_reason == "interrupted_by_release"
             assert trial.complete and not trial.finalized
-        assert FillerTrial.query.count() == 2
+        assert FillerTrial.query.count() == 1
     finally:
         exp.timeline = original
 
@@ -332,7 +333,7 @@ def test_a_release_fails_the_trial_a_trial_loop_prepared_for_its_next_pass(
         first = Participant.query.get(first_id)
         assert exp.timeline.get_current_elt(exp, first).label == "filler_b"
         trials = FillerTrial.query.all()
-        assert len({trial.participant_id for trial in trials}) == 2
+        assert {trial.participant_id for trial in trials} == {first_id}
         for trial in trials:
             assert trial.failed_reason == "interrupted_by_release"
             assert trial.complete and not trial.finalized

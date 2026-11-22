@@ -1807,8 +1807,7 @@ answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).
 The rest of the participant's pass of ``waiting_logic`` is then run through
-without showing its pages, and so is the whole pass for the participant
-whose arrival completes the group. Code blocks in it still run, and so do
+without showing its pages. Code blocks in it still run, and so do
 the ends of modules, loops and fixed time credit. Each
 :func:`~psynet.timeline.while_loop` in the pass ends at its next check,
 since its condition might wait for answers that the skipped pages never

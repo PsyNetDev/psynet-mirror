@@ -132,16 +132,17 @@ class Exp(psynet.experiment.Experiment):
         second.take_page()
         assert "1 point so far" in second.current_page_text
 
-        # The third arrival completes the group and skips the quiz. The second
-        # answers their question within the grace period, so it is scored and
-        # paid, and its feedback page is skipped.
+        # The third arrival completes the group and skips the quiz, without
+        # an unseen trial. The second answers their question within the grace
+        # period, so it is scored and paid, and its feedback page is skipped.
         third.take_page()
         assert third.current_page_text == "Your group is ready."
         second.take_page()
         first.take_page()
-        for bot, points in zip(bots, [2, 2, 0]):
+        for bot, points, n_trials in zip(bots, [2, 2, 0], [3, 2, 0]):
             assert bot.current_page_text == "Your group is ready."
             participant = Participant.query.get(bot.id)
+            assert QuizTrial.query.filter_by(participant_id=bot.id).count() == n_trials
             assert quiz_points(participant) == points
             assert math.isclose(
                 participant.performance_reward, points * REWARD_PER_POINT
