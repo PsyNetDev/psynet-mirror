@@ -898,15 +898,20 @@ def test_keep_roles_without_within_counts_players_who_arrived_after_the_tick(
         [p for p in players if pairs.role(p) == role]
         for role in ("proposer", "responder")
     ]
-    # p2 is still in a pair but no longer working; p3 is still playing.
-    p2.status = "returned"
     (newcomer,) = _working_participants(exp, 1)
     at_tick = [p1, r1, newcomer]
     _arrive(exp, pairs, at_tick)
     _backdate_arrivals(pairs, at_tick, 60)
     _backdate_splits(pairs, None, 60)
     _arrive(exp, pairs, [r2, r3])
-    pairs.choose_who_to_release(at_tick + [r2, r3])
+    # p2 and p3 are still in open pairs; p2 is no longer working.
+    p2.status = "returned"
+    assert p2.active_sync_groups["pair"].active
+    assert p2.id not in pairs._playing_or_waiting_ids()
+    released = pairs.choose_who_to_release(at_tick + [r2, r3])
+    for player in released:
+        pairs.release(player)
+    assert set(released) == {newcomer, r1}
     assert pairs.role(newcomer) == "proposer"
     assert _partner(newcomer) is r1
     assert _waiting(pairs, [p1, r2, r3]) == [p1, r2, r3]
