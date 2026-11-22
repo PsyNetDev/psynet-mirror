@@ -12,6 +12,11 @@
 
   const AWAY_NOTICE = "psynet-player-away-notice";
   const NO_GAME_NOTICE = "psynet-no-game-notice";
+  // The reason PsyNet ends the game of a player it adds after the game
+  // stopped accepting players (TOO_LATE in psynet/live_game).
+  const TOO_LATE = "too_late";
+  // Dallinger's reason for a game that failed (FAILED in dallinger.realtime).
+  const FAILED = "failed";
 
   // Calls report with the players who have been away for AWAY_DELAY_MS,
   // each time that list changes.
@@ -198,6 +203,8 @@
         startedCallbacks: [],
         playingElements: [],
         ended: false,
+        // Whether PsyNet added the player too late to play.
+        tooLate: false,
         // Dallinger's reason this player's game ended, such as
         // "players_left", once it has.
         endReason: null,
@@ -319,7 +326,7 @@
       socket.raw.addEventListener("open", () => {
         clearTimeout(state.connectionTimer);
         state.connectionTimer = null;
-        if (state.left) return;
+        if (state.left || state.tooLate) return;
         page.setNextButtonHidden(true);
       });
       socket.raw.addEventListener("close", down);
@@ -362,7 +369,9 @@
         hideNextButtonWhileConnected(state, socket);
         socket.onResultSaved(() => {
           let seconds = state.session.showResultFor || 0;
-          if (seconds > 0) {
+          if (state.tooLate) {
+            return;
+          } else if (seconds > 0) {
             state.moveOnTimer = setTimeout(() => moveOn(state), seconds * 1000);
           } else {
             moveOn(state);
@@ -374,6 +383,10 @@
         if (state.ended) {
           return;
         }
+        if (details.ended === TOO_LATE) {
+          turnAway(state);
+          return;
+        }
         state.ended = details.ended !== null;
         state.endReason = details.ended;
         receive(state, view, details);
@@ -381,13 +394,36 @@
       // The ending carries the final view, which can arrive before the view
       // itself, and is all a page that joins after the end gets.
       socket.onEnded((reason, view) => {
-        if (!state.ended) {
+        // A game that ended before Dallinger could add the player has no
+        // view for them, nor had the page, unless the game failed.
+        let neverAdded = view === null && reason !== FAILED && state.lastView === null;
+        if (reason === TOO_LATE || neverAdded) {
+          turnAway(state);
+        } else if (!state.ended) {
           state.ended = true;
           state.endReason = reason;
           receive(state, view, null);
         }
       });
       return socket;
+    }
+
+    // Ends the page of a player that PsyNet added after the game stopped
+    // accepting players, who doesn't play: the page's JavaScript gets no
+    // view, and the participant reads the notice and moves on with the
+    // Next button.
+    function turnAway(state) {
+      if (state.tooLate) return;
+      state.ended = true;
+      state.tooLate = true;
+      state.endReason = TOO_LATE;
+      clearTimeout(state.connectionTimer);
+      state.connectionTimer = null;
+      page.hideGame();
+      if (state.session.tooLateMessage) {
+        page.showNotice(NO_GAME_NOTICE, state.session.tooLateMessage);
+      }
+      page.setNextButtonHidden(false);
     }
 
     /**
@@ -468,7 +504,9 @@
         state.fetchingPlayers ||
         !page.fetchPlayers ||
         view === null ||
-        (view.psynet.away_since || []).length <= state.players.length
+        // Players who came too late are numbered last, and not shown.
+        (view.psynet.away_since || []).length - (view.psynet.too_late || []).length <=
+          state.players.length
       ) {
         return;
       }
@@ -576,7 +614,9 @@
     /**
      * Call ``callback`` once, when this player's game has ended, with
      * Dallinger's reason (see ``Socket.onEnded``) and the final view, which
-     * for a failed game is the last view the page had.
+     * for a failed game is the last view the page had. It never runs for a
+     * player who joined after the game stopped taking players, or ended,
+     * whose page shows the page's ``too_late_message`` instead.
      *
      * @param {function} callback - Called with the reason and the view
      * @returns {Object} ``psynet.liveGame``
@@ -584,7 +624,9 @@
     function onEnded(callback) {
       let state = pageState();
       pageSocket().onEnded((reason, view) => {
-        callback(reason, view === null ? state.lastView : view);
+        if (!state.tooLate) {
+          callback(reason, view === null ? state.lastView : view);
+        }
       });
       return api;
     }
@@ -618,6 +660,18 @@
       return tick;
     }
 
+    // Passed on, except for a player who came too late, whose page shows
+    // the too-late notice until they move on.
+    function onResultSaved(callback) {
+      let state = pageState();
+      pageSocket().onResultSaved((...args) => {
+        if (!state.tooLate) {
+          callback(...args);
+        }
+      });
+      return api;
+    }
+
     /**
      * Call ``callback`` with the seconds left of the page's
      * ``show_result_for``, a few times a second, from when this player's
@@ -632,7 +686,7 @@
       let seconds = state.session.showResultFor || 0;
       if (seconds > 0) {
         socket.onResultSaved(() => {
-          if (state.left) {
+          if (state.left || state.tooLate) {
             return;
           }
           let until = Date.now() + seconds * 1000;
@@ -912,17 +966,19 @@
       onEnded: onEnded,
       /**
        * Call ``callback`` once this player's result, their answer and
-       * reward, has been saved, after their game ends.
+       * reward, has been saved, after their game ends. It never runs for a
+       * player who came too late, as for ``onEnded``.
        *
        * @function onResultSaved
        * @param {function} callback - Called once the result is saved
        * @returns {Object} ``psynet.liveGame``
        */
-      onResultSaved: passOn("onResultSaved"),
+      onResultSaved: onResultSaved,
       /**
        * Call ``callback`` with the close code and reason if the server
        * refuses the page's connection, as it does long after the game
-       * ended. A page with ``auto_advance=False`` moves on here too.
+       * ended. The page then moves on by itself, unless it has
+       * ``auto_advance=False``: the callback then calls ``psynet.nextPage()``.
        *
        * @function onRefused
        * @param {function} callback - Called with the code and the reason

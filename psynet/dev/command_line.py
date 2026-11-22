@@ -336,7 +336,7 @@ def release_announce(version, channel, summary_file, dry_run, dry_run_json):
     VERSION is e.g. 13.2.0 or 13.2.0rc1 (no leading 'v'). The release
     candidate vs. final message flavour is auto-detected from the version.
 
-    Posting requires the [slack] extra and a SLACK_BOT_TOKEN environment
+    Posting requires the [dev] extra and a SLACK_BOT_TOKEN environment
     variable with chat:write access to the channel. Always preview with
     --dry-run first.
 

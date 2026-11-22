@@ -123,7 +123,6 @@ write it yourself:
                "The task will take about 15 minutes."
            ),
            "contact_email_on_error": "you@example.org",
-           "organization_name": "Your institution",
            "show_reward": False,
            "force_incognito_mode": True,
        }
@@ -166,7 +165,10 @@ registers an extra completion code with a fixed screen-out payment
 to be less than ``base_payment``, and deployment fails otherwise. When the participant clicks
 **Submit to Prolific**, PsyNet completes the submission with that code,
 Prolific pays the fixed amount, and PsyNet tops the participant up to the
-reward they had earned with a bonus. Prolific discourages giving many
+reward they had earned with a bonus. **Leave** pays only once the
+participant's reward reaches ``min_reward_for_paid_early_exit`` (default
+0.20); below that, it offers **Leave without payment** (see
+:ref:`Leaving early <payment-leaving-early>`). Prolific discourages giving many
 participants partial payments, so keep this path for genuine screen-outs
 and errors.
 
@@ -187,10 +189,10 @@ participant under **Needs payment review** in the dashboard's
 
 To customize these behaviors, subclass
 :class:`~psynet.end.SuccessfulEndLogic` or
-:class:`~psynet.end.UnsuccessfulEndLogic`. For custom completion-code
-routing, override
-:meth:`~psynet.experiment.Experiment.recruiter_exit_info` and register
-extra codes with the ``prolific_completion_config`` configuration key.
+:class:`~psynet.end.UnsuccessfulEndLogic`.
+``prolific_completion_config`` registers extra completion codes on the
+study; PsyNet still completes submissions with its own researcher-actor
+codes.
 
 Qualifications
 --------------

@@ -15,7 +15,7 @@ from .control import LiveGamePage
 from .game import LiveGame
 from .messages import LiveMessage, SavedMessage
 from .play import PlayLiveGame
-from .psynet_entry import NOT_STARTED, PLAYERS_LEFT, TIMEOUT, PlayerReady
+from .psynet_entry import NOT_STARTED, PLAYERS_LEFT, TIMEOUT, TOO_LATE, PlayerReady
 from .record import (
     LiveGameCheckpoint,
     LiveGameFailed,
@@ -39,5 +39,6 @@ __all__ = [
     "Reject",
     "SavedMessage",
     "TIMEOUT",
+    "TOO_LATE",
     "live_game_classes",
 ]

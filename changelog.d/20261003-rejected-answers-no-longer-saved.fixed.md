@@ -1,1 +1,0 @@
-Rejected answers (those that fail page validation) no longer overwrite `participant.answer` or `save_answer` variables, no longer add duplicate entries to accumulated answers, and no longer trigger the page's `on_complete` hook. The rejected response is still stored with `successful_validation = False`.

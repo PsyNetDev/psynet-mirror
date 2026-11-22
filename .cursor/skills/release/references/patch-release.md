@@ -1,7 +1,9 @@
 # Patch release path
 
 
-Example: releasing 13.1.1 from the existing `release-13.1` branch.
+Use this path after the release manager has affirmed a **patch** in the
+skill's [Choose the release type](../SKILL.md#choose-the-release-type)
+step. Example: releasing 13.1.1 from the existing `release-13.1` branch.
 
 ### 1. Verify starting state
 

@@ -1,1 +1,0 @@
-Fixed the trial time estimates of the `rock_paper_scissors` and `create_rate_sync` demos, which counted only one page of each trial, so that their progress bars, reward estimates and default performance-test lengths match the full trial.

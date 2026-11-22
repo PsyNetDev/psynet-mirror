@@ -24,6 +24,7 @@ import numpy as np
 from dominate import tags
 from dominate.dom_tag import dom_tag
 from dominate.util import raw
+from dominate.util import text as dom_text
 from flask import current_app
 from markupsafe import Markup
 
@@ -1215,6 +1216,7 @@ class CheckboxControl(OptionControl):
                         True if answer is not None and choice in answer else False
                     ),
                 )
+                dom_text(" ")
                 tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
@@ -1722,6 +1724,7 @@ class RadioButtonControl(OptionControl):
                     value=choice,
                     checked=(True if choice == answer else False),
                 )
+                dom_text(" ")
                 tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
@@ -4680,6 +4683,12 @@ class SurveyJSControl(Control):
         if raw_answer is None:
             return None
         return json.loads(raw_answer)
+
+    def get_js_dependencies(self):
+        """Load the SurveyJS library only on pages that contain a survey."""
+        return super().get_js_dependencies() + [
+            "/static/scripts/survey-jquery/survey.jquery.min.js"
+        ]
 
     def get_css(self):
         css = super().get_css()

@@ -1,1 +1,0 @@
-Fixed Prolific return-for-bonus checks treating a connection error or timeout as a permanent failure. The participant is now asked to try again, as for other temporary Prolific errors, instead of seeing the error page.

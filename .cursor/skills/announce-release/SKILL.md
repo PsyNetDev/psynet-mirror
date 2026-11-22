@@ -95,10 +95,10 @@ so it can be wired into release scripts safely.
 ## Dependencies
 
 Posting requires `slack_sdk`, which is provided by PsyNet's
-`[slack]` extra:
+`[dev]` extra:
 
 ```bash
-uv pip install -e '.[dev,slack]'
+uv pip install -e '.[dev]'
 ```
 
 This is already part of the prerequisites listed in the `release` skill.

@@ -1,8 +1,8 @@
 """Idempotent PsyNet runtime initialisation.
 
 This module isolates the heavy side effects that the original ``psynet/__init__.py``
-performed at import time (dominate event-loop patch, Dallinger config patch,
-gevent environment variable, debugpy import).  Putting them here allows the
+performed at import time (Dallinger config patch, gevent environment
+variable, debugpy import).  Putting them here allows the
 minimal bootstrap package (``psynet`` without ``[experiment]``) to import
 cleanly without pulling in dallinger or debugpy.
 
@@ -27,7 +27,6 @@ def ensure_runtime() -> None:
 
     Performs the following side effects on the first call:
 
-    - Applies the dominate event-loop patch (requires dominate >= 2.9.1 fix).
     - Patches ``dallinger.config.Configuration.load`` to register PsyNet's
       extra config keys when no experiment is on the path.
     - Sets ``GEVENT_SUPPORT=True`` in the process environment.
@@ -48,10 +47,8 @@ def ensure_runtime() -> None:
 def _initialize_runtime() -> None:
     """Apply heavy runtime imports and patches."""
 
-    import asyncio
     import warnings
 
-    import dominate
     from dallinger.config import ConfigSource, Configuration, experiment_available
 
     import psynet.recruiters  # noqa: F401
@@ -59,9 +56,6 @@ def _initialize_runtime() -> None:
         loading_experiment_classes,
         patch_yaspin_jupyter_detection,
     )
-
-    # Fix event loop deprecation warning from dominate.
-    dominate.dom_tag.get_event_loop = asyncio.get_running_loop
 
     warnings.filterwarnings(
         "ignore",

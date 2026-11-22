@@ -10,7 +10,9 @@ const read = (name) => fs.readFileSync(path.join(ROOT, "psynet/resources/scripts
 const SOURCE = read("live-game.js");
 const CALLBACKS = ["onView", "onRejected", "onEnded", "onResultSaved", "onRefused"];
 // The callbacks psynet.liveGame hands straight to the socket.
-const PASSED_ON = CALLBACKS.filter((name) => !["onView", "onEnded"].includes(name));
+const PASSED_ON = CALLBACKS.filter(
+  (name) => !["onView", "onEnded", "onResultSaved"].includes(name)
+);
 const AWAY_NOTICE = "psynet-player-away-notice";
 const READY = ["pick_numbers", { type: "psynet_ready", message: {} }];
 
@@ -238,6 +240,10 @@ describe("psynet.liveGame", () => {
       assert.equal(liveGame[name](callback), liveGame);
       assert.equal(sockets[0].callbacks[name].at(-1), callback);
     }
+    let saved = 0;
+    assert.equal(liveGame.onResultSaved(() => saved++), liveGame);
+    sockets[0].fire("onResultSaved");
+    assert.equal(saved, 1);
   });
 
   it("says the player is ready after the first clock measurement of each connection", () => {
@@ -544,6 +550,54 @@ describe("psynet.liveGame", () => {
     leavePage();
     assert.deepEqual(notices.at(-1), ["psynet-no-game-notice", null]);
     assert.equal(sockets.length, 0);
+  });
+
+  it("turns away a newcomer to a game that had stopped taking players, with the Next button", () => {
+    session = {
+      ...session,
+      tooLateMessage: "The game had already stopped taking new players.",
+      showResultFor: 5,
+    };
+    changePage();
+    const seen = [];
+    liveGame.onChange(() => seen.push("change"));
+    liveGame.onEnded(() => seen.push("ended"));
+    liveGame.onResultSaved(() => seen.push("saved"));
+    liveGame.onResultTimeLeft(() => seen.push("result time left"));
+    sockets[0].raw.dispatchEvent(new Event("open"));
+    sockets[0].view(view(4), "too_late");
+    sockets[0].fire("onEnded", "too_late", view(4));
+    sockets[0].fire("onResultSaved");
+    sockets[0].raw.dispatchEvent(new Event("open"));
+    assert.deepEqual(seen, []);
+    assert.equal(liveGame.ended, true);
+    assert.equal(hiddenGames, 1);
+    assert.deepEqual(notices.at(-1), [
+      "psynet-no-game-notice",
+      "The game had already stopped taking new players.",
+    ]);
+    assert.equal(nextButtonHidden.at(-1), false);
+    assert.equal(nextPages, 0);
+  });
+
+  it("turns away a newcomer whom the game ended before adding, but not a player of a failed game", () => {
+    session = { ...session, tooLateMessage: "Too late." };
+    changePage();
+    const seen = [];
+    liveGame.onEnded((reason) => seen.push(reason));
+    // Dallinger has no final view for a player it never added.
+    sockets[0].fire("onEnded", "finished", null);
+    sockets[0].fire("onResultSaved");
+    assert.deepEqual(seen, []);
+    assert.equal(hiddenGames, 1);
+    assert.deepEqual(notices.at(-1), ["psynet-no-game-notice", "Too late."]);
+    assert.equal(nextPages, 0);
+
+    changePage();
+    liveGame.onEnded((reason) => seen.push(reason));
+    sockets[1].fire("onEnded", "failed", null);
+    assert.deepEqual(seen, ["failed"]);
+    assert.equal(hiddenGames, 1);
   });
 
   it("does nothing on a page without a game, and explains a page that isn't a game page", () => {

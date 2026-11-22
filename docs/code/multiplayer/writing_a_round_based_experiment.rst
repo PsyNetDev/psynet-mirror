@@ -80,7 +80,7 @@ store it in participant variables:
 
 Each player's role in the round is on their trial, as ``sync_group_role``
 (below). :class:`~psynet.sync.Regrouper` lists its other methods, such as
-``sat_out`` and ``role``.
+``sat_out`` and ``assign_roles``.
 
 .. _rounds-one-trial-per-player:
 
