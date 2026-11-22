@@ -36,6 +36,25 @@ Keeping the document open avoids a full reload, but it also means that PsyNet
 must explicitly reproduce the resource cleanup and initialization that a reload
 would normally provide.
 
+Pages rendered in advance
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A page can carry ``upcoming_pages`` in its bootstrap data and fragment
+payload: the pages the browser may show before the server confirms them,
+each with the page UUID the participant will get on reaching it. When the
+participant answers, ``psynet.js`` swaps in the next one and queues the answer
+for ``/response``. A reply whose page UUID matches is adopted without another
+swap; any other reply replaces the page as usual.
+
+Trial makers that prepare trials in advance set ``Trial.page_uuid`` when they
+create the trials. For a top-level timeline page, the write phase
+(``Experiment._prepare_page_offers``) stores the next page's ``elt_id`` and
+page UUID in ``participant.upcoming_page``, because timeline pages are shared
+by all participants. The read-only render then renders a copy of that page
+(``Timeline._pages_rendered_in_advance``). ``Page.consume`` uses a page UUID
+issued in advance only on reaching that exact element, and clears it either
+way, so a page UUID is never used twice.
+
 Server-side rendering
 ---------------------
 

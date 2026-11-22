@@ -374,10 +374,14 @@ trial again, and drops the answers given after it.
 The browser waits for the server as before when:
 
 * a trial's ``show_trial`` returns more than one page, or a page with a
-  ``time_limit``, background recording or a full page reload;
+  ``time_limit``, background recording, a full page reload or
+  ``render_in_advance=False``;
 * an answer includes a recording or another file to upload;
 * a trial gives feedback, or ``show_after_trial`` returns a page; the trial
   after it waits for the server.
+
+Pages directly in the timeline are also shown without waiting; see
+:ref:`showing_the_next_page_without_waiting`.
 
 Some trial makers can't prepare trials in advance; see the
 ``prepare_trials_in_advance`` parameter of

@@ -2420,6 +2420,26 @@ class ModularPage(Page):
         else:
             return super().validate(response, **kwargs)
 
+    def _may_reject_answers(self):
+        return (
+            self._validate_function is not None
+            or type(self).validate is not ModularPage.validate
+            or type(self.control).validate is not Control.validate
+        )
+
+    def _shows_the_same_to_everyone(self):
+        # A chat shows the group's messages, and participant JavaScript
+        # variables can show anything stored for the participant.
+        return (
+            super()._shows_the_same_to_everyone()
+            and self.chatroom is None
+            and all(
+                type(component).get_participant_js_vars
+                is JavaScriptContributor.get_participant_js_vars
+                for _, component in self._iter_layout_components()
+            )
+        )
+
     def _reject_impossible_answer(self, answer):
         """Delegate to the control, logging a warning when it rejects the answer."""
         rejection = self.control._reject_impossible_answer(answer)

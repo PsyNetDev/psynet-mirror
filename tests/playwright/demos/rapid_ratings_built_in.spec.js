@@ -40,7 +40,18 @@ test("built-in rating pages advance while the server's replies are held back", {
 
   await withExperiment(page, context, dir, async (participant) => {
     await completeInitialGateway(participant);
-    await participant.getByRole("button", { name: "Next", exact: true }).click();
+    const gate = await responseGate(participant);
+    const next = () => participant.getByRole("button", { name: "Next", exact: true }).click();
+
+    // The instructions page comes straight after the intro, so it is shown
+    // while the intro's answer is still on its way.
+    gate.hold();
+    await next();
+    await waitForMainBodyContains(participant, "Rate each picture from 1", STEP_TIMEOUT_MS);
+    expect(gate.posted).toBe(1);
+    gate.release();
+    await next();
+
     const picture = participant.locator("#prompt-image");
     const rate = (rating) =>
       participant.getByRole("button", { name: String(rating), exact: true }).click();
@@ -52,7 +63,6 @@ test("built-in rating pages advance while the server's replies are held back", {
     };
 
     await expectPicture("red circle", STEP_TIMEOUT_MS);
-    const gate = await responseGate(participant);
 
     // Answers go one at a time; the break after the fourth trial needs the
     // server, so the fourth answer waits for the others to be sent.
@@ -67,7 +77,7 @@ test("built-in rating pages advance while the server's replies are held back", {
     expect(gate.posted).toBe(1);
     gate.release();
     await waitForMainBodyContains(participant, "Take a short break.", STEP_TIMEOUT_MS);
-    await participant.getByRole("button", { name: "Next", exact: true }).click();
+    await next();
 
     // A rejected answer brings its trial back and drops the later answers.
     await expectPicture("teal hexagon", STEP_TIMEOUT_MS);
@@ -83,9 +93,9 @@ test("built-in rating pages advance while the server's replies are held back", {
     await participant.locator("#alert-button").click();
     await expectPicture("teal hexagon", STEP_TIMEOUT_MS);
 
-    for (const next of ["blue diamond", "purple ring", "pink cross"]) {
+    for (const name of ["blue diamond", "purple ring", "pink cross"]) {
       await rate(1);
-      await expectPicture(next, STEP_TIMEOUT_MS);
+      await expectPicture(name, STEP_TIMEOUT_MS);
     }
     await rate(5);
     await waitForMainBodyContains(

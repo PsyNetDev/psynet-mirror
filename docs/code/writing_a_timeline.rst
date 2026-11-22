@@ -139,6 +139,44 @@ still repeat any work the function does. If that work is expensive, do it once
 in a code block, store the result in ``participant.var``, and have the page
 maker only read it.
 
+.. _showing_the_next_page_without_waiting:
+
+Showing the next page without waiting
+-------------------------------------
+
+Because a page outside a page maker shows every participant the same thing,
+PsyNet can render the next page in advance. When a page comes straight after
+the current one, the browser receives it with the current page. Once the
+participant clicks Next, the browser shows it at once and sends the answer to
+the server in the background. This needs ``inplace_timeline_transitions``,
+which is on by default.
+
+The browser waits for the server as usual when:
+
+* anything other than a page comes next, such as a code block, a condition, a
+  loop, a page maker, or the start or end of a module;
+* the server may turn down the current page's answer, as it does for pages
+  with a ``validate`` function and, by default, for
+  :class:`~psynet.modular_page.RadioButtonControl`,
+  :class:`~psynet.modular_page.CheckboxControl`,
+  :class:`~psynet.modular_page.DropdownControl` and
+  :class:`~psynet.modular_page.NumberControl`, which ask for a missing answer;
+* either page has a ``time_limit``, background recording, a ``session_id`` or
+  a full page reload;
+* the next page is a chat page, or one of its prompts or controls adds
+  JavaScript variables for the participant;
+* the answer includes a recording or another file to upload.
+
+If a page shows something that the previous answer changes, for example from
+``participant.var`` in a custom template, pass ``render_in_advance=False``:
+
+.. code-block:: python
+
+    Page(..., render_in_advance=False)
+
+While an answer is still being sent, the browser asks the participant before
+the page reloads or closes.
+
 Branching and repetition
 ------------------------
 

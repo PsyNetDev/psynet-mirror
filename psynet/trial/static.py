@@ -585,6 +585,7 @@ class StaticTrialMaker(ChainTrialMaker):
             ahead = (
                 ahead
                 and isinstance(next_page, Page)
+                and next_page.render_in_advance
                 and (
                     next_page._show_in_advance()
                     if adoptable

@@ -482,6 +482,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     progress_fixes = Column(PythonList)
 
     page_uuid = Column(String)
+    # The ``elt_id`` and page UUID of the timeline page after the current one,
+    # issued when that page is rendered in advance; see ``Page.render_in_advance``.
+    upcoming_page = Column(PythonDict)
     # Framework bookkeeping, not author API: page_deadline, waiting_barrier_id,
     # timed_out_since_barrier, group_removal_notice and the pseudonym_* keys.
     # When the latest timed page's ``time_limit`` runs out; see ``Page.time_limit``.

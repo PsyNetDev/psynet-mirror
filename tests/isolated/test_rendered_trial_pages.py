@@ -1,6 +1,8 @@
+import json
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 
 from psynet.bot import BotDriver
 from psynet.participant import Participant
@@ -8,10 +10,27 @@ from psynet.participant import Participant
 BUILT_IN = str(Path(__file__).parents[2] / "demos/features/rapid_ratings_built_in")
 
 
+def _upcoming_pages_in_browser(bot):
+    """The upcoming pages that the bot's current page sends the browser."""
+    html = bot.http_session.get(
+        f"{bot.experiment.base_url}/timeline",
+        params={"unique_id": bot.participant_unique_id},
+    ).text
+    script = BeautifulSoup(html, "html.parser").find(id="psynet-template-data")
+    return json.loads(script.string)["upcomingPages"]
+
+
 @pytest.mark.parametrize("experiment_directory", [BUILT_IN], indirect=True)
 @pytest.mark.usefixtures("launched_experiment")
 def test_built_in_pages_carry_the_next_trials_pages():
     bot = BotDriver()
+    # The instructions page directly after the intro is rendered in advance,
+    # with the page UUID the participant gets on reaching it.
+    [instructions] = _upcoming_pages_in_browser(bot)
+    assert "Rate each picture" in instructions["html"]
+    bot.take_page()
+    assert bot.current_page_uuid == instructions["page_uuid"]
+
     bot.take_page()
     upcoming = bot.get_current_page().upcoming_pages
     # The break after the fourth trial ends the pages sent in advance.
@@ -21,8 +40,6 @@ def test_built_in_pages_carry_the_next_trials_pages():
         "/static/pictures/green-square.svg",
     ]
 
-    # A page rendered in advance has the page UUID the participant gets on
-    # reaching it, so the browser can answer it before the server is there.
     participant = Participant.query.get(bot.id)
     assert upcoming[0]._browser_page_uuid(participant) != participant.page_uuid
     bot.take_page()

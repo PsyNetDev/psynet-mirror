@@ -66,6 +66,11 @@ class Exp(psynet.experiment.Experiment):
             "as you rate the one before.",
             time_estimate=5,
         ),
+        # Rendered in advance, so it appears as soon as the participant clicks Next.
+        InfoPage(
+            "Rate each picture from 1 (not at all) to 5 (very much).",
+            time_estimate=5,
+        ),
         RatingTrialMaker(
             id_="ratings",
             trial_class=RatingTrial,

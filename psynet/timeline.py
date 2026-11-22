@@ -1506,6 +1506,14 @@ class Page(Elt):
         no answer to submit, ``None`` is recorded. An answer that arrives
         more than 5 seconds after the limit is kept the same way.
 
+    render_in_advance
+        Whether PsyNet may render the page while the participant is still on
+        the page before it, so that it appears without waiting for the server
+        (default ``True``). This applies to pages directly in the timeline and
+        to trial pages that a trial maker prepares in advance. Pass ``False``
+        if the page shows something that the previous answer changes, for
+        example in a custom template or ``pre_render``.
+
 
     Attributes
     ----------
@@ -1580,6 +1588,7 @@ class Page(Elt):
         background_recording=None,
         time_limit: Optional[float] = None,
         time_limit_answer=None,
+        render_in_advance: bool = True,
     ):
         super().__init__()
 
@@ -1741,6 +1750,7 @@ class Page(Elt):
             )
         self.time_limit = time_limit
         self.time_limit_answer = time_limit_answer
+        self.render_in_advance = render_in_advance
         if show_abort_button is not None:
             warnings.warn(
                 "Page(show_abort_button=...) is deprecated; "
@@ -1969,7 +1979,17 @@ class Page(Elt):
         return ""
 
     def consume(self, experiment, participant):
-        participant.page_uuid = self._page_uuid or new_page_uuid()
+        upcoming = participant.upcoming_page or {}
+        participant.upcoming_page = None
+        participant.page_uuid = (
+            self._page_uuid
+            or (
+                upcoming["page_uuid"]
+                if upcoming.get("elt_id") == participant.elt_id
+                else None
+            )
+            or new_page_uuid()
+        )
         participant.page_count += 1
         notice = participant.group_removal_notice
         if notice is not None and notice.get("next_page"):
@@ -2786,7 +2806,10 @@ class Page(Elt):
         Page modules show a page from its ``contents``; other pages are sent
         rendered, for the browser to swap in.
         """
-        if self.upcoming_pages is None:
+        upcoming = self.upcoming_pages
+        if upcoming is None:
+            upcoming = experiment.timeline._pages_rendered_in_advance(participant, self)
+        if upcoming is None:
             return None
         return [
             (
@@ -2797,7 +2820,7 @@ class Page(Elt):
                 if page._rendered_in_advance
                 else {"page_uuid": page._page_uuid, "contents": page.contents}
             )
-            for page in self.upcoming_pages
+            for page in upcoming
         ]
 
     def _swap_in_advance(self):
@@ -2811,6 +2834,28 @@ class Page(Elt):
             self.time_limit is None
             and self.background_recording is None
             and not self.requires_full_page_reload
+        )
+
+    def _shows_the_same_to_everyone(self):
+        """Whether the page in the timeline renders the same before the participant reaches it.
+
+        This excludes pages that set something up as the participant reaches
+        them, pages that render themselves, and pages that share a session
+        with the page before them.
+        """
+        return (
+            self.render_in_advance
+            and self._swap_in_advance()
+            and type(self).consume is Page.consume
+            and self.template_kind != "delegated"
+            and self.session_id is None
+        )
+
+    def _may_reject_answers(self):
+        """Whether the server may turn down the page's answers, for example to ask for a missing one."""
+        return (
+            self._validate_function is not None
+            or type(self).validate is not Page.validate
         )
 
     def layout_key(self, fragment_html):
@@ -3359,6 +3404,62 @@ class Timeline:
             selected = selected[index]
 
         return selected
+
+    def _page_to_render_in_advance(self, participant, page):
+        """The timeline page after ``page``, if the browser can show it before ``page`` is answered.
+
+        Only a page directly after a top-level page qualifies, so no code runs
+        between the two, and pages outside page makers show the same content
+        to every participant. The server must also accept any answer to
+        ``page``, as the participant has left it by the time an answer is
+        turned down.
+        """
+        from .utils import get_config
+
+        if (
+            len(participant.elt_id) != 2
+            or page.id != participant.elt_id
+            or page.upcoming_pages is not None
+            or page.is_timeline_hold
+            or not page._swap_in_advance()
+            or page.session_id is not None
+            or page._may_reject_answers()
+            or participant.group_removal_notice is not None
+            or not get_config().get("inplace_timeline_transitions")
+        ):
+            return None
+        branch, index = participant.elt_id
+        elts = self.elts[branch]
+        following = elts[index + 1] if index + 1 < len(elts) else None
+        if isinstance(following, Page) and following._shows_the_same_to_everyone():
+            return following
+        return None
+
+    def _issue_upcoming_page_uuid(self, participant, page):
+        """Issue the page UUID of the page that the browser can show after ``page``."""
+        following = self._page_to_render_in_advance(participant, page)
+        if following is None:
+            participant.upcoming_page = None
+        elif (participant.upcoming_page or {}).get("elt_id") != following.id:
+            participant.upcoming_page = {
+                "elt_id": following.id,
+                "page_uuid": new_page_uuid(),
+            }
+
+    def _pages_rendered_in_advance(self, participant, page):
+        """The pages that the browser can show after ``page``, with the page UUIDs issued for them."""
+        upcoming = participant.upcoming_page
+        if not upcoming:
+            return None
+        following = self._page_to_render_in_advance(participant, page)
+        if following is None or following.id != upcoming["elt_id"]:
+            return None
+        # Timeline pages are shared by all participants.
+        following = copy.copy(following)
+        following._page_uuid = upcoming["page_uuid"]
+        following._rendered_in_advance = True
+        following.pre_render()
+        return [following]
 
     @log_time_taken
     def advance_page(self, experiment, participant):
