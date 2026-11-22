@@ -4121,8 +4121,9 @@ class Regrouper(Grouper):
         members have, so that as many as possible can play, then the one
         fewest current members have, ties broken at random. Current members
         are the active members of the ``within`` group, or without
-        ``within``, those waiting plus those still active in a group this
-        regrouper formed; players who leave their group, for example with
+        ``within``, everyone waiting at this regrouper (including those who
+        arrived after an ``every`` tick) plus those still active in a group
+        this regrouper formed; players who leave their group, for example with
         :func:`leave_group` after their last round or a barrier's
         ``late_action="leave_group"``, stop counting. A newcomer who is left
         over stays without a role, so :meth:`role` returns ``None`` for them,
@@ -4466,8 +4467,9 @@ class Regrouper(Grouper):
         if within_group is not None:
             current_ids = {p.id for p in within_group.active_participants}
         else:
-            current_ids = self._playing_ids() | {m.id for m in members}
-        current = Counter(self._kept_roles(current_ids).values())
+            current_ids = self._playing_or_waiting_ids()
+        current_ids -= {m.id for m in members}
+        current = waiting + Counter(self._kept_roles(current_ids).values())
         for member in random.sample(newcomers, len(newcomers)):
             role = min(
                 self.roles, key=lambda r: (waiting[r], current[r], random.random())
@@ -4477,10 +4479,15 @@ class Regrouper(Grouper):
             current[role] += 1
         return roles
 
-    def _playing_ids(self) -> set:
-        """Return the IDs of working participants still active in a group this regrouper formed."""
+    def _playing_or_waiting_ids(self) -> set:
+        """Return the IDs of working participants waiting here or still active in a group this regrouper formed.
+
+        One statement reads both, so that a player moving from their group
+        to this regrouper meanwhile is counted in one or the other.
+        """
         link = ParticipantLinkSyncGroup
-        rows = (
+        working = (Participant.status == "working", Participant.failed.is_(False))
+        playing = (
             db.session.query(link.participant_id)
             .join(SyncGroup, SyncGroup.id == link.sync_group_id)
             .join(Participant, Participant.id == link.participant_id)
@@ -4488,11 +4495,19 @@ class Regrouper(Grouper):
                 SyncGroup.grouper_id == self.id,
                 SyncGroup.active.is_(True),
                 link.active.is_(True),
-                Participant.status == "working",
-                Participant.failed.is_(False),
+                *working,
             )
         )
-        return {participant_id for (participant_id,) in rows}
+        waiting = (
+            db.session.query(ParticipantLinkBarrier.participant_id)
+            .join(Participant, Participant.id == ParticipantLinkBarrier.participant_id)
+            .filter(
+                ParticipantLinkBarrier.barrier_id == self.id,
+                ParticipantLinkBarrier.released.is_(False),
+                *working,
+            )
+        )
+        return {participant_id for (participant_id,) in playing.union(waiting)}
 
     def _kept_roles(self, participant_ids) -> Dict[int, str]:
         """Return these participants' first roles in this regrouper's groups, keyed by ID.

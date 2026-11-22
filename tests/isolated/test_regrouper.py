@@ -860,7 +860,8 @@ def test_keep_roles_without_within_counts_players_still_in_a_group(
     players = _working_participants(exp, 4)
     _arrive(exp, pairs, players)
     _backdate_arrivals(pairs, players, 31)
-    pairs.choose_who_to_release(players)
+    for player in pairs.choose_who_to_release(players):
+        pairs.release(player)
     (p1, p2), (r1, r2) = [
         [p for p in players if pairs.role(p) == role]
         for role in ("proposer", "responder")
@@ -876,6 +877,39 @@ def test_keep_roles_without_within_counts_players_still_in_a_group(
     assert pairs.role(newcomer) == "responder"
     assert _partner(newcomer) is p1
     assert pairs.sat_out(r1)
+
+
+@in_consents_experiment
+def test_keep_roles_without_within_counts_players_who_arrived_after_the_tick(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """Two responders arriving after the tick, but not a proposer who returned, count."""
+    _freeze_clocks(monkeypatch, start=time.time() // 45 * 45 + 10)
+    exp = get_experiment()
+    pairs = Regrouper(
+        "pair", roles=["proposer", "responder"], keep_roles=True, every=45
+    )
+    players = _working_participants(exp, 6)
+    _arrive(exp, pairs, players)
+    _backdate_arrivals(pairs, players, 60)
+    for player in pairs.choose_who_to_release(players):
+        pairs.release(player)
+    (p1, p2, p3), (r1, r2, r3) = [
+        [p for p in players if pairs.role(p) == role]
+        for role in ("proposer", "responder")
+    ]
+    # p2 is still in a pair but no longer working; p3 is still playing.
+    p2.status = "returned"
+    (newcomer,) = _working_participants(exp, 1)
+    at_tick = [p1, r1, newcomer]
+    _arrive(exp, pairs, at_tick)
+    _backdate_arrivals(pairs, at_tick, 60)
+    _backdate_splits(pairs, None, 60)
+    _arrive(exp, pairs, [r2, r3])
+    pairs.choose_who_to_release(at_tick + [r2, r3])
+    assert pairs.role(newcomer) == "proposer"
+    assert _partner(newcomer) is r1
+    assert _waiting(pairs, [p1, r2, r3]) == [p1, r2, r3]
 
 
 @pytest.mark.parametrize("left_over", ["sit_out", "wait"])
