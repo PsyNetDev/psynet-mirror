@@ -20,7 +20,7 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     page = bot.get_current_page()
     assert page.contents["name"] == "red circle"
     # The break after the fourth trial ends the prediction.
-    assert [c["name"] for c in page.upcoming_contents] == [
+    assert [p.contents["name"] for p in page.upcoming_trials] == [
         "orange triangle",
         "yellow star",
         "green square",

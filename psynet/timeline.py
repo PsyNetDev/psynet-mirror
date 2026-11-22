@@ -1529,9 +1529,13 @@ class Page(Elt):
     requires_full_page_reload = False
     expect_scrolling = False
     skip_beforeunload = False
-    # Set by trial makers that prepare their trials in advance.
-    upcoming_contents = None
+    # Set by trial makers that prepare their trials in advance: the pages of
+    # the next trials that the browser can show before the server confirms
+    # them, and the URLs of the next trials' files by media type.
+    upcoming_trials = None
     upcoming_media = None
+    # The trial whose show_trial returned the page, if it was the only page.
+    _trial_id = None
     _full_page_layout_key = None
 
     def __init__(
@@ -1928,8 +1932,6 @@ class Page(Elt):
                 else None
             ),
         }
-        if self.upcoming_contents is not None:
-            attributes["upcoming_contents"] = self.upcoming_contents
         if self.upcoming_media:
             attributes["upcoming_media"] = self.upcoming_media
         if self._full_page_layout_key is not None:
@@ -2364,7 +2366,7 @@ class Page(Elt):
             raise NotImplementedError(
                 f"{type(self).__name__} delegates rendering and must override render()."
             )
-        if not partial_mode and self.upcoming_contents is not None:
+        if not partial_mode and self.upcoming_trials is not None:
             # Fragments carry their key beside the HTML; a full page needs a
             # partial render to compute the same key.
             self._full_page_layout_key = self.layout_key(
@@ -2453,6 +2455,10 @@ class Page(Elt):
             "trial_progress_display_config": self.progress_display,
             "attributes": self.attributes,
             "contents": self.contents,
+            # A reply carries these beside its fragment.
+            "upcoming_trials": (
+                None if partial_mode else self._upcoming_trials_payload()
+            ),
             "locale": locale,
             "partial_mode": partial_mode,
             "inplace_timeline_transitions": inplace_timeline_transitions,
@@ -2761,6 +2767,15 @@ class Page(Elt):
             and not self.requires_full_page_reload
             and not self.media.urls
         )
+
+    def _upcoming_trials_payload(self):
+        """Describe ``upcoming_trials`` for the browser."""
+        if self.upcoming_trials is None:
+            return None
+        return [
+            {"trial_id": page._trial_id, "contents": page.contents}
+            for page in self.upcoming_trials
+        ]
 
     def layout_key(self, fragment_html):
         """Identify the page's ``#main-body`` and JavaScript in a partial render.

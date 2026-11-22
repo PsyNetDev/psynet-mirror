@@ -213,8 +213,10 @@ after a trial with feedback or with pages from
 trials. With a feedback
 page after every trial, it never runs ahead, and the participant waits for
 the server twice per trial. To give feedback straight away, show it from the
-page module instead, which needs the correct answer in ``contents``. If the participant
-reloads the page, the answers not yet sent are lost, and they continue from
+page module instead, which needs the correct answer in ``contents``. Answers
+are sent as soon as they are given, so only the answers waiting behind a slow
+reply can be lost. If the participant reloads or closes the page, those
+answers are lost, and when they come back they continue from
 the first trial the server hasn't saved; anything entered for that trial is
 lost and its clock starts again.
 

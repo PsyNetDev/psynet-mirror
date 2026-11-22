@@ -727,9 +727,9 @@
     // A page module's update() shows one trial and answers it through a
     // response handle. Answers go to /response in the background, one at a
     // time and in order. Pages of a trial maker that prepares its trials in
-    // advance list the contents of the next trials in ``upcoming_contents``,
-    // so answering shows the next trial at once. A reply that is the
-    // predicted page is adopted without rebuilding the page; any other reply
+    // advance list the next trials in ``upcoming_trials``, so answering shows
+    // the next trial at once. A reply for the trial shown after the oldest
+    // queued answer is adopted without rebuilding the page; any other reply
     // drops the remaining answers and loads as usual. A rejected answer
     // shows its trial again.
     psynet.resetAnswers = function () {
@@ -745,11 +745,15 @@
     };
     psynet.resetAnswers();
 
+    // The trials after the last page the server confirmed, as
+    // ``{trial_id, contents}``. Every approved reply replaces them.
+    psynet.upcomingTrials = psynetTemplateData.upcomingTrials ?? [];
+
     // Contents from the last confirmed page onwards.
     psynet.predictedContents = function () {
       return [
         psynet.page.contents,
-        ...(psynet.page.attributes?.upcoming_contents || []),
+        ...psynet.upcomingTrials.map((trial) => trial.contents),
       ];
     };
 
@@ -805,7 +809,9 @@
             // The events of this trial only, as later trials share the page.
             event_log: psynet.trial.eventLog.splice(0),
           };
-          answers.queue.push({ value, metadata });
+          // The trial shown next, whose reply the answer expects.
+          let trialId = psynet.upcomingTrials[answers.queue.length]?.trial_id;
+          answers.queue.push({ value, metadata, trialId });
           // After the caller's own code, which may still tidy up this trial.
           queueMicrotask(psynet.showNextPredictedTrial);
           psynet.sendAnswers();
@@ -862,17 +868,20 @@
       }
     };
 
-    // Return the reply's fragment if it shows the trial the participant was
-    // shown after the oldest queued answer.
+    // Whether the reply is for the trial shown after the oldest queued answer.
+    psynet.isPredictedReply = function (response) {
+      let trialId = psynet.answers.queue[0]?.trialId;
+      return (
+        trialId !== undefined &&
+        response.trial_id === trialId &&
+        !response.page?.attributes?.timeline_hold
+      );
+    };
+
+    // Return the reply's fragment if page modules can show it in place.
     psynet.predictedFragment = function (response) {
-      let expected = psynet.predictedContents()[1];
       let layoutKey = response.timeline_fragment?.layout_key;
-      if (
-        !psynet.answers.queue.length ||
-        expected === undefined ||
-        response.page?.attributes?.timeline_hold ||
-        JSON.stringify(response.page?.contents) !== JSON.stringify(expected)
-      ) {
+      if (!psynet.isPredictedReply(response)) {
         return null;
       }
       if (!layoutKey || layoutKey !== psynet.layoutKey) {
@@ -4161,6 +4170,7 @@
     psynet.handleApprovedResponse = async function (response) {
       psynet.log.debug("Response received successfully.");
       psynet.pageReceivedAt = Date.now();
+      psynet.upcomingTrials = response.timeline_fragment?.upcoming_trials ?? [];
 
       let predicted = psynet.predictedFragment(response);
       if (predicted) {

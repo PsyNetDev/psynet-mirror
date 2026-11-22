@@ -542,7 +542,7 @@ class StaticTrialMaker(ChainTrialMaker):
         # even if its own feedback stops it from showing later trials.
         adoptable = page._show_in_advance()
         predict = adoptable and not trial.gives_feedback(experiment, participant)
-        contents = [] if adoptable else None
+        shown = [] if adoptable else None
         media = {}
         upcoming = [
             t
@@ -580,11 +580,12 @@ class StaticTrialMaker(ChainTrialMaker):
                 and isinstance(pages[0], Page)
                 and pages[0]._show_in_advance()
             ):
-                contents.append(pages[0].contents)
+                pages[0]._trial_id = following.id
+                shown.append(pages[0])
                 predict = not following.gives_feedback(experiment, participant)
             else:
                 predict = False
-        return contents, media
+        return shown, media
 
     def _selection_hook_overrides(self):
         return [

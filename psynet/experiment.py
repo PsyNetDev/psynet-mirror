@@ -4265,10 +4265,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         )
 
     def _approved_payload(self, participant, page):
-        return {
+        payload = {
             "submission": "approved",
             "page": page.__json__(participant),
         }
+        if page._trial_id is not None:
+            payload["trial_id"] = page._trial_id
+        return payload
 
     @staticmethod
     def _stale_page_payload():
@@ -7829,8 +7832,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """
         html = page.render(experiment, participant, partial_mode=True)
         payload = {"html": html, "page_uuid": participant.page_uuid}
-        if page.upcoming_contents is not None:
+        if page.upcoming_trials is not None:
             payload["layout_key"] = page.layout_key(html)
+            payload["upcoming_trials"] = page._upcoming_trials_payload()
         return payload
 
     @experiment_route("/timeline/arrival_notice", methods=["GET"])

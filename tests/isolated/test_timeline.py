@@ -390,7 +390,7 @@ def test_prepared_partial_fragment_rendering_does_not_repeat_pre_render():
     # /response runs pre_render() before committing its write phase. The
     # read-only render helper must not execute author preparation twice.
     calls = []
-    page = MagicMock(upcoming_contents=None)
+    page = MagicMock(upcoming_trials=None)
     page.pre_render.side_effect = lambda: calls.append("pre_render")
     page.render.side_effect = lambda *args, **kwargs: calls.append("render") or "<html>"
     participant = SimpleNamespace(page_uuid="uuid-123")
