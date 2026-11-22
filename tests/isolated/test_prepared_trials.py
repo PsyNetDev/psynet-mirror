@@ -20,7 +20,7 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     page = bot.get_current_page()
     assert page.contents["name"] == "red circle"
     # The break after the fourth trial ends the prediction.
-    assert [p.contents["name"] for p in page.upcoming_trials] == [
+    assert [p.contents["name"] for p in page.upcoming_pages] == [
         "orange triangle",
         "yellow star",
         "green square",
@@ -29,10 +29,16 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     trials = Trial.query.filter_by(participant_id=bot.id).order_by(Trial.position)
     trials = trials.all()
     assert len(trials) == 8
+    # Each trial's page UUID is issued in advance, so the browser can tell
+    # which page a reply is.
+    participant = Participant.query.get(bot.id)
+    assert participant.page_uuid == trials[0].page_uuid
+    assert [p._page_uuid for p in page.upcoming_pages] == [
+        t.page_uuid for t in trials[1:4]
+    ]
     trial_maker = trials[0].trial_maker
     # A time limit is set up for each page, so such pages aren't predicted.
     page.time_limit = 10
-    participant = Participant.query.get(bot.id)
     assert trial_maker._upcoming(trials[0], page, None, participant)[0] is None
 
     month_ago = datetime.datetime.now() - datetime.timedelta(days=30)
