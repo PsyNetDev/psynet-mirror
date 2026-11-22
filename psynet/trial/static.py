@@ -551,7 +551,7 @@ class StaticTrialMaker(ChainTrialMaker):
         swappable = not adoptable and page._swap_in_advance()
         shown = [] if adoptable or swappable else None
         media = {}
-        ahead = not trial.gives_feedback(experiment, participant)
+        ahead = shown is not None and not trial.gives_feedback(experiment, participant)
         upcoming = [
             t
             for t in self.get_participant_trials(participant)
@@ -581,19 +581,23 @@ class StaticTrialMaker(ChainTrialMaker):
                     for media_type, urls in elt.prefetch_urls.items():
                         known = media.setdefault(media_type, [])
                         known.extend(url for url in urls if url not in known)
-            single = not between and len(pages) == 1 and isinstance(pages[0], Page)
-            if ahead and single and adoptable and pages[0]._show_in_advance():
-                pages[0]._trial_id = following.id
-                shown.append(pages[0])
-            elif ahead and single and swappable and pages[0]._swap_in_advance():
-                pages[0]._trial_id = following.id
-                pages[0]._page_uuid = following.page_uuid
-                pages[0]._rendered_in_advance = True
-                pages[0].pre_render()
-                shown.append(pages[0])
-            else:
-                ahead = False
-            ahead = ahead and not following.gives_feedback(experiment, participant)
+            next_page = pages[0] if not between and len(pages) == 1 else None
+            ahead = (
+                ahead
+                and isinstance(next_page, Page)
+                and (
+                    next_page._show_in_advance()
+                    if adoptable
+                    else next_page._swap_in_advance()
+                )
+            )
+            if ahead:
+                next_page._page_uuid = following.page_uuid
+                if swappable:
+                    next_page._rendered_in_advance = True
+                    next_page.pre_render()
+                shown.append(next_page)
+                ahead = not following.gives_feedback(experiment, participant)
         # Page modules need the list, even if empty, to show the page itself.
         return (shown if adoptable else shown or None), media
 

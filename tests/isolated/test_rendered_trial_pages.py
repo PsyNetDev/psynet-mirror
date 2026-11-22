@@ -13,7 +13,7 @@ BUILT_IN = str(Path(__file__).parents[2] / "demos/features/rapid_ratings_built_i
 def test_built_in_pages_carry_the_next_trials_pages():
     bot = BotDriver()
     bot.take_page()
-    upcoming = bot.get_current_page().upcoming_trials
+    upcoming = bot.get_current_page().upcoming_pages
     # The break after the fourth trial ends the pages sent in advance.
     assert [page.prompt.url for page in upcoming] == [
         "/static/pictures/orange-triangle.svg",

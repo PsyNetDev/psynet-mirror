@@ -727,9 +727,9 @@
     // A page module's update() shows one trial and answers it through a
     // response handle. Answers go to /response in the background, one at a
     // time and in order. Pages of a trial maker that prepares its trials in
-    // advance list the next trials in ``upcoming_trials``, so answering shows
-    // the next trial at once. A reply for the trial shown after the oldest
-    // queued answer is adopted without rebuilding the page; any other reply
+    // advance list the next trials' pages in ``upcoming_pages``, so answering
+    // shows the next trial at once. A reply with the page shown after the
+    // oldest queued answer is adopted without rebuilding the page; any other reply
     // drops the remaining answers and loads as usual. A rejected answer
     // shows its trial again.
     psynet.resetAnswers = function () {
@@ -756,16 +756,16 @@
       }
     });
 
-    // The trials after the last page the server confirmed, as
-    // ``{trial_id, contents}`` for page modules or ``{trial_id, html}`` for
+    // The pages after the last page the server confirmed, as
+    // ``{page_uuid, contents}`` for page modules or ``{page_uuid, html}`` for
     // pages swapped in whole. Every approved reply replaces them.
-    psynet.upcomingTrials = psynetTemplateData.upcomingTrials ?? [];
+    psynet.upcomingPages = psynetTemplateData.upcomingPages ?? [];
 
     // Contents from the last confirmed page onwards.
     psynet.predictedContents = function () {
       return [
         psynet.page.contents,
-        ...psynet.upcomingTrials.map((trial) => trial.contents),
+        ...psynet.upcomingPages.map((page) => page.contents),
       ];
     };
 
@@ -821,9 +821,9 @@
             // The events of this trial only, as later trials share the page.
             event_log: psynet.trial.eventLog.splice(0),
           };
-          // The trial shown next, whose reply the answer expects.
-          let trialId = psynet.upcomingTrials[answers.queue.length]?.trial_id;
-          answers.queue.push({ value, metadata, trialId });
+          // The page shown next, which the answer's reply should be.
+          let nextPageUuid = psynet.upcomingPages[answers.queue.length]?.page_uuid;
+          answers.queue.push({ value, metadata, nextPageUuid });
           // After the caller's own code, which may still tidy up this trial.
           queueMicrotask(psynet.showNextPredictedTrial);
           psynet.sendAnswers();
@@ -894,12 +894,12 @@
       return null;
     };
 
-    // Whether the reply is for the trial shown after the oldest queued answer.
+    // Whether the reply is the page shown after the oldest queued answer.
     psynet.isPredictedReply = function (response) {
-      let trialId = psynet.answers.queue[0]?.trialId;
+      let pageUuid = psynet.answers.queue[0]?.nextPageUuid;
       return (
-        trialId !== undefined &&
-        response.trial_id === trialId &&
+        pageUuid !== undefined &&
+        response.page?.attributes?.page_uuid === pageUuid &&
         !response.page?.attributes?.timeline_hold
       );
     };
@@ -946,10 +946,10 @@
     // server sends the rendered pages of the next trials, each with the page
     // UUID it will have. Answering shows the next one as if the server had
     // sent it, while the answer is sent in the background with the UUID of
-    // the page it was given on. A reply for the trial already shown is
+    // the page it was given on. A reply with the page already shown is
     // adopted without touching the page.
     psynet.nextRenderedPage = function () {
-      let page = psynet.upcomingTrials[psynet.answers.queue.length];
+      let page = psynet.upcomingPages[psynet.answers.queue.length];
       return page?.html === undefined ? null : page;
     };
 
@@ -964,7 +964,7 @@
           comments: psynet.comments.splice(0),
         },
         pageUuid: psynet.submissionPageUuid,
-        trialId: page.trial_id,
+        nextPageUuid: page.page_uuid,
       });
       try {
         await psynet.showTimelineFragment(page);
@@ -4268,7 +4268,7 @@
     psynet.handleApprovedResponse = async function (response) {
       psynet.log.debug("Response received successfully.");
       psynet.pageReceivedAt = Date.now();
-      psynet.upcomingTrials = response.timeline_fragment?.upcoming_trials ?? [];
+      psynet.upcomingPages = response.timeline_fragment?.upcoming_pages ?? [];
 
       if (psynet.adoptRenderedReply(response)) {
         return true;
