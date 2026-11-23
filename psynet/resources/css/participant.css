@@ -603,6 +603,20 @@ code {
 .psynet-back-button {
     justify-self: end;
     min-height: 46px;
+    /* An accent outline, so that it reads as a live button next to Next and
+       stands apart from its faint grey disabled state. */
+    --bs-btn-color: var(--psynet-accent);
+    --bs-btn-border-color: var(--psynet-accent);
+    --bs-btn-hover-color: var(--psynet-accent-hover);
+    --bs-btn-hover-bg: var(--psynet-accent-soft);
+    --bs-btn-hover-border-color: var(--psynet-accent-hover);
+    --bs-btn-active-color: var(--psynet-accent-hover);
+    --bs-btn-active-bg: var(--psynet-accent-soft);
+    --bs-btn-active-border-color: var(--psynet-accent-hover);
+    --bs-btn-disabled-color: var(--psynet-text-muted);
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: var(--psynet-border);
+    --bs-btn-disabled-opacity: 0.6;
 }
 
 #next-button,
