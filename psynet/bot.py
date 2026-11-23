@@ -338,7 +338,9 @@ def regroup_now(
     one ``deadline`` (or ``every`` period): the bots' arrival times at the
     regrouper and the creation times of the groups their pools' earlier
     splits formed. The next check then splits the pools as the deadline or
-    tick would. Group memberships and roles are untouched, so a player still
+    tick would. It runs that check before advancing the bots, so ``stop_at``
+    can name the regrouper itself to leave its left-over bots waiting there.
+    Group memberships and roles are untouched, so a player still
     in last round's group keeps their role. ``max_wait_time`` doesn't
     move: it counts from the bots' real arrivals. A player waiting alone for
     cohort members who are still playing isn't released: that needs a second
@@ -374,6 +376,8 @@ def regroup_now(
         # Responders wait at "offer_made" while the test plays the proposers.
         regroup_now(bots, pairing, stop_at="offer_made")
     """
+    from .sync import check_barriers
+
     period = regrouper.deadline or regrouper.every
     if period is None:
         raise ValueError(
@@ -392,6 +396,7 @@ def regroup_now(
             pools[group and group.id] = group
         for within_group in pools.values():
             _backdate_splits(regrouper, within_group, period)
+    check_barriers()
     advance_past_wait_pages(bots, timeout=timeout, stop_at=stop_at)
 
 
