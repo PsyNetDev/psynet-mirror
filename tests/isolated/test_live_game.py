@@ -30,7 +30,9 @@ import psynet
 from psynet.bot import Bot
 from psynet.experiment import Experiment, get_experiment
 from psynet.live_game import (
-    NOT_STARTED,
+    FAILED,
+    FINISHED,
+    NOT_STARTED_MESSAGE,
     PLAYERS_LEFT,
     TIMEOUT,
     TOO_LATE,
@@ -38,6 +40,7 @@ from psynet.live_game import (
     LiveGameFailed,
     LiveGamePage,
     LiveGameRecord,
+    LiveGameStatus,
     LiveMessage,
     PlayerReady,
     PlayLiveGame,
@@ -956,7 +959,7 @@ def test_a_played_game_s_messages_read_back_in_order_with_their_status(played):
         for message in saved
     ] == [
         (0, 1, "accepted", None, PlayerReady()),
-        (0, 2, "rejected", NOT_STARTED, _pick(7)),
+        (0, 2, "rejected", NOT_STARTED_MESSAGE, _pick(7)),
         (1, 1, "accepted", None, PlayerReady()),
         (
             0,
@@ -1834,7 +1837,7 @@ def test_messages_are_rejected_until_every_player_is_ready(relay):
         relay.apply(state, participant, READY, now, Sent())
     relay.apply(state, "1", TAP, 5, Sent())
 
-    assert rejected.value.reason == NOT_STARTED
+    assert rejected.value.reason == NOT_STARTED_MESSAGE
     assert state == {
         # Participant 1 is player 0, and the tap came 1 second into the game.
         "taps": [[0, 1]],
@@ -1874,7 +1877,7 @@ def test_an_overridden_apply_gets_only_the_game_s_messages_after_the_start(relay
     game = Counted()
     state = game.initial_state(["1"])
 
-    with pytest.raises(Reject, match=NOT_STARTED):
+    with pytest.raises(Reject, match=NOT_STARTED_MESSAGE):
         game.apply(state, "1", TAP, 1, Sent())
     game.apply(state, "1", READY, 2, Sent())
     game.apply(state, "1", TAP, 3, Sent())
@@ -2652,7 +2655,7 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     # Later pages read the answer and the result through the participant.
     db.session.refresh(members[0])
     assert members[0].live_games["pick_numbers"].id == game.id
-    assert members[0].live_games["pick_numbers"].finished
+    assert members[0].live_games["pick_numbers"].end_reason == FINISHED
     assert members[0].live_games["pick_numbers"].answer == outcome
     assert members[0].live_game_history["pick_numbers"][-1].answer == outcome
     # Each player's answer, in player order, including the one whose page
@@ -2680,12 +2683,19 @@ def test_a_step_without_a_game_has_a_record_that_says_so(pair, monkeypatch):
         _arrive(game_barrier, member)
 
     game = members[0].live_games[game_barrier.id]
-    assert (game.id, game.status, game.finished) == (None, "not_started", False)
+    assert game.id is None and game.status is LiveGameStatus.NOT_STARTED
     assert (game.answer, game.outcome, game.end_reason, game.player) == (None,) * 4
     assert (game.left_early, game.done_reason) == (False, None)
     assert (game.messages, game.moments, game.participant_ids) == ([], [], [])
     assert not game.record_complete
     assert members[0].live_game_history[game_barrier.id] == []
+
+
+@pytest.mark.parametrize("status", ["running", "ended", "failed"])
+def test_a_record_gives_its_session_status_as_a_live_game_status(pair, status):
+    row = db.session.get(RealtimeSession, _pair_session(pair))
+    row.status = status
+    assert LiveGameRecord(row.id).status is LiveGameStatus(status)
 
 
 def test_the_game_page_fails_once_its_game_can_no_longer_end(pair, monkeypatch):
@@ -2719,9 +2729,9 @@ def test_the_game_page_fails_once_its_game_can_no_longer_end(pair, monkeypatch):
 @pytest.mark.parametrize(
     "end_reason, outcome, record_complete",
     [
-        ("failed", [None, None], True),
+        (FAILED, [None, None], True),
         # The game's outcome raised an error too.
-        ("failed", None, True),
+        (FAILED, None, True),
         (None, None, False),
     ],
 )
@@ -2744,6 +2754,7 @@ def test_a_failed_game_fails_its_players_as_any_error_does(
     )
     result = LiveGameRecord(session_id)
     assert result.record_complete is record_complete
+    assert result.status is LiveGameStatus.FAILED
 
     notified = []
     monkeypatch.setattr(
@@ -3047,7 +3058,7 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
     records = {member: LiveGameRecord(session_id, member) for member in members}
     assert (records[early].left_early, records[early].done_reason) == (True, "retired")
     assert (records[other].left_early, records[other].done_reason) == (False, None)
-    assert records[other].finished
+    assert records[other].end_reason == FINISHED
 
 
 def _save_ending(

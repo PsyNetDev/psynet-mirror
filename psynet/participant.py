@@ -772,7 +772,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
         If their group didn't start a game there, for example because it
         broke up while it waited, the record's ``status`` is
-        ``"not_started"`` and its ``answer`` is ``None``. A step they never
+        :attr:`LiveGameStatus.NOT_STARTED <psynet.live_game.LiveGameStatus.NOT_STARTED>` and its ``answer`` is ``None``. A step they never
         reached isn't in it.
         """
         from .live_game.play import _participant_live_games
