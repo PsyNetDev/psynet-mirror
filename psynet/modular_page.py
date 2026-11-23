@@ -152,6 +152,8 @@ class Prompt(JavaScriptContributor):
         in PsyNet's built-in ``prompt.html`` file.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         text: Union[None, str, Markup] = None,
@@ -324,6 +326,8 @@ class AudioPrompt(BaseAudioPrompt):
     kwargs
         Passed to :class:`~psynet.modular_page.Prompt`.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -601,6 +605,8 @@ class ImagePrompt(Prompt):
 
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         url: str,
@@ -683,6 +689,8 @@ class ColorPrompt(Prompt):
         CSS alignment of the text.
 
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -983,6 +991,8 @@ class NullControl(Control):
     Here the participant just has a single button that takes them to the next page.
     """
 
+    can_swap_in_advance = True
+
     # The macro is named blank, not null, for back-compatibility reasons
     macro = "blank"
     metadata = {}
@@ -1184,6 +1194,8 @@ class CheckboxControl(OptionControl):
         See :class:`OptionControl`.
     """
 
+    can_swap_in_advance = True
+
     input_type = "checkbox"
 
     def __init__(
@@ -1308,6 +1320,8 @@ class DropdownControl(OptionControl):
         See :class:`OptionControl`.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         choices: List[str],
@@ -1394,6 +1408,8 @@ class PushButtonControl(OptionControl):
         Other arguments to pass to :class:`OptionControl`, such as ``restrict_to_choices``.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         choices: List[Union[str, float, int]],
@@ -1473,6 +1489,8 @@ class KeyboardPushButtonControl(PushButtonControl):
     kwargs:
         Other arguments to pass to :class:`~psynet.modular_page.PushButtonControl`.
     """
+
+    can_swap_in_advance = True
 
     macro = "keyboard_push_buttons"
 
@@ -1679,6 +1697,8 @@ class RadioButtonControl(OptionControl):
         See :class:`OptionControl`.
     """
 
+    can_swap_in_advance = True
+
     input_type = "radio"
 
     def __init__(
@@ -1797,6 +1817,8 @@ class NumberControl(Control):
         CSS width property for the alignment of the text inside the number input field. Default: `"right"`.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         width: Optional[str] = "120px",
@@ -1873,6 +1895,8 @@ class TextControl(Control):
     block_copy_paste:
         Whether to block the copy, cut and paste options in the text input box.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -2165,6 +2189,8 @@ class ModularPage(Page):
         including ``js_dependencies`` and ``js_page_modules``.
     """
 
+    can_swap_in_advance = True
+
     default_layout = ["prompt", "media", "progress", "control", "chatroom", "buttons"]
 
     def __init__(
@@ -2420,11 +2446,16 @@ class ModularPage(Page):
         else:
             return super().validate(response, **kwargs)
 
+    def _swap_components(self):
+        return [self, self.prompt, self.control]
+
     def _may_reject_answers(self):
         return (
             self._validate_function is not None
             or type(self).validate is not ModularPage.validate
             or type(self.control).validate is not Control.validate
+            or type(self.control).check_ready_for_response
+            is not Control.check_ready_for_response
         )
 
     def _shows_the_same_to_everyone(self):
@@ -2863,6 +2894,8 @@ class SliderControl(Control):
     template_args:
         Arguments for the  optional additional template. Default: `None`.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -4861,6 +4894,8 @@ class MultiRatingControl(SurveyJSControl):
         Whether to show question titles (default: True).
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         *scales: "RatingScale",
@@ -4935,6 +4970,8 @@ class RatingControl(MultiRatingControl):
     bot_response :
         An optional argument that can be used to specify a response delivered by automatic bots to this page.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,

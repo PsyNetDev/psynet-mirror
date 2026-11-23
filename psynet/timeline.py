@@ -2896,17 +2896,12 @@ class Page(Elt):
             "contents": previous.contents,
         }
 
-    def _swap_in_advance(self):
-        """Whether a rendered copy of the page can be swapped in before the server confirms it.
-
-        The browser runs the copy's usual page lifecycle, so this excludes only
-        what the server sets up as it serves each page: a time limit,
-        background recording and a full page reload.
-        """
+    def _may_reject_answers(self):
+        """Whether the server may turn down the page's answers, for example to ask for a missing one."""
         return (
-            self.time_limit is None
-            and self.background_recording is None
-            and not self.requires_full_page_reload
+            self._validate_function is not None
+            or type(self).validate is not Page.validate
+            or type(self).check_ready_for_response is not Page.check_ready_for_response
         )
 
     def _shows_the_same_to_everyone(self):
@@ -2917,18 +2912,45 @@ class Page(Elt):
         with the page before them.
         """
         return (
-            self._swap_in_advance()
+            self.render_in_advance
+            and self._not_swappable_because() is None
             and type(self).consume is Page.consume
             and self.template_kind != "delegated"
-            and self.session_id is None
         )
 
-    def _may_reject_answers(self):
-        """Whether the server may turn down the page's answers, for example to ask for a missing one."""
-        return (
-            self._validate_function is not None
-            or type(self).validate is not Page.validate
-        )
+    def _swap_components(self):
+        """The page and what it is built from, each of which must allow being swapped in."""
+        return [self]
+
+    def _not_swappable_because(self):
+        """Say why a rendered copy of the page can't be swapped in before the server serves it, or return ``None``.
+
+        The copy is rendered while an earlier page is on screen. So the page's
+        class and those of its prompt and control must each set
+        ``can_swap_in_advance = True`` in their own class body, saying that
+        they render the same then as when served and run as usual when swapped
+        in; a subclass doesn't inherit this, as it may add behaviour that
+        isn't safe. The page also mustn't need what the server sets up as it
+        serves each page. Whether the server may turn down the page's answers
+        is a separate question, see :meth:`_may_reject_answers`.
+        """
+        undeclared = [
+            type(component).__name__
+            for component in self._swap_components()
+            if not vars(type(component)).get("can_swap_in_advance", False)
+        ]
+        if undeclared:
+            return f"{', '.join(undeclared)} doesn't set can_swap_in_advance"
+        reasons = {
+            "it has page modules, which show trials in advance instead": bool(
+                self.js_page_modules
+            ),
+            "it has a time limit": self.time_limit is not None,
+            "it records in the background": self.background_recording is not None,
+            "it needs a full page reload": self.requires_full_page_reload,
+            "it has a session_id": self.session_id is not None,
+        }
+        return next((reason for reason, found in reasons.items() if found), None)
 
     def layout_key(self, fragment_html, experiment, participant):
         """Identify the page's ``#main-body``, JavaScript and ``js_vars`` in a partial render.
@@ -3495,7 +3517,9 @@ class Timeline:
             or page.id != participant.elt_id
             or page.upcoming_pages is not None
             or page.is_timeline_hold
-            or not page._swap_in_advance()
+            or page.time_limit is not None
+            or page.background_recording is not None
+            or page.requires_full_page_reload
             or page.session_id is not None
             or page._may_reject_answers()
             or participant.group_removal_notice is not None

@@ -163,6 +163,12 @@ The browser waits for the server as usual when:
   :class:`~psynet.modular_page.NumberControl`, which ask for a missing answer;
 * either page has a ``time_limit``, background recording, a ``session_id`` or
   a full page reload;
+* the next page isn't built from components that allow it, such as an
+  :class:`~psynet.page.InfoPage` or a
+  :class:`~psynet.modular_page.ModularPage` whose prompt and control set
+  ``can_swap_in_advance = True`` (see
+  :ref:`the trial maker guide <prepared_trials_swapped_in>` for the built-in
+  ones);
 * the next page is a chat page, or one of its prompts or controls adds
   JavaScript variables for the participant;
 * the answer includes a recording or another file to upload.
