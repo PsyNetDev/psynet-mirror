@@ -158,6 +158,8 @@ test("an answer that couldn't be sent brings its picture back", { tag: "@inplace
     await participant.evaluate(() => (psynet.nextPagePending = true));
     await participant.getByRole("button", { name: "5", exact: true }).click();
     await expect(picture).toHaveAttribute("alt", "red circle");
+    // Visible again once the trial is back and can be answered.
+    await expect(picture).toBeVisible();
     await participant.evaluate(() => (psynet.nextPagePending = false));
 
     // As while the page is still loading: the picture stays under the alert.
@@ -168,6 +170,7 @@ test("an answer that couldn't be sent brings its picture back", { tag: "@inplace
     await participant.evaluate(() => (psynet.pageReady = true));
     await participant.locator("#alert-button").click();
     await expect(picture).toHaveAttribute("alt", "red circle");
+    await expect(picture).toBeVisible();
     await participant.getByRole("button", { name: "5", exact: true }).click();
     await expect(picture).toHaveAttribute("alt", "orange triangle", { timeout: STEP_TIMEOUT_MS });
     await assertNoBackendError(participant);

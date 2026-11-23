@@ -2767,12 +2767,15 @@ class Page(Elt):
 
         Only page modules can, as their ``update`` shows each trial, and only
         on pages that need nothing PsyNet sets up for each page: a time limit,
-        background recording, media or a full page reload.
+        recording, media or a full page reload.
         """
+        from .modular_page import RecordControl
+
         return (
             bool(self.js_page_modules)
             and self.time_limit is None
             and self.background_recording is None
+            and not isinstance(getattr(self, "control", None), RecordControl)
             and not self.requires_full_page_reload
             and not self.media.urls
         )

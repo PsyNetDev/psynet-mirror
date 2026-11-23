@@ -864,9 +864,10 @@
       if (answers.sending) return;
       answers.sending = true;
       let retry = false;
+      let entry;
       try {
         while (psynet.answers === answers && answers.queue.length) {
-          let entry = answers.queue[0];
+          entry = answers.queue[0];
           answers.showAgain = false;
           let accepted = await psynet.nextPage(
             entry.value,
@@ -887,7 +888,8 @@
         answers.sending = false;
       }
       if (retry) {
-        // Show the rejected trial again.
+        // Show the rejected trial again, with the comments made on it.
+        psynet.comments.unshift(...(entry.metadata.comments ?? []));
         answers.queue = [];
         answers.showAgain = false;
         await psynet.updatePageModules(0);
@@ -4777,14 +4779,21 @@
     // The server may have accepted the answer, and an error page would lose its
     // recordings. Let the participant resend the same submission instead, so the
     // server can recover its original reply.
-    let offerRecordingResend = function (request) {
+    let offerRecordingResend = async function (request, options) {
       psynet.log.warn(
         `Recording submission outcome unknown (HTTP ${request.status}); keeping it for a resend.`,
       );
-      psynet.alert(
+      let message =
         (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.unconfirmed ||
-          "We could not confirm that your answer was received. Please check your connection and press Next again.",
-      );
+        "We could not confirm that your answer was received. Please check your connection and press Next again.";
+      if (options.background) {
+        // Showing the trial again lets the participant answer, which resends.
+        psynet.answers.handle = null;
+        psynet.answers.showAgain = true;
+        await psynet.alert(message);
+        return;
+      }
+      psynet.alert(message);
       psynet.restoreSubmissionControlState();
     };
 
@@ -4987,7 +4996,7 @@
               } else if (Array.isArray(sources) && [0, 502, 503, 504].includes(request.status)) {
                 // Only a transport failure leaves acceptance unknown; PsyNet's
                 // own error replies go to its error recovery as before.
-                offerRecordingResend(request);
+                await offerRecordingResend(request, options);
               } else {
                 psynet.log.debug("Something went wrong.");
                 onErrorResponse(request);
@@ -5000,7 +5009,7 @@
               } else if (Array.isArray(sources) && unconfirmedRecordingSubmission) {
                 // The reply could not be read, so acceptance is still unknown.
                 psynet.log.warn(error.stack || String(error));
-                offerRecordingResend(request);
+                await offerRecordingResend(request, options);
               } else if (psynetTemplateData.flags.inplaceTimelineTransitions) {
                 await psynet.handleTimelineTransitionFailure(error);
               } else {
