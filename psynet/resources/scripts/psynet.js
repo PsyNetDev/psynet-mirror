@@ -4188,6 +4188,10 @@
         return false;
       }
       if (!options.background) {
+        if (psynet.answers.waiting) {
+          psynet.log.info("Blocked nextPage because an answer is waiting.");
+          return false;
+        }
         if (psynet.nextPagePending && !psynet.answers.sending) {
           // Something other than an answer given in advance, such as a
           // barrier's release, is being sent.
@@ -4211,9 +4215,21 @@
           // Answers given in advance are sent first. This page's answer is
           // dropped unless they all were and the page is still on screen.
           let generation = psynet.pageModuleGeneration;
+          // The time taken and events end when the participant answered.
+          metadata = {
+            time_taken: (new Date() - psynet.pageLoadTime) / 1000,
+            event_log: [...psynet.trial.eventLog],
+            ...(metadata === undefined ? staged.metadata : metadata),
+          };
+          answers.waiting = true;
           psynet.setTimelineTransitionBusy(true);
-          let result = await answers.sending;
-          psynet.setTimelineTransitionBusy(false);
+          let result;
+          try {
+            result = await answers.sending;
+          } finally {
+            answers.waiting = false;
+            psynet.setTimelineTransitionBusy(false);
+          }
           if (
             !result.sent ||
             psynet.answers !== answers ||

@@ -146,3 +146,35 @@ describe("prefetch after adopting a reply mid-swap", () => {
     assert.deepEqual([...psynet.media.prefetched.keys()], ["/b.wav"]);
   });
 });
+
+const nextPageCode = SOURCE.match(/psynet\.nextPage = async function[\s\S]*?\n    \};/)[0];
+
+describe("nextPage while answers given in advance are sent", () => {
+  it("times the answer from the click and ignores a second click", async () => {
+    let finishSending;
+    const submitted = [];
+    const psynet = {
+      pageReady: true,
+      pageLoadTime: new Date(Date.now() - 500),
+      trial: { eventLog: ["promptStart"] },
+      response: { staged: { blobs: {} } },
+      var: {},
+      log: { info() {} },
+      answers: { sending: new Promise((resolve) => (finishSending = resolve)) },
+      nextRenderedPage: () => null,
+      setTimelineTransitionBusy() {},
+      sendSubmission: async (rawAnswer, metadata) => submitted.push([rawAnswer, metadata]),
+    };
+    new Function("psynet", nextPageCode)(psynet);
+    const first = psynet.nextPage("A");
+    assert.equal(await psynet.nextPage("B"), false);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    finishSending({ sent: true });
+    await first;
+    assert.equal(submitted.length, 1);
+    const [answer, metadata] = submitted[0];
+    assert.equal(answer, "A");
+    assert.ok(metadata.time_taken < 0.7, `time_taken was ${metadata.time_taken}`);
+    assert.deepEqual(metadata.event_log, ["promptStart"]);
+  });
+});
