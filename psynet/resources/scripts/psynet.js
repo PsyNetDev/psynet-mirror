@@ -1981,9 +1981,23 @@
       psynet.ensureStylesheetLinks(fragment.template.content);
       psynet.applyInlinePageStyles(fragment.template.content);
 
+      let shownProgress = document.getElementById("timeline-progress-bar")?.style.width;
       fragment.replacements.forEach(({ currentElement, nextElement }) => {
         currentElement.replaceWith(nextElement);
       });
+      // Slide the new progress bar from the old width rather than jump.
+      let progressBar = document.getElementById("timeline-progress-bar");
+      if (
+        progressBar &&
+        shownProgress &&
+        shownProgress !== progressBar.style.width &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        progressBar.animate(
+          [{ width: shownProgress }, { width: progressBar.style.width }],
+          { duration: 600, easing: "ease" },
+        );
+      }
 
       let root = document.getElementById("timeline-root");
       (fragment.optionalChanges || []).forEach(({ currentElement, nextElement }) => {
@@ -5257,7 +5271,9 @@
   })();
 
   let updateProgressAndReward = function () {
-    if (psynet.uniqueId !== undefined) {
+    // Until queued answers reach the server, it reports the progress from
+    // before them, while a page shown in advance already has the new one.
+    if (psynet.uniqueId !== undefined && !psynet.answers.queue.length) {
       $.ajax({
         url: "/timeline/progress_and_reward",
         cache: false,
