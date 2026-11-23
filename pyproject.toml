@@ -208,7 +208,9 @@ DEP002 = ["rpdb"]
 DEP004 = ["repp", "openai", "statsmodels"]
 # Imported only to detect Jupyter; PsyNet works without it.
 DEP001 = ["IPython"]
-DEP003 = ["IPython"]
+# IPython is optional; pydantic pins its exact pydantic-core version (imported
+# directly by live_game for to_jsonable_python).
+DEP003 = ["IPython", "pydantic_core"]
 
 [tool.ruff]
 line-length = 88
