@@ -33,8 +33,10 @@ test("Back shows the previous page at once and never returns to a question", {
       await route.continue();
     });
 
+    // A page that the next page can go back to shows Back disabled, so it
+    // doesn't appear from nowhere on the next page.
     await show("Welcome!");
-    await expect(back).toHaveCount(0);
+    await expect(back).toBeDisabled();
     const nextBox = await nextButton.boundingBox();
     await nextButton.click();
     await show("Instructions, page 1 of 3");
@@ -69,10 +71,10 @@ test("Back shows the previous page at once and never returns to a question", {
 
     // ...but nothing goes back to the question, and the last page opts out.
     await show("Thanks!");
-    await expect(back).toHaveCount(0);
+    await expect(back).toBeDisabled();
     await nextButton.click();
     await show("a run of just two pages");
-    await expect(back).toBeVisible();
+    await expect(back).toBeEnabled();
     await nextButton.click();
     await show("hides its Back button");
     await expect(back).toHaveCount(0);

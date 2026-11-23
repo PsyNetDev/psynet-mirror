@@ -58,24 +58,30 @@
     </button>
 {% endmacro %}
 
-{% macro back_button() %}
-    <script>
-        psynet.trial.onEvent("trialConstruct", function() {
-            let button = document.getElementById("back-button");
-            if (!button) {
-                return;
-            }
-            psynet.addPageEventListener(button, "click", function() {
-                psynet.captureSubmissionControlState();
-                psynet.showSubmissionSpinner(button);
-                psynet.goBack();
+{% macro back_button(disabled=False) %}
+    {% if disabled %}
+        <button type="button" id="back-button" class="btn btn-outline-secondary btn-lg psynet-back-button" disabled>
+            {{ gettext("Back") }}
+        </button>
+    {% else %}
+        <script>
+            psynet.trial.onEvent("trialConstruct", function() {
+                let button = document.getElementById("back-button");
+                if (!button) {
+                    return;
+                }
+                psynet.addPageEventListener(button, "click", function() {
+                    psynet.captureSubmissionControlState();
+                    psynet.showSubmissionSpinner(button);
+                    psynet.goBack();
+                });
             });
-        });
-    </script>
+        </script>
 
-    <button type="button" id="back-button" class="btn btn-outline-secondary btn-lg submit psynet-back-button">
-        {{ gettext("Back") }}
-    </button>
+        <button type="button" id="back-button" class="btn btn-outline-secondary btn-lg submit psynet-back-button">
+            {{ gettext("Back") }}
+        </button>
+    {% endif %}
 {% endmacro %}
 
 {% macro reset_button(params) %}

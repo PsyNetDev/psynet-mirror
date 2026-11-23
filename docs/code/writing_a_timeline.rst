@@ -201,6 +201,9 @@ pages, and the first page after a code block, a condition or the start of a
 module, can't be gone back to. Pages whose controls answer on click, such
 as :class:`~psynet.modular_page.PushButtonControl`, have no Back button.
 
+A page that the next page can go back to shows Back disabled, so it doesn't
+appear from nowhere on the next page. Other pages have none.
+
 To hide the Back button on a page, pass ``show_back_button=False``:
 
 .. code-block:: python

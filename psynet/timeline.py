@@ -2490,10 +2490,7 @@ class Page(Elt):
             "trial_progress_display_config": self.progress_display,
             "attributes": self.attributes,
             "contents": self.contents,
-            "show_back_button": experiment.timeline._page_to_go_back_to(
-                participant, self
-            )
-            is not None,
+            "back_button": experiment.timeline._back_button(participant, self),
             # A reply carries these beside its fragment.
             "upcoming_pages": (
                 None
@@ -3486,44 +3483,72 @@ class Timeline:
         return None
 
     def _page_to_go_back_to(self, participant, page):
-        """The timeline page before ``page``, if the participant can go back to it.
+        """The timeline page before ``page``, if the participant can go back to it."""
+        if self._back_button(participant, page) == "enabled":
+            branch, index = page.id
+            return self.elts[branch][index - 1]
+        return None
 
-        As with pages rendered in advance, both pages must be next to each
-        other directly in the timeline, so no code runs between them, and
-        must show the same to every participant. Back sits beside Next, so
-        ``page`` must have a Next button. The earlier page must collect no
-        answer, so going back never revises one, and must not override
-        ``on_complete``, which would run again.
+    def _back_button(self, participant, page):
+        """How ``page`` shows its Back button: ``"enabled"``, ``"disabled"`` or ``None``.
+
+        Back is enabled when the page can go back to the page before it, as
+        described in :meth:`_can_go_back`. A page that the next page can go
+        back to shows it disabled, so it doesn't appear from nowhere on the
+        next page.
         """
-        from .modular_page import ModularPage, NextButton, NullControl
+        from .modular_page import NextButton
         from .utils import get_config
 
         position = page.id
         if (
             position is None
             or len(position) != 2
-            or position[1] == 0
-            or not page.show_back_button
-            or not any(isinstance(b, NextButton) for b in getattr(page, "buttons", ()))
-            or page.is_timeline_hold
-            or not page._shows_the_same_to_everyone()
-            or page._recording_capture_sources()
             or participant.answer_accumulation_depth
             or participant.group_removal_notice is not None
             or not get_config().get("inplace_timeline_transitions")
         ):
             return None
         branch, index = position
-        previous = self.elts[branch][index - 1]
+        if self._can_go_back(branch, index):
+            return "enabled"
         if (
-            isinstance(previous, ModularPage)
+            self._can_go_back(branch, index + 1)
+            and page.show_back_button
+            and any(isinstance(b, NextButton) for b in getattr(page, "buttons", ()))
+        ):
+            return "disabled"
+        return None
+
+    def _can_go_back(self, branch, index):
+        """Whether the page at ``index`` in ``branch`` can go back to the page before it.
+
+        As with pages rendered in advance, both pages must be next to each
+        other directly in the timeline, so no code runs between them, and
+        must show the same to every participant. Back sits beside Next, so
+        the page must have a Next button. The earlier page must collect no
+        answer, so going back never revises one, and must not override
+        ``on_complete``, which would run again.
+        """
+        from .modular_page import ModularPage, NextButton, NullControl
+
+        elts = self.elts[branch]
+        if not 0 < index < len(elts):
+            return False
+        page, previous = elts[index], elts[index - 1]
+        return (
+            isinstance(page, Page)
+            and page.show_back_button
+            and any(isinstance(b, NextButton) for b in getattr(page, "buttons", ()))
+            and not page.is_timeline_hold
+            and page._shows_the_same_to_everyone()
+            and not page._recording_capture_sources()
+            and isinstance(previous, ModularPage)
             and isinstance(previous.control, NullControl)
             and not previous.is_timeline_hold
             and previous._shows_the_same_to_everyone()
             and type(previous).on_complete is Page.on_complete
-        ):
-            return previous
-        return None
+        )
 
     def go_back(self, experiment, participant):
         """Show the participant the page before the current one again.

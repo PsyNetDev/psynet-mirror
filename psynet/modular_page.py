@@ -2496,8 +2496,8 @@ class ModularPage(Page):
             return ""
 
         logic = [
-            '<div class="psynet-actions{% if show_back_button %} psynet-actions-with-back{% endif %}">',
-            "{% if show_back_button %}{{ psynet_controls.back_button() }}{% endif %}",
+            '<div class="psynet-actions{% if back_button %} psynet-actions-with-back{% endif %}">',
+            '{% if back_button %}{{ psynet_controls.back_button(back_button == "disabled") }}{% endif %}',
         ]
         for i, button in enumerate(self.buttons):
             logic.append(f"{{% set button_params = buttons[{i}] %}}")

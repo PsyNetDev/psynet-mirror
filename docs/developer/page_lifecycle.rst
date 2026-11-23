@@ -61,7 +61,7 @@ The same rules decide whether a top-level page can go back to the page before
 it (``Timeline._page_to_go_back_to``). In addition, the page must have a Next
 button, for Back to sit beside, and the earlier page must collect no answer
 (its control is a ``NullControl``), so going back never revises an answer.
-The render passes the result to the template as ``show_back_button``. The
+``Timeline._back_button`` also shows Back, disabled, on a page that the next page can go back to, and the render passes the result to the template as ``back_button``. The
 page also sends the browser the earlier page as ``previous_page``, rendered
 with the page UUID and progress it will have, like the pages rendered in
 advance (``Page._page_uuid`` and ``Page._progress``). The Back button queues a ``/response`` with
