@@ -78,4 +78,6 @@ def test_back_returns_to_pages_without_answers():
     # But no page goes back to the question, and the last page opts out.
     assert _template_data(bot)["previousPage"] is None
     bot.take_page()
+    assert "Thanks!" in _template_data(bot)["previousPage"]["html"]
+    bot.take_page()
     assert _template_data(bot)["previousPage"] is None

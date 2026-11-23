@@ -71,6 +71,9 @@ test("Back shows the previous page at once and never returns to a question", {
     await show("Thanks!");
     await expect(back).toHaveCount(0);
     await nextButton.click();
+    await show("a run of just two pages");
+    await expect(back).toBeVisible();
+    await nextButton.click();
     await show("hides its Back button");
     await expect(back).toHaveCount(0);
     await assertNoBackendError(participant);

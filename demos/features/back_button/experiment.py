@@ -9,7 +9,7 @@ class Exp(psynet.experiment.Experiment):
 
     timeline = Timeline(
         InfoPage(
-            "Welcome! This first page has no Back button, as there is nothing to go back to.",
+            "Welcome! There is nothing to go back to from this first page.",
             time_estimate=5,
         ),
         InfoPage(
@@ -33,8 +33,12 @@ class Exp(psynet.experiment.Experiment):
             time_estimate=5,
         ),
         InfoPage(
-            "Thanks! This page has no Back button, because going back would "
-            "mean answering the question again.",
+            "Thanks! Nothing goes back to the question, as that would mean "
+            "answering it again.",
+            time_estimate=5,
+        ),
+        InfoPage(
+            "This page and the one before it make a run of just two pages.",
             time_estimate=5,
         ),
         InfoPage(
