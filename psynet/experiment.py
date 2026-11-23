@@ -195,7 +195,6 @@ from .utils import (
     get_authenticated_session,
     get_logger,
     get_translator,
-    is_in_repo_experiment,
     keep_alive_session,
     loading_experiment_classes,
     log_time_taken,
@@ -966,10 +965,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
     debug_ssh_app : ``bool``
         Marks an SSH app as one that ``psynet debug ssh`` (or ``psynet
-        performance-test ssh``) deployed, which sets it. ``psynet destroy
-        ssh`` destroys such an app with a warning when it can't check the
-        app for pending async jobs, instead of refusing. Don't set it
-        yourself.
+        performance-test ssh``) deployed, which sets it. When ``psynet
+        destroy ssh`` cannot check such an app for pending async jobs, it
+        destroys the app instead of refusing. When the check runs, pending
+        jobs are handled as for any other app. Don't set it yourself.
         Default: ``False``.
 
     performance_test_app : ``bool``
@@ -2683,8 +2682,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             "notifier": "logger",
             "leave_comments_on_every_page": False,
             "force_incognito_mode": False,
-            "openai_default_model": "gpt-4o",
-            "openai_default_temperature": 0,
+            "openai_default_model": "gpt-6-luna",
             "host": "0.0.0.0",
             "initial_recruitment_size": INITIAL_RECRUITMENT_SIZE,
             "label": cls.get_experiment_folder_name(),
@@ -5161,8 +5159,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 ),
                 (
                     resources.files("psynet")
-                    / "resources/libraries/jQuery/jquery-3.7.1.min.js",
-                    "/static/scripts/jquery-3.7.1.min.js",
+                    / "resources/libraries/jQuery/jquery-4.0.0.min.js",
+                    "/static/scripts/jquery-4.0.0.min.js",
                 ),
                 (
                     resources.files("psynet")
@@ -5285,6 +5283,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         config.register("currency", str)
         config.register("default_translator", str)
         config.register("enable_google_search_console", bool)
+        # No longer used; still registered so that config files that set them load.
         config.register("google_translate_json_path", str, sensitive=True)
         config.register("google_translate_project_id", str, sensitive=True)
         config.register("initial_recruitment_size", int)
@@ -8458,41 +8457,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 f"{e} For a debug deploy, you can also skip the consent checks with "
                 "--no-consent."
             ) from None
-
-    def check_python_dependencies(self):
-        if os.environ.get("SKIP_DEPENDENCY_CHECK"):
-            return
-        if is_in_repo_experiment():
-            if Path("constraints.txt").exists():
-                logger.warning(
-                    "Ignoring constraints.txt in in-repo experiment %s; in-repo "
-                    "experiments use PsyNet's shared development environment "
-                    "instead of per-demo constraint pins.",
-                    Path.cwd(),
-                )
-            return
-        extra_deps = self.notifier.python_dependencies
-        if not extra_deps:
-            return
-        constraints_path = Path("constraints.txt")
-        constraints = (
-            constraints_path.read_text().splitlines()
-            if constraints_path.exists()
-            else []
-        )
-        for dep in extra_deps:
-            self.check_python_dependency(dep, constraints)
-
-    def check_python_dependency(self, dep, constraints):
-        for constraint in constraints:
-            if constraint.startswith(f"{dep}=="):
-                return
-        raise ValueError(
-            f"Missing Python dependency: {dep}. "
-            f"Please make sure it's installed locally (``pip install {dep}``), "
-            f"then add ``{dep}`` to requirements.txt, "
-            "then regenerate constraints.txt (``psynet generate-constraints``)."
-        )
 
 
 Experiment.SuccessfulEndLogic = SuccessfulEndLogic

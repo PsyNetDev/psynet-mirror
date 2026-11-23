@@ -249,33 +249,6 @@ def test_vendored_consent_package_init_is_not_gitignored():
         )
 
 
-def test_skipped_dependency_check_does_not_require_constraints(monkeypatch):
-    from psynet.experiment import Experiment
-
-    monkeypatch.setenv("SKIP_DEPENDENCY_CHECK", "1")
-    Experiment.check_python_dependencies(object())
-
-
-def test_bundled_demo_dependency_check_does_not_require_constraints(monkeypatch):
-    from psynet.experiment import Experiment
-
-    monkeypatch.delenv("SKIP_DEPENDENCY_CHECK", raising=False)
-    monkeypatch.setattr("psynet.experiment.is_in_repo_experiment", lambda: True)
-    Experiment.check_python_dependencies(object())
-
-
-def test_bundled_demo_dependency_check_ignores_leftover_constraints(
-    tmp_path, monkeypatch
-):
-    from psynet.experiment import Experiment
-
-    monkeypatch.delenv("SKIP_DEPENDENCY_CHECK", raising=False)
-    monkeypatch.setattr("psynet.experiment.is_in_repo_experiment", lambda: True)
-    (tmp_path / "constraints.txt").write_text("some-package==1.0.0\n")
-    with working_directory(tmp_path):
-        Experiment.check_python_dependencies(object())
-
-
 def test_in_experiment_directory_sets_skip_only_outside_repo(tmp_path, monkeypatch):
     """Temp experiment dirs without constraints still get SKIP_DEPENDENCY_CHECK."""
     import psynet.pytest_psynet as pytest_psynet

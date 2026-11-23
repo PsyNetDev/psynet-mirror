@@ -72,15 +72,13 @@ was not the limit: the experiment used under 5 GB.
 
 .. warning::
 
-   Dallinger 12.4 and earlier cap every docker-ssh server at about 200
-   participants at a time, whatever its size, because of the database
-   connection pool: in the same test, the response time rose to over 400 ms
-   at 320 bots while most of the CPU sat idle. The figures in this section
-   assume a Dallinger release that includes
-   `Dallinger#10051 <https://github.com/Dallinger/Dallinger/pull/10051>`_,
-   which is not yet released. Even then, only apps deployed with Cloudflare
-   ingress get the larger pool; classic-ingress apps share one database
-   server and stay at about 200.
+   The figures in this section apply to apps deployed with Cloudflare
+   ingress, which have their own database server and a larger database
+   connection pool. Classic-ingress apps share one database server, whose
+   smaller pool caps each app at about 200 participants at a time, whatever
+   the server's size: in the same test, the response time rose to over
+   400 ms at 320 bots while most of the CPU sat idle. Dallinger 12.4 and
+   earlier have the smaller pool for every app.
 
 A cloud vCPU is one CPU thread, often on a slower core, and most experiments
 do more work per page than this one, so as a starting point plan on 20 to 30
@@ -457,6 +455,31 @@ the shared services:
 .. code-block:: bash
 
     dallinger docker-ssh servers upgrade --host my-server.example.org
+
+.. _upgrading_to_postgresql_18:
+
+On a server set up by Dallinger 13.0 or earlier, the upgrade also moves the
+shared database from PostgreSQL 12 to 18. While it copies the databases, it
+stops every classic app on the server, so run it when no app has participants.
+The move normally runs without problems, but as a precaution, first export
+the data of the apps you still need with ``psynet export ssh --app <app>``
+(see :doc:`/data/exporting_data`). On a server that runs PostgreSQL 18, new
+or moved, no one may deploy with PsyNet 13 or earlier or with PsyNet
+14.0.0rc1 to rc3, which use Dallinger 12 or earlier. Nor may anyone run
+``servers upgrade`` on it with Dallinger 13.0. Any of these can take every
+classic app on the server offline. Notify everyone who deploys to the server.
+
+A Cloudflare-ingress app runs its own database, which ``servers upgrade``
+doesn't move. An app deployed with Dallinger 13.0 or earlier keeps PostgreSQL
+12 when you update it with ``--update``. To move it, export its data with
+``psynet export ssh --app <app>``, destroy it with ``psynet destroy ssh``, and
+deploy it again under the same name with ``--archive`` (see
+:doc:`/deploy/reference/deploy_from_archive`).
+
+`Moving to PostgreSQL 18
+<https://dallinger.readthedocs.io/latest/docker_support.html#moving-to-postgresql-18>`__
+in the Dallinger documentation gives the details, including how to remove the
+old database volume afterwards.
 
 The upgrade writes the Let's Encrypt contact email into the server's
 ``Caddyfile``: the one you pass with ``--contact-email``, else the one saved

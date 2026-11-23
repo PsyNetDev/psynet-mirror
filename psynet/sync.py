@@ -197,13 +197,14 @@ from psynet.db import (
 )
 from psynet.error import ErrorRecord
 from psynet.field import PythonClass, PythonDict, PythonObject
-from psynet.page import UnsuccessfulEndPage
+from psynet.page import UnsuccessfulEndPage, WaitPage
 from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
 from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
+    PageMaker,
     _is_timeline_hold,
     _trial_owning_page,
     conditional,
@@ -900,6 +901,38 @@ class _ReadOnlyParticipantList(list):
     __delitem__ = __iadd__ = __imul__ = __setitem__ = _raise_mutation_error
 
 
+# How long the wait page shown for a pass of waiting_logic without a page
+# lasts before the waiting logic runs again.
+_EMPTY_WAITING_PASS_SECONDS = 2.0
+
+
+# Participant.__dict__ key: page_count when each barrier's current pass of
+# waiting_logic began. A pass that shows no page starts and ends within one
+# Timeline.advance_page call, which stops at the first page, so the value
+# never needs to outlive the request. A pass that began in an earlier request
+# showed a page: a freshly loaded participant object has no entry for it, and
+# a reused one (expire_all keeps unmapped keys) holds a count from before
+# Page.consume raised page_count, so the comparison rejects it, and the next
+# pass overwrites it.
+_WAITING_PASS_PAGE_COUNTS = "_psynet_waiting_pass_page_counts"
+
+
+class _EmptyWaitingPassPage(WaitPage):
+    """Short wait shown when a pass of ``waiting_logic`` shows no page.
+
+    It saves no answer, and a release ends it at once, without the
+    barrier's ``release_grace`` countdown (see :func:`waiting_page_config`).
+    """
+
+    def __init__(self):
+        _p = get_translator(context=True)
+        super().__init__(
+            wait_time=_EMPTY_WAITING_PASS_SECONDS,
+            content=_p("timeline_hold", "Waiting for other participants…"),
+            save_answer=False,
+        )
+
+
 def _expected_repetitions(waiting_logic, expected_wait, default):
     """Return how often ``waiting_logic`` is expected to run to fill ``expected_wait``.
 
@@ -987,7 +1020,15 @@ class Barrier(EltCollection):
         one short trial or page per pass (the loop repeats it), such as
         ``PageMaker(trial_maker.cue_trial, ...)`` in the ``sync_quorum``
         demo: a release then fails at most the trial on screen and creates
-        no unseen trials (see ``release_grace``). A barrier with
+        no unseen trials (see ``release_grace``). A participant whose
+        arrival releases them at once, such as the one who completes a
+        group, normally doesn't start ``waiting_logic``. Participants who
+        arrive at the same moment don't see each other's arrivals yet, so
+        each of them may still start it, and the release then fails those
+        unseen trials. A pass
+        that shows no page, for example because the trial maker has no
+        trial left for the participant, shows a short waiting page
+        instead. A barrier with
         ``waiting_logic`` can't be inside a trial's own pages, such as in
         ``Trial.show_trial``; use ``waiting_screen`` there.
 
@@ -1073,7 +1114,9 @@ class Barrier(EltCollection):
         shows no feedback, and doesn't count towards the trial maker's
         targets of completed trials (it still counts towards
         ``max_trials_per_block`` and ``n_created_trials``).
-        ``None`` lets each waiting page run to its end. Default: 3 seconds.
+        ``None`` lets each page supplied in ``waiting_logic`` run to its
+        end; the short page PsyNet shows after a pass with nothing to show
+        still ends as soon as the participant is released. Default: 3 seconds.
         Only used with ``waiting_logic``; passing it without raises an error.
     """
 
@@ -1189,7 +1232,10 @@ class Barrier(EltCollection):
         """Return whether evaluating this visit would release anyone.
 
         ``GET /timeline`` uses this to decide whether to wait for the visit
-        claim. It must not mutate participants, groups, or the session.
+        claim, and a barrier with ``waiting_logic`` uses it on each arrival
+        to decide whether to skip the first pass of ``waiting_logic``
+        (showing a short wait page instead). It must not mutate
+        participants, groups, or the session.
         Last-arrival skip-in-one-GET waits only when this is true. Custom
         barriers that override :meth:`choose_who_to_release` should override
         this too. The default is ``True`` whenever anyone is waiting, so a
@@ -1212,7 +1258,27 @@ class Barrier(EltCollection):
                 condition=lambda participant: (
                     not self.can_participant_exit(participant)
                 ),
-                logic=self.waiting_logic,
+                logic=join(
+                    CodeBlock(self._start_waiting_pass),
+                    conditional(
+                        "waiting_pass_runs_logic",
+                        lambda participant: (
+                            not self._arrival_releases_at_once(participant)
+                        ),
+                        logic_if_true=self.waiting_logic,
+                        log_chosen_branch=False,
+                    ),
+                    conditional(
+                        "waiting_pass_showed_no_page",
+                        self._waiting_pass_showed_no_page,
+                        logic_if_true=PageMaker(
+                            _EmptyWaitingPassPage,
+                            time_estimate=_EMPTY_WAITING_PASS_SECONDS,
+                        ),
+                        time_estimate=0,
+                        log_chosen_branch=False,
+                    ),
+                ),
                 expected_repetitions=self._waiting_logic_repetitions,
                 max_loop_time=self._arrival_max_wait_time,
                 fix_time_credit=self.fix_time_credit,
@@ -1240,6 +1306,52 @@ class Barrier(EltCollection):
             if elt is not leave:
                 elt.links.setdefault("barrier", self)
         return elts
+
+    def _start_waiting_pass(self, participant):
+        """Remember how many pages the participant had seen when this pass of ``waiting_logic`` began."""
+        counts = participant.__dict__.setdefault(_WAITING_PASS_PAGE_COUNTS, {})
+        counts[self.id] = participant.page_count
+
+    def _arrival_releases_at_once(self, participant):
+        """Return whether the release check queued by this request's arrival is expected to release.
+
+        The check runs after the arrival commits, so the participant who
+        completes a group would otherwise start a pass of ``waiting_logic``,
+        such as a trial, that the release then fails unseen. Their pass
+        shows the short wait page instead, which the release skips. A wrong
+        "yes" only costs that wait page. The peek can't see arrivals that
+        other requests haven't committed yet, so simultaneous arrivals may
+        each get "no"; the release then fails the unseen trial as usual.
+        Waiting for those requests would serialise every arrival.
+        """
+        link = participant.active_barriers.get(self.id)
+        if link is None or link.barrier_instance is None:
+            return False
+        instance_id = link.barrier_instance.id
+        if instance_id not in _pending_barrier_checks.peek():
+            return False
+        # The peek rolls back a savepoint, which must not undo the arrival.
+        db.session.flush()
+        return _visit_check_would_release(instance_id)
+
+    def _waiting_pass_showed_no_page(self, participant):
+        """Return whether this pass of ``waiting_logic`` showed no page and the participant still waits.
+
+        Without a page, the waiting loop would repeat on the server until
+        ``max_wait_time``; a short wait page lets the next poll try again.
+        """
+        counts = participant.__dict__.get(_WAITING_PASS_PAGE_COUNTS, {})
+        if counts.pop(self.id, None) != participant.page_count:
+            return False
+        if self.can_participant_exit(participant):
+            return False
+        logger.debug(
+            "Barrier '%s': waiting_logic showed participant %s no page; "
+            "showing a wait page.",
+            self.id,
+            participant.id,
+        )
+        return True
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Release the participant's active barrier link after a max-wait timeout."""
@@ -6699,7 +6811,9 @@ def _interruptible_waiting_barrier(page, participant):
     Every such page may end, including a trial's; see :func:`_end_waiting_page`.
     """
     barrier = (getattr(page, "links", None) or {}).get("barrier")
-    if not isinstance(barrier, Barrier) or barrier.release_grace is None:
+    if not isinstance(barrier, Barrier):
+        return None
+    if barrier.release_grace is None and not isinstance(page, _EmptyWaitingPassPage):
         return None
     if participant.waiting_barrier_id != barrier.id:
         return None
@@ -6786,10 +6900,13 @@ def waiting_page_config(page, participant):
         return None
     barrier = _interruptible_waiting_barrier(page, participant)
     if barrier is not None:
+        empty_pass = isinstance(page, _EmptyWaitingPassPage)
         return {
             "barrier_id": barrier.id,
-            "release_grace_ms": round(barrier.release_grace * 1000),
-            "release_notice": _release_notice(barrier),
+            "release_grace_ms": (
+                0 if empty_pass else round(barrier.release_grace * 1000)
+            ),
+            "release_notice": None if empty_pass else _release_notice(barrier),
         }
     barrier_id = participant.waiting_barrier_id
     if (

@@ -93,7 +93,7 @@ deployments:
 * idle hibernation does not put the app to sleep while any job is pending;
 * ``psynet export ssh`` and ``psynet export local`` end with a warning that
   jobs are still pending, because the export does not contain their
-  results (``psynet export heroku`` does not check); if the jobs cannot be
+  results; if the jobs cannot be
   checked, the export prints a warning and completes;
 * ``psynet destroy ssh`` wakes the app if it is asleep, then refuses to
   destroy it while jobs are pending, or asks you to confirm when run

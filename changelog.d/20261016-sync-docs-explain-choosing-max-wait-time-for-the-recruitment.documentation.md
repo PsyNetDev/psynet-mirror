@@ -1,1 +1,0 @@
-The synchronization guide explains how to choose `max_wait_time` for the recruitment rate so the grouper fails few participants, and "Setting up a server" gives measured capacities for experiments whose participants wait for each other at barriers.
