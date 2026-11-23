@@ -87,8 +87,6 @@ def test_the_last_page_tells_a_removed_member_why_the_story_ended_early(
     in_experiment_directory, db_session
 ):
     demo, group, (first, second, third) = _story_group(get_experiment())
-    for participant in (first, second, third):
-        demo.remember_group(participant)
     _play_turn(demo, 0, [first, second, third], "Once upon a time.")
     group.remove_participant(second, reason="removed_by_experimenter")
     db.session.commit()

@@ -9,7 +9,8 @@ one cued round, `StoryTurn.cue(..., round=turn)`, whose definition stores the
 turn's writer, chosen once with `group.seats`. The writer stores their
 sentence in `trial.group_round.var` as soon as they submit it, and the last page reads the
 story with `SyncGroup.rounds("story")`, which also works after the group has
-ended. The bot test plays a full story in which one writer runs out of time.
+ended. The bot test plays a story in which one writer runs out of time and the last
+writer goes quiet and is failed.
 
 ## Dropouts and edge cases
 
