@@ -63,8 +63,10 @@ test(
   async ({ page, context }) => {
     await context.addInitScript(() => {
       const mockStream = { getTracks: () => [{ stop: () => {} }] };
-      if (navigator.mediaDevices) {
-        navigator.mediaDevices.getUserMedia = async () => mockStream;
+      if (window.MediaDevices) {
+        // Patch the prototype: WebKit drops a getUserMedia set on the
+        // navigator.mediaDevices instance before the page uses it.
+        MediaDevices.prototype.getUserMedia = async () => mockStream;
       }
     });
 
@@ -86,8 +88,10 @@ test(
   { tag: "@both" },
   async ({ page, context }) => {
     await context.addInitScript(() => {
-      if (navigator.mediaDevices) {
-        navigator.mediaDevices.getUserMedia = async (constraints) => {
+      if (window.MediaDevices) {
+        // Patch the prototype: WebKit drops a getUserMedia set on the
+        // navigator.mediaDevices instance before the page uses it.
+        MediaDevices.prototype.getUserMedia = async (constraints) => {
           if (constraints.audio) {
             throw new DOMException("Permission denied", "NotAllowedError");
           }
@@ -120,8 +124,10 @@ test(
   { tag: "@both" },
   async ({ page, context }) => {
     await context.addInitScript(() => {
-      if (navigator.mediaDevices) {
-        navigator.mediaDevices.getUserMedia = async (constraints) => {
+      if (window.MediaDevices) {
+        // Patch the prototype: WebKit drops a getUserMedia set on the
+        // navigator.mediaDevices instance before the page uses it.
+        MediaDevices.prototype.getUserMedia = async (constraints) => {
           if (constraints.video) {
             throw new DOMException("Permission denied", "NotAllowedError");
           }

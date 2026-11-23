@@ -1,1 +1,0 @@
-The payment page shows `wage_per_hour` and `currency` in `config.txt`, the form new experiments already use, and explains how Prolific lists a study's hourly rate from the base payment alone. The implement-experiment skill asks agents to set the Prolific listing from `psynet estimate`.

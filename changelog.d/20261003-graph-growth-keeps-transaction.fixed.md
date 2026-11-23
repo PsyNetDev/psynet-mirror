@@ -1,1 +1,0 @@
-Growing a graph network no longer commits the surrounding transaction partway through, so a participant's response is saved all-or-nothing and the growth poller keeps its network lock until growth finishes.

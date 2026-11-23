@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from dallinger import db
-from sqlalchemy import Column, ForeignKey, Integer
+from sqlalchemy import Column, ForeignKey, Integer, update
 from sqlalchemy.orm import relationship
 
 from psynet.asset import Asset, ExternalAsset
@@ -15,6 +15,7 @@ from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
+from psynet.sync import SimpleSyncGroup, SyncGroupRound
 from psynet.timeline import Module, StartAccumulateAnswers
 from psynet.trial.main import GenericTrialNode, Trial
 
@@ -239,6 +240,43 @@ def test_a_trial_ending_in_the_request_that_cued_it_can_pay_its_participant(
         participant.current_trial.on_finalized()
 
     assert participant.performance_reward == 0.5
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
+@pytest.mark.usefixtures("in_experiment_directory")
+def test_a_trial_s_reward_adds_to_one_a_live_game_stored_since_it_was_loaded(
+    db_session, participant_and_node, monkeypatch
+):
+    experiment, participant, node = participant_and_node
+    monkeypatch.setattr(
+        RewardTrial,
+        "get_default_parent_node",
+        classmethod(lambda cls, participant, experiment: node),
+    )
+    RewardTrial.cue(definition={})[0].consume(experiment, participant)
+    trial = participant.current_trial
+    # A live game is played in a trial of a group's round.
+    group = SimpleSyncGroup(group_type="pair", initial_group_size=1)
+    db.session.add(group)
+    db.session.flush()
+    group_round = SyncGroupRound(sync_group_id=group.id, module_id="game", number=0)
+    db.session.add(group_round)
+    db.session.flush()
+    trial.sync_group_round_id = group_round.id
+    db.session.flush()
+    # As a live game's record job does, in another transaction.
+    db.session.execute(
+        update(Trial)
+        .where(Trial.id == trial.id)
+        .values(performance_reward=0.25)
+        .execution_options(synchronize_session=False)
+    )
+
+    trial.on_finalized()
+
+    assert trial.performance_reward == 0.75
 
 
 @pytest.mark.parametrize(

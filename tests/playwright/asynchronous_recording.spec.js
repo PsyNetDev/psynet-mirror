@@ -6,7 +6,7 @@ const {
 } = require("./psynetHarness");
 
 for (const lostAcceptance of [false, true]) {
-test(`accepted video advances and plays deposited bytes (lost acceptance: ${lostAcceptance}) @inplace-only`, async ({ page, context }) => {
+test(`accepted video advances and plays deposited bytes (lost acceptance: ${lostAcceptance}) @inplace-only @media`, async ({ page, context }) => {
   test.setTimeout(120000);
   let lost = false;
   if (lostAcceptance) {
@@ -44,7 +44,7 @@ test(`accepted video advances and plays deposited bytes (lost acceptance: ${lost
 
 }
 
-test("manual resend after lost replies recovers the original upload slot @inplace-only", async ({ page, context }) => {
+test("manual resend after lost replies recovers the original upload slot @inplace-only @media", async ({ page, context }) => {
   // Every automatic attempt loses its reply. The participant is asked to press
   // Next again; that resend reuses the same submission and recovery secret, so
   // the server replays its original acceptance instead of rejecting a new one.
@@ -105,7 +105,7 @@ test("camera stream is kept on its recording page and released afterwards @inpla
   });
 });
 
-test("camera is released while waiting for the recording @inplace-only", async ({ page, context }) => {
+test("camera is released while waiting for the recording @inplace-only @media", async ({ page, context }) => {
   test.setTimeout(120000);
   let held;
   await context.route(/\/media-upload\/\d+$/, route => { held = route; });
@@ -136,7 +136,7 @@ test("camera is released while waiting for the recording @inplace-only", async (
 });
 
 for (const autoAdvance of [false, true]) {
-test(`legacy capture failure blocks submission until the page is reloaded (auto advance: ${autoAdvance}) @legacy-only`, async ({ page, context }) => {
+test(`legacy capture failure blocks submission until the page is reloaded (auto advance: ${autoAdvance}) @legacy-only @media`, async ({ page, context }) => {
   // The legacy path uploads the recording with the answer. An empty recording
   // must not be submittable: the participant is told to reload, which runs the
   // recording page again. With auto_advance, the automatic submit after the
@@ -226,7 +226,7 @@ test("stalled upload module permits independent navigation @inplace-only", async
   });
 });
 
-test("missing non-trial recording shows fallback without failing participant @inplace-only", async ({page, context}) => {
+test("missing non-trial recording shows fallback without failing participant @inplace-only @media", async ({page, context}) => {
   test.setTimeout(120000);
   await context.route(/\/media-upload\/\d+$/, route => route.fulfill({status:403, body:"Upload unavailable"}));
   await withExperiment(page, context, path.resolve("tests/playwright/experiments/asynchronous_recording"), async p => {

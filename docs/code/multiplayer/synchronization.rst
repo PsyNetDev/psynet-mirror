@@ -169,7 +169,7 @@ says why they left (see
 participant out of their group of that type, for example after their last
 round. The list has no guaranteed
 order. When you need a stable one, for example to assign roles or turns,
-use :func:`group_seats(group) <psynet.sync.group_seats>`, which numbers
+use :attr:`group.seats <psynet.sync.SyncGroup.seats>`, which numbers
 everyone who has been in the group by when they joined, and keeps the
 numbers when members leave (see the ``story_chain`` demo).
 ``sync_group.leader`` is the group's leader.
@@ -614,7 +614,8 @@ or to leave it out:
 
 By default the participant's last page stays on screen, greyed out, while
 they wait. To show something else instead, pass ``waiting_screen``; to give
-them something to do, such as filler trials, pass ``waiting_logic``
+them something to do, such as filler trials or
+:ref:`quiz questions <sync-waiting-quiz>`, pass ``waiting_logic``
 instead. A waiting screen can be text,
 a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
 button (``NullControl(show_next_button=False)``), or a module-level
@@ -680,7 +681,7 @@ have answered get a tick. A member has answered once they wait at a barrier
 of the group, typically the barrier
 after the decision page. A member who reached the barrier because their
 page's time limit ran out gets a grey dash instead
-(:func:`~psynet.sync.reached_barrier_after_time_limit`), and screen readers announce
+(:meth:`~psynet.sync.SyncGroup.reached_barrier_after_time_limit`), and screen readers announce
 that they ran out of time. Pass ``show_progress=False`` to
 hide the ticks.
 
@@ -711,9 +712,10 @@ bubble, as a dictionary from participant ID to answer; ``show_progress``
 then defaults to ``False``, and passing ``show_progress=True`` with
 ``answers`` raises an error. A member whose answer is
 ``None``, for example because they ran out of time, keeps their seat
-without a bubble. Participant variables
-store dictionary keys as strings, so a dictionary read back from one can be
-passed as it is; ``highlight`` takes string IDs too. Speech bubbles may
+without a bubble. Both ``answers`` and ``highlight`` are keyed by integer
+participant IDs; variables keep the type of their keys, so a dictionary
+stored as ``{t.participant_id: t.answer for t in trials}`` can be passed as
+it is. Speech bubbles may
 overlap a neighbour; hovering over or tapping a member brings their bubble to
 the front. Answers are shown as text; pass :class:`~markupsafe.Markup` for
 HTML such as an image. ``highlight`` marks members, with built-in styles for
@@ -836,7 +838,7 @@ are fixed or formed anew each round. For a worked example, with the
 group's results in ``group_round.var`` and the exports, see
 :ref:`rounds-one-trial-per-player` in the round-based tutorial. For a group
 that works through a stimulus set or a chain, use a trial maker with
-``sync_group_type`` instead (see :ref:`concept_groups` for how to choose,
+``sync_group_type`` instead (see :ref:`design-rounds-cued-or-synced` for how to choose,
 and :ref:`rounds of a trial maker <trial-maker-rounds>`).
 
 ``cue`` numbers each group's rounds by itself, from 0:
@@ -1224,9 +1226,14 @@ the maximum waiting time:
 
     A member who has started a page with a ``time_limit``, other than a
     waiting page, since the group last passed a barrier (or since being
-    admitted) is not late until that limit has run out plus 10 seconds, so
-    that an answer sent at the deadline can arrive. So the late limit need not be
-    longer than the pages' time limits. See
+    admitted) has their late limit counted from when that limit runs out plus
+    10 seconds, so that an answer sent at the deadline can arrive. So the late
+    limit needs to cover only the pages without a time limit: with a
+    30-second page and ``late_after=20``, a member who closes their tab on
+    the page is late 60 seconds after it started. A page without a time limit can say
+    when it ends at the latest with :meth:`~psynet.timeline.Page.ends_by`,
+    which counts in the same way; a live game's page does this (see
+    :doc:`live_games`). See
     :ref:`a worked example <rounds-slow-players>`.
 
     At a group's first barrier the late limit counts from when each member
@@ -1405,8 +1412,10 @@ settings together decide both fates:
 ``"fail"`` stops a pair or group from carrying on short-handed. Combined
 with ``late_action="leave_group"`` it would let the late member carry on
 while failing the partner who was on time, so the experiment rejects that
-combination when it loads; for a barrier it can't see then, such as one
-built in ``show_trial``, PsyNet logs a warning when it happens. To let the
+combination when it loads. A barrier built in ``show_trial`` is checked when
+the trial is shown, which raises the same error; for one built in a
+``for_loop`` or another ``PageMaker``, PsyNet logs a warning when it
+happens. To let the
 members who were on time carry on, set
 ``below_quorum="continue_without_group"`` on the grouper:
 
@@ -1552,7 +1561,7 @@ group admits them. A pending member holds a seat, so the group's
 ``max_group_size`` counts them, but nothing else counts them: not the
 quorum, the barriers, the choice of leader,
 :class:`~psynet.group_prompt.GroupPrompt` or
-:func:`~psynet.sync.group_seats`. The group's other barriers let them
+:attr:`~psynet.sync.SyncGroup.seats`. The group's other barriers let them
 straight through, and a cue by a pending member raises an error. The
 admission points are:
 
@@ -1725,7 +1734,8 @@ For the rest of the timeline:
   needs another room, or none, then.
 - ``participant.sync_group_removal_reason("pair")`` says why they left:
   ``"late"``, ``"waited_too_long"``, ``"no_group_formed"`` (a grouper found
-  them no group in time), ``"group_dissolved"``, ``"moved_on"`` (a
+  them no group in time), ``"no_show"`` or ``"left_game"`` (they didn't play
+  a live game, see :ref:`live-games-absent`), ``"group_dissolved"``, ``"moved_on"`` (a
   :class:`~psynet.sync.Regrouper` took them out of their previous group, and
   they are waiting there or sitting the round out),
   ``"finished"``, ``"not_admitted"`` (they were turned away before an
@@ -1778,7 +1788,21 @@ repeat often enough to fill that time, rounded up to whole passes; here,
 Keep ``waiting_logic`` atomic, as in ``sync_quorum``: one short trial or
 page per pass, letting the loop repeat it, rather than several trials per
 pass. A release then fails at most the trial on screen and creates no
-unseen trials (see below).
+unseen trials (see below). A participant whose arrival releases them at
+once, such as the one who completes a group, normally doesn't start
+``waiting_logic``. Participants who arrive at the same moment don't see
+each other's arrivals yet, so each of them may still start it, and the
+release then fails those unseen trials.
+
+If a pass of ``waiting_logic`` has nothing to show, for example because a
+trial maker has no trial left for the participant or a
+:func:`~psynet.timeline.conditional` in it is false, PsyNet shows a
+waiting page ("Waiting for other participants…") for about 2 seconds
+and then runs the waiting logic again, so that trials that become
+available later are shown. Each of these waiting pages costs a request
+and stores a response (leaving ``participant.answer`` unchanged), so give
+the waiting logic enough to do for the expected wait. A release ends the
+waiting page at once.
 
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
@@ -1788,8 +1812,7 @@ answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).
 The rest of the participant's pass of ``waiting_logic`` is then run through
-without showing its pages, and so is the whole pass for the participant
-whose arrival completes the group. Code blocks in it still run, and so do
+without showing its pages. Code blocks in it still run, and so do
 the ends of modules, loops and fixed time credit. Each
 :func:`~psynet.timeline.while_loop` in the pass ends at its next check,
 since its condition might wait for answers that the skipped pages never
@@ -1799,8 +1822,8 @@ waiting for a trial to become available or for asynchronous processing.
 run all their iterations, so a very long one makes the release raise an
 error after 1000 skipped pages. Pass
 ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
-:class:`~psynet.sync.GroupBarrier` or a grouper to let every waiting page
-run to its end.
+:class:`~psynet.sync.GroupBarrier` or a grouper to let every page of
+``waiting_logic`` run to its end.
 
 A release ends trial pages too, such as the animal trials in
 ``sync_quorum``. A trial whose page ends before it is answered is failed
@@ -1839,6 +1862,109 @@ when the grace period is over.
      document.getElementById("note").textContent =
        "Your partner is here. Finish your sentence!";
    });
+
+.. _sync-waiting-quiz:
+
+Quiz questions while waiting
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To give waiting participants quiz questions with feedback and points, make
+each question a node of a :class:`~psynet.trial.static.StaticTrialMaker` and
+cue one question per pass of ``waiting_logic``, as ``sync_quorum`` does with
+its filler trials. This is a recipe, not a dedicated API: everything below is
+existing trial and timeline API. The ``waiting_quiz`` test experiment
+(``tests/experiments/waiting_quiz``) runs it with bots:
+
+.. literalinclude:: ../../../tests/experiments/waiting_quiz/experiment.py
+   :start-at: QUESTIONS = [
+   :end-before: class Exp
+
+Wrap the grouper in the trial maker's
+:meth:`~psynet.trial.main.TrialMaker.custom`, so that the trial maker is set
+up for each participant before it cues their first question:
+
+.. literalinclude:: ../../../tests/experiments/waiting_quiz/experiment.py
+   :start-at: quiz.custom(
+   :end-before: InfoPage("Your group is ready."
+   :dedent: 8
+
+``custom()`` takes any timeline elements, so later parts of the
+experiment, even other trial makers, may go inside it too. Keeping only
+the grouper inside is simplest: the quiz's module then finishes, and the
+trial maker's ``on_complete`` runs, when the wait ends.
+
+How the pieces fit:
+
+- **Scoring and feedback.** :meth:`~psynet.trial.main.Trial.score_answer`
+  scores each answer, and :meth:`~psynet.trial.main.Trial.show_feedback`
+  then shows a page with the trial's ``score`` already set. The feedback
+  page has a ``time_limit`` and no Next button, so it moves on by itself;
+  the ``data-psynet-seconds-left`` span shows its countdown in place of
+  PsyNet's "N s left" chip. An :class:`~psynet.page.InfoPage` would need a
+  click instead. Each question then takes two page loads, one for the
+  question and one for the feedback. Feedback on the question page
+  itself would need your own JavaScript and route.
+- **Time limits.** When a question's ``time_limit`` runs out, its answer
+  is ``None`` (the page's ``time_limit_answer``), so ``score_answer``
+  receives ``None``, here scoring 0. ``show_feedback`` still runs: return
+  ``None`` from it to skip the feedback, as here. Test ``self.answer``
+  rather than ``self.time_limit_reached``, which pages shown while
+  waiting at a barrier don't set.
+- **Answers stay on the server.** The browser only receives the page that
+  ``show_trial`` builds, here the question and its choices. The correct
+  answer stays in the trial's definition on the server.
+- **Points and bonus.** :meth:`~psynet.trial.main.Trial.compute_performance_reward`
+  adds each trial's reward to the participant's performance reward, which
+  is paid with the rest of their bonus. Count points from the participant's
+  finalized trials, as ``quiz_points`` does, rather than keeping a separate
+  total. ``custom()`` doesn't run the trial maker's performance checks, so
+  ``check_performance_at_end`` and ``check_performance_every_trial`` have
+  no effect here. A check or summary of
+  your own should leave out failed trials, as ``quiz_points`` does, since
+  interrupted trials are among the participant's trials (see above).
+- **Expected trials.** Progress and time credit for the wait come from the
+  barrier's ``expected_wait``, not from the trial maker. With ``custom()``,
+  ``expected_trials_per_participant`` plays no part in recruitment and
+  isn't shown in the timeline overview, but a static trial maker requires
+  it and performance tests report it. Set it to the number of questions a
+  typical wait fills, as the example does, not to the size of the pool.
+- **Running out of questions.** A static trial maker doesn't give a
+  participant a question they have answered again. Once a participant has
+  answered every question, ``cue_trial`` finds no trial and shows nothing,
+  so PsyNet shows its waiting page instead until the group forms (see
+  above). To avoid this, give the pool at least ``max_wait_time`` divided by
+  the time of the fastest question and its feedback. Or reuse questions:
+  pass ``allow_repeated_nodes=True``, a ``max_trials_per_participant``, and
+  a planned ``node_order`` that lists the pool several times, reshuffled
+  each time (see :ref:`trial_order`). The default ``"balanced"`` order
+  counts every participant's trials, so it doesn't stop a question from
+  coming back soon. The trial maker then logs a warning that the plan is
+  longer than ``expected_trials_per_participant``, which is harmless here.
+
+  .. code-block:: python
+
+     StaticTrialMaker(
+         ...,
+         allow_repeated_nodes=True,
+         max_trials_per_participant=3 * len(QUESTIONS),
+         node_order=lambda nodes: [
+             node for _ in range(3) for node in random.sample(nodes, len(nodes))
+         ],
+     )
+
+- **When the group forms.** The participant whose arrival completes the
+  group normally skips the quiz. Rarely, when several participants arrive
+  at the same moment, each of them can get a question they never see,
+  failed with ``failed_reason="interrupted_by_release"`` and not paid, so count
+  only trials that aren't failed in analyses, as ``quiz_points`` does.
+  Anyone else who is on a question has
+  ``release_grace`` seconds (default 3) to answer it: their answer is then
+  scored and paid, and the feedback page is skipped. A question left
+  unanswered is failed with ``failed_reason="interrupted_by_release"``,
+  earns nothing, and isn't counted as answered. Raise ``release_grace`` for
+  questions that take longer to answer. Someone on a feedback page has
+  already been scored and paid; the page ends after the grace period or
+  its own time limit, whichever comes first.
 
 Time credit
 ~~~~~~~~~~~

@@ -1,1 +1,0 @@
-Corrected stale code examples, commands and API names across the documentation, including PsyNet 10-era examples, pre-screening instructions, deployment configuration examples and the Hello world demo page.

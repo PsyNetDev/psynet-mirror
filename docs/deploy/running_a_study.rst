@@ -334,8 +334,9 @@ check before recruiting more:
 
 Then increase the places in batches. On Prolific, open the study, choose
 **Action > Increase places**, and enter the number of *additional*
-participants. PsyNet typically copes with about 50 simultaneous
-participants, depending on how efficient the experiment code is. Keep the
+participants. How many participants a server can take at once depends on
+its size and on how efficient the experiment code is; see
+:ref:`choosing_server_size`. Keep the
 median hourly wage on the Prolific study page above Prolific's minimum.
 
 .. image:: /_static/images/running_studies/recruiters/prolific/recruitment-strategy.png
@@ -418,10 +419,13 @@ participants email the address configured in your Lab Recruiter setup.
 Participants who hit an error, fail a pre-screening task or leave early
 are paid automatically: they click **Submit to Prolific**, PsyNet
 completes the submission with a screen-out payment and tops it up to the
-reward they had earned. Do not ask them to return the submission or pay
-them by hand unless they never submitted (for example they closed the
-error page) or ``prolific_pay_unsuccessful`` is false. The payment rules
-are in :doc:`/deploy/recruiters/prolific`.
+reward they had earned. The exception is leaving with **Leave** before
+their reward reaches ``min_reward_for_paid_early_exit`` (default 0.20):
+those participants are offered **Leave without payment** instead (see
+:ref:`Leaving early <payment-leaving-early>`). Do not ask them to return the
+submission or pay them by hand unless they never submitted (for example they
+closed the error page) or ``prolific_pay_unsuccessful`` is false. The payment
+rules are in :doc:`/deploy/recruiters/prolific`.
 
 **Slack notifications.** Slack notifications report launches, errors and
 recruitment changes, and forward new Prolific messages for the study. They
@@ -540,7 +544,7 @@ Getting help
 Read the whole stack trace. The last line names the error, but it is
 often a symptom of an earlier one further up. Search for the specific
 part of the message first (for example a missing key such as
-``show_bonus``), then for the error type together with the failing
+``show_reward``), then for the error type together with the failing
 function, in the
 `PsyNet issue tracker <https://gitlab.com/PsyNetDev/PsyNet/-/issues>`__,
 the `Dallinger issue tracker <https://github.com/Dallinger/Dallinger/issues>`__,

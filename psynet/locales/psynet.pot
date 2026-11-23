@@ -502,23 +502,23 @@ msgid ""
 "grant it."
 msgstr ""
 
-#: psynet/experiment.py:4196 psynet/experiment.py:8096
+#: psynet/experiment.py:4195 psynet/experiment.py:8095
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
 "multiple browser tabs? Please close all other tabs and refresh the page."
 msgstr ""
 
-#: psynet/experiment.py:4277
+#: psynet/experiment.py:4276
 msgctxt "timeline_problem"
 msgid "This session has already ended. Please reload the page."
 msgstr ""
 
-#: psynet/experiment.py:4734
+#: psynet/experiment.py:4733
 msgid "The experiment is temporarily busy. Please try again."
 msgstr ""
 
-#: psynet/experiment.py:4768
+#: psynet/experiment.py:4767
 msgctxt "error"
 msgid ""
 "This session is no longer available. It may have ended, or the study may "
@@ -568,63 +568,63 @@ msgctxt "group prompt"
 msgid "{NAME} (left)"
 msgstr ""
 
-#: psynet/modular_page.py:240
+#: psynet/modular_page.py:241
 msgid "Play"
 msgstr ""
 
-#: psynet/modular_page.py:241 psynet/templates/macros/control.html:1144
+#: psynet/modular_page.py:242 psynet/templates/macros/control.html:1144
 msgid "Stop"
 msgstr ""
 
-#: psynet/modular_page.py:242 psynet/templates/macros/control.html:1153
+#: psynet/modular_page.py:243 psynet/templates/macros/control.html:1153
 msgid "Loop"
 msgstr ""
 
-#: psynet/modular_page.py:1053 psynet/modular_page.py:1314
-#: psynet/modular_page.py:1713
+#: psynet/modular_page.py:1054 psynet/modular_page.py:1316
+#: psynet/modular_page.py:1716
 msgctxt "validation"
 msgid "You need to select an answer!"
 msgstr ""
 
-#: psynet/modular_page.py:1207
+#: psynet/modular_page.py:1209
 msgctxt "validation"
 msgid "You need to check at least one answer!"
 msgstr ""
 
-#: psynet/modular_page.py:1801
+#: psynet/modular_page.py:1804
 msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr ""
 
-#: psynet/modular_page.py:4237
+#: psynet/modular_page.py:4240
 msgid ""
 "Share your screen to record this answer. Continuing without recording may "
 "make this trial unsuccessful."
 msgstr ""
 
-#: psynet/modular_page.py:4239
+#: psynet/modular_page.py:4242
 msgid "Share your screen to record this answer."
 msgstr ""
 
-#: psynet/modular_page.py:4240
+#: psynet/modular_page.py:4243
 msgid "Share screen"
 msgstr ""
 
-#: psynet/modular_page.py:4241
+#: psynet/modular_page.py:4244
 msgid "Continue without recording"
 msgstr ""
 
-#: psynet/modular_page.py:4242
+#: psynet/modular_page.py:4245
 msgid "Uploading your recording, please keep this page open."
 msgstr ""
 
-#: psynet/modular_page.py:4244
+#: psynet/modular_page.py:4247
 msgid ""
 "Your recording could not be captured. Please make sure your browser can "
 "access your camera or screen, then reload the page."
 msgstr ""
 
-#: psynet/modular_page.py:4247
+#: psynet/modular_page.py:4250
 msgid ""
 "We could not confirm that your answer was received. Please check your "
 "connection and press Next again."
@@ -1671,39 +1671,39 @@ msgctxt "early_exit_error_lucid"
 msgid "Return to your panel"
 msgstr ""
 
-#: psynet/sync.py:838 psynet/timeline_hold.py:733
+#: psynet/sync.py:839 psynet/timeline_hold.py:733
 msgctxt "timeline_hold"
 msgid "Waiting for other participants…"
 msgstr ""
 
-#: psynet/sync.py:2981
+#: psynet/sync.py:3041
 msgctxt "timeline_hold"
 msgid "We couldn't find a partner for you in time. Please continue."
 msgstr ""
 
-#: psynet/sync.py:2986
+#: psynet/sync.py:3046
 msgctxt "timeline_hold"
 msgid "We couldn't form a group for you in time. Please continue."
 msgstr ""
 
-#: psynet/sync.py:6600
+#: psynet/sync.py:6694
 #, python-brace-format
 msgctxt "waiting"
 msgid "Your group is ready. Moving on in {SECONDS} s."
 msgstr ""
 
-#: psynet/sync.py:6601
+#: psynet/sync.py:6695
 #, python-brace-format
 msgctxt "waiting"
 msgid "Moving on in {SECONDS} s."
 msgstr ""
 
-#: psynet/sync.py:6699
+#: psynet/sync.py:6793
 msgctxt "timeline_hold"
 msgid "Your partner is no longer in your group. Please continue."
 msgstr ""
 
-#: psynet/sync.py:6704
+#: psynet/sync.py:6798
 msgctxt "timeline_hold"
 msgid "Too few members of your group remained. Please continue."
 msgstr ""

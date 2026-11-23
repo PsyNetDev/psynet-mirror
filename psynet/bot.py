@@ -387,8 +387,8 @@ def make_late_now(
     time to test a player who goes quiet. For each group of a bot waiting at
     the barrier, this moves the group's clocks back: the time it last passed
     a barrier, and its members' times of joining and page deadlines. They
-    move back by ``late_after``, or further if a quiet member's timed page
-    and the grace for its answer would otherwise keep them from being late.
+    move back by ``late_after``, plus what is left of a quiet member's timed
+    page and the grace for its answer, from which ``late_after`` counts.
     The barrier's next check, when the waiting bots poll it, then removes
     every member who isn't waiting there, with its ``late_action``. Bots not
     waiting there, such as the quiet ones, aren't advanced: a quiet bot sees
@@ -439,7 +439,9 @@ def make_late_now(
         now = timenow()
         answer_arrival = 2 * TIME_LIMIT_GRACE_SECONDS
         for group in groups.values():
-            seconds = late_after
+            # late_after counts from the end of a quiet member's timed page,
+            # and the grace for its answer, if that is later.
+            page_left = 0
             for link in group.participant_links:
                 if (
                     link.active
@@ -447,8 +449,8 @@ def make_late_now(
                     and barrier_id not in link.participant.active_barriers
                 ):
                     left = (link.page_deadline - now).total_seconds()
-                    seconds = max(seconds, left + answer_arrival)
-            _backdate_group(group, seconds + 1)
+                    page_left = max(page_left, left + answer_arrival)
+            _backdate_group(group, late_after + page_left + 1)
     advance_past_wait_pages(bots, timeout=timeout)
 
 

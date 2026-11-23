@@ -1,1 +1,0 @@
-Removed `balance_across_nodes` and `balance_across_chains`; pass `node_order="balanced"` / `chain_order="balanced"` or `"random"` instead. Passing `block_order` while overriding `choose_block_order` now raises an error.

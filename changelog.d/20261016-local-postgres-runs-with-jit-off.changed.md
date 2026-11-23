@@ -1,1 +1,0 @@
-The PostgreSQL container that PsyNet starts for local debugging and testing (`dallinger_postgres`, also in CI) now runs with JIT off, as Dallinger's Docker PostgreSQL does, because JIT compilation slows down the short queries that experiments make.

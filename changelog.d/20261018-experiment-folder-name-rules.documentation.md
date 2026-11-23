@@ -1,1 +1,0 @@
-The quickstart now gives the real experiment folder-name rule: the name must not clash with an existing Python module such as `code`, and lowercase letters, digits and underscores are safest because the name also becomes the Docker image name.

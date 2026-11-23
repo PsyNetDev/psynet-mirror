@@ -1,1 +1,0 @@
-Fixed `GroupBarrier` arrivals costing one extra database statement per group member: an arrival now counts the group once when it updates every waiting member's hold message, so its cost no longer grows with group size.

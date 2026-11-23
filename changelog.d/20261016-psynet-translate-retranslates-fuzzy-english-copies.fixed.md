@@ -1,1 +1,0 @@
-`psynet translate` now translates a fuzzy entry whose translation is still the English text once more, instead of keeping it forever. If the model gives the English text again, as is correct for many country names and for "OK", the entry is marked `psynet-kept-source` and kept on later runs. Remove the fuzzy flag to keep an English translation without the retry.

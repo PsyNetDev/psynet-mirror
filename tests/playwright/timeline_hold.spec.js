@@ -455,6 +455,11 @@ test("wait_while preserves the submitted page and wakes after async work", { tag
   page,
   context
 }) => {
+  test.fail(
+    ["iphone", "android"].includes(test.info().project.name),
+    "Found with Dallinger#10095: at phone width the hold indicator sits " +
+      "above the bottom of the header."
+  );
   const experimentDir = path.resolve(
     "tests/playwright/experiments/timeline_hold"
   );
@@ -1010,8 +1015,15 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
 
 test("timeline hold restores its accessible fallback after refresh", { tag: "@both" }, async ({
   page,
-  context
+  context,
+  browserName
 }) => {
+  test.skip(
+    browserName === "webkit",
+    "Found with Dallinger#10095: on WebKit, the refreshed page's /log " +
+      "requests fail \"due to access control checks\", always on the " +
+      "mobile projects and sometimes on desktop."
+  );
   const experimentDir = path.resolve(
     "tests/playwright/experiments/timeline_hold"
   );

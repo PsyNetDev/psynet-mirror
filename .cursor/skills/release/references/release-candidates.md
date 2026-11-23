@@ -81,8 +81,9 @@ Slack announcement, and the announcement's approval does not cover
 launching paid recruitment.
 
 8. [Announce the release on Slack](shared-steps.md#announce-the-release-on-slack) with the
-   RC version, writing the highlights file from the RC's CHANGELOG
-   section as described there. `psynet dev release announce 13.2.0rc1
+   RC version, writing a cumulative highlights file from the CHANGELOG
+   sections of this and every earlier RC, as described there.
+   `psynet dev release announce 13.2.0rc1
    --summary-file ...` auto-detects the `rc` segment and generates an
    RC-flavoured envelope with the `/rc/<tag>/` docs URL, the
    CHANGELOG-at-tag link (since there is no GitLab release entry), and

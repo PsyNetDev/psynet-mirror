@@ -1,1 +1,0 @@
-For large source files, `psynet translate` now gives ChatGPT the code around every text in a request. Before, long lines near the first text could use up the whole budget, so the request was sent without any code.

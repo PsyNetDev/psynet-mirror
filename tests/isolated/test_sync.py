@@ -36,7 +36,7 @@ from psynet.dashboard.sync_groups import (
 from psynet.data import SQLBase
 from psynet.db import _set_transaction_lock_timeout, transaction
 from psynet.experiment import Experiment, get_experiment
-from psynet.modular_page import ModularPage
+from psynet.modular_page import ModularPage, NullControl
 from psynet.page import InfoPage, WaitPage, wait_while
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
@@ -76,7 +76,6 @@ from psynet.sync import (
     arrival_notice_payload,
     check_barriers,
     check_sync_groups,
-    group_seats,
     hold_message,
     leave_group,
     pending_arrival_notice_for,
@@ -7220,6 +7219,38 @@ def test_make_late_now_needs_a_waiting_bot_and_late_after(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_make_late_now_makes_a_member_on_a_timed_page_late(
+    in_experiment_directory, db_session, monkeypatch
+):
+    monkeypatch.setattr(psynet.bot, "advance_past_wait_pages", lambda *a, **k: None)
+    exp = get_experiment()
+    waiter, quiet = [new_participant(exp) for _ in range(2)]
+    group = SimpleSyncGroup(group_type="main", initial_group_size=2)
+    db_session.add(group)
+    for p in (waiter, quiet):
+        p.status = "working"
+        group.add_participant(p)
+    group.last_barrier_pass_time = timenow()
+    (quiet_link,) = [
+        link for link in group.participant_links if link.participant is quiet
+    ]
+    quiet_link.page_deadline = timenow() + timedelta(seconds=20)
+    barrier = GroupBarrier(
+        "round", group_type="main", late_after=30, late_action="fail"
+    )
+    _arrive_at_group_barrier(exp, barrier, waiter)
+    db_session.commit()
+    group_id, waiter_id, quiet_id = group.id, waiter.id, quiet.id
+
+    make_late_now([SimpleNamespace(id=waiter_id)], "round")
+
+    late = barrier._late_between_barriers(SyncGroup.query.get(group_id), {waiter_id})
+    assert [p.id for p in late] == [quiet_id]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 @pytest.mark.parametrize("passed_before", [True, False])
 def test_make_late_now_keeps_who_left_since_the_last_pass(
     in_experiment_directory, db_session, monkeypatch, passed_before
@@ -7503,10 +7534,11 @@ def test_late_after_counts_from_joining_the_group(
 def test_late_after_follows_a_timed_page(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """A between-barrier timeout waits for a timed page's answer, but no longer."""
+    """A between-barrier timeout counts from a timed page's deadline, once its
+    answer has had time to arrive."""
     exp = get_experiment()
-    grouper = SimpleGrouper("main", initial_group_size=7, quorum=2, below_quorum="fail")
-    participants = _working_participants(exp, 7)
+    grouper = SimpleGrouper("main", initial_group_size=8, quorum=2, below_quorum="fail")
+    participants = _working_participants(exp, 8)
     (
         waiting,
         deciding,
@@ -7515,6 +7547,7 @@ def test_late_after_follows_a_timed_page(
         no_time_limit,
         before_joining,
         at_other_barrier,
+        in_game,
     ) = participants
 
     _start_timed_page(exp, before_joining, 60)
@@ -7532,11 +7565,15 @@ def test_late_after_follows_a_timed_page(
         (at_other_barrier, 25),
     ]:
         _start_timed_page(exp, participant, time_limit)
+    # A page without a time limit that says when it ends counts the same.
+    in_game.waiting_barrier_id = None
+    ModularPage("game", "Play", _EndsIn(25), time_estimate=5).consume(exp, in_game)
     # Another barrier on the way doesn't end this group's round.
     _arrive_at_group_barrier(
         exp, SimpleGrouper("other", initial_group_size=2), at_other_barrier
     )
-    later = timenow() + timedelta(seconds=20)
+    # 8 + 10 + 20 seconds after it started, the shortest timed page has ended.
+    later = timenow() + timedelta(seconds=40)
     monkeypatch.setattr("psynet.sync.timenow", lambda: later)
     barrier = GroupBarrier(
         id_="after_timed_page",
@@ -7552,9 +7589,19 @@ def test_late_after_follows_a_timed_page(
         deciding,
         moved_on,
         at_other_barrier,
+        in_game,
     }
     for participant in (left_timed_page, no_time_limit, before_joining):
         assert participant.sync_group_links[0].removal_reason == "late"
+
+
+class _EndsIn(NullControl):
+    def __init__(self, seconds):
+        super().__init__()
+        self.seconds = seconds
+
+    def ends_by(self, experiment, participant):
+        return timenow() + timedelta(seconds=self.seconds)
 
 
 def _start_timed_page(exp, participant, time_limit):
@@ -8498,7 +8545,7 @@ def test_a_pending_member_is_admitted_only_at_an_admission_point(
     assert group.pending_participants == [newcomer]
     assert group.active_participants == founders
     assert newcomer.sync_group_link("society").admitted_at is None
-    assert newcomer.id not in group_seats(group)
+    assert newcomer.id not in group.seats
 
     ordinary = GroupBarrier("round_ends", group_type="society")
     assert not ordinary._waits_here(newcomer)
@@ -8522,7 +8569,7 @@ def test_a_pending_member_is_admitted_only_at_an_admission_point(
     assert _ADMITTED_AT_RELEASE == [[newcomer.id]]
     assert group.active_participants == [*founders, newcomer]
     assert group.pending_participants == []
-    assert group_seats(group)[newcomer.id] == 2
+    assert group.seats[newcomer.id] == 2
     assert start._just_admitted(newcomer) and not start._just_admitted(founders[0])
     assert [
         p.sync_group_link("society").admission_points_passed
