@@ -18,8 +18,6 @@ It is the live counterpart of `public_goods`, with the same team set-up:
 - Failing isn't a penalty: it ends a session that can no longer
   contribute, and failed participants are paid for the rounds they
   completed.
-- A player the experimenter removes on the dashboard plays no more rounds
-  and is told they were removed from the game.
 
 ## Usage
 

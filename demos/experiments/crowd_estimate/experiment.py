@@ -100,19 +100,9 @@ def get_timeline():
                     {"question": question}, round=question
                 ),
                 time_estimate_per_iteration=EstimateTrial.time_estimate,
-                stop_if=removed_from_group,
             ),
         ),
     )
-
-
-def removed_from_group(participant):
-    """Return whether the experimenter has removed the player from their group on the dashboard.
-
-    Nothing else leaves a player without a group and still playing: a late
-    player is failed, and so are the members of a group that ends.
-    """
-    return not participant.in_sync_group(GROUP)
 
 
 class EstimateTrial(Trial):
@@ -206,13 +196,9 @@ class EstimateTrial(Trial):
     def _no_revision_reason(self):
         """Return why the player has nothing to revise, or ``None`` if they can revise.
 
-        The player's own outcome comes first, because a member who left the
-        group passes the barrier without waiting, before the group is scored.
-        Only an experimenter's removal lets them see this page after leaving:
-        a late player is failed, and so are the members of a group that ends.
+        Only players still in the group see this page: a late player is
+        failed, and so are the members of a group that ends.
         """
-        if self.sync_group_outcome == "removed_by_experimenter":
-            return "You were removed from your group before you saw its median"
         if self.group_round.var.get("median") is None:
             return "Too few estimates arrived for a group median"
         if self.var.estimate_timed_out:

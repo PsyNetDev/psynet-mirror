@@ -52,20 +52,19 @@ def _crowd(n_members):
 
 
 @pytest.mark.parametrize(
-    "outcome, median, in_median, timed_out, expected",
+    "median, in_median, timed_out, expected",
     [
-        ("removed_by_experimenter", 5, None, False, "You were removed from your group"),
-        ("stayed", None, None, False, "Too few estimates"),
-        ("stayed", 5, False, True, "You didn't give an estimate in time"),
-        ("stayed", 5, True, False, "The median of your group's 3 estimates is 5."),
+        (None, None, False, "Too few estimates"),
+        (5, False, True, "You didn't give an estimate in time"),
+        (5, True, False, "The median of your group's 3 estimates is 5."),
     ],
 )
 def test_revise_page_explains_each_outcome(
-    in_experiment_directory, db_session, outcome, median, in_median, timed_out, expected
+    in_experiment_directory, db_session, median, in_median, timed_out, expected
 ):
     _, trials = _crowd(3)
     trial = trials[0]
-    trial.sync_group_outcome = outcome
+    trial.sync_group_outcome = "stayed"
     trial.var.estimate_timed_out = timed_out
     trial.var.in_median = in_median
     trial.group_round.var.median = median

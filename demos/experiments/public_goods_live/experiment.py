@@ -37,7 +37,7 @@ from psynet.live_game import (
 )
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
-from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop
+from psynet.timeline import Module, PageMaker, Timeline, for_loop
 from psynet.trial.main import Trial
 
 N_ROUNDS = 3
@@ -173,10 +173,6 @@ class ContributionTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         answer = self.answer
-        if answer is None:
-            # The experimenter removed the player from their team during the
-            # round, before its game started.
-            return InfoPage("Your group couldn't start this round.", time_estimate=5)
         team = self.live_game.outcome
         return InfoPage(
             f"The group put {team['pot']} tokens in the pot, which was "
@@ -188,28 +184,12 @@ class ContributionTrial(Trial):
         )
 
 
-def removed_from_team(participant):
-    """Return whether the experimenter has removed the player from their team on the dashboard.
-
-    Nothing else leaves a player without a team and still playing: a late
-    player is failed, and so is the last player of a team that ends.
-    """
-    return not participant.in_sync_group("team")
-
-
 def bonus_text(participant):
     return f"Your bonus is ${participant.performance_reward:.2f}."
 
 
 def game_over(participant):
     return InfoPage(f"The game is over. {bonus_text(participant)}", time_estimate=5)
-
-
-def removed_page(participant):
-    return InfoPage(
-        f"You were removed from the game. {bonus_text(participant)}",
-        time_estimate=5,
-    )
 
 
 def get_timeline():
@@ -240,16 +220,9 @@ def get_timeline():
                 iterate_over=range(N_ROUNDS),
                 logic=lambda i: ContributionTrial.cue(round=i),
                 time_estimate_per_iteration=ContributionTrial.time_estimate,
-                # Checked before each round.
-                stop_if=removed_from_team,
             ),
         ),
-        conditional(
-            "game_over",
-            removed_from_team,
-            PageMaker(removed_page, time_estimate=5),
-            PageMaker(game_over, time_estimate=5),
-        ),
+        PageMaker(game_over, time_estimate=5),
     )
 
 

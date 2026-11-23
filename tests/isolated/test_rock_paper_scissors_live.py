@@ -10,7 +10,6 @@ from psynet.experiment import import_local_experiment
 from psynet.live_game import Reject
 from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
-from psynet.timeline import StartSwitch
 
 
 def _choose(game, player, throw, action):
@@ -172,43 +171,3 @@ class TestRockPaperScissorsLive:
         assert gives_feedback(SimpleNamespace(answer=finished.answer(0)), None, None)
         # A trial whose pair didn't start a game.
         assert not gives_feedback(SimpleNamespace(answer=None), None, None)
-
-    @pytest.mark.parametrize(
-        "in_pair, index, plays_a_game, told_removed",
-        [
-            (True, 0, True, False),
-            (True, 1, True, False),
-            # Both games played.
-            (True, 2, False, False),
-            # Removed from the pair by the experimenter.
-            (False, 1, False, True),
-        ],
-    )
-    def test_a_participant_removed_from_their_pair_plays_no_more_games(
-        self, demo, in_pair, index, plays_a_game, told_removed
-    ):
-        # The conditions of the timeline's loop of games and of the page
-        # after it, asked of a participant about to start the game at index.
-        switches = {
-            elt.label: elt
-            for elt in demo.Exp.timeline.all_elts
-            if isinstance(elt, StartSwitch)
-        }
-        participant = SimpleNamespace(
-            id=1,
-            in_sync_group=lambda group_type: in_pair and group_type == "pair",
-            for_loops={"games": {"lst": [0, 1], "index": index}},
-            module_state=None,
-            append_branch_log=lambda entry: None,
-        )
-
-        def goes(label):
-            return switches[label].function(experiment=None, participant=participant)
-
-        assert goes("for_loop") is plays_a_game
-        assert goes("removed") is told_removed
-        if told_removed:
-            participant.performance_reward = 0.25
-            assert str(demo.removed_page(participant).content) == (
-                "You were removed from the game. Your bonus is $0.25."
-            )

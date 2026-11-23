@@ -16,7 +16,6 @@ from psynet.utils import get_logger
 
 TEMPLATE_NAME = "dashboard_sync_groups.html"
 MANUAL_FAILURE_REASON = "manual_failure"
-MANUAL_KICK_REASON = "manual_kick"
 logger = get_logger()
 
 
@@ -82,26 +81,12 @@ def manual_fail_sync_group_participant(
     return success_response(participant_id=participant.id)
 
 
-def manual_kick_sync_group_participant(
-    participant_id, sync_group_id, kick_reason=MANUAL_KICK_REASON
-):
-    try:
-        participant = _kick_sync_group_participant(
-            participant_id, sync_group_id, kick_reason
-        )
-    except ValueError as err:
-        return error_response(str(err))
-
-    return success_response(participant_id=participant.id)
-
-
 def _fail_sync_group_participant(participant_id, sync_group_id, fail_reason):
+    """Fail a working participant who is active in the given sync group."""
     if fail_reason != MANUAL_FAILURE_REASON:
         raise ValueError(f"Invalid fail reason: {fail_reason}")
 
-    participant, _ = _get_active_sync_group_participant_link(
-        participant_id, sync_group_id
-    )
+    participant = _get_active_sync_group_participant(participant_id, sync_group_id)
 
     if participant.failed or participant.status != "working":
         raise ValueError("Only active working participants can be failed manually.")
@@ -110,24 +95,7 @@ def _fail_sync_group_participant(participant_id, sync_group_id, fail_reason):
     return participant
 
 
-def _kick_sync_group_participant(participant_id, sync_group_id, kick_reason):
-    if kick_reason != MANUAL_KICK_REASON:
-        raise ValueError(f"Invalid kick reason: {kick_reason}")
-
-    participant, active_group_link = _get_active_sync_group_participant_link(
-        participant_id, sync_group_id
-    )
-
-    if participant.failed or participant.status != "working":
-        raise ValueError("Only active working participants can be kicked manually.")
-
-    active_group_link.sync_group.remove_participant(
-        participant, reason="removed_by_experimenter"
-    )
-    return participant
-
-
-def _get_active_sync_group_participant_link(participant_id, sync_group_id):
+def _get_active_sync_group_participant(participant_id, sync_group_id):
     participant = _lock_and_load_participant(Participant.query, participant_id)
     if participant is None:
         raise ValueError(f"No participant found with ID {participant_id}.")
@@ -148,7 +116,7 @@ def _get_active_sync_group_participant_link(participant_id, sync_group_id):
             "This participant is not currently active in the selected sync group."
         )
 
-    return participant, active_group_link
+    return participant
 
 
 def report_sync_groups():

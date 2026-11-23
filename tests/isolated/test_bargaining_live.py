@@ -40,9 +40,9 @@ class TestBargainingLive:
         )
         assert demo.ROUND_DEADLINE_SECONDS > round_takes
 
-    @pytest.mark.parametrize("reason", [None, "removed_by_experimenter"])
+    @pytest.mark.parametrize("dissolved", [False, True])
     def test_a_player_out_of_the_cohort_plays_no_more_rounds(
-        self, demo, db_session, reason
+        self, demo, db_session, dissolved
     ):
         experiment = get_experiment()
         cohort = SimpleSyncGroup(
@@ -60,12 +60,15 @@ class TestBargainingLive:
         cohort.check_numbers()
         db_session.commit()
         player = players[0]
-        if reason is not None:
-            cohort.remove_participant(player, reason)
+        if dissolved:
+            # The other two leave, so the cohort falls below its quorum.
+            for other in players[1:]:
+                cohort.remove_participant(other, "left_experiment")
+            assert player.sync_group_removal_reason("cohort") == "group_dissolved"
 
         # The rounds end for them, and the timeline's last steps run.
-        assert demo.keep_playing(player) is (reason is None)
-        if reason is not None:
+        assert demo.keep_playing(player) is not dissolved
+        if dissolved:
             assert demo.round_status(player) == "no_cohort"
         leave_group("cohort").consume(experiment, player)
         assert str(demo.end_of_game(player).content) == (

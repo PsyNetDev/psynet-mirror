@@ -20,7 +20,7 @@ writer goes quiet and is failed.
   finish a turn, is failed (`late_action="fail"`), which takes them out of
   the group. If they were due to write, the member in the next seat writes
   instead, so turns become uneven (for example A, C, C).
-- A writer who has left the group stores nothing. When a member's trial
+- A writer who was failed stores nothing. When a member's trial
   finishes and the turn still has no sentence, it stores `None`, so every
   finished turn has a `sentence`. The writer trial's `sync_group_outcome`
   says why a sentence is `None`: `"stayed"` if they ran out of time,
@@ -32,8 +32,6 @@ writer goes quiet and is failed.
   grouper's default `max_wait_action="fail"`).
 - Failing isn't a penalty here: it ends the session promptly, and failed
   participants are paid for what they completed.
-- A member the experimenter removes on the dashboard writes no more turns
-  and is told they were removed from their group.
 
 The `turn` export has one row per turn; its `finished` column tells a turn
 that stored `None` from one that never finished.

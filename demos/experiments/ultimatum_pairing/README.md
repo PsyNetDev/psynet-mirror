@@ -31,10 +31,6 @@ the pair's offer and result live on the round shared by its two trials
 (`trial.group_round.var`), sit-outs get a page instead of a trial, and the
 basic data is read from trials and rounds.
 
-A player the experimenter removes from their pair on the dashboard gets no
-coins that round; one removed from the cohort before their last round is
-told they were removed from the game.
-
 ## Usage
 
 For instructions on how to run PsyNet experiments like this one, visit the

@@ -26,7 +26,7 @@ from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
 from psynet.sync import GroupBarrier, SimpleGrouper, SyncGroupRound
-from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop, join
+from psynet.timeline import Module, PageMaker, Timeline, for_loop, join
 from psynet.trial.main import Trial
 from psynet.utils import serialise_datetime
 
@@ -65,6 +65,8 @@ def get_timeline():
             max_wait_time=GROUPING_WAIT,
             waiting_message="Waiting for two other players to join…",
         ),
+        # A player who leaves the team is failed, so everyone who plays a
+        # round is still in a team.
         Module(
             "game",
             for_loop(
@@ -72,26 +74,10 @@ def get_timeline():
                 iterate_over=range(N_ROUNDS),
                 logic=lambda i: ContributionTrial.cue(round=i),
                 time_estimate_per_iteration=ContributionTrial.time_estimate,
-                # Checked before each round.
-                stop_if=removed_from_team,
             ),
         ),
-        conditional(
-            "game_over",
-            removed_from_team,
-            PageMaker(removed_page, time_estimate=5),
-            PageMaker(game_over, time_estimate=5),
-        ),
+        PageMaker(game_over, time_estimate=5),
     )
-
-
-def removed_from_team(participant):
-    """Return whether the experimenter has removed the player from their team on the dashboard.
-
-    Nothing else leaves a player without a team and still playing: a late
-    player is failed, and so is the last player of a team that ends.
-    """
-    return not participant.in_sync_group(GROUP)
 
 
 class ContributionTrial(Trial):
@@ -118,8 +104,8 @@ class ContributionTrial(Trial):
     def contribution_page(self, participant):
         return ModularPage(
             "contribution",
-            # Ticks appear as the others decide. The loop's stop_if means the
-            # trial always has a group, so sync_group_round is set.
+            # Ticks appear as the others decide. The player is in a team, so
+            # sync_group_round is set.
             GroupPrompt(
                 f"Round {self.sync_group_round + 1} of {N_ROUNDS}. How many of "
                 f"your {ENDOWMENT} tokens do you put in the group pot?",
@@ -158,18 +144,13 @@ class ContributionTrial(Trial):
 
     def score_answer(self, answer, definition):
         """Return the tokens the player earned in the round."""
-        if self.sync_group_outcome == "stayed":
-            return self.var.payoff
-        # "removed_by_experimenter". A failed player, for example one who was
-        # late or the last of a team that ended, is never scored: their trial
-        # doesn't finish.
-        return 0
+        # Only a round the team finished is scored. A failed player, for
+        # example one who was late or the last of a team that ended, is
+        # never scored: their trial doesn't finish.
+        return self.var.payoff
 
     def compute_performance_reward(self, score):
         return TOKEN_VALUE * score
-
-    def gives_feedback(self, experiment, participant):
-        return self.sync_group_outcome == "stayed"
 
     def show_feedback(self, experiment, participant):
         team = self.group_round.var
@@ -212,13 +193,6 @@ def game_over(participant):
     return InfoPage(f"The game is over. {bonus_text(participant)}", time_estimate=5)
 
 
-def removed_page(participant):
-    return InfoPage(
-        f"You were removed from the game. {bonus_text(participant)}",
-        time_estimate=5,
-    )
-
-
 def bonus_text(participant):
     return f"Your bonus is ${participant.performance_reward:.2f}."
 
@@ -254,7 +228,7 @@ class Exp(psynet.experiment.Experiment):
                     # study or being the last player of the team.
                     "complete": t.complete,
                     # "stayed" if the round was scored; otherwise why the
-                    # player left: "late", "removed_by_experimenter", "left_experiment" or, for the
+                    # player left: "late", "left_experiment" or, for the
                     # last player of a cancelled round, "group_dissolved".
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or never answered.
