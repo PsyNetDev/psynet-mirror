@@ -1142,8 +1142,12 @@ barrier settings are described in `Timeouts`_, and the grouper's
 
 A player who comes back after being removed keeps their reason, so their
 next page can explain what happened (see `After leaving a group`_). Only
-with ``max_wait_action="leave_group"`` does a player who waited too long
-reach a next page. The reasons ``"moved_on"`` (a regrouper split the group)
+players who weren't failed reach a next page: those the experimenter
+removed, newcomers turned away (``"not_admitted"``), and players removed
+under the advanced options: a barrier's ``late_action="leave_group"`` or
+``max_wait_action="leave_group"``, or a grouper's
+``below_quorum="continue_without_group"`` or
+``max_wait_action="continue_without_group"``. The reasons ``"moved_on"`` (a regrouper split the group)
 and ``"finished"`` (``leave_group`` after the player's part) are normal
 exits rather than failures, but a page that looks up the reason must still
 handle them if it can meet them.

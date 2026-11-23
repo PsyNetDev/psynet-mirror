@@ -249,8 +249,9 @@ class Exp(psynet.experiment.Experiment):
                     "team_id": t.sync_group_id,
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
-                    # False while the trial runs or if the player returned
-                    # the study during it.
+                    # False while the trial runs or if the player was failed
+                    # during it, for example for being late, returning the
+                    # study or being the last player of the team.
                     "complete": t.complete,
                     # "stayed" if the round was scored; otherwise why the
                     # player left: "late", "removed_by_experimenter", "left_experiment" or, for the

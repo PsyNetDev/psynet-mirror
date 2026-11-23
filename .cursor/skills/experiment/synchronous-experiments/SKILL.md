@@ -451,7 +451,7 @@ map every reason your game can meet (such as `"late"` or
 `"group_dissolved"`) to its own text, and test that a player who comes back
 after being removed sees it.
 
-Read `references/test-dropouts.md` for a worked pair test with a quitter and a
+Read `references/test-dropouts.md` for a worked dropout test with a quitter and a
 silent member, and for how long to wait out timeouts in bot tests.
 
 - Check why a bot left with

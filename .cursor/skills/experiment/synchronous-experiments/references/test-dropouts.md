@@ -70,4 +70,6 @@ setup instead, `late_action="leave_group"` with
 `below_quorum="continue_without_group"`, where the partner carries on alone
 and a member removed for being late is told on the page they are on.
 PsyNet rejects `late_action="leave_group"` with `below_quorum="fail"`
-at load; it can only log a warning for barriers built in `show_trial`.
+with a `ValueError`, at load or, for a barrier built in `show_trial`, when
+the trial is shown; for a barrier built in a `for_loop` or another
+`PageMaker`, it can only log a warning when a late member leaves.
