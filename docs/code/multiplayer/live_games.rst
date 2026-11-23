@@ -237,11 +237,12 @@ takes newcomers:
   ``late_action="leave_group"``, which lets the late member carry on
   without the group, is an advanced option (see
   :ref:`sync-leaving-a-group`).
-- ``max_wait_time``, with ``max_wait_action="leave_group"``, is for a group
-  that takes newcomers, as in the ``microsociety_live`` demo. There PsyNet
-  can't tell a slow member from one who hasn't joined yet, so it can't use
-  ``late_after``. Instead each member waits ``max_wait_time`` seconds from
-  when they arrive, and then leaves the group themselves.
+- ``max_wait_time`` is for a group that takes newcomers, as in the
+  ``microsociety_live`` demo. There PsyNet can't tell a slow member from one
+  who hasn't joined yet, so it can't use ``late_after``. Instead each member
+  waits at most ``max_wait_time`` seconds from when they arrive, and is then
+  failed, or, with ``max_wait_action="leave_group"``, leaves the group and
+  carries on without it.
 
 Here and below, ``game_page()`` stands for a function of your own that
 returns a new game page like the one above. The tutorial's demo builds its
@@ -970,18 +971,22 @@ who arrives while no game is running waits at the barrier as usual, and
 starts the next game with the others there. Newcomers join the group
 first, through a :class:`~psynet.sync.Grouper` with
 ``join_existing_groups=True``. Give it ``use_admission_points=False``, so
-that it admits them at once: a pending member waits at the barrier.
+that it admits them at once: a pending member waits at the barrier. In the
+demo, ``initial_group_size=1`` lets the first member found the group and
+start the game alone, at once, so nobody waits for anyone, and
+``max_groups=1`` keeps a single society, which the next participant
+founds anew once the last one has closed.
 
 .. code-block:: python
 
     SimpleGrouper(
         group_type="society",
-        initial_group_size=2,
+        initial_group_size=1,
         max_group_size=4,
         quorum=1,
         join_existing_groups=True,
         use_admission_points=False,
-        below_quorum="continue_without_group",
+        max_groups=1,
     ),
     PlayLiveGame(
         group_type="society",
@@ -989,7 +994,6 @@ that it admits them at once: a pending member waits at the barrier.
         page=lake_page(),
         join_running_game=True,
         max_wait_time=60,
-        max_wait_action="leave_group",
     ),
 
 The game defines ``on_add(self, state, player, now)``, which makes room in
