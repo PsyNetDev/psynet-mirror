@@ -18,7 +18,6 @@ from psynet.sync import (
     SimpleGrouper,
     SimpleSyncGroup,
     arrival_notice_payload,
-    group_seats,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -56,7 +55,7 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
     _arrive(exp, GroupBarrier("decided", group_type="room"), [first, second])
     refreshed = {t["participant_id"] for t in published if t.get("refresh")}
     assert refreshed == {first.id, second.id, third.id}
-    seats = group_seats(group)
+    seats = group.seats
     assert arrival_notice_payload(third.unique_id) == {
         "notice": "2/3 of your group are ready.",
         "group_ready": [
@@ -91,6 +90,10 @@ def test_group_prompt_shows_distinct_members_ticks_and_answers(
         GroupPrompt(group=group, participant=first, names="hidden")
     with pytest.raises(ValueError, match="either progress or answers"):
         GroupPrompt(group=group, participant=first, answers={}, show_progress=True)
+    with pytest.raises(TypeError, match="integer participant IDs"):
+        GroupPrompt(group=group, participant=first, answers={str(first.id): "3"})
+    with pytest.raises(TypeError, match="integer participant IDs, not True"):
+        GroupPrompt(group=group, participant=first, highlight={True: "winner"})
 
     # Derived pseudonyms are only made distinct in a participant's first
     # group, and pseudonyms that were set are kept there too.
@@ -189,7 +192,7 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
     assert ">ran out of time<" in html
     assert html.count("psynet-group-member--answered") == 1
     (ready,) = arrival_notice_payload(third.unique_id)["group_ready"]
-    assert ready["ran_out_of_time"] == [group_seats(group)[first.id]]
+    assert ready["ran_out_of_time"] == [group.seats[first.id]]
 
     # The timeout only marks the barrier that the page led to.
     _arrive(exp, GroupBarrier("decided", group_type="room"), [third])
@@ -215,7 +218,7 @@ def test_a_member_who_ran_out_of_time_gets_a_dash(in_experiment_directory, db_se
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
+def test_seats_follow_joining_order(in_experiment_directory, db_session):
     exp = get_experiment()
     early, late = _working_participants(exp, 2)
     group = SimpleSyncGroup(group_type="room", initial_group_size=2)
@@ -228,7 +231,7 @@ def test_group_seats_follow_joining_order(in_experiment_directory, db_session):
     group.add_participant(late)
     group.add_participant(early)
     db_session.flush()
-    assert group_seats(group) == {late.id: 0, early.id: 1}
+    assert group.seats == {late.id: 0, early.id: 1}
 
     # Members are shown in seat order, and an anonymous partner is labelled as such.
     third = _working_participants(exp, 1)[0]

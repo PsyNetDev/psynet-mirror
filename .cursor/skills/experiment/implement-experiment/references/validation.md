@@ -122,12 +122,12 @@ chains reduce it and may allow more participants at once.
 ## Interactive evidence
 
 ```bash
-psynet debug local
+psynet debug local --no-browsers
 ```
 
-Capture the generated ad page URL. Browser control is acceptable for quick
-exploration, but repeatable screenshots, assertions, and participant recordings
-should be Playwright-driven. Write the walk with `playwright-testing/SKILL.md`.
+Capture the generated ad page URL. Use headless Playwright for quick
+exploration too, and write repeatable screenshots, assertions and participant
+recordings as Playwright scripts with `playwright-testing/SKILL.md`.
 For canonical participant recordings, follow
 `record-participant-video/SKILL.md`.
 

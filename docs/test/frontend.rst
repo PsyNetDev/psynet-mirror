@@ -21,7 +21,7 @@ Automated browser tests
 A browser test drives a real browser through the experiment with
 `Playwright <https://playwright.dev/>`_. It is stored with the experiment as
 ``tests/participant-flow.spec.js`` and runs against a local server started
-with ``psynet debug local``. A useful test checks what the participant
+with ``psynet debug local --no-browsers``. A useful test checks what the participant
 experiences, not only that each page can be passed: controls that should be
 enabled or disabled, feedback and validation messages, transitions between
 trials, and the saved responses.
@@ -37,7 +37,7 @@ To install Playwright in the experiment directory:
     npm install --save-dev @playwright/test
     npx playwright install chromium
 
-Then start ``psynet debug local`` in one terminal and run
+Then start ``psynet debug local --no-browsers`` in one terminal and run
 ``npx playwright test`` in another.
 
 Waiting for the next page

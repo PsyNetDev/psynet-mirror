@@ -1,0 +1,1 @@
+Added `LiveGamePage(player_info=...)`, a function of the participant whose result, such as an avatar chosen in the lobby, each game page reads as that player's `info` in `psynet.liveGame.players`, without putting it in the game's state. An anonymous page gets only the participant's own.

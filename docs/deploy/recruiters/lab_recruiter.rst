@@ -28,6 +28,7 @@ to ``~/.dallingerconfig``:
 
 .. code-block:: ini
 
+   [Lab Recruiter]
    lab_recruiter_external_submission_url = https://recruiter.your-lab.edu/tasks
    lab_recruiter_auth_token = xxxxxxx
 
@@ -90,7 +91,6 @@ your lab's payment policy:
            "The task will take about 15 minutes."
        ),
        "contact_email_on_error": "you@example.org",
-       "organization_name": "Your institution",
        "show_reward": False,
    }
 

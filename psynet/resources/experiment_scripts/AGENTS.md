@@ -37,14 +37,15 @@ in a directory that `psynet debug` is serving, and `psynet debug local`
 refuses a directory that tests are using, because both create and remove
 generated files there; test from a copy (such as a git worktree) instead.
 `psynet debug local` sessions, however, share port 5000, the PostgreSQL database, Redis and
-Dallinger's development folder, and starting one stops the other's worker
-processes. Before `psynet debug local`, check that nothing is listening on
+Dallinger's development folder, so only one can run at a time; a second
+refuses to start while another uses the same port or database. Before
+`psynet debug local`, check that nothing is listening on
 port 5000 (`lsof -nP -iTCP:5000 -sTCP:LISTEN`). If
 another experiment is running, don't stop it yourself: either ask the user to
-stop it, or run yours alongside it with `psynet debug local --isolated`,
-which uses a free port and a temporary database and Redis that are removed
-when it stops (see "Run several experiments at once" in
-`code/project/running_and_debugging`).
+stop it, or run yours alongside it with
+`psynet debug local --isolated --no-browsers`, which uses a free port and a
+temporary database and Redis that are removed when it stops (see "Run
+several experiments at once" in `code/project/running_and_debugging`).
 Remote launches (`psynet deploy ssh`, `psynet debug ssh` and
 `psynet performance-test ssh`)
 prepare in a scratch database and Redis of their own, so they leave a running
@@ -56,16 +57,25 @@ where they refuse to run. Several `psynet test local` runs can go at once,
 even from different agents: runs in the same directory wait for each other
 automatically, so don't add a lock of your own or wait for other tests.
 
+In `experiment.py`, put the constants first, then a `get_timeline()`
+function that returns the `Timeline`, then the helpers it uses, and the
+`Experiment` class last with `timeline = get_timeline()`, so that readers see
+the structure before the details (see `code/writing_a_timeline`).
+
 From `experiment.py`, import sibling modules with `from . import my_module`.
 Validate code with `psynet test local`, not `python experiment.py`. For
 running, debugging and inspecting the database, read
-`code/project/running_and_debugging`. After `psynet debug local`, the log
-prints an ad page URL such as
-`http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer to
-walk through the experiment in the browser. When you start the server from a
-non-interactive background shell, keep stdin open
-(`tail -f /dev/null | psynet debug local`); otherwise it can stop without a
-log line.
+`code/project/running_and_debugging`. Start the server with
+`psynet debug local --no-browsers`, including when you add `--isolated` or
+`--docker`, and tell subagents to do the same; otherwise each server opens
+browser windows on the user's screen. The log prints an ad page URL such as
+`http://127.0.0.1:5000/ad?generate_tokens=true&recruiter=hotair`; offer it to
+the user to walk through the experiment, and look at pages yourself with
+headless Playwright (see `playwright-testing/SKILL.md`); a
+`POST /load-participant 403` in the console when a participant enters is
+expected. From a non-interactive background shell, keep stdin open
+(`tail -f /dev/null | psynet debug local --no-browsers`); otherwise the server
+can stop without a log line.
 
 The `demos/index` page describes each PsyNet demo. `psynet docs demos` prints
 the folder holding their code for the installed version (without media).

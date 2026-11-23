@@ -10,7 +10,7 @@ also adds tools for developing experiments with coding agents.
 Some of these changes break existing experiments. Each section below says
 what to change, and :doc:`upgrading_to_psynet_14` gives the step-by-step
 checklist. The
-`changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_
+`changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/release-14.0/CHANGELOG.md>`_
 lists every change.
 
 Participant pages
@@ -21,7 +21,7 @@ the page content instead of loading a new page. Transitions are faster, and
 audio, video and custom front ends keep their state between pages. Custom
 pages must follow the new page lifecycle: fragment templates, page data read
 from ``psynet.var``, and setup code in a page module's ``activate()``
-function. Pages that don't raise an error that names the problem. While you
+function. Pages that don't comply raise an error that names the problem. While you
 migrate, ``requires_full_page_reload=True`` exempts a single page and
 ``inplace_timeline_transitions = false`` exempts the whole experiment. See
 :doc:`/code/pages/custom_front_ends`.
@@ -47,9 +47,10 @@ Firefox 121+, Safari 15.4+), not only Chrome. Declare the browser features
 your experiment needs, such as ``browser_capabilities = {"microphone"}``, and
 PsyNet screens participants for them at the start of the timeline.
 
-**jQuery 4.** Timeline pages now load jQuery 4.0.0, and PsyNet serves jQuery UI
-1.14.1. Custom JavaScript that uses utilities jQuery 4 removed, such as
-``$.trim`` or ``$.isArray``, must switch to native JavaScript. See
+**jQuery 4.** Timeline pages now load jQuery 4.0.0, and PsyNet no longer
+bundles jQuery UI. Custom JavaScript that uses utilities jQuery 4 removed,
+such as ``$.trim`` or ``$.isArray``, must switch to native JavaScript, and
+pages that use jQuery UI must ship their own copy in ``static/``. See
 :doc:`upgrading_to_psynet_14` (step 3).
 
 **Leaving and errors.** The **Leave** button now explains what leaving means
