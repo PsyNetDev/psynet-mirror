@@ -2882,7 +2882,7 @@ class Page(Elt):
         return next((reason for reason, found in reasons.items() if found), None)
 
     def layout_key(self, fragment_html, experiment, participant):
-        """Identify the page's ``#main-body``, JavaScript and ``js_vars`` in a partial render.
+        """Identify the page's ``#main-body``, JavaScript, ``js_vars``, media and events in a partial render.
 
         A predicted trial page is only reused for the next trial if the two
         keys match, so that the page modules' ``update`` can show it.
@@ -2899,6 +2899,8 @@ class Page(Elt):
                 self.legacy_js_links,
                 self.legacy_scripts,
                 self._js_vars_for(experiment, participant),
+                self.media.data,
+                self.events,
             ],
             default=str,
             sort_keys=True,

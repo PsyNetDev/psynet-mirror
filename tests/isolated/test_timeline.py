@@ -27,6 +27,7 @@ from psynet.modular_page import (
     Prompt,
     PushButtonControl,
     RadioButtonControl,
+    SliderControl,
 )
 from psynet.page import InfoPage, SuccessfulEndPage, UnsuccessfulEndPage
 from psynet.participant import Participant
@@ -140,6 +141,12 @@ def test_only_pages_whose_answers_may_be_turned_down_say_so():
 
     assert not page(PushButtonControl(["a", "b"]))._may_reject_answers()
     assert page(RadioButtonControl(["a", "b"]))._may_reject_answers()
+    assert not page(
+        RadioButtonControl(["a", "b"], force_selection=False)
+    )._may_reject_answers()
+    assert not page(
+        SliderControl(start_value=0, min_value=0, max_value=1)
+    )._may_reject_answers()
     assert page(
         PushButtonControl(["a"]), validate=lambda answer: None
     )._may_reject_answers()
@@ -178,6 +185,15 @@ def test_layout_key_covers_main_body_and_js_vars():
     assert key("task", timing=1) != key("other task", timing=1)
     assert key("task", timing=1) != key("task", timing=2)
     assert key("task", timing=None) != key("task")
+
+    page = Page(
+        time_estimate=1, template_str="", media=MediaSpec(audio={"a": "/1.wav"})
+    )
+    other = Page(
+        time_estimate=1, template_str="", media=MediaSpec(audio={"a": "/2.wav"})
+    )
+    html = '<div id="main-body">task</div>'
+    assert page.layout_key(html, None, None) != other.layout_key(html, None, None)
 
 
 def test_timeline_template_emits_js_dependencies_as_blocking_head_scripts():

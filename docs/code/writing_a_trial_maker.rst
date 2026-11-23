@@ -384,10 +384,11 @@ and ``ColorPrompt`` allow it, and so do ``NullControl``, ``PushButtonControl``,
 allows it by setting ``can_swap_in_advance = True`` in its class body; a
 subclass doesn't inherit the setting, as it may add behaviour that isn't safe.
 The server must also accept any answer to the trial page, which would
-otherwise be turned down with the next trial already on screen, so a
-``RadioButtonControl``, ``CheckboxControl``, ``DropdownControl``,
-``NumberControl`` or ``SliderControl`` that asks for a missing answer still
-waits for the server. The server log says why a trial maker's pages wait.
+otherwise be turned down with the next trial already on screen. So a
+``RadioButtonControl``, ``CheckboxControl`` or ``DropdownControl`` with
+``force_selection=True`` (the default for radio buttons and dropdowns), which
+asks for a missing answer, still waits for the server, and so does a
+``NumberControl``. The server log says why a trial maker's pages wait.
 
 The browser also waits for the server as before when:
 
