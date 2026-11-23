@@ -48,7 +48,8 @@ test("built-in rating pages advance while the server's replies are held back", {
     gate.hold();
     await next();
     await waitForMainBodyContains(participant, "Rate each picture from 1", STEP_TIMEOUT_MS);
-    expect(gate.posted).toBe(1);
+    // Sent once the swap has finished, which may be just after the text shows.
+    await expect.poll(() => gate.posted).toBe(1);
     gate.release();
     await next();
 
