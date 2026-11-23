@@ -84,7 +84,9 @@ def _page_config_differs(config, page, experiment, participant):
     """
     other = page._js_vars_for(experiment, participant)
     keys = sorted(
-        key for key in config.keys() | other.keys() if config.get(key) != other.get(key)
+        key
+        for key in config.keys() | other.keys()
+        if key not in config or key not in other or config[key] != other[key]
     )
     if keys:
         logger.warning(
@@ -285,7 +287,9 @@ class StaticTrialMaker(ChainTrialMaker):
         in-place timeline transitions, which are on by default. The response
         timeout counts from when the server first sends each trial's page;
         once one times out, the participant's trials waiting their turn
-        fail with it.
+        fail with it. As every block is prepared at once,
+        ``participant.module_state.block`` is the last block prepared while
+        the trials are taken; read a trial's own block from ``trial.block``.
         Can't be combined with
         ``sync_group_type``, ``check_performance_every_trial``,
         ``n_repeat_trials`` or ``recruit_mode="n_trials"``.
