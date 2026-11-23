@@ -1,1 +1,0 @@
-`psynet deploy ssh`, `psynet debug ssh` and `psynet performance-test ssh` to a Cloudflare-ingress server now stop with Dallinger's `Error: Cloudflare error: …` message before they start local services, contact the server or run `prepare`, if the Cloudflare API token can't be read.

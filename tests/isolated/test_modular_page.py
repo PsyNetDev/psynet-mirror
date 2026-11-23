@@ -30,6 +30,7 @@ from psynet.modular_page import (  # AudioPrompt,; VideoSliderControl,
     RatingControl,
     RatingScale,
     SliderControl,
+    SurveyJSControl,
     TextControl,
     TimedPushButtonControl,
 )
@@ -429,6 +430,19 @@ def test_music_notation_prompt_uses_managed_javascript():
     assert page.js_vars["music_notation_prompt"] == {"content": "C D E F"}
 
 
+def test_only_survey_js_pages_load_survey_js():
+    survey_page = ModularPage(
+        "test",
+        Prompt("Survey"),
+        SurveyJSControl({"elements": [{"type": "text", "name": "q1"}]}),
+    )
+    button_page = ModularPage("test", Prompt("Buttons"), PushButtonControl(["A"]))
+
+    survey_js = "/static/scripts/survey-jquery/survey.jquery.min.js"
+    assert survey_page.js_dependencies == [survey_js]
+    assert survey_js not in button_page.js_dependencies
+
+
 def test_modular_page_text():
     page = ModularPage("test", Prompt("Hi!"))
     assert page.plain_text == "Hi!"
@@ -791,6 +805,14 @@ def test_push_button_visualization_highlights_a_numeric_answer(
     html = control.visualize_response(answer=answer, response=response, trial=None)
     assert html.count("btn-success") == 1
     assert html.index("btn-success") > html.index('id="1"')
+
+
+@pytest.mark.parametrize("control_class", [CheckboxControl, RadioButtonControl])
+def test_choice_visualization_separates_each_input_from_its_label(control_class):
+    control = control_class(choices=["a", "b"], labels=["A", "B"])
+    html = control.visualize_response(answer="a", response=None, trial=None)
+    assert "> <span>A</span>" in html
+    assert "> <span>B</span>" in html
 
 
 def test_modular_page_accepts_page_css_list():

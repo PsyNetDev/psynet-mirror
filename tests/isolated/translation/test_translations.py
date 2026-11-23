@@ -20,6 +20,7 @@ from psynet.translation.check import (
 )
 from psynet.translation.check import check_translations as check_translations_internal
 from psynet.translation.translate import check_translations
+from psynet.translation.utils import create_pot, po_to_dict
 from psynet.utils import get_psynet_root, is_release_branch, working_directory
 
 
@@ -198,6 +199,33 @@ class TestTranslationContainsSameVariables:
     def test_format_string_mismatch(self):
         """Test that mismatched format placeholders fail."""
         assert not translation_contains_same_variables("Hello {}", "Bonjour")
+
+
+def test_create_pot_merges_texts_repeated_across_files(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "page.py").write_text('_("Loop")\n_p("audio", "Loop")\n')
+    (source / "other.py").write_text('_("Loop")\n')
+    (source / "page.html").write_text('{{ gettext("Loop") }}\n')
+
+    with working_directory(tmp_path):
+        pot = create_pot(str(source), str(tmp_path / "test.pot"))
+
+    assert [(e.msgctxt, e.msgid) for e in pot] == [(None, "Loop"), ("audio", "Loop")]
+    assert [path for path, _ in pot[0].occurrences] == [
+        "source/other.py",
+        "source/page.html",
+        "source/page.py",
+    ]
+
+
+def test_conflicting_duplicate_translations_are_named():
+    po = polib.POFile()
+    po.append(polib.POEntry(msgid="Loop", msgstr="Widderhuelen"))
+    po.append(polib.POEntry(msgid="Loop", msgstr="Widderhuelung"))
+
+    with pytest.raises(AssertionError, match="'Widderhuelen' and 'Widderhuelung'"):
+        po_to_dict(po)
 
 
 def test_check_translations_uses_path_namespace(tmp_path):

@@ -8,7 +8,7 @@ Then act on the following PsyNet developer instructions:
 
 ## Source checkout setup
 
-Install PsyNet in editable mode with `uv pip install -e '.[dev,demos,slack]'`.
+Install PsyNet in editable mode with `uv pip install -e '.[dev,demos]'`.
 
 Demo directories contain only the authored experiment files; their unpinned
 `requirements.txt` files and missing constraints are intentional. Running
@@ -112,16 +112,32 @@ Open a PR to upstream, writing the description to a file first:
 - branch on the main repository: `gh pr create --repo Dallinger/Dallinger --base master --head <branch-name> --title "<title>" --body-file <file>`
 - branch on the fork: `gh pr create --repo Dallinger/Dallinger --base master --head <your-username>:<branch-name> --title "<title>" --body-file <file>`
 
-If your PsyNet PR depends on this new unmerged change to Dallinger,
-specify the repository that holds the branch in `pyproject.toml` (use a
-literal URL; environment variables are not expanded in `pyproject.toml`):
+If your PsyNet PR depends on this new unmerged change to Dallinger, first
+make sure the Dallinger branch contains any Dallinger commit that the
+PsyNet target branch already pins: merge that commit in if not (it may be
+on Dallinger's `master` or on another unmerged branch), and push. Then,
+once that Dallinger PR is open, replace the Dallinger entry in
+`pyproject.toml` with a pin on the full commit SHA of the branch head, not
+the branch name, and update the comment above it to say which unreleased
+Dallinger changes the pin carries. PsyNet's bootstrap and CI tooling
+accept only a `>=X.Y.Z` lower bound whose `vX.Y.Z` tag exists, or a full
+40-character commit SHA on `github.com/Dallinger/Dallinger`. A commit on a
+fork branch can be fetched from `Dallinger/Dallinger` once its PR is open,
+so the URL is the same either way:
 
 ```toml
-# In [project].dependencies
-"dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@<branch-name>",
-# or, for a branch on the fork:
-"dallinger[docker] @ git+https://github.com/<your-username>/Dallinger.git@<branch-name>",
+# In [project.optional-dependencies], under experiment
+"dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@<commit-sha>",
 ```
+
+Then, from the PsyNet repository root, refresh the vendored CI constraints
+with `psynet dev ci update-dallinger-constraints`. Update the pin and
+refresh the constraints again after pushing new Dallinger commits that
+PsyNet needs.
+
+Return to a lower bound only once a Dallinger release contains every
+commit PsyNet needs, using that release's version as the bound, and
+refresh the constraints again.
 
 Use the GitHub CLI to find and read Dallinger job logs.
 Use the token `DALLINGER_GH_TOKEN` for all these commands (either via

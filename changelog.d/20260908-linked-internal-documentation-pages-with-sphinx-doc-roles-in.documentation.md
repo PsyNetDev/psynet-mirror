@@ -1,1 +1,0 @@
-Fixed documentation links that ``psynet dev docs linkcheck`` reported as broken: internal pages now use Sphinx ``:doc:`` roles, and 404ing, missing-anchor, bot-blocked, or TLS-failing URLs now point at current official pages or are ignored only when the official page still works in a browser.

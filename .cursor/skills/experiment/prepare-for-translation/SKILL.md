@@ -59,8 +59,8 @@ Follow `references/translation-workflow.md` for infrastructure setup, participan
   credentials. If translation APIs are unavailable, still prepare the code,
   generate and verify the POT when possible, and document that translated `.po`
   generation remains for the localization phase.
-- Keep translator API settings such as `.dallingerconfig`, OpenAI API keys, and
-  Google Translate JSON paths machine-local and uncommitted. Do not retrieve,
+- Keep translator API settings such as `.dallingerconfig` and OpenAI API keys
+  machine-local and uncommitted. Do not retrieve,
   copy, inspect, or publish credentials from private stores as part of this
   skill.
 - Do not require target languages, locale-code mapping, translator API

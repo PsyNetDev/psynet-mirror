@@ -1,1 +1,0 @@
-Documented the precedence of runtime writes, environment variables, experiment settings (`config.txt` and `Experiment.config`), `~/.dallingerconfig`, PsyNet experiment defaults, and Dallinger package defaults.
