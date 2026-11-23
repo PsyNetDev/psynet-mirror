@@ -170,6 +170,19 @@ class BotResponse:
 
         blobs :
             A dictionary of blobs returned from the front-end.
+
+        time_limit_reached :
+            If ``True``, the bot lets the page's ``time_limit`` run out, as a
+            participant who doesn't answer in time. The page records its
+            ``time_limit_answer`` without validating it, and
+            :attr:`~psynet.timeline.Response.time_limit_reached` is ``True``.
+            The server accepts this at once, so the bot doesn't wait for the
+            deadline; use
+            :meth:`~psynet.participant.ParticipantDriver.run_out_of_time` when
+            the test needs the time to pass. ``raw_answer`` defaults to
+            ``None``; with ``time_limit_answer=CURRENT_ANSWER``, pass the
+            answer entered so far as ``raw_answer``. Pages without a
+            ``time_limit`` raise an error.
     """
 
     def __init__(
@@ -179,7 +192,15 @@ class BotResponse:
         answer=NoArgumentProvided,
         metadata=NoArgumentProvided,
         blobs=NoArgumentProvided,
+        time_limit_reached=False,
     ):
+        if (
+            time_limit_reached
+            and raw_answer == NoArgumentProvided
+            and answer == NoArgumentProvided
+        ):
+            raw_answer = None
+
         if raw_answer != NoArgumentProvided and answer != NoArgumentProvided:
             raise ValueError(
                 "raw_answer and answer cannot both be provided; you should probably just provide raw_answer."
@@ -194,6 +215,13 @@ class BotResponse:
         if metadata == NoArgumentProvided:
             metadata = {}
 
+        time_limit_reached = bool(time_limit_reached) or (
+            metadata.get("time_limit_reached") is True
+        )
+        if time_limit_reached:
+            metadata = {**metadata, "time_limit_reached": True}
+
+        self.time_limit_reached = time_limit_reached
         self.raw_answer = raw_answer
         self.answer = answer
         self.metadata = metadata

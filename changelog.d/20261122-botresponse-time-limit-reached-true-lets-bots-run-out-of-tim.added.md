@@ -1,0 +1,1 @@
+Added `BotResponse(time_limit_reached=True)`, which makes a bot let a timed page's `time_limit` run out, so bot tests can cover time-outs without waiting for the deadline; the page records its `time_limit_answer` and `Response.time_limit_reached` is `True`.

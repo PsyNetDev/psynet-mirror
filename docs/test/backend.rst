@@ -65,6 +65,35 @@ answer through ``format_answer`` like a browser response, return
     def get_bot_response(self, experiment, bot, page, prompt):
         return BotResponse(raw_answer="hello")
 
+To test what happens when a participant runs out of time on a page with a
+``time_limit`` (see :ref:`time_limits`), make the bot let the time limit run
+out with ``BotResponse(time_limit_reached=True)``. The page records its
+``time_limit_answer`` without validating it, as for a participant, so the
+answer needn't be one of a :class:`~psynet.modular_page.PushButtonControl`'s
+choices, and :attr:`~psynet.timeline.Response.time_limit_reached` is
+``True``:
+
+.. code-block:: python
+
+    ModularPage(
+        "offer",
+        "How many coins do you offer?",
+        PushButtonControl(choices=list(range(11))),
+        time_limit=15,
+        time_limit_answer="timeout",
+        bot_response=lambda bot: (
+            BotResponse(time_limit_reached=True) if bot.id % 2 else 5
+        ),
+        time_estimate=15,
+    )
+
+The server accepts a bot's time-out at once, so the test doesn't wait
+for the 15 seconds. To make the time actually pass, for example because a
+partner's barrier counts from the deadline, use
+:meth:`~psynet.participant.ParticipantDriver.run_out_of_time` instead. A page
+without a ``time_limit`` raises an error if its bot returns
+``BotResponse(time_limit_reached=True)``.
+
 Pages that collect recordings need a sample file for bots to submit:
 
 .. code-block:: python
@@ -231,7 +260,8 @@ Other helpers ask about a bot's group or act in it:
   message to the :class:`~psynet.chatroom.ChatRoom` on the bot's current page.
 - :meth:`~psynet.participant.ParticipantDriver.run_out_of_time` waits until
   the time limit of the bot's current page has passed and submits no answer,
-  as a participant who leaves a timed page open does.
+  as a participant who leaves a timed page open does. A page's bot response
+  ``BotResponse(time_limit_reached=True)`` does the same without waiting.
 - :func:`~psynet.bot.bots_by_sync_group` sorts bots into their current groups
   of a type, for example ``for first, second in bots_by_sync_group(bots,
   "pair")``, since a grouper can pair them in any order.
