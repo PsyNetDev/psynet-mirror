@@ -144,6 +144,21 @@ def test_only_pages_whose_answers_may_be_turned_down_say_so():
         PushButtonControl(["a"]), validate=lambda answer: None
     )._may_reject_answers()
 
+    class WaitingControl(PushButtonControl):
+        def check_ready_for_response(self, experiment, participant):
+            return None
+
+    assert page(WaitingControl(["a"]))._may_reject_answers()
+
+
+def test_pages_with_page_modules_or_a_session_are_not_swapped_in():
+    def page(**kwargs):
+        return Page(time_estimate=1, template_str="", **kwargs)
+
+    assert page()._swap_in_advance()
+    assert not page(js_page_modules=["/static/trial.js"])._swap_in_advance()
+    assert not page(session_id="game")._swap_in_advance()
+
 
 def test_layout_key_covers_main_body_and_js_vars():
     def key(body, **js_vars):

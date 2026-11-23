@@ -2839,6 +2839,7 @@ class Page(Elt):
         return (
             self._validate_function is not None
             or type(self).validate is not Page.validate
+            or type(self).check_ready_for_response is not Page.check_ready_for_response
         )
 
     def _swap_in_advance(self):
@@ -2846,12 +2847,18 @@ class Page(Elt):
 
         The browser runs the copy's usual page lifecycle, so this excludes only
         what the server sets up as it serves each page: a time limit,
-        background recording and a full page reload.
+        recording, a full page reload or an update within a ``session_id``.
+        Pages with page modules are shown in advance by those instead.
         """
+        from .modular_page import RecordControl
+
         return (
-            self.time_limit is None
+            not self.js_page_modules
+            and self.time_limit is None
             and self.background_recording is None
+            and not isinstance(getattr(self, "control", None), RecordControl)
             and not self.requires_full_page_reload
+            and self.session_id is None
         )
 
     def layout_key(self, fragment_html, experiment, participant):

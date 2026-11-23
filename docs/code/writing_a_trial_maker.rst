@@ -374,7 +374,7 @@ trial again, and drops the answers given after it.
 The browser waits for the server as before when:
 
 * a trial's ``show_trial`` returns more than one page, or a page with a
-  ``time_limit``, background recording or a full page reload;
+  ``time_limit``, recording, a full page reload or a ``session_id``;
 * the server may turn a page's answer down, as with a
   ``RadioButtonControl``, ``CheckboxControl``, ``DropdownControl``,
   ``NumberControl`` or ``SliderControl``, or a page with ``validate``: the

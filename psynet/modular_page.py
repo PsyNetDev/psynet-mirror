@@ -2425,6 +2425,8 @@ class ModularPage(Page):
             self._validate_function is not None
             or type(self).validate is not ModularPage.validate
             or type(self.control).validate is not Control.validate
+            or type(self.control).check_ready_for_response
+            is not Control.check_ready_for_response
         )
 
     def _reject_impossible_answer(self, answer):
