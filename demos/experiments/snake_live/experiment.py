@@ -292,7 +292,8 @@ def food_text(n):
 
 
 def show_result(participant):
-    # None if the group started no game.
+    # None if the group started no game, which only happens to a player the
+    # experimenter removed from the group before it.
     answer = participant.live_games["snake"].answer
     if answer is None:
         return InfoPage("Your group couldn't play the game.", time_estimate=5)
@@ -349,16 +350,18 @@ class Exp(psynet.experiment.Experiment):
             waiting_message="Waiting for other participants to join you",
             # A participant who waits longer than this leaves the experiment.
             max_wait_time=300,
-            # When a member is late for the game, the others go on without
-            # a group, and without a game.
-            below_quorum="continue_without_group",
+            # The game needs two players. A group of more plays on without
+            # a member who is late for it; a player left alone is failed.
+            quorum=2,
+            below_quorum="fail",
         ),
         PlayLiveGame(
             group_type="snake",
             # The game page comes straight after the group forms, so this
-            # only has to allow for a page that is slow to load.
+            # only has to allow for a page that is slow to load. A member
+            # later than this is failed.
             late_after=60,
-            late_action="leave_group",
+            late_action="fail",
             game_class=Snake,
             page=LiveGamePage(
                 "snake_live",
