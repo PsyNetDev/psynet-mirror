@@ -4822,11 +4822,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             f"Timeline hold skip did not settle after {_MAX_BARRIER_WALK_PASSES} steps."
         )
 
-    def response_rejected(self, message, **extra):
+    def response_rejected(self, message):
         logger.warning(
             "The response was rejected with the following message: '%s'.", message
         )
-        return success_response(submission="rejected", message=message, **extra)
+        return success_response(submission="rejected", message=message)
 
     @classmethod
     def busy_response(cls):
@@ -8215,34 +8215,20 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             clock.close("render")
             if fragment is None:
-                _p = get_translator(context=True)
+                payload = exp._stale_page_payload()
                 submission = "rejected"
-                return finish(
-                    exp.response_rejected(
-                        message=_p(
-                            "timeline_problem",
-                            "Synchronization problem detected. "
-                            "Are you running the same experiment in multiple browser tabs? "
-                            "Please close all other tabs and refresh the page.",
-                        )
-                    )
-                )
-            payload["timeline_fragment"] = fragment
-            return finish(success_response(**payload))
+            else:
+                payload["timeline_fragment"] = fragment
+                return finish(success_response(**payload))
 
         clock.close("render")
         if payload.get("submission") == "rejected":
-            if "retry_after" in payload:
+            if "retry_after" in payload or payload.get("stale_page"):
                 # Not the participant's to correct, so response_rejected
-                # isn't told: the page resends the response by itself.
-                logger.info("The response was refused for now: %r.", payload["message"])
+                # isn't told: the page resends the response or reloads.
+                logger.info("The response was refused: %r.", payload["message"])
                 return finish(success_response(**payload))
-            extra = {
-                key: value
-                for key, value in payload.items()
-                if key not in ("submission", "message")
-            }
-            return finish(exp.response_rejected(payload["message"], **extra))
+            return finish(exp.response_rejected(payload["message"]))
         return finish(success_response(**payload))
 
     @classmethod

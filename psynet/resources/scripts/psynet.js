@@ -2013,6 +2013,8 @@
       // to wait for the page to load (for example after an automatic submit).
       psynet.pageFailureShown = true;
       psynet.nextPagePending = false;
+      // Answers not yet sent are lost on reload, which needn't be confirmed.
+      psynet.resetAnswers();
       psynet.setTimelineTransitionBusy(false);
       psynet.response.disable();
       psynet.submit.disable();
@@ -4020,13 +4022,17 @@
       options = {},
     ) {
       // A queued answer refused here was never sent, so its trial is shown
-      // again to be answered later.
+      // again to be answered later, unless the page has failed.
       if (!psynet.pageReady) {
         psynet.log.info("Blocked nextPage because pageReady is false.");
-        if (!psynet.pageFailureShown) {
-          psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        if (psynet.pageFailureShown) {
+          return false;
         }
-        psynet.answers.showAgain = Boolean(options.background);
+        let alerted = psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        if (options.background) {
+          psynet.answers.showAgain = true;
+          await alerted;
+        }
         return false;
       }
       if (psynet.timelineHold && !options.timelineHoldResume) {
@@ -4040,7 +4046,9 @@
         psynet.log.debug(
           "Skipping nextPage request as nextPage is already pending.",
         );
-        psynet.answers.showAgain = Boolean(options.background);
+        if (options.background) {
+          psynet.answers.showAgain = true;
+        }
         return false;
       }
       psynet.log.info("Submitting response via nextPage.");
@@ -4132,6 +4140,7 @@
 
     psynet.loadNextTimelinePageWithReload = async function () {
       await psynet.drainRecordingUploads();
+      psynet.resetAnswers();
       if (psynetTemplateData.flags.lucidRecruitment) {
         psynet.removeBeforeUnloadEventListener();
       }

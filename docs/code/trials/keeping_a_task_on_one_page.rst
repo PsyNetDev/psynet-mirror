@@ -225,9 +225,11 @@ For this to work:
 
 - Every trial page must render the same HTML and JavaScript, with everything
   that changes between trials in ``contents`` rather than in the HTML or
-  ``js_vars``. The browser checks this when the server's reply arrives; if
-  the HTML differs, it drops the answers given ahead, loads the server's page
-  and logs a warning in the browser console.
+  ``js_vars``. The browser checks the HTML and JavaScript when the server's
+  reply arrives; if they differ, it drops the answers given ahead, loads the
+  server's page and logs a warning in the browser console. Changes to
+  ``js_vars`` aren't detected, so the trials shown in advance keep the first
+  trial's.
 - ``show_trial`` and ``show_after_trial`` must not change anything or
   choose at random, because PsyNet also calls them for upcoming trials,
   before they are answered.
