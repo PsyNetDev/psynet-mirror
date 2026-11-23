@@ -35,5 +35,6 @@ not run with the reason.
 <!--
 State whether an automatic code review has been run on the merge request,
 including whether it used the repo-local /branch-review command or another
-review workflow. If it has not been run, explain why.
+review workflow, and the model(s) used for each review. If it has not been
+run, explain why.
 -->

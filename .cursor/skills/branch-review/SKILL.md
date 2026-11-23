@@ -117,5 +117,6 @@ branch diff. Do this even if the current title or description looks close.
   Testing, Automatic code review). Compare each section against the reviewed
   diff. Look for stale claims: changes that were later reverted or reworked,
   CI/test statements that no longer hold, and new commits not yet reflected.
-- Record that `/branch-review` was run in **Automatic code review**.
+- Record that `/branch-review` was run in **Automatic code review**,
+  including the model used and the reviewed commit.
 - If no merge request exists, say so and skip this step.
