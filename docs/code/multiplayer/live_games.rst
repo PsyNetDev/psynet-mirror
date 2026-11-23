@@ -172,14 +172,14 @@ game, and then shows the group the game page:
         SimpleGrouper(
             group_type="pair",
             initial_group_size=2,
-            below_quorum="continue_without_group",
+            below_quorum="fail",
         ),
         PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,
             settings={"throws": 5, "reward_per_win": 0.05},
             late_after=60,
-            late_action="leave_group",
+            late_action="fail",
             page=LiveGamePage(
                 "rock_paper_scissors",
                 tags.div(
@@ -222,14 +222,21 @@ grouper's groups no larger than the game allows.
 for its wait, and needs a limit on it. Use ``late_after`` unless the group
 takes newcomers:
 
-- ``late_after``, with ``late_action="leave_group"``, waits for the slowest
-  member, and removes them from the group if they keep the others waiting
-  that many seconds. The members who were on time then reach the game page
-  without a game. Give the pages before the game a ``time_limit``, such as
-  instructions or the last game's result: ``late_after`` counts only from 10
-  seconds after a page's time limit has run out, so it only has to cover the
-  untimed moments. The group's grouper needs a ``below_quorum``, such as
-  ``"continue_without_group"``, for the members left behind.
+- ``late_after``, with ``late_action="fail"``, waits for the slowest
+  member, and fails them if they keep the others waiting that many seconds.
+  Failing isn't a penalty: it ends a session that can no longer
+  contribute, and the player keeps what they have earned. The group's
+  grouper needs a ``below_quorum`` for the members who were on time. A
+  group that keeps its ``quorum`` plays the game without the late member,
+  and one that falls below it dissolves; with ``below_quorum="fail"`` its
+  remaining members are failed too, as in a game for two (see
+  :ref:`late-remaining-players`). Give the pages before the game a
+  ``time_limit``, such as instructions or the last game's result:
+  ``late_after`` counts only from 10 seconds after a page's time limit has
+  run out, so it only has to cover the untimed moments.
+  ``late_action="leave_group"``, which lets the late member carry on
+  without the group, is an advanced option (see
+  :ref:`sync-leaving-a-group`).
 - ``max_wait_time``, with ``max_wait_action="leave_group"``, is for a group
   that takes newcomers, as in the ``microsociety_live`` demo. There PsyNet
   can't tell a slow member from one who hasn't joined yet, so it can't use
@@ -250,7 +257,7 @@ page in ``rock_paper_scissors_page(game)``, from the trial's definition
         settings={"throws": 5, "reward_per_win": 0.05},
         page=game_page(),
         late_after=20,  # counts from 10 s after the instructions' 90 s are up
-        late_action="leave_group",
+        late_action="fail",
     ),
 
 A ``PlayLiveGame`` without either raises an error, since a group barrier's
@@ -283,7 +290,7 @@ since they get only the state:
         page=game_page(),
         settings={"throws": 3, "reward_per_win": 0.10},
         late_after=60,
-        late_action="leave_group",
+        late_action="fail",
     )
 
 
@@ -310,7 +317,7 @@ trial's ``show_trial``, and pass the trial's ``definition`` as the settings:
                 page=game_page(),
                 settings=self.definition,
                 late_after=60,
-                late_action="leave_group",
+                late_action="fail",
             )
 
 Every member of a group has to arrive with the same settings: a member
@@ -686,9 +693,11 @@ Cases a game page should allow for
 No game
 ~~~~~~~
 
-A participant can reach the page without one, for example when another
-member was late for the ``PlayLiveGame`` and their group broke up, or when
-their group ended before they reached it. PsyNet tells the participant with
+A participant can reach the page without one, for example when the
+experimenter removed them from their group, when another member was late
+for the ``PlayLiveGame`` and their group broke up with the advanced
+``below_quorum="continue_without_group"``, or when their group ended
+before they reached it. PsyNet tells the participant with
 a notice at the top of the page, "Your group couldn't start the game.",
 which the page's ``no_game_message`` changes or turns off, and hides the
 page's content. When the page already has a notice saying that the
@@ -848,7 +857,8 @@ the ``PlayLiveGame``'s, and the others are the game's:
    * - ``late_after`` or ``max_wait_time``, of the ``PlayLiveGame``
      - None: one is needed
      - The wait for the group's members ends. With ``late_after``, a member
-       still keeping the others waiting is late and leaves the group; with
+       still keeping the others waiting is late, and is failed or leaves
+       the group, as ``late_action`` says; with
        ``max_wait_time``, a member who has waited that long leaves it (see
        `PlayLiveGame`_).
    * - ``ready_timeout``

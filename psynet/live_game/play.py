@@ -85,7 +85,7 @@ class PlayLiveGame(EltCollection):
                 time_estimate=30,
             ),
             late_after=30,
-            late_action="leave_group",
+            late_action="fail",
         )
 
     In a trial played in groups, return it from ``show_trial``: it is the
@@ -211,8 +211,8 @@ class PlayLiveGame(EltCollection):
         if kwargs.get("late_after") is None and kwargs.get("max_wait_time") is None:
             raise TypeError(
                 f"The PlayLiveGame {id_!r} needs a limit on its wait. Usually "
-                'give it late_after, with late_action="leave_group", which '
-                "moves on a member who keeps the others waiting, and a "
+                'give it late_after, with late_action="fail", which '
+                "fails a member who keeps the others waiting, and a "
                 "time_limit to the pages before it, which late_after allows "
                 "for. Otherwise give it max_wait_time, which moves on the "
                 "members who wait. Without either, a member still waiting "

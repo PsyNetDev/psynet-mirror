@@ -396,7 +396,7 @@ then shows each player their score:
         SimpleGrouper(
             group_type="pair",
             initial_group_size=2,
-            below_quorum="continue_without_group",
+            below_quorum="fail",
         ),
         PlayLiveGame(
             group_type="pair",
@@ -409,7 +409,7 @@ then shows each player their score:
                 time_estimate=60,
             ),
             late_after=20,
-            late_action="leave_group",
+            late_action="fail",
         ),
         PageMaker(show_score, time_estimate=5),
     )
@@ -418,7 +418,7 @@ then shows each player their score:
     def show_score(participant):
         answer = participant.live_games["rock_paper_scissors"].answer
         if answer is None:
-            return InfoPage("Your partner didn't arrive in time.", time_estimate=5)
+            return InfoPage("Your pair couldn't play the game.", time_estimate=5)
         return InfoPage(f"You won {answer['wins']} throws.", time_estimate=5)
 
 - The :class:`~psynet.sync.SimpleGrouper` puts participants into pairs.
@@ -428,16 +428,18 @@ then shows each player their score:
   ``group_type`` is the grouper's. Its ``settings`` are what
   ``initial_state`` receives.
 - ``late_after`` limits that wait. A partner who keeps the other player
-  waiting more than 20 seconds is late, and with
-  ``late_action="leave_group"`` leaves the pair. The player who was on time
-  then goes on to the game page without a game, as the grouper's
-  ``below_quorum="continue_without_group"`` says. Every ``PlayLiveGame``
-  needs a limit like this.
+  waiting more than 20 seconds is late, and ``late_action="fail"`` fails
+  them. A game for two can't go on with one player, so the grouper's
+  ``below_quorum="fail"`` fails the player who was on time too. Failing
+  isn't a penalty: it ends a session that can no longer contribute, and
+  players keep what they have earned. Every ``PlayLiveGame`` needs a limit
+  like this.
 - ``page`` is the game page, as in `The game page`_ above.
 - On the next page, ``participant.live_games`` has the participant's record
   of the game, keyed by the game's ``name``. Its ``answer`` is what the
   game's ``answer`` returned for them, or ``None`` if the pair didn't start
-  a game.
+  a game, for example because the experimenter removed the player from
+  the pair on the dashboard.
 
 Reference: :ref:`live-games-play`, including :ref:`the wait before the game
 <live-games-wait>`, and :ref:`live-games-record`.
@@ -532,25 +534,27 @@ When a partner leaves
 The rest of the timeline deals with a partner who doesn't come back:
 
 - The grouper's ``max_wait_time`` fails a participant who waits five minutes
-  without a partner, and sends them to the end of the experiment. To let them
-  carry on without a partner instead, give the grouper
-  ``max_wait_action="continue_without_group"``.
+  without a partner, and sends them to the end of the experiment. Keep
+  this unless the design has a meaningful task for them alone, for which
+  the advanced ``max_wait_action="continue_without_group"`` lets them carry
+  on without a partner.
 - Before the second game, the partner may still be reading the first game's
   result, so the result page has a ``time_limit`` of ``RESULT_SECONDS``.
   ``late_after`` counts from 10 seconds after it has run out, time for an
   answer sent at the deadline to arrive, so ``LATE_AFTER`` only has to
   cover the moments after that. A partner who closed their tab on the result
   page is late 30 + 10 + 20 = 60 seconds after it opened.
-- A partner who is late leaves the pair, and
-  ``below_quorum="continue_without_group"`` lets the player left behind carry
-  on with the experiment.
-- ``stop_if`` ends the loop for a participant who is no longer in a pair.
-  PsyNet checks it before each game, never during one. The ``conditional``
-  after the loop then shows that participant a page that says why there are
-  no more games:
+- A partner who is late is failed, and the grouper's
+  ``below_quorum="fail"`` fails the player left behind, who has nobody to
+  play the second game with. Both keep what they earned in the first game.
+- ``stop_if`` ends the loop for a participant the experimenter has removed
+  from their pair on the dashboard, the only way to be without a pair and
+  still playing. PsyNet checks it before each game, never during one. The
+  ``conditional`` after the loop then shows that participant a page that
+  says they were removed:
 
   .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
-     :start-at: def left_pair(participant):
+     :start-at: def removed_from_pair(participant):
      :end-before: class Exp(psynet.experiment.Experiment):
      :dedent:
 
