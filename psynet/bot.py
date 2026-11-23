@@ -293,6 +293,17 @@ def advance_past_wait_pages(
         )
     if timeout is NoArgumentProvided:
         timeout = None if max_iterations is not None else 10.0
+    _advance_past_wait_pages(bots, timeout, stop_at, max_iterations=max_iterations)
+
+
+def _advance_past_wait_pages(
+    bots, timeout, stop_at, max_iterations=None, current_visits=frozenset()
+):
+    """Run :func:`advance_past_wait_pages`, also advancing bots on the pages in ``current_visits``.
+
+    ``current_visits`` holds the ``page_uuid`` of waits that ``stop_at``
+    mustn't leave bots at, as their barrier ID is also that of a later wait.
+    """
     stop_at = {stop_at} if isinstance(stop_at, str) else set(stop_at)
     deadline = None if timeout is None else time.monotonic() + timeout
     iteration = 0
@@ -306,7 +317,11 @@ def advance_past_wait_pages(
             # two would leave take_page submitting the stale waiting page.
             bot.refresh_status()
             page = bot.status.get("page") or {}
-            if page.get("barrier_id") in stop_at and not page.get("can_resume"):
+            if (
+                page.get("barrier_id") in stop_at
+                and not page.get("can_resume")
+                and bot.status.get("page_uuid") not in current_visits
+            ):
                 continue
             if _status_is_waiting(bot.status):
                 waiting.append(bot)
@@ -452,14 +467,16 @@ def make_late_now(
     timeout : float, optional
         Passed to :func:`advance_past_wait_pages`.
     stop_at : str or sequence of str
-        Passed to :func:`advance_past_wait_pages`: IDs of barriers after this
-        one, such as the next turn's, to leave bots waiting at.
+        Passed to :func:`advance_past_wait_pages`: IDs of barriers to leave
+        bots waiting at once they are past this one, such as the next turn's.
+        It can name ``barrier_id`` itself, for a turn-taking game whose turns
+        share one barrier: the bots then stop at its next visit.
 
     Raises
     ------
     ValueError
-        If none of the bots is waiting at the barrier, it has no
-        ``late_after``, or ``stop_at`` names it.
+        If none of the bots is waiting at the barrier, or the barrier has no
+        ``late_after``.
 
     Examples
     --------
@@ -469,15 +486,10 @@ def make_late_now(
         bots[1].take_page(response=8)
         make_late_now(bots, "round_finished")  # bots[2] goes quiet.
 
-        # The others finish the turn and wait at the next one's barrier.
-        make_late_now(bots, "turn_1", stop_at="turn_2")
+        # The others finish the turn and wait at the next turn's visit of
+        # the barrier that every turn shares.
+        make_late_now(bots, "turn_finished", stop_at="turn_finished")
     """
-    stop_at = (stop_at,) if isinstance(stop_at, str) else tuple(stop_at)
-    if barrier_id in stop_at:
-        raise ValueError(
-            f"stop_at can't name '{barrier_id}': its waiting bots must poll it "
-            "for it to make the others late."
-        )
     with transaction():
         participants = [Participant.query.get(bot.id) for bot in bots]
         waiting = [p for p in participants if barrier_id in p.active_barriers]
@@ -511,7 +523,8 @@ def make_late_now(
                     left = (link.page_deadline - now).total_seconds()
                     page_left = max(page_left, left + answer_arrival)
             _backdate_group(group, late_after + page_left + 1)
-    advance_past_wait_pages(bots, timeout=timeout, stop_at=stop_at)
+        current_visits = frozenset(p.page_uuid for p in waiting)
+    _advance_past_wait_pages(bots, timeout, stop_at, current_visits=current_visits)
 
 
 def _backdate_group(group, seconds):
