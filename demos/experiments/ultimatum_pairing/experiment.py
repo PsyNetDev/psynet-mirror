@@ -36,7 +36,7 @@ rounds or if their cohort falls apart.
 from typing import List
 
 import psynet.experiment
-from psynet.bot import BotDriver, advance_past_wait_pages, regroup_now
+from psynet.bot import BotDriver, advance_past_wait_pages, make_late_now, regroup_now
 from psynet.group_prompt import GroupPrompt
 from psynet.modular_page import ModularPage, PushButtonControl
 from psynet.page import InfoPage
@@ -503,7 +503,8 @@ class Exp(psynet.experiment.Experiment):
         if first_role[stayer.id] != first_role[leaver.id]:
             for bot in (stayer, leaver):
                 assert bot.with_participant(pairing.role) != first_role[bot.id]
-        _play([stayer])
+        stayer.take_page(response=5 if stayer.current_page_label == "proposer" else 3)
+        make_late_now([stayer], "round_finished")  # instead of waiting LATE_AFTER
         assert "Your partner was away" in stayer.current_page_text
         assert leaver.failed
         assert leaver.with_participant(lambda p: cohort_of(p) is None)
