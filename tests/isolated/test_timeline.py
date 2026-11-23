@@ -164,7 +164,7 @@ def test_only_pages_built_from_declared_components_are_swapped_in():
     assert because(CustomControl(["a"])) == (
         "CustomControl doesn't set can_swap_in_advance"
     )
-    assert because(RadioButtonControl(["a"])).startswith("RadioButtonControl")
+    assert because(RadioButtonControl(["a"])) is None
     assert because(session_id="game") == "it has a session_id"
     assert because(time_limit=5) == "it has a time limit"
 

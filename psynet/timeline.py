@@ -2843,20 +2843,20 @@ class Page(Elt):
         )
 
     def _swap_components(self):
-        """The page and what it is built from, each of which must allow swapping in advance."""
+        """The page and what it is built from, each of which must allow being swapped in."""
         return [self]
 
     def _not_swappable_because(self):
-        """Say why a rendered copy of the page can't be swapped in before the server confirms it, or return ``None``.
+        """Say why a rendered copy of the page can't be swapped in before the server serves it, or return ``None``.
 
-        The copy is rendered while an earlier trial is on screen, and its answer
-        reaches the server after the browser has moved on. So the page's class
-        and those of its prompt and control must each set
+        The copy is rendered while an earlier page is on screen. So the page's
+        class and those of its prompt and control must each set
         ``can_swap_in_advance = True`` in their own class body, saying that
-        they render the same then as when served and that the server accepts
-        any answer they give; a subclass doesn't inherit this, as it may add
-        behaviour that isn't safe. The page also mustn't need what the server
-        sets up as it serves each page.
+        they render the same then as when served and run as usual when swapped
+        in; a subclass doesn't inherit this, as it may add behaviour that
+        isn't safe. The page also mustn't need what the server sets up as it
+        serves each page. Whether the server may turn down the page's answers
+        is a separate question, see :meth:`_may_reject_answers`.
         """
         undeclared = [
             type(component).__name__
@@ -2873,8 +2873,6 @@ class Page(Elt):
             "it records in the background": self.background_recording is not None,
             "it needs a full page reload": self.requires_full_page_reload,
             "it has a session_id": self.session_id is not None,
-            "the server may turn its answers down (validate or "
-            "check_ready_for_response)": self._may_reject_answers(),
         }
         return next((reason for reason, found in reasons.items() if found), None)
 

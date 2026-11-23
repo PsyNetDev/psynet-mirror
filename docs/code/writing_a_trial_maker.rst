@@ -372,17 +372,20 @@ the browser shows its message and loads that trial again, and drops the
 answers given after it.
 
 Only a :class:`~psynet.modular_page.ModularPage` whose prompt and control
-allow it is swapped in. These built-in prompts and controls do:
-``Prompt``, ``ImagePrompt``, ``AudioPrompt``, ``ColorPrompt``,
-``NullControl``, ``PushButtonControl``, ``KeyboardPushButtonControl``,
-``TextControl``, ``MultiRatingControl`` and ``RatingControl``. They render
-the same while an earlier trial is on screen as when the server serves them,
-and the server accepts any answer they give. Controls such as
-``RadioButtonControl`` or ``SliderControl`` can turn an answer down, which
-would arrive with the next trial already on screen. A prompt or control of
-your own allows it by setting ``can_swap_in_advance = True`` in its class
-body; a subclass doesn't inherit the setting, as it may add behaviour that
-isn't safe. The server log says why a trial maker's pages wait.
+allow it is swapped in, which means that they render the same while an
+earlier trial is on screen as when the server serves them, and run as usual
+when swapped in. The built-in ``Prompt``, ``ImagePrompt``, ``AudioPrompt``
+and ``ColorPrompt`` allow it, and so do ``NullControl``, ``PushButtonControl``,
+``KeyboardPushButtonControl``, ``TextControl``, ``RadioButtonControl``,
+``CheckboxControl``, ``DropdownControl``, ``NumberControl``, ``SliderControl``,
+``MultiRatingControl`` and ``RatingControl``. A prompt or control of your own
+allows it by setting ``can_swap_in_advance = True`` in its class body; a
+subclass doesn't inherit the setting, as it may add behaviour that isn't safe.
+The server must also accept any answer to the trial page, which would
+otherwise be turned down with the next trial already on screen, so a
+``RadioButtonControl``, ``CheckboxControl``, ``DropdownControl``,
+``NumberControl`` or ``SliderControl`` that asks for a missing answer still
+waits for the server. The server log says why a trial maker's pages wait.
 
 The browser also waits for the server as before when:
 

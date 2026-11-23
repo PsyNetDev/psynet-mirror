@@ -69,6 +69,8 @@ class InfoPage(ModularPage):
         Further arguments to pass to :class:`psynet.modular_page.ModularPage`.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         content: Union[str, Markup, dom_tag],

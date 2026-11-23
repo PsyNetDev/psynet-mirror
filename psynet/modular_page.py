@@ -1194,6 +1194,8 @@ class CheckboxControl(OptionControl):
         See :class:`OptionControl`.
     """
 
+    can_swap_in_advance = True
+
     input_type = "checkbox"
 
     def __init__(
@@ -1317,6 +1319,8 @@ class DropdownControl(OptionControl):
         Whether to reject answers that are not one of ``choices``. Default: ``None``, which uses the class attribute (``True``).
         See :class:`OptionControl`.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -1693,6 +1697,8 @@ class RadioButtonControl(OptionControl):
         See :class:`OptionControl`.
     """
 
+    can_swap_in_advance = True
+
     input_type = "radio"
 
     def __init__(
@@ -1810,6 +1816,8 @@ class NumberControl(Control):
     text_align:
         CSS width property for the alignment of the text inside the number input field. Default: `"right"`.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -2870,6 +2878,8 @@ class SliderControl(Control):
     template_args:
         Arguments for the  optional additional template. Default: `None`.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
