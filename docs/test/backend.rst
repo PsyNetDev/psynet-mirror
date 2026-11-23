@@ -284,6 +284,13 @@ per-bot traits on ``bot.var`` in ``initialize_bot`` rather than in globals or
 on ``self``, and avoid calling ``random.seed()`` from experiment code. To
 measure how the server performs under load, see :doc:`scalability`.
 
+Bots answer pages instantly by default (``test_time_factor = 0``),
+including the pages of a barrier's ``waiting_logic``, such as filler trials
+in a grouper's lobby. Once the barrier is ready to release them, for
+example because the group is complete, waiting bots stop answering those
+pages until they are released (for at most 5 s). The release has to lock
+every waiter at once, which it can't do while one of them is mid-request.
+
 Testing on a remote server
 --------------------------
 
