@@ -6,6 +6,7 @@ import pytest
 from dallinger import db
 
 from psynet.bot import BotDriver
+from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage
 from psynet.participant import Participant
 from psynet.trial.main import Trial
@@ -140,7 +141,7 @@ def test_prepared_trials_reject_options_they_cant_support(option):
 
 @pytest.mark.parametrize("experiment_directory", [EXPERIMENT], indirect=True)
 @pytest.mark.usefixtures("launched_experiment")
-def test_a_trial_whose_page_has_a_different_layout_is_not_shown_in_advance():
+def test_a_trial_whose_page_has_a_different_layout_is_not_shown_in_advance(monkeypatch):
     bot = BotDriver()
     bot.take_page()
     trials = Trial.query.filter_by(participant_id=bot.id).order_by(Trial.position)
@@ -171,10 +172,12 @@ def test_a_trial_whose_page_has_a_different_layout_is_not_shown_in_advance():
     # The browser compares the same key, computed from the page it receives.
     assert reply["timeline_fragment"]["layout_key"] == trials[1].layout_key
 
-    # Bot tests fail if no trial could be shown in advance.
-    trial_maker = trials[0].trial_maker
-    trial_maker._check_trials_shown_in_advance(participant)
+    # Bot tests fail if no trial could be shown in advance, even if the
+    # experiment's own bot checks don't call super().
+    experiment = get_experiment()
+    monkeypatch.setattr(type(experiment), "test_check_bots", lambda self, bots: None)
+    experiment._check_bots([participant])
     for i, trial in enumerate(trials):
         trial.layout_key = f"layout {i}"
     with pytest.raises(AssertionError, match="none could be shown in advance"):
-        trial_maker._check_trials_shown_in_advance(participant)
+        experiment._check_bots([participant])

@@ -584,9 +584,14 @@ class StaticTrialMaker(ChainTrialMaker):
 
         Trials get a layout key once their pages are compared, so a pair of
         consecutive trials with keys, but none with the same key, means no
-        trial could be shown in advance.
+        trial could be shown in advance. A pair separated by a page between
+        trials, which isn't compared, can still pass the check.
         """
-        keys = [trial.layout_key for trial in self.get_participant_trials(participant)]
+        keys = [
+            trial.layout_key
+            for trial in self.get_participant_trials(participant)
+            if not trial.failed
+        ]
         compared = [
             (a, b) for a, b in zip(keys, keys[1:]) if a is not None and b is not None
         ]

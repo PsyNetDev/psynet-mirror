@@ -2070,7 +2070,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 n_bots=self.test_n_bots,
                 time_factor=self.test_time_factor,
                 stagger_interval_s=self.test_parallel_stagger_interval_s,
-                check_bots=self.test_check_bots,
+                check_bots=self._check_bots,
             )
         else:
             raise ValueError(f"Invalid test mode: {self.test_mode}")
@@ -2198,7 +2198,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         # rather than the BotDriver instances.
         with transaction():
             bots = Bot.query.all()
-            self.test_check_bots(bots)
+            self._check_bots(bots)
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
         """
@@ -2233,6 +2233,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         bot.take_experiment(render_pages, time_factor)
 
+    def _check_bots(self, bots: List[Bot]):
+        """Run the experiment's bot checks, then PsyNet's own, which can't be overridden."""
+        self.test_check_bots(bots)
+        for trial_maker in self.timeline.trial_makers.values():
+            if getattr(trial_maker, "prepare_trials_in_advance", False):
+                for bot in bots:
+                    trial_maker._check_trials_shown_in_advance(bot)
+
     def test_check_bots(self, bots: List[Bot]):
         for b in bots:
             self.test_check_bot(b)
@@ -2244,18 +2252,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         :meth:`~psynet.participant.ParticipantDriver.drop_out` or the test
         called :meth:`~psynet.participant.ParticipantDriver.allow_failure`
         for it, for example for group members failed because a partner
-        dropped out. A trial maker with ``prepare_trials_in_advance`` must
-        also have been able to show some of the bot's trials in advance, if
-        it tried. Override this for other checks.
+        dropped out. Override this for other checks.
         """
         assert (
             not bot.failed
             or bot.status == "returned"
             or bot.unique_id in _unique_ids_allowed_to_fail
         ), f"Bot {bot.id} failed (failure tags: {bot.failure_tags})."
-        for trial_maker in self.timeline.trial_makers.values():
-            if getattr(trial_maker, "prepare_trials_in_advance", False):
-                trial_maker._check_trials_shown_in_advance(bot)
 
     @classmethod
     def error_page(

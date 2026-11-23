@@ -191,6 +191,7 @@ class Exp(psynet.experiment.Experiment):
         }
 
     def test_check_bot(self, bot, **kwargs):
+        super().test_check_bot(bot, **kwargs)
         trials = participant_trials(bot)
         assert len(trials) == N_TRIALS
         assert sum(t.definition["congruent"] for t in trials) == N_TRIALS // 2
