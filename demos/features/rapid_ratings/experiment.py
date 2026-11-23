@@ -99,6 +99,7 @@ class Exp(psynet.experiment.Experiment):
     )
 
     def test_check_bot(self, bot, **kwargs):
+        super().test_check_bot(bot, **kwargs)
         trials = RatingTrial.query.filter_by(participant_id=bot.id).all()
         assert sorted(trial.definition["name"] for trial in trials) == sorted(PICTURES)
         assert all(trial.answer == 3 for trial in trials)
