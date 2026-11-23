@@ -5273,7 +5273,7 @@
   let updateProgressAndReward = function () {
     // Until queued answers reach the server, it reports the progress from
     // before them, while a page shown in advance already has the new one.
-    if (psynet.uniqueId !== undefined && !psynet.answers.queue.length) {
+    if (psynet.uniqueId !== undefined && !psynet.answers?.queue.length) {
       $.ajax({
         url: "/timeline/progress_and_reward",
         cache: false,
