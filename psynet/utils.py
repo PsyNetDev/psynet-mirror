@@ -412,10 +412,10 @@ def linspace(lower, upper, length: int):
     Parameters
     ----------
 
-    lower : number
+    lower : float
         The lower bound.
 
-    upper : number
+    upper : float
         The upper bound.
 
     length : int
@@ -777,6 +777,9 @@ def _translation_environment(app, locale):
     )
     environment.install_gettext_translations(translation)
     environment.globals.update(**jinja_functions)
+    environment.policies["json.dumps_kwargs"] = app.jinja_env.policies[
+        "json.dumps_kwargs"
+    ]
     environment.psynet_string_templates = OrderedDict()
     cache[locale] = environment
     return environment

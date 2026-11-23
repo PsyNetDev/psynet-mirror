@@ -180,6 +180,8 @@
             const attempt = ++startAttempt;
             let entryInformation = getEntryInformation();
             if (Object.keys(entryInformation).length > 0) {
+                // A new participant gets an expected 403 (participant_not_found)
+                // here, and is created by shouldAttemptCreate's fallback.
                 dallinger.post("/load-participant", entryInformation).done(function (resp) {
                     if (attempt !== startAttempt) {
                         return;

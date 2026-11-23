@@ -11,30 +11,6 @@ processes they need.
 
 Run it once :doc:`back-end tests <backend>` pass.
 
-Measuring async job CPU
------------------------
-
-At the end of ``psynet test local``, PsyNet logs how much CPU each kind of
-async job used, grouped by where the job runs, label and
-:ref:`priority <async_job_priority>`:
-
-.. code-block:: text
-
-    Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
-      Runs in  Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
-      worker   AsyncCodeBlock  high          2         0.027        0.052          0.085         no
-
-``worker`` rows are :class:`~psynet.async_job.WorkerAsyncJob` jobs, which run
-in worker processes. ``web`` rows are :class:`~psynet.async_job.LocalAsyncJob`
-jobs, such as asset deposits, which run in a thread of the web process. A
-CPU-heavy worker job keeps a core busy while it runs, so as load grows it
-needs more worker processes and a server with a core for each (see
-:ref:`performance_testing_async_workers`). An I/O-bound job, such as an API
-call, mostly waits and doesn't need more cores. Per-job values are in the
-``cpu_time`` column of ``database/async_job.csv`` in the export. The
-:doc:`/skills/plan-server-resources` Agent Skill turns these numbers into a
-worker estimate; confirm it with a performance test.
-
 Running a test
 --------------
 
@@ -107,7 +83,9 @@ removal reason (such as ``late`` or ``group_dissolved``; a bot removed from
 two groups counts twice); these bots may
 still have completed the experiment. Other sections cover
 runtimes, busy chains, requests answered busy or stale (which bots retry),
-wait pages, async job queue waits and worker use, and how the database grew.
+wait pages, async job queue waits and worker use,
+:ref:`live games <performance_testing_live_games>`, and how the database
+grew.
 *Start-up vs steady state* splits the measures at the moment the first bot
 finishes, because a study's opening burst is often its hardest moment.
 
@@ -131,14 +109,41 @@ for it. In one test on the server described in :ref:`choosing_server_size`,
 1,000 participants waiting at once made no measurable difference to
 response times. At about 2,000, a few web processes reached their limit of
 1,024 open files and refused new websockets and ordinary requests.
-`Dallinger#10102 <https://github.com/Dallinger/Dallinger/pull/10102>`_
-raises that limit. Without `Dallinger#10052
-<https://github.com/Dallinger/Dallinger/pull/10052>`_, which gives
-websockets their own Redis connections, Redis requests already failed with
-about 500 participants waiting. Neither is released yet.
+Dallinger 13, which PsyNet 14 requires, raises that limit to 65,536 for
+Docker deployments
+(`Dallinger#10102 <https://github.com/Dallinger/Dallinger/pull/10102>`_), so
+this ceiling no longer applies there; the higher limit hasn't been load-tested
+yet. Dallinger 13 also gives websockets their own Redis connections
+(`Dallinger#10052 <https://github.com/Dallinger/Dallinger/pull/10052>`_);
+before that, Redis requests already failed with about 500 participants
+waiting.
 
 If response times are high, profile the database queries with ``psynet test
 local --sql-profile``; see :doc:`/test/sqlalchemy_profiling`.
+
+Measuring async job CPU
+-----------------------
+
+At the end of ``psynet test local``, PsyNet logs how much CPU each kind of
+async job used, grouped by where the job runs, label and
+:ref:`priority <async_job_priority>`:
+
+.. code-block:: text
+
+    Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
+      Runs in  Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
+      worker   AsyncCodeBlock  high          2         0.027        0.052          0.085         no
+
+``worker`` rows are :class:`~psynet.async_job.WorkerAsyncJob` jobs, which run
+in worker processes. ``web`` rows are :class:`~psynet.async_job.LocalAsyncJob`
+jobs, such as asset deposits, which run in a thread of the web process. A
+CPU-heavy worker job keeps a core busy while it runs, so as load grows it
+needs more worker processes and a server with a core for each (see
+:ref:`performance_testing_async_workers`). An I/O-bound job, such as an API
+call, mostly waits and doesn't need more cores. Per-job values are in the
+``cpu_time`` column of ``database/async_job.csv`` in the export. The
+:doc:`/skills/plan-server-resources` Agent Skill turns these numbers into a
+worker estimate; confirm it with a performance test.
 
 .. _performance_testing_capacity:
 
@@ -161,10 +166,14 @@ A test passes if:
   500);
 - high-priority async jobs wait under ``--max-queue-p95-s`` (default 5 s)
   for a worker, at the 95th percentile;
+- live games' ticks, and players' messages where the test measures them,
+  run at most 100 ms late at the 95th percentile, and at most 1% of the
+  games fail (see :ref:`performance_testing_live_games`);
 - at most 1% of participants are failed for waiting too long, and at most
   1% get fewer trials because every chain was busy.
 
-A single stray error doesn't fail a test. Low-priority async jobs, which
+A single stray request error doesn't fail a test, but a single failed live
+game in a test of fewer than 100 games does. Low-priority async jobs, which
 participants don't wait for (see :ref:`async_job_priority`), never fail a
 test. If participants do wait for an
 :meth:`~psynet.trial.main.Trial.async_post_trial` job some other way, for
@@ -257,8 +266,8 @@ config variables (see :doc:`/reference/configuration`) set how many run at
 once:
 
 - ``worker_processes`` (default 1): the number of worker processes, the
-  ``worker_N`` containers on an SSH server or the worker dynos on Heroku.
-  It replaces ``num_dynos_worker``.
+  ``worker_N`` containers on an SSH server. Heroku sizes its worker dynos
+  with ``num_dynos_worker`` instead.
 - ``worker_greenlets_per_process`` (default 20): how many jobs each process
   runs at once.
 
@@ -289,6 +298,108 @@ that uses every core, so going higher needs a larger server or cheaper
 jobs. There is no estimate if the test had no steady state or fewer than
 20 worker jobs finished in it. The ``recommend_workers`` docstring in
 ``psynet/perf_test/results.py`` gives the formula.
+
+.. _performance_testing_live_games:
+
+Live games
+----------
+
+:doc:`Live games </design/live_games>` aren't played in requests or async
+jobs. Each worker process runs a *game runner* beside it, which plays its
+share of the games one after another, running their ticks and applying the
+players' messages. A runner that can't keep up runs ticks late, and players
+see the game stutter.
+
+Bots play live games on the server, through the game's ``bot`` method, and
+open no game pages. So a test with bots alone measures the game's code and
+how late its ticks run, but not players' messages, nor views on their way
+to the pages; see `Playing during a test`_ for those.
+
+Test a multiple of the group size, for longer than one game, as for any
+group experiment (see :ref:`performance_testing_capacity`): bots left over
+wait for a group, and a test that stops mid-game leaves groups unfinished.
+
+Timing the game's code
+~~~~~~~~~~~~~~~~~~~~~~
+
+Before a performance test, time the game's code with
+:meth:`~psynet.live_game.testing.LocalGame.time_play`. It plays the game with
+its bots for a while, as a runner would, without a server:
+
+.. code-block:: python
+
+    from psynet.live_game.testing import LocalGame
+
+    print(LocalGame(Snake, players=4).time_play(30))
+
+.. code-block:: text
+
+    Snake: 240 turns in 30 s of play took 0.037 s of game code (0.15 ms a turn on average, 1.48 ms at most), 0.12% of a game runner, so one runner can play about 575 games at once.
+
+The number of games keeps the runner about 70% busy, as the worker estimate
+above does. It leaves out the runner's own work of saving games and sending
+views, so treat it as an upper bound. If it is near the number of groups the
+study will run at once, make the game's ``tick`` and ``view`` cheaper, for
+example by sending less in each view, or plan on more worker processes.
+
+Reading the report
+~~~~~~~~~~~~~~~~~~
+
+A performance test of an experiment with live games reports them under *Live
+games*::
+
+    LIVE GAMES (1 game runner, busy 3% of the test)
+    ------------------------------------
+    The p95 delays are how late ticks ran and how long players' messages
+    waited for the pass that applied them; a pass is the runner's turn at one game.
+      Game      Games    Failed    p95 tick delay    p95 message delay    Avg pass
+      ------  -------  --------  ----------------  -------------------  ----------
+      snake        12         0           0-10 ms      (needs browser)      0.4 ms
+
+*Games* counts the games started during the test and those already running
+when it started, and *Avg pass* is the time the game's code took in a pass.
+The runners count delays in ranges, so the 95th percentiles are ranges. A
+game without a ``tick_rate`` shows *no ticks* for its tick delay, and the
+summary checks the delay limit only for the delays a test measured. Such a
+game runs only when a message arrives or one of its deadlines is due. Bots'
+messages can all arrive at once, so one pass can play many of them. When
+games fail, the section gives each game's most common errors. The report
+warns when the runners were busy for more than 85% of the test: raise
+``worker_processes`` (see :ref:`performance_testing_async_workers`), which
+adds runners, or make the games cheaper.
+
+When games fail
+~~~~~~~~~~~~~~~
+
+A runner that falls far behind doesn't just run ticks late. Its next turn
+at a game runs every tick that has come due, and if together they take
+longer than the game's :ref:`time_limit <live-games-time-limit>`, 1 second
+by default, the game fails, with ``TimeLimitExceeded`` in the server log.
+This is deliberate: a game that stalled isn't the game its players were
+meant to play, so it fails like any other failed game rather than being
+kept in the data. The report's *Failed* column counts these games. Game code
+that is slow in itself fails the same way, and the report can't tell the
+two apart, so time the game with ``LocalGame.time_play`` to find out which
+it was.
+
+Playing during a test
+~~~~~~~~~~~~~~~~~~~~~
+
+To measure how long players' messages wait, play in a browser during the
+test. For example, start ``psynet debug local --legacy`` (``--legacy``
+because the development server delivers a ticking game's views in bursts),
+join the game in a browser, and run
+``psynet performance-test local --existing --force`` (``--force`` because
+your participant isn't a bot). The bots share games with you, and the *p95
+message delay* column shows how long your moves waited to be applied. The
+summary's numbers, its recommended cap included, are worked out as usual,
+but a note says that the database had participants that bots didn't
+create, so treat them as a check of how the experiment ran rather than as
+an estimate of how many participants it can handle.
+
+No test measures the views' trip to the page, so also watch the game in a
+browser on the deployed server (see :ref:`performance_testing_server`) while
+other groups play.
 
 .. _performance_testing_database_size:
 

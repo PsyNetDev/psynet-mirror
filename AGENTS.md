@@ -112,16 +112,32 @@ Open a PR to upstream, writing the description to a file first:
 - branch on the main repository: `gh pr create --repo Dallinger/Dallinger --base master --head <branch-name> --title "<title>" --body-file <file>`
 - branch on the fork: `gh pr create --repo Dallinger/Dallinger --base master --head <your-username>:<branch-name> --title "<title>" --body-file <file>`
 
-If your PsyNet PR depends on this new unmerged change to Dallinger,
-specify the repository that holds the branch in `pyproject.toml` (use a
-literal URL; environment variables are not expanded in `pyproject.toml`):
+If your PsyNet PR depends on this new unmerged change to Dallinger, first
+make sure the Dallinger branch contains any Dallinger commit that the
+PsyNet target branch already pins: merge that commit in if not (it may be
+on Dallinger's `master` or on another unmerged branch), and push. Then,
+once that Dallinger PR is open, replace the Dallinger entry in
+`pyproject.toml` with a pin on the full commit SHA of the branch head, not
+the branch name, and update the comment above it to say which unreleased
+Dallinger changes the pin carries. PsyNet's bootstrap and CI tooling
+accept only a `>=X.Y.Z` lower bound whose `vX.Y.Z` tag exists, or a full
+40-character commit SHA on `github.com/Dallinger/Dallinger`. A commit on a
+fork branch can be fetched from `Dallinger/Dallinger` once its PR is open,
+so the URL is the same either way:
 
 ```toml
-# In [project].dependencies
-"dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@<branch-name>",
-# or, for a branch on the fork:
-"dallinger[docker] @ git+https://github.com/<your-username>/Dallinger.git@<branch-name>",
+# In [project.optional-dependencies], under experiment
+"dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@<commit-sha>",
 ```
+
+Then, from the PsyNet repository root, refresh the vendored CI constraints
+with `psynet dev ci update-dallinger-constraints`. Update the pin and
+refresh the constraints again after pushing new Dallinger commits that
+PsyNet needs.
+
+Return to a lower bound only once a Dallinger release contains every
+commit PsyNet needs, using that release's version as the bound, and
+refresh the constraints again.
 
 Use the GitHub CLI to find and read Dallinger job logs.
 Use the token `DALLINGER_GH_TOKEN` for all these commands (either via
@@ -301,14 +317,37 @@ Non-trivial code changes should be tested.
 Prefer red/green test-driven development, but avoid committing overly verbose tests in the final PR.
 Implement sensible unit tests where appropriate.
 Verify changes end-to-end by running `psynet test local` within a relevant demo.
-Each `psynet test local` run gets its own database, Redis server and port, so
-several can run at once, including from agents working in other worktrees.
-Runs in the same experiment directory wait for each other automatically. Don't
-queue test runs behind your own lock or wait for other agents' tests to finish.
 Prefer concise tests that exercise real/public interfaces.
 Avoid very long tests with extensive monkeypatching unless there is no practical
 alternative; if monkeypatching is necessary, keep it minimal and focused on
 observable behavior rather than internal implementation details.
+
+### Running work in parallel
+
+`pytest` from this checkout and each `psynet test local` run get their own
+database, Redis server and port, so several can run at once, including from
+agents working in other worktrees. Test sessions in the same experiment
+directory wait for each other automatically. Don't queue test runs behind your
+own lock or wait for other agents' tests to finish. A test session and a
+`psynet debug local` server (with or without `--isolated`) refuse to share an
+experiment directory, because both replace its generated files; to test an
+experiment while debugging it, run the tests from a git worktree.
+
+To test another branch without switching this checkout, use a git worktree.
+Set `PYTHONPATH` for both `pytest` and `psynet` commands there, because the
+editable install points at this checkout:
+
+```bash
+git worktree add /tmp/wt-<branch> <branch>
+cd /tmp/wt-<branch> && PYTHONPATH=/tmp/wt-<branch> python -m pytest tests/isolated/<file>.py
+cd /tmp/wt-<branch>/demos/<dir> && PYTHONPATH=/tmp/wt-<branch> psynet test local
+```
+
+`psynet debug local`, `psynet deploy local` (also with `--docker`) and the
+Playwright specs, which start `psynet debug local`, use the shared database,
+Redis and port (5000 by default), so only one of them can run at a time.
+Subagents and parallel dogfood runs should use `psynet debug local --isolated`.
+Remove the worktrees when you are done. See `docs/developer/running_tests.rst`.
 
 ## Code organization and documentation
 

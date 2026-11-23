@@ -1,0 +1,26 @@
+#rps-game {
+  max-width: 480px;
+  margin: 1rem auto 0;
+  text-align: center;
+}
+
+#rps-status {
+  min-height: 1.5rem;
+  margin: 1rem 0;
+}
+
+#rps-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+#rps-results {
+  text-align: left;
+}
+
+/* The latest throw stands out, so a player sees its result at a glance. */
+#rps-results li:last-child {
+  font-weight: 600;
+}

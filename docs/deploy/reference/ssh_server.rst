@@ -477,7 +477,7 @@ after you switch it on from the dashboard, and while any participant is
 still working, until the clock times out abandoned participants. The app's
 logs say why it stayed awake. An experiment that recruits in other ways can
 add conditions by overriding ``reason_to_stay_awake`` on its ``Experiment``
-class. Idle sleep needs the matching Dallinger release.
+class.
 
 Hibernate by hand only apps that are not recruiting or serving participants.
 ``psynet export ssh`` awakens a
