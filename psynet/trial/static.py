@@ -76,6 +76,26 @@ class StaticTrial(ChainTrial):
         raise NotImplementedError
 
 
+def _page_config_differs(config, page, experiment, participant):
+    """Whether ``page``'s ``js_vars`` differ from ``config``, warning if they do.
+
+    ``js_vars`` configure the page, and trials shown in advance share it, so
+    a trial whose ``js_vars`` differ waits for the server instead.
+    """
+    other = page._js_vars_for(experiment, participant)
+    keys = sorted(
+        key for key in config.keys() | other.keys() if config.get(key) != other.get(key)
+    )
+    if keys:
+        logger.warning(
+            "The next trial's page has different js_vars (%s), so it can't be "
+            "shown in advance. Put what changes between trials in the page's "
+            "contents.",
+            ", ".join(keys),
+        )
+    return bool(keys)
+
+
 class StaticTrialMaker(ChainTrialMaker):
     """
     Administers a sequence of trials in a static experiment.
@@ -545,6 +565,7 @@ class StaticTrialMaker(ChainTrialMaker):
         adoptable = page._show_in_advance()
         predict = adoptable and not trial.gives_feedback(experiment, participant)
         shown = [] if adoptable else None
+        config = page._js_vars_for(experiment, participant) if predict else None
         media = {}
         upcoming = [
             t
@@ -582,6 +603,7 @@ class StaticTrialMaker(ChainTrialMaker):
                 and len(pages) == 1
                 and isinstance(pages[0], Page)
                 and pages[0]._show_in_advance()
+                and not _page_config_differs(config, pages[0], experiment, participant)
             ):
                 pages[0]._page_key = following._page_key
                 shown.append(pages[0])

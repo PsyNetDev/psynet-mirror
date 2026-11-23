@@ -35,6 +35,10 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     # A time limit is set up for each page, so such pages aren't predicted.
     page.time_limit = 10
     assert trial_maker._upcoming(trials[0], page, None, participant)[0] is None
+    # Nor are pages whose js_vars differ from this page's.
+    page.time_limit = None
+    page.js_vars = {**page.js_vars, "picture": "red circle"}
+    assert trial_maker._upcoming(trials[0], page, None, participant)[0] == []
 
     month_ago = datetime.datetime.now() - datetime.timedelta(days=30)
     for trial in trials:

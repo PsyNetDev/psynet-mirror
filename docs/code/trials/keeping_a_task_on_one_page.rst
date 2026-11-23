@@ -223,15 +223,16 @@ lost and its clock starts again.
 
 For this to work:
 
-- Every trial page must render the same HTML and JavaScript, with everything
-  that changes between trials in ``contents`` rather than in the HTML or
-  ``js_vars``. The browser checks the HTML and JavaScript when the server's
-  reply arrives; if they differ, it drops the answers given ahead, loads the
-  server's page and logs a warning in the browser console. Changes to
-  ``js_vars`` aren't detected, and ``psynet.var`` follows the last page the
-  server confirmed rather than the trial on screen. A prompt that puts the
-  stimulus in its HTML, such as ``ImagePrompt``, makes every trial's HTML
-  differ, so pass the stimulus in ``contents`` instead.
+- Every trial page must have the same HTML, JavaScript and ``js_vars``. ``js_vars`` configure the page, such as a task's timings,
+  and stay as they are for all the trials it shows. What changes between
+  trials goes in ``contents``, which each ``update()`` receives. A trial whose
+  ``js_vars`` differ isn't shown in advance: it waits for the server, and
+  PsyNet logs a warning naming the keys that differ. The browser checks the
+  HTML and JavaScript when the server's reply arrives; if they differ, it
+  drops the answers given ahead, loads the server's page and logs a warning
+  in the browser console. A prompt that puts the stimulus in its HTML, such
+  as ``ImagePrompt``, makes every trial's HTML differ, so pass the stimulus
+  in ``contents`` instead.
 - ``show_trial`` and ``show_after_trial`` must not change anything or
   choose at random, because PsyNet also calls them for upcoming trials,
   before they are answered.
