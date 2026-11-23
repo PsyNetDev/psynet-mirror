@@ -609,6 +609,33 @@ class StaticTrialMaker(ChainTrialMaker):
             "Pages without page modules are sent rendered instead and aren't checked."
         )
 
+    def _swappable(self, page, experiment, participant):
+        """Whether a rendered copy of ``page`` can be swapped in, with its answer sent in the background.
+
+        Its answer reaches the server after the next trial is on screen, so the
+        server must accept any answer, and a Leave offer rendered in advance
+        belongs to the page it was rendered on. The first time each reason
+        stops a page, the log says so.
+        """
+        reason = page._not_swappable_because()
+        if reason is None and page._may_reject_answers():
+            reason = (
+                "the server may turn its answers down (validate or "
+                "check_ready_for_response)"
+            )
+        if reason is None and page.early_exit_available(experiment, participant):
+            reason = "it offers a Leave button"
+        logged = self.__dict__.setdefault("_logged_swap_reasons", set())
+        if reason is not None and reason not in logged:
+            logged.add(reason)
+            logger.info(
+                "Trial maker %r waits for the server before showing a %s, because %s.",
+                self.id,
+                type(page).__name__,
+                reason,
+            )
+        return reason is None
+
     def _upcoming(self, trial, page, experiment, participant):
         # Without in-place transitions each reply reloads the page, which would
         # drop the answers given ahead and the files downloaded early.
@@ -622,7 +649,7 @@ class StaticTrialMaker(ChainTrialMaker):
         # swaps in as each trial is answered.
         page._pre_render_once()
         adoptable = page._show_in_advance()
-        swappable = not adoptable and page._swap_in_advance()
+        swappable = not adoptable and self._swappable(page, experiment, participant)
         shown = [] if adoptable or swappable else None
         media = {}
         ahead = shown is not None and not trial.gives_feedback(experiment, participant)
@@ -677,7 +704,7 @@ class StaticTrialMaker(ChainTrialMaker):
                         trial, page, following, next_page, experiment, participant
                     )
                     if adoptable
-                    else next_page._swap_in_advance()
+                    else self._swappable(next_page, experiment, participant)
                 )
             )
             if ahead:

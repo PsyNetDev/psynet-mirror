@@ -366,16 +366,36 @@ version (``?v=...``).
 Each trial page also carries the next trials' pages, rendered in advance. When
 the participant answers, the browser swaps in the next trial's page at once,
 and sends the answers to the server in the background, one at a time and in
-order. The swapped-in page runs as usual, so built-in prompts and controls,
-trial events and page scripts need no changes. The server still checks each
-answer: if it turns one down, the browser shows its message and loads that
-trial again, and drops the answers given after it.
+order. The swapped-in page runs as usual, so trial events and page scripts
+need no changes. The server still checks each answer: if it turns one down,
+the browser shows its message and loads that trial again, and drops the
+answers given after it.
 
-The browser waits for the server as before when:
+.. _prepared_trials_swapped_in:
+
+Only a :class:`~psynet.modular_page.ModularPage` whose prompt and control
+allow it is swapped in, which means that they render the same while an
+earlier trial is on screen as when the server serves them, and run as usual
+when swapped in. The built-in ``Prompt``, ``ImagePrompt``, ``AudioPrompt``
+and ``ColorPrompt`` allow it, and so do ``NullControl``, ``PushButtonControl``,
+``KeyboardPushButtonControl``, ``TextControl``, ``RadioButtonControl``,
+``CheckboxControl``, ``DropdownControl``, ``NumberControl``, ``SliderControl``,
+``MultiRatingControl`` and ``RatingControl``. A prompt or control of your own
+allows it by setting ``can_swap_in_advance = True`` in its class body; a
+subclass doesn't inherit the setting, as it may add behaviour that isn't safe.
+The server must also accept any answer to the trial page, which would
+otherwise be turned down with the next trial already on screen, so a
+``RadioButtonControl``, ``CheckboxControl``, ``DropdownControl``,
+``NumberControl`` or ``SliderControl`` that asks for a missing answer still
+waits for the server. The server log says why a trial maker's pages wait.
+
+The browser also waits for the server as before when:
 
 * a trial's ``show_trial`` returns more than one page, or a page with a
-  ``time_limit``, background recording, a full page reload or
+  ``time_limit``, recording, a full page reload, a ``session_id`` or
   ``render_in_advance=False``;
+* the page has a ``validate`` function or ``check_ready_for_response``, or
+  offers the participant a Leave button;
 * an answer includes a recording or another file to upload;
 * a trial gives feedback, or ``show_after_trial`` returns a page; the trial
   after it waits for the server.

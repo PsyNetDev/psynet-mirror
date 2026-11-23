@@ -55,3 +55,26 @@ describe("isPredictedReply", () => {
     );
   });
 });
+
+const sendingCode = ["psynet\\.sendAnswers", "let sendQueuedAnswers"].map((name) => {
+  const found = SOURCE.match(new RegExp(`${name} = async function[\\s\\S]*?\\n    \\};`));
+  assert.ok(found, `could not extract ${name}`);
+  return found[0];
+});
+
+describe("sendAnswers", () => {
+  it("stops when an answer couldn't be sent and isn't shown again", async () => {
+    const psynet = {
+      answers: { queue: [{ value: 1, metadata: {} }], sending: null },
+      calls: 0,
+      async nextPage() {
+        this.calls += 1;
+        return false;
+      },
+    };
+    new Function("psynet", sendingCode.join("\n"))(psynet);
+    await psynet.sendAnswers();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(psynet.calls, 1);
+  });
+});

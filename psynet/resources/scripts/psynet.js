@@ -546,6 +546,7 @@
       psynet.pageLoaded = false;
       psynet.pageModuleUpdates = [];
       psynet.nextPagePending = false;
+      psynet.clearSubmissionControlState();
       psynet.media.audioRequired = false;
       psynet.media.otherAudioContexts = [];
       // A sound dialog left open by the previous page belongs to it.
@@ -734,7 +735,8 @@
     // shows its trial again.
     psynet.resetAnswers = function () {
       // ``handle`` belongs to the trial on screen until it is answered.
-      // ``sending`` settles once the queue is sent or sending stops.
+      // ``sending`` settles once the queue is sent or sending stops, as
+      // ``sendQueuedAnswers`` describes.
       // ``showAgain`` is set when an answer is turned down or couldn't be
       // sent yet, as opposed to the page failing or moving on.
       psynet.answers = {
@@ -757,15 +759,18 @@
     });
 
     // The pages after the last page the server confirmed, as
-    // ``{page_uuid, contents}`` for page modules or ``{page_uuid, html}`` for
-    // pages swapped in whole. Every approved reply replaces them.
+    // ``{page_uuid, contents}`` for page modules or ``{page_uuid, html,
+    // contents}`` for pages swapped in whole. Every approved reply replaces them.
     psynet.upcomingPages = psynetTemplateData.upcomingPages ?? [];
 
-    // Contents from the last confirmed page onwards.
+    // Contents from the last confirmed page onwards, up to the first page that
+    // is swapped in whole rather than shown by the page modules.
     psynet.predictedContents = function () {
+      let pages = psynet.upcomingPages;
+      let end = pages.findIndex((page) => page.html !== undefined);
       return [
         psynet.page.contents,
-        ...psynet.upcomingPages.map((page) => page.contents),
+        ...(end < 0 ? pages : pages.slice(0, end)).map((page) => page.contents),
       ];
     };
 
@@ -866,14 +871,15 @@
     psynet.sendAnswers = async function () {
       let answers = psynet.answers;
       if (answers.sending) return;
-      let retry;
+      let result = {};
       answers.sending = sendQueuedAnswers(answers);
       try {
-        retry = await answers.sending;
+        result = await answers.sending;
       } finally {
         answers.sending = null;
       }
-      if (!retry && psynet.answers === answers && answers.queue.length) {
+      let retry = result.retry;
+      if (result.sent && psynet.answers === answers && answers.queue.length) {
         // Queued while the last reply was being handled.
         psynet.sendAnswers();
       } else if (retry) {
@@ -891,8 +897,10 @@
       }
     };
 
-    // Return the answer to show again, if it was turned down or couldn't be
-    // sent yet.
+    // Settle to ``{sent: true}`` once the queue is sent or replaced, to
+    // ``{retry: entry}`` for an answer turned down or not sent yet, which is
+    // shown again, or to ``{}`` if sending stopped, for example as the page
+    // failed.
     let sendQueuedAnswers = async function (answers) {
       while (psynet.answers === answers && answers.queue.length) {
         let entry = answers.queue[0];
@@ -913,10 +921,10 @@
             answers.showAgain &&
             psynet.answers === answers &&
             answers.queue[0] === entry;
-          return showAgain ? entry : null;
+          return showAgain ? { retry: entry } : {};
         }
       }
-      return null;
+      return { sent: true };
     };
 
     // Whether the reply is the page shown after the oldest queued answer,
@@ -985,17 +993,24 @@
       psynet.answers.queue.push({
         value: rawAnswer,
         metadata: {
-          ...metadata,
           time_taken: (new Date() - psynet.pageLoadTime) / 1000,
           event_log: psynet.trial.eventLog.splice(0),
           comments: psynet.comments.splice(0),
+          ...metadata,
         },
         pageUuid: psynet.submissionPageUuid,
         nextPageUuid: page.page_uuid,
         nextContents: JSON.stringify(page.contents),
       });
+      let swap = psynet.showTimelineFragment(page);
+      let settled = swap
+        .catch(() => {})
+        .finally(() => {
+          if (psynet.pageSwap === settled) psynet.pageSwap = null;
+        });
+      psynet.pageSwap = settled;
       try {
-        await psynet.showTimelineFragment(page);
+        await swap;
       } catch (error) {
         await psynet.handleTimelineTransitionFailure(error);
         return true;
@@ -1003,6 +1018,10 @@
       psynet.sendAnswers();
       return true;
     };
+
+    // While a page is being swapped in, settles once it is shown or has
+    // failed.
+    psynet.pageSwap = null;
 
     // Return true if the reply shows the trial shown after its answer.
     psynet.adoptRenderedReply = function (response) {
@@ -1012,6 +1031,9 @@
       }
       psynet.answers.queue.shift();
       psynet.nextPagePending = false;
+      if (psynetTemplateData.flags.lucidRecruitment) {
+        psynet.addBeforeUnloadEventListener();
+      }
       psynet.media.prefetch(response.page.attributes?.upcoming_media);
       return true;
     };
@@ -1437,14 +1459,19 @@
       },
 
       interrupt() {
-        if (!psynet.waiting.config) return;
-        if (psynet.nextPagePending) {
-          // A submission in flight may still be rejected, for example by
-          // validation; try again once it has settled.
+        if (!psynet.waiting.config || psynet.timelineHold) return;
+        if (
+          psynet.nextPagePending ||
+          psynet.answers.sending ||
+          !psynet.pageReady
+        ) {
+          // A submission in flight, including answers given in advance, may
+          // still be rejected, for example by validation; try again once it
+          // has settled and the page is ready.
           psynet.waiting.graceTimer = setTimeout(psynet.waiting.interrupt, 500);
           return;
         }
-        psynet.nextPage(null, { interrupted: true }, {}, undefined, {
+        psynet.sendSubmission(null, { interrupted: true }, {}, undefined, {
           interrupted: true,
         });
       },
@@ -1735,7 +1762,7 @@
       controller.resumeRequested = false;
       clearTimeout(controller.safetyTimer);
       try {
-        return await psynet.nextPage(null, {}, {}, undefined, {
+        return await psynet.sendSubmission(null, {}, {}, undefined, {
           timelineHoldResume: true,
         });
       } finally {
@@ -4125,13 +4152,13 @@
         }
         return false;
       }
-      if (psynet.timelineHold && !options.timelineHoldResume) {
+      if (psynet.timelineHold) {
         psynet.log.warn(
           "Blocked a page submission while the timeline is held.",
         );
         return false;
       }
-      if (!options.background && !options.timelineHoldResume) {
+      if (!options.background) {
         let staged = psynet.response.staged;
         let uploads = Object.keys(blobs ?? staged.blobs ?? {}).length;
         if (
@@ -4144,15 +4171,45 @@
             metadata === undefined ? staged.metadata : metadata,
           );
         }
-        if (psynet.answers.sending) {
-          // Answers given in advance are sent first.
+        let answers = psynet.answers;
+        if (answers.sending) {
+          // Answers given in advance are sent first. This page's answer is
+          // dropped unless they all were and the page is still on screen.
           let generation = psynet.pageModuleGeneration;
           psynet.setTimelineTransitionBusy(true);
-          await psynet.answers.sending;
+          let result = await answers.sending;
           psynet.setTimelineTransitionBusy(false);
-          if (psynet.pageModuleGeneration !== generation) return false;
+          if (
+            !result.sent ||
+            psynet.answers !== answers ||
+            psynet.pageModuleGeneration !== generation ||
+            psynet.timelineHold ||
+            psynet.pageFailureShown
+          ) {
+            return false;
+          }
         }
       }
+      return await psynet.sendSubmission(
+        rawAnswer,
+        metadata,
+        blobs,
+        onRejection,
+        options,
+      );
+    };
+
+    // Send a submission to the server unless one is in flight. Answers go
+    // through nextPage, which may show the next trial first; a barrier's
+    // release and a timeline hold's check aren't answers and are sent
+    // directly.
+    psynet.sendSubmission = async function (
+      rawAnswer,
+      metadata,
+      blobs,
+      onRejection,
+      options = {},
+    ) {
       if (psynet.nextPagePending && options.pageUuid === undefined) {
         psynet.log.info("Blocked nextPage because nextPagePending is true.");
         psynet.log.debug(
@@ -4321,7 +4378,9 @@
         psynet.adoptPredictedPage(predicted);
         return true;
       }
-      // Any other reply ends the prediction, dropping the later answers.
+      // Any other reply ends the prediction, dropping the later answers. It
+      // replaces the page once a page being swapped in is shown.
+      if (psynet.pageSwap) await psynet.pageSwap;
       psynet.resetAnswers();
 
       if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
