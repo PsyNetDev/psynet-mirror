@@ -4241,6 +4241,7 @@
         metadata: {},
         pageUuid: psynet.submissionPageUuid,
         nextPageUuid: page.page_uuid,
+        nextContents: JSON.stringify(page.contents),
       });
       // These belong to the page left; the reply brings the shown page's.
       psynet.upcomingPages = [];

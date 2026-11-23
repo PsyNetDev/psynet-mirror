@@ -2890,7 +2890,11 @@ class Page(Elt):
         previous._rendered_in_advance = True
         previous.pre_render()
         html = previous.render(experiment, participant, partial_mode=True)
-        return {"page_uuid": previous._page_uuid, "html": html}
+        return {
+            "page_uuid": previous._page_uuid,
+            "html": html,
+            "contents": previous.contents,
+        }
 
     def _swap_in_advance(self):
         """Whether a rendered copy of the page can be swapped in before the server confirms it.
