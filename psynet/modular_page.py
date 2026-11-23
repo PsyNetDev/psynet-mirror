@@ -2420,6 +2420,13 @@ class ModularPage(Page):
         else:
             return super().validate(response, **kwargs)
 
+    def _may_reject_answers(self):
+        return (
+            self._validate_function is not None
+            or type(self).validate is not ModularPage.validate
+            or type(self.control).validate is not Control.validate
+        )
+
     def _reject_impossible_answer(self, answer):
         """Delegate to the control, logging a warning when it rejects the answer."""
         rejection = self.control._reject_impossible_answer(answer)

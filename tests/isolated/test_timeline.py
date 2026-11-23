@@ -22,6 +22,12 @@ from psynet.exit import (
     PaymentState,
 )
 from psynet.experiment import Experiment
+from psynet.modular_page import (
+    ModularPage,
+    Prompt,
+    PushButtonControl,
+    RadioButtonControl,
+)
 from psynet.page import InfoPage, SuccessfulEndPage, UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.timeline import (
@@ -126,6 +132,17 @@ def test_partial_render_makes_embedded_scripts_inert():
     assert 'data-example="1"' in inert_html
     assert 'type="application/json"' in inert_html
     assert 'type="text/html"' in inert_html
+
+
+def test_only_pages_whose_answers_may_be_turned_down_say_so():
+    def page(control, **kwargs):
+        return ModularPage("q", Prompt("?"), control, time_estimate=1, **kwargs)
+
+    assert not page(PushButtonControl(["a", "b"]))._may_reject_answers()
+    assert page(RadioButtonControl(["a", "b"]))._may_reject_answers()
+    assert page(
+        PushButtonControl(["a"]), validate=lambda answer: None
+    )._may_reject_answers()
 
 
 def test_layout_key_covers_main_body_and_js_vars():

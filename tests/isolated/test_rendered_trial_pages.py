@@ -5,7 +5,9 @@ import pytest
 from bs4 import BeautifulSoup
 
 from psynet.bot import BotDriver
+from psynet.experiment import get_experiment
 from psynet.participant import Participant
+from psynet.trial.main import Trial
 
 BUILT_IN = str(Path(__file__).parents[2] / "demos/features/rapid_ratings_built_in")
 
@@ -36,3 +38,14 @@ def test_built_in_pages_carry_the_next_trials_pages():
     assert upcoming[0]["page_uuid"] in upcoming[0]["html"]
     bot.take_page()
     assert Participant.query.get(bot.id).page_uuid == upcoming[0]["page_uuid"]
+
+    # The browser has moved on by the time an answer would be turned down,
+    # so pages whose answers the server may turn down aren't swapped in.
+    page = bot.get_current_page()
+    participant = Participant.query.get(bot.id)
+    trial = Trial.query.filter_by(participant_id=bot.id, position=1).one()
+    page._validate_function = lambda answer: None
+    assert (
+        trial.trial_maker._upcoming(trial, page, get_experiment(), participant)[0]
+        is None
+    )

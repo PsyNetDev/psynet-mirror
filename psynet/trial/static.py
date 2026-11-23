@@ -78,6 +78,19 @@ class StaticTrial(ChainTrial):
         raise NotImplementedError
 
 
+def _swappable(page, experiment, participant):
+    """Whether a rendered copy of ``page`` can be swapped in, with its answer sent in the background.
+
+    The browser has already moved on when an answer is turned down, and a
+    Leave offer rendered in advance belongs to the page it was rendered on.
+    """
+    return (
+        page._swap_in_advance()
+        and not page._may_reject_answers()
+        and not page.early_exit_available(experiment, participant)
+    )
+
+
 def _layout_key(trial, page, experiment, participant):
     """Return the layout key of ``trial``'s ``page``, rendering it only once per trial.
 
@@ -622,7 +635,7 @@ class StaticTrialMaker(ChainTrialMaker):
         # swaps in as each trial is answered.
         page._pre_render_once()
         adoptable = page._show_in_advance()
-        swappable = not adoptable and page._swap_in_advance()
+        swappable = not adoptable and _swappable(page, experiment, participant)
         shown = [] if adoptable or swappable else None
         media = {}
         ahead = shown is not None and not trial.gives_feedback(experiment, participant)
@@ -676,7 +689,7 @@ class StaticTrialMaker(ChainTrialMaker):
                         trial, page, following, next_page, experiment, participant
                     )
                     if adoptable
-                    else next_page._swap_in_advance()
+                    else _swappable(next_page, experiment, participant)
                 )
             )
             if ahead:

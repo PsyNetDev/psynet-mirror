@@ -757,15 +757,18 @@
     });
 
     // The pages after the last page the server confirmed, as
-    // ``{page_uuid, contents}`` for page modules or ``{page_uuid, html}`` for
-    // pages swapped in whole. Every approved reply replaces them.
+    // ``{page_uuid, contents}`` for page modules or ``{page_uuid, html,
+    // contents}`` for pages swapped in whole. Every approved reply replaces them.
     psynet.upcomingPages = psynetTemplateData.upcomingPages ?? [];
 
-    // Contents from the last confirmed page onwards.
+    // Contents from the last confirmed page onwards, up to the first page that
+    // is swapped in whole rather than shown by the page modules.
     psynet.predictedContents = function () {
+      let pages = psynet.upcomingPages;
+      let end = pages.findIndex((page) => page.html !== undefined);
       return [
         psynet.page.contents,
-        ...psynet.upcomingPages.map((page) => page.contents),
+        ...(end < 0 ? pages : pages.slice(0, end)).map((page) => page.contents),
       ];
     };
 

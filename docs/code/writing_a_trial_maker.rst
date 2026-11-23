@@ -375,6 +375,11 @@ The browser waits for the server as before when:
 
 * a trial's ``show_trial`` returns more than one page, or a page with a
   ``time_limit``, background recording or a full page reload;
+* the server may turn a page's answer down, as with a
+  ``RadioButtonControl``, ``CheckboxControl``, ``DropdownControl``,
+  ``NumberControl`` or ``SliderControl``, or a page with ``validate``: the
+  next trial would already be on screen by then;
+* the page offers the participant a Leave button;
 * an answer includes a recording or another file to upload;
 * a trial gives feedback, or ``show_after_trial`` returns a page; the trial
   after it waits for the server.

@@ -2834,6 +2834,13 @@ class Page(Elt):
                 payload.append({"page_uuid": page_uuid, "contents": page.contents})
         return payload
 
+    def _may_reject_answers(self):
+        """Whether the server may turn down the page's answers, for example to ask for a missing one."""
+        return (
+            self._validate_function is not None
+            or type(self).validate is not Page.validate
+        )
+
     def _swap_in_advance(self):
         """Whether a rendered copy of the page can be swapped in before the server confirms it.
 
