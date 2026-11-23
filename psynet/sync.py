@@ -6918,6 +6918,23 @@ def waiting_page_config(page, participant):
     return {"barrier_id": barrier_id, "release_grace_ms": None}
 
 
+def _waiting_visit_would_release(page, participant):
+    """Return whether the barrier visit this page waits at would release someone now.
+
+    Bots on such a page stop answering until they are released: a release
+    must lock every waiter's row, and unpaced bots answering
+    ``waiting_logic`` pages nearly always hold one in their own request.
+    Read-only, like :meth:`Barrier.would_release`.
+    """
+    if waiting_page_config(page, participant) is None:
+        return False
+    barrier_id = participant.waiting_barrier_id
+    if barrier_id is None or _has_left_barrier(participant, barrier_id):
+        return False
+    instance_id = participant.active_barriers[barrier_id].barrier_instance_id
+    return instance_id is not None and _visit_check_would_release(instance_id)
+
+
 def waiting_status_payload(unique_id, barrier_id):
     """Return whether a participant on a waiting page has been released.
 

@@ -8,13 +8,20 @@ import pytest
 from dallinger import db
 from flask import Flask
 from markupsafe import Markup
+from sqlalchemy import text
 
 from psynet.experiment import Experiment, get_experiment
 from psynet.modular_page import ModularPage
 from psynet.page import WaitPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import GroupBarrier, SimpleGrouper, waiting_status_payload
+from psynet.sync import (
+    GroupBarrier,
+    SimpleGrouper,
+    _waiting_visit_would_release,
+    check_barriers,
+    waiting_status_payload,
+)
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -228,6 +235,43 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
         interrupted = Response.query.filter_by(question="filler_trial").one()
         assert interrupted.trial.failed
         assert interrupted.trial.response == interrupted
+    finally:
+        exp.timeline = original
+
+
+@in_consents_experiment
+def test_a_waiter_busy_at_the_last_arrival_awaits_the_release(
+    in_experiment_directory, db_session
+):
+    """A bot on a waiting page stops answering it while the barrier is ready to release them.
+
+    The last arrival can't lock a waiter who is mid-request, so the release
+    waits for a barrier sweep, which needs that waiter to stay idle.
+    """
+    exp = get_experiment()
+    original = exp.timeline
+    _use_timeline(exp, _filler("filler"))
+    try:
+        first, last = _working_participants(exp, 2)
+        first_id, last_id = first.id, last.id
+        _json_timeline(exp, first)
+
+        def awaiting_release():
+            db.session.expire_all()
+            participant = Participant.query.get(first_id)
+            page = exp.timeline.get_current_elt(exp, participant)
+            return _waiting_visit_would_release(page, participant)
+
+        assert not awaiting_release()
+        with db.engine.connect() as conn, conn.begin():
+            conn.execute(
+                text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+                {"id": first_id},
+            )
+            _json_timeline(exp, Participant.query.get(last_id))
+        assert awaiting_release()
+        check_barriers()
+        assert not awaiting_release()
     finally:
         exp.timeline = original
 

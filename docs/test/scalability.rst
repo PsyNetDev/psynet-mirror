@@ -60,9 +60,7 @@ The main options are:
 ``--time-factor``
     A multiplier on the timeline's time estimates. ``1`` (the default)
     roughly matches real participants; ``0`` makes bots go as fast as
-    possible, which loads the server far more than people do. Even at
-    ``0``, bots stay at least 0.25 s on each page shown while they wait at a
-    barrier, so that the barrier can group and release them.
+    possible, which loads the server far more than people do.
 
 ``--bot-processes``
     The number of processes running the bots (see

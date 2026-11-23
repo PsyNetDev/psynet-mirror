@@ -54,7 +54,7 @@ class TestRunBot:
         assert status["page"]["label"] == "favourite_colour"
         assert status["page"]["time_estimate"] == 5
         assert status["page"]["is_timeline_hold"] is False
-        assert status["page"]["in_waiting_logic"] is False
+        assert status["page"]["awaiting_release"] is False
         assert not bot.is_waiting
         assert status["page"]["bot_response"]["answer"] == "red"
         assert len(response_files) == 0
@@ -485,27 +485,16 @@ def test_page_min_duration_follows_the_submit_enable_triggers():
 
 
 @pytest.mark.parametrize(
-    "time_factor, min_duration, in_waiting_logic, expected_sleep",
-    [
-        (0, 5.0, False, 0),
-        (1, 0.0, False, 2.0),
-        (1, 5.0, False, 5.0),
-        (3, 5.0, False, 6.0),
-        # Unpaced bots still pause on waiting_logic pages, so the barrier
-        # can lock every waiter at once.
-        (0, 0.0, True, 0.25),
-        (1, 0.0, True, 2.0),
-    ],
+    "time_factor, min_duration, expected_sleep",
+    [(0, 5.0, 0), (1, 0.0, 2.0), (1, 5.0, 5.0), (3, 5.0, 6.0)],
 )
 def test_paced_bots_stay_on_a_page_for_at_least_its_min_duration(
-    monkeypatch, time_factor, min_duration, in_waiting_logic, expected_sleep
+    monkeypatch, time_factor, min_duration, expected_sleep
 ):
     driver = ParticipantDriver.__new__(ParticipantDriver)
     driver.status = _driver_page_status("page-a")
     driver.status["status"] = "working"
-    driver.status["page"].update(
-        time_estimate=2.0, min_duration=min_duration, in_waiting_logic=in_waiting_logic
-    )
+    driver.status["page"].update(time_estimate=2.0, min_duration=min_duration)
     driver.response_files = {}
     sleeps = []
     monkeypatch.setattr(driver, "_submit_response", lambda *args, **kwargs: None)
@@ -515,6 +504,35 @@ def test_paced_bots_stay_on_a_page_for_at_least_its_min_duration(
     driver.take_page(render_pages=False, time_factor=time_factor)
 
     assert sleeps[0] == pytest.approx(expected_sleep, abs=0.05)
+
+
+def test_bots_poll_instead_of_answering_until_their_barrier_releases_them(
+    monkeypatch,
+):
+    """Waiters must not hold their rows while a barrier is ready to lock them all."""
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    statuses = [_driver_page_status("page-a"), _driver_page_status("page-a")]
+    for status, awaiting in zip(statuses, [True, False]):
+        status["status"] = "working"
+        status["page"]["awaiting_release"] = awaiting
+    driver.status = statuses.pop(0)
+    driver.response_files = {}
+    events = []
+
+    def fetch():
+        events.append("fetch")
+        driver.status = statuses.pop(0)
+
+    monkeypatch.setattr(driver, "_fetch_status", fetch)
+    monkeypatch.setattr(
+        driver, "_submit_response", lambda *args, **kwargs: events.append("submit")
+    )
+    monkeypatch.setattr("psynet.participant.time.sleep", lambda s: None)
+    driver.status_time_fetched = time.monotonic()
+
+    driver.take_page(render_pages=False)
+
+    assert events == ["fetch", "submit"]
 
 
 def test_advance_past_wait_pages_names_bots_still_waiting():

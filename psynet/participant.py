@@ -254,9 +254,9 @@ def _is_psynet_stale_timeline_response(response):
 
 
 _TIMELINE_HOLD_POLL_SECONDS = 0.1
-# A barrier check gives up while any waiter's row is locked by their own
-# request, so a group of unpaced bots on waiting_logic pages may never form.
-_WAITING_LOGIC_MIN_PAGE_SECONDS = 0.25
+# Barrier sweeps run every 0.5 s. A bot not released by then answers the
+# page as usual, so the waiting loop's own time limits still apply.
+_AWAIT_RELEASE_MAX_SECONDS = 5.0
 _BOT_RECORDING_UPLOAD_ATTEMPTS = 5
 # Under load, a partner's barrier check can hold the participant row for
 # several seconds. A busy reply may itself take up to the lock timeout, so
@@ -1701,6 +1701,9 @@ class ParticipantDriver:
             # Holds are paced by the poll sleep below, as browsers poll from
             # arrival; their time_estimate is expected_wait, not a poll gap.
             self._simulate_page_time(time_factor)
+            self._await_release()
+            if not self.is_working:
+                return False
         self._submit_response(self.status, self.response_files, response)
         if render_pages:
             self._render_page()
@@ -1781,8 +1784,6 @@ class ParticipantDriver:
             Factor to multiply the page's ``time_estimate`` by. Above 0 the
             bot also stays at least the page's ``min_duration`` (see
             :attr:`psynet.timeline.Page.min_duration`), as a participant must.
-            A page shown while waiting at a barrier always takes a short
-            pause, so that the barrier can lock its waiters and release them.
         """
         page = self.status["page"]
         simulated_page_time = page["time_estimate"] * time_factor
@@ -1790,12 +1791,24 @@ class ParticipantDriver:
             simulated_page_time = max(
                 simulated_page_time, page.get("min_duration") or 0.0
             )
-        if page.get("in_waiting_logic"):
-            simulated_page_time = max(
-                simulated_page_time, _WAITING_LOGIC_MIN_PAGE_SECONDS
-            )
         wake_time = self.status_time_fetched + simulated_page_time
         self._sleep(max(wake_time - time.monotonic(), 0))
+
+    def _await_release(self):
+        """Poll instead of answering while the barrier this bot waits at is about to release it.
+
+        A release must lock every waiter's row, which a bot holds while the
+        server processes its answer, so bots that kept answering pages of
+        ``waiting_logic`` might never be released together.
+        """
+        deadline = time.monotonic() + _AWAIT_RELEASE_MAX_SECONDS
+        while (
+            self.is_working
+            and self.status["page"].get("awaiting_release")
+            and time.monotonic() < deadline
+        ):
+            self._sleep(_TIMELINE_HOLD_POLL_SECONDS)
+            self._fetch_status()
 
     def _sleep(self, seconds):
         """Sleep, raising :class:`DriverStopped` if ``stop_event`` is or becomes set."""
