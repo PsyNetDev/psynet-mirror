@@ -994,6 +994,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         or alternatively a list of such objects,
         that solicits an answer from the participant.
 
+        A trial maker that prepares its trials in advance also calls this
+        method for upcoming trials, before the participant reaches them, to
+        show them without waiting for the server. It must then depend only on
+        the trial and its node, not on other trials' answers or scores, and
+        must not change anything.
+
         Parameters
         ----------
 
@@ -3056,15 +3062,18 @@ class TrialMaker(Module):
             corresponding to the current participant.
 
         trial
-            The :class:`~psynet.trial.main.Trial` that just finished.
+            The :class:`~psynet.trial.main.Trial` that just finished, or one
+            that hasn't been answered yet (see below).
 
         Returns
         -------
 
         Timeline logic, such as a page or a list of pages, or ``None``.
         A trial maker that prepares its trials in advance also calls this
-        method for upcoming trials, to find where the next trials stop being
-        predictable, so it must not change anything itself.
+        method for the current and upcoming trials before they are answered,
+        to find where the next trials stop being predictable. It must then
+        not change anything, nor rely on ``trial.answer`` or ``trial.score``,
+        which are still ``None``.
         """
         return None
 

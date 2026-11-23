@@ -8,6 +8,8 @@ authors customize node eligibility with ``custom_node_filter`` and ranking with
 
 from typing import Callable, List, Literal, Optional, Sequence, Union
 
+from flask import has_app_context
+
 from psynet.trial.chain import (
     Candidate,
     ChainNetwork,
@@ -77,10 +79,14 @@ class StaticTrial(ChainTrial):
 
 
 def _layout_key(trial, page, experiment, participant):
-    """Return the layout key of ``trial``'s ``page``, rendering it only once per trial."""
+    """Return the layout key of ``trial``'s ``page``, rendering it only once per trial.
+
+    A page without ``#main-body`` has the key ``""``, which matches nothing.
+    """
     if trial.layout_key is None:
+        page.pre_render()
         html = page.render(experiment, participant, partial_mode=True)
-        trial.layout_key = page.layout_key(html)
+        trial.layout_key = page.layout_key(html) or ""
     return trial.layout_key
 
 
@@ -91,11 +97,15 @@ def _same_layout(trial, page, following, following_page, experiment, participant
     a trial whose page renders different HTML or JavaScript waits for the
     server instead.
     """
+    if not has_app_context() and None in (trial.layout_key, following.layout_key):
+        # Pages can only be rendered in the experiment's app, as in a request.
+        return False
+    first_comparison = following.layout_key is None
     key = _layout_key(trial, page, experiment, participant)
-    if key is not None and key == _layout_key(
-        following, following_page, experiment, participant
-    ):
+    if key and key == _layout_key(following, following_page, experiment, participant):
         return True
+    if not first_comparison:
+        return False
     logger.warning(
         "The next trial's page has different HTML or JavaScript, so it can't be "
         "shown in advance. Put what changes between trials in the page's "
@@ -626,6 +636,8 @@ class StaticTrialMaker(ChainTrialMaker):
             )
             for elt in between + pages:
                 if isinstance(elt, Page):
+                    # As before the page is shown, as it may set its contents.
+                    elt.pre_render()
                     for media_type, urls in elt.prefetch_urls.items():
                         known = media.setdefault(media_type, [])
                         known.extend(url for url in urls if url not in known)

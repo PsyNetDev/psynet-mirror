@@ -149,3 +149,5 @@ def test_a_trial_whose_page_has_a_different_layout_is_not_shown_in_advance():
     ).json()
     upcoming = reply["timeline_fragment"]["upcoming_pages"]
     assert [page["contents"]["name"] for page in upcoming] == ["yellow star"]
+    # The browser compares the same key, computed from the page it receives.
+    assert reply["timeline_fragment"]["layout_key"] == trials[1].layout_key

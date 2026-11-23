@@ -850,8 +850,10 @@
         // Set here rather than on answering, as that trial may only become
         // known from a later reply.
         if (offset > 0) {
-          psynet.answers.queue[offset - 1].nextPageUuid =
-            psynet.upcomingPages[offset - 1]?.page_uuid;
+          let next = psynet.upcomingPages[offset - 1];
+          let entry = psynet.answers.queue[offset - 1];
+          entry.nextPageUuid = next?.page_uuid;
+          entry.nextContents = JSON.stringify(next?.contents);
         }
         psynet.updatePageModules(offset).catch((error) => {
           psynet.log.error(error.stack || String(error));
@@ -896,12 +898,14 @@
       }
     };
 
-    // Whether the reply is the page shown after the oldest queued answer.
+    // Whether the reply is the page shown after the oldest queued answer,
+    // with the contents that were shown for it.
     psynet.isPredictedReply = function (response) {
-      let pageUuid = psynet.answers.queue[0]?.nextPageUuid;
+      let entry = psynet.answers.queue[0];
       return (
-        pageUuid !== undefined &&
-        response.page?.attributes?.page_uuid === pageUuid &&
+        entry?.nextPageUuid !== undefined &&
+        response.page?.attributes?.page_uuid === entry.nextPageUuid &&
+        JSON.stringify(response.page?.contents) === entry.nextContents &&
         !response.page?.attributes?.timeline_hold
       );
     };
