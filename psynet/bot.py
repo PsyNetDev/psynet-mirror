@@ -375,7 +375,8 @@ def regroup_now(
         # Responders wait at "offer_made" while the test plays the proposers.
         regroup_now(bots, pairing, stop_at="offer_made")
     """
-    if regrouper.id in ({stop_at} if isinstance(stop_at, str) else set(stop_at)):
+    stop_at = (stop_at,) if isinstance(stop_at, str) else tuple(stop_at)
+    if regrouper.id in stop_at:
         raise ValueError(
             f"stop_at can't name the regrouper '{regrouper.id}': the split happens "
             "in the background, so bots waiting there would be left before it."
