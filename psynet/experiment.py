@@ -7471,8 +7471,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def _pre_render(page, participant):
         """Run ``pre_render`` for the page and, on a timeline hold, its waiting screen."""
-        with forbid_commits(f"{type(page).__name__}.pre_render"):
-            page.pre_render()
+        if getattr(page, "_pre_rendered", False):
+            # Already pre-rendered for this request, to compare it with the
+            # trials prepared in advance.
+            page._pre_rendered = False
+        else:
+            with forbid_commits(f"{type(page).__name__}.pre_render"):
+                page.pre_render()
         if _is_timeline_hold(page):
             page.waiting_screen_page(participant)
 

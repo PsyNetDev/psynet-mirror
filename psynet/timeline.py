@@ -2340,6 +2340,18 @@ class Page(Elt):
         """
         pass
 
+    _pre_rendered = False
+
+    def _pre_render_once(self):
+        """Run ``pre_render``, unless it already ran for this request.
+
+        Trial makers that prepare trials in advance pre-render pages early to
+        compare them; the request then skips running ``pre_render`` again.
+        """
+        if not self._pre_rendered:
+            self.pre_render()
+            self._pre_rendered = True
+
     def early_exit_available(self, experiment, participant) -> bool:
         """Return whether this page may offer the participant an early exit.
 

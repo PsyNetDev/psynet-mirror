@@ -84,7 +84,7 @@ def _layout_key(trial, page, experiment, participant):
     A page without ``#main-body`` has the key ``""``, which matches nothing.
     """
     if trial.layout_key is None:
-        page.pre_render()
+        page._pre_render_once()
         html = page.render(experiment, participant, partial_mode=True)
         trial.layout_key = page.layout_key(html) or ""
     return trial.layout_key
@@ -107,14 +107,17 @@ def _same_layout(trial, page, following, following_page, experiment, participant
     if not first_comparison:
         return False
     logger.warning(
-        "The next trial's page has different HTML or JavaScript, so it can't be "
-        "shown in advance. Put what changes between trials in the page's "
-        "contents."
+        "Trial maker %r: the page of the trial at position %i has different "
+        "HTML or JavaScript from the one at position %i, so it can't be shown in advance and waits for the server. "
+        "Put what changes between trials in the page's contents.",
+        following.trial_maker_id,
+        following.position,
+        trial.position,
     )
     return False
 
 
-def _page_config_differs(config, page, experiment, participant):
+def _page_config_differs(config, trial, following, page, experiment, participant):
     """Whether ``page``'s ``js_vars`` differ from ``config``, warning if they do.
 
     ``js_vars`` configure the page, and trials shown in advance share it, so
@@ -128,10 +131,13 @@ def _page_config_differs(config, page, experiment, participant):
     )
     if keys:
         logger.warning(
-            "The next trial's page has different js_vars (%s), so it can't be "
-            "shown in advance. Put what changes between trials in the page's "
-            "contents.",
+            "Trial maker %r: the page of the trial at position %i has different "
+            "js_vars (%s) from the one at position %i, so it can't be shown in advance and waits for the "
+            "server. Put what changes between trials in the page's contents.",
+            following.trial_maker_id,
+            following.position,
             ", ".join(keys),
+            trial.position,
         )
     return bool(keys)
 
@@ -604,6 +610,7 @@ class StaticTrialMaker(ChainTrialMaker):
             return None, None
         # A page that can be adopted as a predicted page gets a layout key,
         # even if its own feedback stops it from showing later trials.
+        page._pre_render_once()
         adoptable = page._show_in_advance()
         predict = adoptable and not trial.gives_feedback(experiment, participant)
         shown = [] if adoptable else None
@@ -637,7 +644,7 @@ class StaticTrialMaker(ChainTrialMaker):
             for elt in between + pages:
                 if isinstance(elt, Page):
                     # As before the page is shown, as it may set its contents.
-                    elt.pre_render()
+                    elt._pre_render_once()
                     for media_type, urls in elt.prefetch_urls.items():
                         known = media.setdefault(media_type, [])
                         known.extend(url for url in urls if url not in known)
@@ -647,7 +654,9 @@ class StaticTrialMaker(ChainTrialMaker):
                 and len(pages) == 1
                 and isinstance(pages[0], Page)
                 and pages[0]._show_in_advance()
-                and not _page_config_differs(config, pages[0], experiment, participant)
+                and not _page_config_differs(
+                    config, trial, following, pages[0], experiment, participant
+                )
                 and _same_layout(
                     trial, page, following, pages[0], experiment, participant
                 )

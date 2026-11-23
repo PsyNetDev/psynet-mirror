@@ -6,6 +6,7 @@ import pytest
 from dallinger import db
 
 from psynet.bot import BotDriver
+from psynet.modular_page import ModularPage
 from psynet.participant import Participant
 from psynet.trial.main import Trial
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
@@ -39,6 +40,8 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     page.time_limit = None
     page.js_vars = {**page.js_vars, "picture": "red circle"}
     assert trial_maker._upcoming(trials[0], page, None, participant)[0] == []
+    page.js_vars["picture"] = None
+    assert trial_maker._upcoming(trials[0], page, None, participant)[0] == []
 
     month_ago = datetime.datetime.now() - datetime.timedelta(days=30)
     for trial in trials:
@@ -53,6 +56,28 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     db.session.commit()
     trial_maker.check_old_trials()
     assert all(trial.failed for trial in trials)
+
+
+@pytest.mark.parametrize("experiment_directory", [EXPERIMENT], indirect=True)
+@pytest.mark.usefixtures("launched_experiment")
+def test_pages_are_pre_rendered_once_before_they_are_compared(monkeypatch):
+    bot = BotDriver()
+    bot.take_page()
+    participant = Participant.query.get(bot.id)
+    trial = Trial.query.filter_by(participant_id=bot.id, position=0).one()
+    pre_rendered = []
+
+    def pre_render(self):
+        pre_rendered.append(self)
+        self.js_vars = {**self.js_vars, "pre_rendered": True}
+
+    monkeypatch.setattr(ModularPage, "pre_render", pre_render)
+    page = trial.show_trial(None, participant)
+    shown, _ = trial.trial_maker._upcoming(trial, page, None, participant)
+    assert len(shown) == 3
+    # Each page, including the one on screen, is pre-rendered exactly once.
+    assert page in pre_rendered
+    assert len(pre_rendered) == len({id(page) for page in pre_rendered})
 
 
 @pytest.mark.parametrize("experiment_directory", [EXPERIMENT], indirect=True)
