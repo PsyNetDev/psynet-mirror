@@ -63,11 +63,13 @@ function extractRecruitmentUrlFromLine(line) {
   return null;
 }
 
-function getPsynetDebugArgs() {
+function getPsynetDebugArgs(options = {}) {
   const args = ["debug", "local", "--no-browsers"];
 
-  // Optional compatibility switch for local troubleshooting. We do not force legacy mode.
-  if (parseBoolEnv("PSYNET_USE_LEGACY_DEBUG")) {
+  // Gunicorn, as a deployed experiment uses, for a spec whose game ticks: the
+  // default development server can deliver its views late, in bursts. Also a
+  // compatibility switch for local troubleshooting.
+  if (options.legacy || parseBoolEnv("PSYNET_USE_LEGACY_DEBUG")) {
     args.push("--legacy");
   }
 
@@ -168,8 +170,8 @@ function resolvePsynetCommand() {
   return "psynet";
 }
 
-function resolvePsynetLaunch() {
-  const debugArgs = getPsynetDebugArgs();
+function resolvePsynetLaunch(options = {}) {
+  const debugArgs = getPsynetDebugArgs(options);
   const psynetCmd = resolvePsynetCommand();
 
   // In some environments, psynet debug local is only reliable when launched through uv.
@@ -189,7 +191,7 @@ function resolvePsynetLaunch() {
 
 // ---- Backend process lifecycle ---------------------------------------------
 function startExperiment(experimentDir, options = {}) {
-  const launch = resolvePsynetLaunch();
+  const launch = resolvePsynetLaunch(options);
   if (!launch || !launch.cmd) {
     throw new Error("Unable to resolve psynet command.");
   }
@@ -431,6 +433,15 @@ async function assertNoBackendError(page) {
   );
 }
 
+// Checks that the page fits its layout, and saves a screenshot of it as
+// <name>.png in ARTIFACT_DIR, if set.
+async function checkLayoutAndScreenshot(page, name) {
+  expect(await page.evaluate(() => window.psynetLayout.check()), name).toEqual([]);
+  if (process.env.ARTIFACT_DIR) {
+    await page.screenshot({ path: `${process.env.ARTIFACT_DIR}/${name}.png`, fullPage: true });
+  }
+}
+
 async function getPageUuid(page) {
   try {
     return await page.evaluate(() => window.pageUuid);
@@ -570,6 +581,13 @@ async function waitForNextEnabled(page, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await assertNoBackendError(page);
+    // Pages that use audio ask to turn on sound when the browser blocks it;
+    // click as a participant would.
+    const soundButton = page.locator("#resume-button");
+    if (await soundButton.isVisible().catch(() => false)) {
+      await soundButton.click().catch(() => {});
+      continue;
+    }
     const isEnabled = await page
       .evaluate(() => {
         const btn = document.getElementById("next-button");
@@ -1578,6 +1596,30 @@ async function waitForTrialEvents(
     .toBe(true);
 }
 
+// Starts a participant in each browser context and takes them all past the
+// initial gateway and the experiment's first page at the same time, as
+// participants who are grouped on arrival need. ``label`` goes into each
+// participant's ids. Returns the participants' pages, in the contexts' order.
+async function startParticipantsTogether(contexts, recruitmentUrl, label) {
+  const participants = [];
+  for (const [index, context] of contexts.entries()) {
+    participants.push(
+      await beginExperiment(
+        await context.newPage(),
+        context,
+        withFreshParticipantIds(recruitmentUrl, `${label}_${index}`)
+      )
+    );
+  }
+  await Promise.all(
+    participants.map(async (participant) => {
+      await completeInitialGateway(participant);
+      await clickNextAndWait(participant);
+    })
+  );
+  return participants;
+}
+
 function withFreshParticipantIds(rawUrl, label = null) {
   const url = new URL(rawUrl);
   const randomSuffix = Math.random().toString(36).slice(2, 10);
@@ -1715,6 +1757,7 @@ module.exports = {
   advanceUntilPromptContains,
   assertNoBackendError,
   beginExperiment,
+  checkLayoutAndScreenshot,
   captureFirstTimelineAfterGateway,
   enterTimelineAfterGateway,
   installTimelineHoldReleaseProbe,
@@ -1738,6 +1781,7 @@ module.exports = {
   getPageUuid,
   isInplaceTimelineModeEnabled,
   startExperiment,
+  startParticipantsTogether,
   startResponseSubmitTracker,
   stopExperiment,
   waitForResponseSubmitIncrement,

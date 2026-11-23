@@ -2,9 +2,22 @@ Writing a timeline
 ==================
 
 The timeline is the ``timeline`` attribute of the experiment class. Most
-experiments build it in a ``get_timeline`` function:
+experiments build it in a ``get_timeline`` function. Put ``get_timeline``
+near the top of ``experiment.py``, after the constants, and the functions it
+uses below it, so that a reader sees the experiment's structure before its
+details. This works because Python looks up the names in a function when the
+function runs, which here is when the class at the end of the file is
+created:
 
 .. code-block:: python
+
+    N_ROUNDS = 3
+
+    def get_timeline():
+        return Timeline(instructions(), play_game(), debrief())
+
+    def play_game():
+        ...
 
     class Exp(psynet.experiment.Experiment):
         timeline = get_timeline()
@@ -215,13 +228,16 @@ full timeline:
 
 .. code-block:: python
 
-    instructions = join(
-        InfoPage("In this experiment you will rate sounds.", time_estimate=5),
-        InfoPage("Use headphones if you can.", time_estimate=5),
-    )
-
     def get_timeline():
-        return Timeline(consent, instructions, practice, main_task, questionnaire)
+        return Timeline(
+            consent(), instructions(), practice(), main_task(), questionnaire()
+        )
+
+    def instructions():
+        return join(
+            InfoPage("In this experiment you will rate sounds.", time_estimate=5),
+            InfoPage("Use headphones if you can.", time_estimate=5),
+        )
 
 .. _writing_a_timeline_ending_early:
 
@@ -321,11 +337,15 @@ maker or code block can check the previous page with
 ``participant.response.time_limit_reached``.
 
 In a group experiment, a time limit covers only its page. A following
-:class:`~psynet.sync.GroupBarrier` with ``late_after`` waits for a member
-who has started a timed page since the group's previous barrier until the
-page's time limit has run out plus 10 seconds, which is enough for an answer
-sent at the deadline to arrive. This also holds once they have answered and
-moved on to untimed pages, so finishing early never makes a member late. So
+:class:`~psynet.sync.GroupBarrier` with ``late_after`` counts the late limit
+of a member who has started a timed page since the group's previous barrier
+from when the page's time limit has run out plus 10 seconds, which is enough
+for an answer sent at the deadline to arrive. This also holds once they have
+answered and moved on to untimed pages, so finishing early never makes a
+member late, and ``late_after`` needs to cover only the untimed pages. A
+page that ends by other means can say when it ends at the latest with
+:meth:`~psynet.timeline.Page.ends_by`, and the barrier counts from that in
+the same way; a :doc:`live game's <multiplayer/live_games>` page does this. So
 give decision pages a ``time_limit``, and the barrier after them
 ``late_after`` rather than a long ``max_wait_time``; see
 :ref:`rounds-slow-players` for a worked example.

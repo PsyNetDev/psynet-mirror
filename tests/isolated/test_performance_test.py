@@ -22,7 +22,12 @@ from psynet.perf_test.measure import (
     phase_stats,
     worker_load,
 )
-from psynet.perf_test.results import recommend_workers, retry_bot_count
+from psynet.perf_test.results import (
+    overshoot,
+    phase_limit_reasons,
+    recommend_workers,
+    retry_bot_count,
+)
 from psynet.perf_test.runtime import _BotState
 from psynet.pytest_psynet import path_to_test_experiment
 
@@ -190,8 +195,8 @@ def test_bots_that_fail_count_as_started_and_errored(monkeypatch):
     tester._stop_bots(bot_state, timeout_s=5)
 
     assert bot_state.total_bots_started == bot_state.total_bot_errors >= 2
-    assert 1 not in bot_state.errored_bot_ids
-    assert 2 in bot_state.errored_bot_ids
+    assert 1 not in bot_state.errored_bots
+    assert 2 in bot_state.errored_bots
     kinds = bot_state.bot_error_kinds
     assert kinds["RuntimeError"] == 1
     assert kinds["HTTP 500 on /participant_status"] == bot_state.total_bot_errors - 1
@@ -983,6 +988,75 @@ def test_database_rows_count_new_participants(db_session):
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
 )
+def test_live_game_stats_count_the_test_s_games_failures_and_runner_work(db_session):
+    from dallinger import db
+    from dallinger.models import RealtimeSession
+    from sqlalchemy import func
+
+    from psynet.perf_test.measure import live_game_stats
+
+    def runner_stats(passes):
+        counts = dict(
+            passes=passes,
+            seconds=passes / 1000,
+            tick_delays=[passes] + [0] * 9,
+            message_delays=[0] * 10,
+        )
+        return {"runners": 1, "busy": passes / 100, "games": {"snake": counts}}
+
+    # A game running when the test started, which fails in it, counts; one
+    # that had ended doesn't.
+    running = RealtimeSession(game_type="snake", members=[8])
+    ended = RealtimeSession(game_type="snake", members=[7], status="ended")
+    db.session.add_all([running, ended])
+    db.session.flush()
+    before = {
+        "runner_stats": runner_stats(10),
+        "max_session_id": ended.id,
+        "running_session_ids": [running.id],
+    }
+    running.status = "failed"
+    db.session.add_all(
+        [
+            RealtimeSession(game_type="snake", members=[1, 2]),
+            RealtimeSession(
+                game_type="snake",
+                members=["3", "4"],
+                status="failed",
+                error="Traceback (most recent call last):\nTimeLimitExceeded: 1 s",
+            ),
+            # The runner hasn't saved its counts for this game yet.
+            RealtimeSession(game_type="fishing", members=[5], status="failed"),
+        ]
+    )
+    db.session.flush()
+    after = {
+        "runner_stats": runner_stats(30),
+        "max_session_id": db.session.query(func.max(RealtimeSession.id)).scalar(),
+    }
+
+    stats = live_game_stats(
+        before,
+        after,
+        errored_bot_ids={3, 5, 8, 9},
+        startup_bot_ids={3, 9},
+    )
+
+    snake, fishing = stats["games"]["snake"], stats["games"]["fishing"]
+    assert (snake["games"], snake["failed"], snake["passes"]) == (3, 2, 20)
+    assert snake["errors"] == {"TimeLimitExceeded: 1 s": 1, "no error saved": 1}
+    assert snake["tick_delays"][0] == 20
+    assert (fishing["games"], fishing["failed"], fishing["passes"]) == (1, 1, 0)
+    assert fishing["errors"] == {"no error saved": 1}
+    assert stats["errored_players"] == 3
+    # Bot 9 errored in the start-up, but not in a game.
+    assert stats["startup_errored_players"] == 1
+    assert stats["busy_s"] == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("timeline")], indirect=True
+)
 def test_report_counts_removals_from_sync_groups_by_reason(db_session):
     from dallinger import db
 
@@ -1290,6 +1364,148 @@ def test_only_high_priority_queue_waits_limit_capacity():
         "40 still queued at the end. Participants don't wait for these"
     ) in text
     assert "can't keep up" not in text
+
+
+def _live_games(tick_delays, busy_s=10.0, errors=None, errored_players=0):
+    errors = errors or {}
+    return {
+        "delay_bounds": [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, None],
+        "runners": 1,
+        "busy_s": busy_s,
+        "errored_players": errored_players,
+        "games": {
+            "snake": {
+                "games": 3,
+                "failed": sum(errors.values()),
+                "errors": errors,
+                "passes": 1000,
+                "seconds": 0.5,
+                "tick_delays": tick_delays + [0] * (10 - len(tick_delays)),
+                "message_delays": [0] * 10,
+            }
+        },
+    }
+
+
+def test_live_game_delays_are_reported_and_limit_capacity():
+    smooth = _base_result(
+        n_bots=20, actual_duration=100, live_games=_live_games([990, 10])
+    )
+    # 95% of the ticks ran within 200 ms, but not within 100 ms.
+    lagging = _base_result(
+        n_bots=40,
+        actual_duration=100,
+        live_games=_live_games([800, 100, 0, 0, 100], busy_s=95),
+    )
+
+    report = _join(format_test_results(lagging))
+    summary = _join(format_capacity_summary([smooth, lagging], CapacityLimits()))
+
+    assert "LIVE GAMES (1 game runner, busy 95% of the test)" in report
+    assert "The game runners were busy 95% of the test" in report
+    assert "(needs browser)" in report
+    assert capacity_failures(smooth) == []
+    assert capacity_failures(lagging) == ["p95 tick delay 100-200 ms in snake"]
+    assert overshoot(lagging, CapacityLimits()) == 2
+    assert "the p95 tick delay in the live game snake was 100-200 ms" in summary
+
+
+def test_failed_live_games_are_reported_with_their_errors():
+    failing = _base_result(live_games=_live_games([1000], errors={"KeyError: 3": 1}))
+    assert capacity_failures(failing) == ["1 failed live game"]
+    assert "1 of 3 snake games failed: KeyError: 3 (1x)." in _join(
+        format_test_results(failing)
+    )
+    # A game that also failed for other reasons reports its errors, and how
+    # busy the runner was.
+    mixed = _base_result(
+        actual_duration=100,
+        live_games=_live_games(
+            [1000], busy_s=95, errors={"KeyError: 3": 1, "TimeLimitExceeded": 1}
+        ),
+    )
+    report = _join(format_test_results(mixed))
+    assert "KeyError: 3 (1x), TimeLimitExceeded (1x)" in report
+    assert "The game runners were busy 95% of the test" in report
+    assert "fix the errors under LIVE GAMES" in _join(
+        format_capacity_summary([mixed], CapacityLimits())
+    )
+    # A server that is also slow to respond needs fewer bots too.
+    slow = _base_result(
+        p95_response_time=0.9, live_games=_live_games([800, 100, 0, 0, 100])
+    )
+    assert "or add worker_processes or test fewer bots" in _join(
+        format_capacity_summary([slow], CapacityLimits())
+    )
+    # Games that all failed measured no messages, which a browser can't change.
+    dead = _base_result(live_games=_live_games([], errors={"KeyError: 3": 3}))
+    assert "(needs browser)" not in _join(format_test_results(dead))
+    assert "Not measured for live games" not in _join(
+        format_performance_summary([dead])
+    )
+
+
+def test_live_games_without_ticks_are_limited_by_their_message_delays():
+    untimed = _base_result(actual_duration=100, live_games=_live_games([], busy_s=0.1))
+    report = _join(format_test_results(untimed))
+    assert "busy <1% of the test" in report and "no ticks" in report
+    assert "can play many of them" in report
+    summary = _join(format_performance_summary([untimed]))
+    assert "live game delay" not in summary.lower()
+    assert "of live games failing" in summary
+    untimed.live_games["games"]["snake"]["message_delays"][4] = 1000
+    assert capacity_failures(untimed) == ["p95 message delay 100-200 ms in snake"]
+
+
+def test_live_games_that_ran_out_of_time_count_their_players_errors_once():
+    behind = _base_result(
+        n_bots=4,
+        total_bots_started=4,
+        bot_errors=4,
+        bot_error_kinds={"HTTP 500 on /response": 4},
+        live_games=_live_games(
+            [0] * 7 + [10], errors={"TimeLimitExceeded": 2}, errored_players=4
+        ),
+    )
+    report = _join(format_test_results(behind))
+    assert capacity_failures(behind) == [
+        "p95 tick delay 1-2 s in snake",
+        "2 failed live games",
+    ]
+    assert "failed for running past the game's time_limit" in report
+    assert "so 4 bots got an error page" in report
+    # Nor do their errors count again in the start-up or steady state.
+    startup = {**_PHASE, "request_errors": 4}
+    assert phase_limit_reasons(startup, CapacityLimits()) != []
+    assert phase_limit_reasons(startup, CapacityLimits(), errored_players=4) == []
+    verdict = _join(format_capacity_summary([behind]))
+    assert "over the 1% limit, and 4 bots in them failed too" in verdict
+    assert "make the games' tick and view faster" in verdict
+    assert "Errors at" not in verdict
+    # Bot errors beyond the failed games' still name their kinds.
+    more = _base_result(
+        n_bots=100,
+        total_bots_started=100,
+        bot_errors=6,
+        bot_error_kinds={"HTTP 500 on /response": 6},
+        live_games=_live_games([1000], errors={"KeyError: 3": 1}, errored_players=4),
+    )
+    assert "Errors at 100: 6 x HTTP 500 on /response." in _join(
+        format_capacity_summary([more])
+    )
+
+
+def test_live_game_summary_notes_what_bots_can_t_measure():
+    smooth = _base_result(live_games=_live_games([990, 10]))
+    assert "Not measured for live games" in _join(format_performance_summary([smooth]))
+    smooth.live_games["games"]["snake"]["message_delays"][0] = 5
+    assert "Not measured for live games" not in _join(
+        format_performance_summary([smooth])
+    )
+    smooth.non_bot_participants = 1
+    assert "not as an estimate of how many participants" in _join(
+        format_performance_summary([smooth])
+    )
 
 
 def _phase_backlog(backlog):
@@ -1649,8 +1865,12 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
             n_bots=n, key_requests=47_000, total_bots_started=3_000, **overrides
         )
 
+    live_games = _live_games([1000], errors={"KeyError: 3": 1})
+    live_games["games"]["snake"]["games"] = 1_000
     results = [
-        result(640, request_errors=1, busy_responses=3, bot_errors=1),
+        result(
+            640, request_errors=1, busy_responses=3, bot_errors=1, live_games=live_games
+        ),
         result(2000, request_errors=60, queue_waits={"high": {"q_delay_p95": 36.9}}),
     ]
 
@@ -1661,8 +1881,8 @@ def test_a_stray_error_is_reported_but_does_not_cap_capacity():
         in text
     )
     assert (
-        "The 640-bot test had 1 request error, 3 busy/stale responses and 1 bot error"
-        in text
+        "The 640-bot test had 1 request error, 3 busy/stale responses, 1 bot error "
+        "and 1 failed live game, within the limits" in text
     )
     assert (
         "for one of the 2 worker processes, up to 40 jobs at once. No estimate "

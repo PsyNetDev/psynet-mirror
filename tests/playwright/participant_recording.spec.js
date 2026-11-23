@@ -50,7 +50,8 @@ function maxVolumeDb(file) {
   return Number(match[1]);
 }
 
-test("participant recording helper writes an MP4 with audio", { tag: "@both" }, async ({
+// The helper records the page's audio with MediaRecorder.
+test("participant recording helper writes an MP4 with audio", { tag: ["@both", "@media"] }, async ({
   context
 }, testInfo) => {
   const absDir = path.resolve("demos/experiments/static_audio");

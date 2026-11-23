@@ -2,7 +2,7 @@ const path = require("path");
 const {test, expect} = require("./fixtures");
 const {withExperiment, completeInitialGateway, waitForVideoRecordingReady, waitForNextEnabled} = require("./psynetHarness");
 
-test("missing answer expires and the unaffected imitation chain completes @inplace-only", async ({page, context}) => {
+test("missing answer expires and the unaffected imitation chain completes @inplace-only @media", async ({page, context}) => {
   test.setTimeout(180000);
   let uploads = 0;
   await context.route(/\/media-upload\/\d+$/, route => {

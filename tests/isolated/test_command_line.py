@@ -910,6 +910,30 @@ class TestCommandLine(object):
 #
 
 
+def test_local_runs_warn_about_the_development_server_for_a_game_with_ticks(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from psynet.command_line import _ticking_game_warning
+
+    def experiment_with(*tick_rates):
+        games = [SimpleNamespace(tick_rate=rate) for rate in tick_rates]
+        experiment = SimpleNamespace(realtime_games=games)
+        monkeypatch.setattr(
+            "psynet.experiment.import_local_experiment",
+            lambda: {"class": experiment},
+        )
+
+    experiment_with(0, 20)
+    assert "Run psynet debug local --legacy" in _ticking_game_warning("debug")
+    assert "Run psynet deploy local --legacy" in _ticking_game_warning("live")
+    experiment_with(0)
+    assert _ticking_game_warning("debug") is None
+    experiment_with()
+    assert _ticking_game_warning("debug") is None
+
+
 def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     """Legacy debug defaults to four workers so a quartet extra waiter can POST."""
     from psynet.command_line import LEGACY_DEBUG_GUNICORN_THREADS, _debug_legacy
@@ -953,123 +977,61 @@ def test_reloader_ignores_only_other_develop_folders(own):
         assert not any(fnmatch(path, p) for p in patterns), path
 
 
-@pytest.mark.parametrize("browsers", [False, True])
-def test_launch_job_uses_the_login_it_was_enqueued_with(monkeypatch, capsys, browsers):
-    """Another experiment's worker on the same Redis may run the launch job."""
-    from psynet import command_line
-
-    monkeypatch.setattr(
-        "dallinger.deployment.launch_auth", lambda: ("admin", "other-experiment")
-    )
-    launches = []
-    monkeypatch.setattr(
-        "dallinger.deployment.handle_launch_data",
-        lambda url, **kwargs: launches.append(kwargs) or {},
-    )
-    opened = []
-    monkeypatch.setattr(command_line, "_open_browser_async", opened.append)
-    launch = (
-        command_line.launch_app_and_open_browsers
-        if browsers
-        else command_line.launch_app_without_browsers
-    )
-    launch(5001, auth=("admin", "enqueued"))
-    assert launches[0]["auth"] == ("admin", "enqueued")
-    assert "(user admin, password enqueued)" in capsys.readouterr().out
-    if browsers:
-        assert "admin:enqueued@" in opened[0]
-
-    launch(5001)
-    assert launches[1]["auth"] == ("admin", "other-experiment")
-
-
+@pytest.mark.parametrize("isolated", [True, False])
 @pytest.mark.parametrize("no_browsers", [True, False])
-def test_debug_auto_reload_prints_the_dashboard_login_once(
-    monkeypatch, capsys, no_browsers
+def test_debug_auto_reload_adds_the_ready_rows(
+    monkeypatch, capsys, isolated, no_browsers
 ):
-    """PsyNet's launch job prints the login once and never logs it in a URL."""
-    from psynet.command_line import (
-        _debug_auto_reload,
-        _reloader_exclude_patterns,
-        launch_app_and_open_browsers,
-        launch_app_without_browsers,
-    )
+    """The ``Ready.`` block repeats the development server warning and, in an isolated session, tells other terminals how to connect."""
+    from psynet.command_line import _debug_auto_reload, _reloader_exclude_patterns
 
-    develop = importlib.import_module("dallinger.command_line.develop")
-    original_job = develop.launch_app_and_open_browser
     calls = []
-
-    class _Ctx:
-        def invoke(self, _command, **kwargs):
-            calls.append((kwargs, develop.launch_app_and_open_browser))
-
+    develop = importlib.import_module("dallinger.command_line.develop")
+    monkeypatch.setattr(develop, "run_debug", lambda **kwargs: calls.append(kwargs))
     monkeypatch.setattr("psynet.command_line.run_pre_auto_reload_checks", lambda: None)
     monkeypatch.setattr("psynet.command_line.patch_dallinger_develop", lambda: None)
     monkeypatch.setattr("psynet.command_line.db.session.commit", lambda: None)
     monkeypatch.setattr("psynet.command_line.reset_console", lambda: None)
-    monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5010)
+    monkeypatch.setattr("psynet.command_line._local_base_port", lambda: 5100)
     # setenv, unlike delenv of an unset variable, restores the variables it sets.
     monkeypatch.setenv("FLASK_RUN_PORT", "")
     monkeypatch.setenv("FLASK_RUN_EXCLUDE_PATTERNS", "")
     monkeypatch.setenv("base_port", "")
-    _debug_auto_reload(_Ctx(), archive=None, no_browsers=no_browsers)
-    job = launch_app_without_browsers if no_browsers else launch_app_and_open_browsers
-    assert calls == [({"skip_flask": False, "port": 5010}, job)]
-    assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5010"
-    assert os.environ["FLASK_RUN_EXCLUDE_PATTERNS"].split(os.pathsep) == (
-        _reloader_exclude_patterns()
-    )
-    assert develop.launch_app_and_open_browser is original_job
-
-    monkeypatch.setattr("dallinger.deployment.launch_auth", lambda: ("admin", "s3cret"))
-    monkeypatch.setattr(
-        "dallinger.deployment.handle_launch_data",
-        lambda url, **kwargs: {
-            "recruitment_msg": "Initial recruitment list:\nhttp://x/ad?a=1\n"
-            "Additional details:\nSingle recruitment link: http://x/ad?t=1\n\n"
-            "Recruitment requests will open browser windows automatically."
-        },
-    )
-    if no_browsers:
+    if isolated:
         monkeypatch.setenv("_PSYNET_TEST_ENVIRONMENT_READY", "1")
         monkeypatch.setenv("DATABASE_URL", "postgresql://localhost/db_5100")
         monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6479")
-        monkeypatch.setenv("base_port", "5100")
     else:
         # This test session is itself isolated.
         monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
-    opened = []
-    monkeypatch.setattr(develop, "open_browser", opened.append)
-    job(5001)
-    deadline = time.monotonic() + 5
-    while len(opened) < (0 if no_browsers else 2) and time.monotonic() < deadline:
-        time.sleep(0.01)
-    lines = capsys.readouterr().out.splitlines()
-    ready = lines.index("Ready.")
-    assert lines[ready - 1] == "" and lines[-1] == "Press Ctrl+C to stop."
-    rows = [line.split(":", 1) for line in lines[ready + 1 : -1]]
-    block = {label.strip(): value.strip() for label, value in rows}
-    assert block["Participant link"] == "http://x/ad?t=1"
-    assert block["Dashboard"] == (
-        "http://127.0.0.1:5001/dashboard (user admin, password s3cret)"
+    monkeypatch.setattr(
+        "psynet.command_line._ticking_game_warning",
+        lambda mode: f"Views are late in {mode} mode.",
     )
-    assert block["Full log"].endswith("logs.jsonl")
-    assert ("Other terminals" in block) is no_browsers
-    if no_browsers:
-        assert block["Other terminals"] == (
+    monkeypatch.setattr("psynet.command_line.deployment_info.read", lambda key: "live")
+
+    _debug_auto_reload(archive=None, no_browsers=no_browsers)
+
+    assert capsys.readouterr().err == "Warning: Views are late in live mode.\n"
+    warning = [("Warning", "Views are late in live mode.")]
+    export = [
+        (
+            "Other terminals",
             "export DATABASE_URL=postgresql://localhost/db_5100 "
-            "REDIS_URL=redis://127.0.0.1:6479 base_port=5100"
+            "REDIS_URL=redis://127.0.0.1:6479 base_port=5100",
         )
-    # The values line up.
-    assert len({len(label + value) - len(value.lstrip()) for label, value in rows}) == 1
-    output = "\n".join(lines)
-    assert "Initial recruitment list" not in output and "❯❯" not in output
-    assert output.count("s3cret") == 1
-    if no_browsers:
-        assert opened == []
-    else:
-        assert "admin:s3cret@127.0.0.1:5001/dashboard" in opened[0]
-        assert "/ad?" in opened[1]
+    ]
+    assert calls == [
+        {
+            "port": 5100,
+            "no_browsers": no_browsers,
+            "ready_rows": warning + (export if isolated else []),
+        }
+    ]
+    assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5100"
+    assert os.environ["FLASK_RUN_EXCLUDE_PATTERNS"].split(os.pathsep) == (
+        _reloader_exclude_patterns()
+    )
 
 
 def test_debug_legacy_gunicorn_workers_follow_env(monkeypatch):
@@ -5935,6 +5897,11 @@ def test_run_local_prepares_before_legacy_cleanup():
         ),
         patch("psynet.command_line.kill_psynet_worker_processes"),
         patch("psynet.command_line._cleanup_exp_directory"),
+        # Parallel CI test sessions can hold the configured port.
+        patch(
+            "psynet.command_line._refuse_if_local_server_running",
+            lambda **kwargs: contextlib.nullcontext(),
+        ),
     ):
         _run_local(
             Mock(),

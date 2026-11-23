@@ -16,7 +16,7 @@
   // Legacy globals remain available through configurable accessors while
   // experiments migrate, allowing accesses to warn or fail with useful errors.
   const LEGACY_JS_VAR_GLOBAL_MODES = new Set(["warn", "error", "off"]);
-  const RESERVED_JS_VAR_GLOBALS = new Set(["pageUuid"]);
+  const RESERVED_JS_VAR_GLOBALS = new Set(["pageUuid", "liveGame"]);
   let legacyJsVarGlobalStates = new Map();
   let warnedLegacyJsVarGlobalCollisionKeys = new Set();
   let warnedLegacyJsVarGlobalLockedKeys = new Set();
@@ -542,6 +542,10 @@
       psynet.setPageReady(false);
       psynet.pageLoaded = false;
       psynet.nextPagePending = false;
+      psynet.media.audioRequired = false;
+      psynet.media.otherAudioContexts = [];
+      // A sound dialog left open by the previous page belongs to it.
+      psynet.media.cancelAudioPrompt();
       psynet.clearStageResponseHandler();
       psynet.response.staged = {
         rawAnswer: null,
@@ -2153,8 +2157,10 @@
         });
       };
 
+      // Wall-clock seconds, independent of audio: a suspended AudioContext's
+      // clock stands still, which would freeze the trial progress display.
       trial.getGlobalTime = function () {
-        return psynet.media.audioContext.currentTime;
+        return performance.now() / 1000;
       };
 
       trial.listEvents = function () {
@@ -2588,37 +2594,136 @@
       psynet.media.audioContext = context;
     };
 
-    let askUserToResume = function () {
+    // Page code that plays or records audio without an audio media request
+    // (through psynet.media.audioContext, Tone.js or an unmuted <video>) calls
+    // this before trialConstruct, so psynet.media.init() makes sure audio can
+    // start. Code with an AudioContext of its own, such as Tone.js, passes it
+    // so that it starts too. Pages that preload audio need no call.
+    // resetPageState clears both between pages.
+    psynet.media.audioRequired = false;
+    psynet.media.otherAudioContexts = [];
+    psynet.media.requireAudio = function (context) {
+      psynet.media.audioRequired = true;
+      if (context) {
+        psynet.media.otherAudioContexts.push(context);
+      }
+    };
+
+    let audioContexts = function () {
+      return [psynet.media.audioContext, ...psynet.media.otherAudioContexts];
+    };
+
+    let audioSuspended = function () {
+      return audioContexts().some((context) => context.state === "suspended");
+    };
+
+    let resumeAudio = function () {
+      return Promise.all(audioContexts().map((context) => context.resume()));
+    };
+
+    let pageNeedsAudio = function () {
+      let audioRequests = (psynet.media.requests || {}).audio || {};
+      return (
+        psynet.media.audioRequired || Object.keys(audioRequests).length > 0
+      );
+    };
+
+    // Browsers keep an AudioContext suspended until the participant interacts
+    // with the document, unless their autoplay policy allows audio anyway.
+    // Firefox and Chrome then allow resume() at any time; Safari only inside
+    // the click handler itself, so a resume() that does not settle quickly is
+    // treated as refused. Audio can also start late, for example while the
+    // browser opens the audio output, so the dialog closes by itself once the
+    // context runs.
+    const AUDIO_RESUME_WAIT_MS = 500;
+
+    let waitForResume = function (resumed) {
+      return Promise.race([
+        resumed.catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, AUDIO_RESUME_WAIT_MS)),
+      ]);
+    };
+
+    // Closes the dialog of a page that is being replaced, without letting
+    // that page continue.
+    psynet.media.cancelAudioPrompt = function () {};
+
+    let askUserToEnableAudio = function () {
+      let contexts = audioContexts();
       return new Promise((resolve) => {
-        let resumeModal = $("#resume-modal");
-        let resumeButton = $("#resume-button");
-        resumeModal.css("display", "block");
-        resumeButton.click(async function () {
-          resumeModal.css("display", "none");
+        let modal = $("#resume-modal");
+        let button = $("#resume-button");
+        let cancelled = false;
+        let hide = function () {
+          contexts.forEach((context) =>
+            context.removeEventListener("statechange", closeWhenRunning),
+          );
+          button.off("click");
+          modal.css("display", "none");
+        };
+        let close = function () {
+          if (cancelled) {
+            return;
+          }
+          hide();
           $("#js-psych").trigger("focus");
-          await psynet.media.init();
           resolve();
+        };
+        psynet.media.cancelAudioPrompt = function () {
+          cancelled = true;
+          hide();
+        };
+        let closeWhenRunning = function () {
+          if (!audioSuspended()) {
+            close();
+          }
+        };
+        contexts.forEach((context) =>
+          context.addEventListener("statechange", closeWhenRunning),
+        );
+        modal.css("display", "block");
+        button.one("click", async function () {
+          // resume() must run synchronously inside the click for Safari.
+          let resumed = resumeAudio();
+          modal.css("display", "none");
+          await waitForResume(resumed);
+          close();
         });
+        closeWhenRunning();
       });
     };
 
-    psynet.media.init = async function () {
+    let ensureAudioRunning = async function () {
       psynet.media.initAudioContext();
-
-      if (psynet.media.audioContext.state == "suspended") {
-        psynet.log.info(
-          "Audio context is suspended, and can only be resumed " +
-            "after a user interaction. Waiting for the participant to click 'Resume'.",
-        );
-        await askUserToResume();
-        psynet.media.initAudioContext();
+      if (!audioSuspended()) {
+        return;
       }
+      await waitForResume(resumeAudio());
+      // Ask again if the browser still refuses after a click.
+      while (audioSuspended()) {
+        psynet.log.info(
+          "The browser blocked audio until the participant clicks; " +
+            "asking them to enable sound.",
+        );
+        await askUserToEnableAudio();
+      }
+    };
+
+    psynet.media.init = async function () {
+      // Every page gets an AudioContext, since page code may decode sounds
+      // without a media request; only pages that need audio ask the
+      // participant to enable it. Media downloads while they read the prompt.
+      psynet.media.initAudioContext();
+      let audioReady = pageNeedsAudio() ? ensureAudioRunning() : null;
       let requests = psynet.media.requests;
       let mediaTypes = Object.keys(requests);
       // Nothing here touches the progress bar: it may not exist (show_footer =
       // false omits it), and its appearance belongs to participant.css, which
       // keeps it a solid accent rather than animating a gradient.
-      await Promise.all(mediaTypes.map((x) => processRequests(x, requests[x])));
+      await Promise.all([
+        audioReady,
+        ...mediaTypes.map((x) => processRequests(x, requests[x])),
+      ]);
     };
 
     let initMediaType = function (mediaType) {
@@ -3872,26 +3977,85 @@
     };
 
     psynet.showWakingNotice = function (visible) {
-      let notice = document.getElementById("psynet-waking-notice");
-      if (!visible) {
+      psynet.showStatusNotice(
+        "psynet-waking-notice",
+        visible
+          ? psynetTemplateData.strings?.wakingUp ||
+              "Getting ready, please wait..."
+          : null,
+      );
+    };
+
+    // Shows ``text`` in a notice at the top of the page, or removes the
+    // notice if ``text`` is null. Notices with different ids stack, in the
+    // order they were first shown.
+    psynet.showStatusNotice = function (id, text) {
+      let notice = document.getElementById(id);
+      if (text === null) {
         notice?.remove();
         return;
       }
-      if (notice) return;
+      if (notice) {
+        notice.psynetText = text;
+        if (notice.textContent !== text) notice.textContent = text;
+        return;
+      }
+      let stack = document.getElementById("psynet-status-notices");
+      if (!stack) {
+        stack = document.createElement("div");
+        stack.id = "psynet-status-notices";
+        stack.style.cssText =
+          "position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 1080; " +
+          "display: flex; flex-direction: column; align-items: center; gap: 0.5rem;";
+        document.body.appendChild(stack);
+      }
       notice = document.createElement("div");
-      notice.id = "psynet-waking-notice";
+      notice.id = id;
       notice.className = "alert alert-info";
       notice.setAttribute("role", "status");
-      notice.style.cssText =
-        "position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 1080;";
-      document.body.appendChild(notice);
+      notice.style.cssText = "margin: 0;";
+      notice.psynetText = text;
+      stack.appendChild(notice);
       // Screen readers announce a status region's text only if it changes
-      // after the region is in the page.
+      // after the region is in the page. A later call may change the text
+      // before then.
       setTimeout(() => {
-        notice.textContent =
-          psynetTemplateData.strings?.wakingUp ||
-          "Getting ready, please wait...";
+        notice.textContent = notice.psynetText;
       }, 0);
+    };
+
+    // If the server refused the response and asked for it to be resent
+    // later, returns {delayMs, message}. Otherwise returns null.
+    psynet.retryLaterRejection = function (request) {
+      if (request.status !== 200) return null;
+      let body;
+      try {
+        body = JSON.parse(request.response);
+      } catch (error) {
+        return null;
+      }
+      let seconds = body?.retry_after;
+      if (
+        body?.submission !== "rejected" ||
+        !Number.isFinite(seconds) ||
+        seconds <= 0
+      ) {
+        return null;
+      }
+      return { delayMs: seconds * 1000, message: body.message };
+    };
+
+    psynet.waitIfRetryLater = async function (request) {
+      // Return true, after waiting, when a rejected response should be resent.
+      let rejection = psynet.retryLaterRejection(request);
+      if (rejection === null) {
+        psynet.showStatusNotice("psynet-retry-notice", null);
+        return false;
+      }
+      psynet.log.info("The response can't be accepted yet; sending it again later.");
+      psynet.showStatusNotice("psynet-retry-notice", rejection.message);
+      await new Promise((resolve) => setTimeout(resolve, rejection.delayMs));
+      return true;
     };
 
     psynet.waitIfAppIsWaking = async function (request, retry, options = {}) {
@@ -4288,6 +4452,10 @@
           request.onreadystatechange = async function () {
             if (request.readyState !== 4) return;
             if (await psynet.waitIfAppIsWaking(request, wakeRetry, options)) {
+              send(false);
+              return;
+            }
+            if (await psynet.waitIfRetryLater(request)) {
               send(false);
               return;
             }

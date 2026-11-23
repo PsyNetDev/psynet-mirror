@@ -4,26 +4,60 @@ Groups
 ======
 
 In a **group experiment**, several participants take part at the same time and
-interact: they play a game against each other, rate the same stimuli together,
-or talk in a chatroom. The rest of the :doc:`timeline <timeline>` stays the
+interact with each other. The rest of the :doc:`timeline <timeline>` stays the
 same; groups add points where participants wait for each other.
+
+This page covers what every group experiment has. Many groups then interact
+in :doc:`rounds <rounds>` or in a :doc:`live game <live_games>`, which have
+pages of their own.
+
+How it works
+------------
+
+A group goes through the experiment like this:
+
+1. Participants arrive one by one, and a **grouper** in the timeline collects
+   them into groups.
+2. Each group goes through the timeline together, and **barriers** keep its
+   members in step, wherever they must all be in the same place.
+3. Members interact: by chatting, in rounds of decisions, or in a live
+   game.
+4. They see each other by a **pseudonym**, never by their real identity.
+5. Members may leave, for example by closing the tab, and in some designs
+   newcomers join.
+6. Each member's data records their group, and what happened to them in it.
 
 Forming groups
 --------------
 
 A **grouper** in the timeline collects participants as they arrive and forms
 a group once enough are waiting, for example two for a two-player game.
-Participants wait on the page they are on until their group is complete. A
+Participants wait on the page they are on until their group is complete,
+or answer filler trials meanwhile, such as quiz questions that earn points
+(see :ref:`sync-waiting-quiz`). A
 grouper can also wait for a larger batch and then split it into groups; the
 built-in grouper splits it at random, and a custom grouper can choose the
 split, for example to balance groups. Waiting for a larger batch gives the
-grouper more choice but makes participants wait longer, so a grouper can also
-start a smaller group once its first participant has waited long enough.
+grouper more choice but makes participants wait longer.
 
 Groups are formed from whoever is online at the same moment, so recruitment
 has to bring participants in close together. A participant who waits too long
 without a group is failed and sent to the end of the experiment, unless you
 choose to let them continue without one, for example with a task of their own.
+
+Waiting for a full group makes the first arrivals wait longest, and a group
+that loses a member early may still be worth saving. An **open lobby** lets
+a group **start short**, with fewer members than it would like, once its
+first member has waited long enough, and then **tops it up**: latecomers join
+a group that has a free place instead of waiting for a new one. Top-ups
+can stop when the game starts, so that every member plays every round;
+from then on, latecomers wait for a new group. Alternatively, a group can
+keep taking latecomers during the game, who wait to be admitted at the
+start of the next round (see `When membership changes`_). A group
+that loses a member before the game starts can also wait a little while for a
+latecomer to replace them (see `When members leave`_). The ``crowd_estimate``
+demo starts groups short and tops them up (see
+:ref:`design-rounds-start-short`).
 
 Keeping a group in step
 -----------------------
@@ -36,13 +70,59 @@ the whole group, such as scoring a round or assigning roles. For rounds of
 cued trials, where a barrier's release also closes the round, see
 :ref:`rounds-cued-trials`.
 
-In a trial maker, the group can also share its trials. One member acts as the
-**leader**: PsyNet picks the leader's next node as if they were taking the
-trial maker alone, and the other members get trials on the same node, so
-everyone sees the same stimulus in each round.
-
-Waiting and dropouts
+How members interact
 --------------------
+
+Members of a group interact in three ways, and an experiment can use more
+than one:
+
+- **In a chatroom**, where members exchange messages as they write them. The
+  messages are stored with the experiment's data, so conversations can be
+  analyzed later. In `chatroom_simple <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/chatroom_simple>`__, pairs
+  discuss a topic, and a barrier after the chat waits until both have
+  finished. Other real-time pages that aren't games, such as editing a
+  shared answer, can be built from WebSocket messages (see
+  :doc:`/code/multiplayer/realtime_interaction`).
+- **In rounds**, where each member decides on their own page, a barrier waits
+  for all of them, and then everyone sees the result. Economic games, rating
+  stimuli together and taking turns work this way, at the pace of the
+  slowest member. :doc:`rounds` describes them.
+- **In a live game**, where the members stay on one page, and each move
+  reaches the others as soon as it's made, so players can react to each
+  other while they act, as in a negotiation or a game on a shared board.
+  :doc:`live_games` describes them.
+
+.. figure:: ../_static/images/design/groups/chatroom_simple.svg
+   :alt: A grouper forms pairs, both chat on a group page, and a barrier waits until both have finished.
+
+Seeing who you're playing with
+------------------------------
+
+Group members see each other by a **pseudonym**, such as "Pink koala", drawn
+as an animal in a colour, never by their real identity:
+
+.. figure:: ../_static/images/design/groups/pseudonyms_chat.png
+   :width: 520
+   :alt: A chatroom in which the participant is labelled "You" and their
+      partner "Pink koala", each with their animal next to their messages.
+
+A participant keeps the same pseudonym for the whole experiment, so when
+groups change from round to round, players can recognise someone they met
+before. If that could change how they behave, for example because a player
+could build a reputation in a game, show members **anonymously** instead:
+everyone appears as the same grey figure.
+
+.. figure:: ../_static/images/design/groups/anonymous_partner.png
+   :width: 520
+   :alt: A decision page that shows the participant and their partner as two
+      identical grey figures, one labelled "You".
+
+The dashboard shows each participant's pseudonym, and the names that
+participants saw can be recovered from an export, for example to read chat
+messages that mention them (see :doc:`/code/multiplayer/pseudonyms`).
+
+When members leave
+------------------
 
 Participants leave groups in several ways, and PsyNet learns of each in a
 different way:
@@ -92,153 +172,9 @@ with a quorum below their size or whose barriers remove late members. Failed
 participants are paid for what they completed (see
 :doc:`/code/participants/payment`).
 
-Plan for dropouts: decide whether a round can continue with fewer members,
-whether the remaining members should go on alone or finish early, and how
-their data will be analyzed.
-
-Groups can go through the experiment in two ways, **cued trials** or a
-**synchronized trial maker**:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 34 40 26
-
-   * - The design
-     - Use
-     - Demos
-   * - A game played in rounds without a stimulus set, such as an economic
-       game, with the same group or new partners every round
-     - **Cued trials**: a loop in the timeline with one
-       :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` per player in each
-       round, after a regrouper when partners change (see
-       `New groups for each round`_). The trials of a group's round share a
-       :class:`~psynet.sync.SyncGroupRound` that holds the group's results.
-     - `public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__,
-       `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__,
-       `story_chain <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/story_chain>`__,
-       `microsociety <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety>`__
-   * - A group working through a stimulus set or a chain together, each
-       member getting a trial on the same stimulus
-     - **A synchronized trial maker**: a trial maker with a group type
-       (``sync_group_type``), which gives the members trials on the same
-       nodes and keeps them in step from trial to trial. Each time it
-       prepares the group's trials, they share a new
-       :class:`~psynet.sync.SyncGroupRound`.
-     - `create_rate_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/create_rate_sync>`__,
-       `gibbs_within_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/gibbs_within_sync>`__
-
-Either way, each trial records the group, the player's role and the round,
-and how the round ended for the player (``trial.sync_group_outcome``), so
-the data can be analyzed round by round. A group's rounds can be read back
-in order with :meth:`SyncGroup.rounds() <psynet.sync.SyncGroup.rounds>`.
-
-Talking to each other
----------------------
-
-A **chatroom** lets group members exchange messages on a page. Messages are
-stored with the experiment's data, so conversations can be analyzed later.
-
-Other **real-time interaction**, such as taking turns in a game on one page,
-works the same way: each member's page sends actions to the server as they
-happen. The server is the authority on the shared state. It accepts or rejects
-each action, for example one made out of turn, and sends the result to every
-member, whose page shows only what the server sent. Decide what each member
-is allowed to see, what happens when a member's connection drops or they
-reload the page, and which parts of the interaction are recorded for
-analysis. The `websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__ demo
-sends messages live to everyone in a room.
-
-Seeing who you're playing with
-------------------------------
-
-Group members see each other by a **pseudonym**, such as "Pink koala", drawn
-as an animal in a colour, never by their real identity:
-
-.. figure:: ../_static/images/design/groups/pseudonyms_chat.png
-   :width: 520
-   :alt: A chatroom in which the participant is labelled "You" and their
-      partner "Pink koala", each with their animal next to their messages.
-
-A participant keeps the same pseudonym for the whole experiment, so when
-groups change from round to round, players can recognise someone they met
-before. If that could change how they behave, for example because a player
-could build a reputation in a game, show members **anonymously** instead:
-everyone appears as the same grey figure.
-
-.. figure:: ../_static/images/design/groups/anonymous_partner.png
-   :width: 520
-   :alt: A decision page that shows the participant and their partner as two
-      identical grey figures, one labelled "You".
-
-The dashboard shows each participant's pseudonym, and the names that
-participants saw can be recovered from an export, for example to read chat
-messages that mention them (see :doc:`/code/multiplayer/pseudonyms`).
-
-Kinds of group experiment
--------------------------
-
-Most group experiments are one of these kinds, or combine several. They are
-listed in order of complexity, each with a demo to start from:
-
-- `One group for the whole experiment`_
-- `Groups that latecomers can join`_
-- `New groups for each round`_
-- `Cohorts that regroup each round`_
-- `Groups that carry on when members leave`_
-- `Groups whose members change`_
-
-Each diagram shows a demo's timeline as a sequence of blocks; a dashed box
-repeats. :doc:`/demos/index` lists every demo.
-
-One group for the whole experiment
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The simplest design forms a group once and keeps it to the end, with barriers
-wherever the members must be in step.
-
-In `chatroom_simple <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/chatroom_simple>`__, pairs discuss a topic in a chatroom.
-The trial maker starts both partners on the chat together, and a barrier after
-the chat waits until both have finished before either moves on.
-
-.. figure:: ../_static/images/design/groups/chatroom_simple.svg
-   :alt: A grouper forms pairs, both chat on a group page, and a barrier waits until both have finished.
-
-In `rock_paper_scissors <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors>`__, the same pair plays three rounds.
-Each player chooses within a time limit, a barrier scores the round, and both
-see the result. Rounds don't need new groups when partners stay the same.
-
-.. figure:: ../_static/images/design/groups/rock_paper_scissors.svg
-   :alt: A grouper forms pairs. Then, for three rounds, players choose with a time limit, a barrier scores the round, and both see the result and can chat.
-
-In `create_rate_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/create_rate_sync>`__, each member of a group of three
-writes an answer, then rates the others' answers, and the group sees which
-answer won. One barrier waits until all answers are in, and another counts the
-votes.
-
-.. figure:: ../_static/images/design/groups/create_rate_sync.svg
-   :alt: A grouper forms groups of three. Then, for each trial, members create an answer, wait at a barrier, rate the others' answers, wait at a barrier that counts the votes, and see the results.
-
-In `story_chain <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/story_chain>`__, a group of three writes a story one
-sentence at a time, taking turns in seat order. While one member writes, the
-others wait at a barrier that shows them the story so far. The writer's
-sentence is stored on the turn as soon as they submit it. A writer who runs
-out of time adds nothing that turn; a member who leaves plays no more turns,
-and the next member in seat order writes in their place. The last one left
-goes on to the story so far.
-
-.. figure:: ../_static/images/design/groups/story_chain.svg
-   :alt: A grouper forms groups of three. Then, for each turn, the writer adds a sentence while the others wait at a barrier that shows them the story so far. Finally everyone rates the story.
-
-In `gibbs_within_sync <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/gibbs_within_sync>`__, a group of three shares a chain of
-stimuli. The leader's next stimulus is chosen as if they were taking the
-experiment alone, and everyone rates that same stimulus. Newcomers can join a
-group that has lost members; each is admitted when the group's next trial is
-prepared, which is an admission point.
-
-.. figure:: ../_static/images/design/groups/gibbs_within_sync.svg
-   :alt: A grouper forms groups of three that newcomers can join. Then, for each trial, a barrier prepares the trial and admits newcomers, and every member rates the leader's stimulus.
-
-In `sync_quorum <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/sync_quorum>`__, everyone joins one growing group, and
+A group that needs a quorum for only part of the experiment can let its
+members do something else while it waits. In
+`sync_quorum <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/sync_quorum>`__, everyone joins one growing group, and
 part of the experiment only opens while at least three members are present.
 Until then, and whenever the group drops below three, members do filler
 trials instead of waiting.
@@ -246,138 +182,32 @@ trials instead of waiting.
 .. figure:: ../_static/images/design/groups/sync_quorum.svg
    :alt: A grouper waits for three participants while they do filler trials. Then, three times, a member sees the quorum page if enough members are present, or a filler trial otherwise.
 
-Groups that latecomers can join
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Waiting for a full group makes the first arrivals wait longest, and a group
-that loses a member early may still be worth saving. An **open lobby** lets
-a group **start short**, with fewer members than it would like, once its
-first member has waited long enough, and then **tops it up**: latecomers join
-a group that has a free place instead of waiting for a new one. Top-ups
-can stop when the game starts, so that every member plays every round;
-from then on, latecomers wait for a new group. Alternatively, a group can
-keep taking latecomers during the game, who wait to be admitted at the
-start of the next round (see `Groups whose members change`_). A group
-that falls below its quorum before the game starts can wait a little while
-for a latecomer to replace the member who left (see
-:ref:`groups_below_quorum` for when a group ends).
-
-In `crowd_estimate <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/crowd_estimate>`__, groups of up to four play a
-wisdom-of-crowds game; a group of three may start after a short wait. For
-each of two questions, every member estimates the answer, a barrier shares
-the group's median, and members see everyone's estimate and may revise their
-own. A group needs three members, because the median of two estimates is
-just their mean, so the group's quorum is three. Nobody is failed for
-waiting or for what another player did: a participant who finds no group,
-whose group ends, or who was removed for being late answers the remaining
-questions alone.
-
-.. figure:: ../_static/images/design/groups/crowd_estimate.svg
-   :alt: A grouper forms groups of up to four that latecomers can join, and a barrier starts the game and closes the group to latecomers. Then, for each question, members estimate, a barrier shares the group's median, and members revise their estimate on a group page that shows everyone's estimate.
-
-New groups for each round
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Some designs give players new partners in each round, for example so that
-each player meets several others. To change groups once, for example from
-groups of three to pairs, a **group closer**, a barrier that ends the group
-once all its members reach it, closes the first groups, and a second grouper
-forms the new ones (see :ref:`sync-regrouping`).
-
-Repeating this every round would make each player wait for their whole old
-group before they could be regrouped, and fail the group's members when one of
-them drops out. A **regrouper** is made for this instead. Each time
-participants reach it, it removes them from their previous group and splits
-those waiting into new groups at random and gives out roles such as
-proposer and responder at random. If the
-players don't divide evenly into groups, the player who has played the most
-rounds **sits out** the round; they see a page saying so and play again in a
-later round. A player who is late for a split joins the next one. If no
-further split comes within the regrouper's maximum waiting time, for example
-after the last round, they are failed by default
-(``max_wait_action="fail"``), unless the regrouper lets them continue
-without a group (``max_wait_action="continue_without_group"``).
-
-A regrouper doesn't split players as soon as two are waiting, because that
-would pair whoever finished at the same moment, often the same people every
-round. It collects players first and splits them at a deadline, for example
-every 10 seconds (``every=10``).
-
-Cohorts that regroup each round
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-When everyone waiting is split together, what a player experiences depends
-on how busy the experiment is: at a busy moment a group has eight players, at
-a quiet one two. To keep this the same for everyone, a grouper first forms
-**cohorts**, groups that stay together for the whole game (called *matching
-groups* in experimental economics). The regrouper then splits each cohort
-into new groups every round, so players only ever meet others in their cohort.
-Because the regrouper knows who is in the cohort, a round can start as soon as
-the whole cohort is back; the deadline only matters when someone is missing.
-
-In `ultimatum_pairing <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/ultimatum_pairing>`__, a grouper forms cohorts of four,
-or of two or three once the first player has waited a minute. Each round, the
-regrouper splits the cohort into pairs of a proposer and a responder. The
-proposer offers part of 10 coins, and the responder accepts or rejects the
-offer. A latecomer can join a cohort that started short, and is admitted at
-the next split, which is an admission point.
-
-.. figure:: ../_static/images/design/groups/ultimatum_pairing.svg
-   :alt: A grouper forms cohorts of four that latecomers can join. Then, for each round, a regrouper admits latecomers and splits the cohort into pairs, players decide with a time limit, a barrier waits for the partner, and both see the outcome.
-
-Groups that carry on when members leave
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Rounds need a plan for slow players, because a player who stops responding
-holds up their partners. Give decision pages a time limit. A player who runs
-out of time moves on, and their partners see that they ran out of time instead
-of waiting. A player who falls further behind, for example because they closed
-the tab, is late at the barrier after the decision: they are removed from
-the group, and either rejoin in the next round or, as in
-``ultimatum_pairing``, end their game.
-
-Decide when the game ends: after a fixed number of rounds, when a player has
-sat out too often, or when too few players remain to form a group.
-
-In `public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__, a group of three plays three rounds.
-Each round, every player privately puts some of their tokens in a shared pot,
-within a time limit; the pot grows by half and is shared between the players
-of that round, who then see everyone's contributions and what they earned,
-paid as a bonus. A player who runs out of time puts nothing in, but keeps
-their tokens and their share. A player who returns the study or stops
-responding leaves the group and earns nothing for that round, and the other
-two carry on and share the pot between them. When only one player is left, the
-game ends: that round is cancelled and they keep their tokens for it. Nobody is failed because others left;
-the last player, a player who comes back after being removed, and a
-participant for whom no group formed each see why the game ended for them.
-Each round is one trial per player that pays that round's bonus, so the data
-and the payments agree.
-
-.. figure:: ../_static/images/design/groups/public_goods.svg
-   :alt: A grouper forms groups of three that carry on with two. Then, for three rounds, players give tokens with a time limit, a barrier shares the pot, and everyone sees the results. Finally each player sees their bonus, or why the game ended early.
-
-Groups whose members change
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+When membership changes
+-----------------------
 
 Some designs study what a group passes on while its members are replaced,
 for example whether a society's knowledge outlives its founders. The group
-takes newcomers for as long as it lasts, but a newcomer doesn't join in the
-middle of a round. They become a **pending member**, who holds a seat but
+takes newcomers for as long as it lasts. In rounds, a newcomer doesn't join in
+the middle of a round: they become a **pending member**, who holds a seat but
 whom nobody waits for, until the group reaches an **admission point**, such
 as the barrier that starts the next round (see :ref:`sync-admission-points`).
-A newcomer who isn't admitted in time is turned away, not failed.
+A newcomer who isn't admitted in time is turned away, not failed. A live
+game can instead take newcomers while it runs.
 
-In `microsociety <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety>`__, three players
-form a fishing society that plays round after round. Each round, every
-member picks a fishing spot and catches some fish, a barrier scores the round, and everyone sees where
-the others fished and what they caught. A newcomer is admitted at the start
-of a round, where they see the society's recent catches and the tips left by
-earlier members. When a newcomer has made the society four, its
-longest-serving member retires at the end of the round. Members also stop
-after six rounds, and leave a tip for future members before they go.
+The ``microsociety`` demo replaces its members round after round (see
+:ref:`design-rounds-society`), and ``microsociety_live`` does it during one
+continuous game.
 
-.. figure:: ../_static/images/design/groups/microsociety.svg
-   :alt: A grouper forms a society of three that newcomers can join. Then, for each round of a membership, a barrier starts the round and admits newcomers, members fish with a time limit, a barrier scores the round and may retire the oldest member, and everyone sees all catches. Finally each member leaves a tip.
+Where the data goes
+-------------------
+
+Each member's link to their group is saved with the experiment's data: when
+they arrived, their role, when they were admitted, and when and why they left
+the group, such as being late or the group being dissolved. Chat messages are
+saved with the participant who sent each one, and the pseudonyms that
+participants saw can be recovered from an export (see
+:doc:`/code/multiplayer/pseudonyms`). What the group did together is saved
+with its rounds or its live games, as their pages describe.
 
 What to check when reviewing group experiments
 ----------------------------------------------
@@ -385,23 +215,21 @@ What to check when reviewing group experiments
 - Is recruitment fast enough to form groups? Waiting participants cost money
   and may leave.
 - Is there a barrier everywhere members must be in step, and nowhere else?
-- What happens to each remaining member when someone drops out mid-round?
+- What happens to each remaining member when someone drops out, and how
+  will their data be analyzed?
 - Are maximum waiting times long enough for the slowest pages, and short
   enough that participants don't give up?
-- In a game played in rounds, what do a player's partners see when the
-  player runs out of time?
-- Is sitting out fair, and do rounds a player sits out count towards their
-  total?
 - In a real-time interaction, can a member see information meant only for
   others, and can the interaction resume after a reload?
-- Can players recognise each other across rounds, and should they?
+- Can players recognise each other from one group or round to the next, and
+  should they?
+
+:doc:`rounds` has checks of its own.
 
 .. seealso::
 
-   :doc:`/code/multiplayer/writing_a_round_based_experiment` shows how these
-   ideas appear in ``experiment.py``, using the
-   ``demos/experiments/ultimatum_pairing`` demo.
+   :doc:`/code/multiplayer/synchronization` shows how groups and barriers
+   appear in ``experiment.py``.
 
    The :doc:`/skills/synchronous-experiments` skill describes how to design
    and test group experiments.
-

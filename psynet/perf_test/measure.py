@@ -12,6 +12,12 @@ participants keep the status ``approved`` (see :func:`_bot_outcome`). Each
 result also records the row counts of the tables that grow as a study collects
 data (:func:`database_rows`), because capacity can fall as they grow.
 
+Live games are played by Dallinger's game runners rather than in requests or
+async jobs. The runners count what they do in redis, and
+:func:`live_game_snapshot` reads those counts with the newest
+``RealtimeSession`` ID before and after a test, so :func:`live_game_stats`
+covers the test window too.
+
 The functions here only query the database; they neither run bots nor format
 output. Database imports stay inside the functions so that importing
 :mod:`psynet.perf_test` does not need a configured experiment.
@@ -605,6 +611,131 @@ def configured_worker_processes():
     except Exception as e:
         logger.warning(f"Could not read worker_processes: {e}")
         return None
+
+
+def live_game_snapshot():
+    """Return what the live game runners had done so far, for :func:`live_game_stats`."""
+    from dallinger import db
+    from dallinger.models import RealtimeSession
+    from dallinger.realtime import realtime_runner_stats
+    from sqlalchemy import func
+
+    return {
+        "runner_stats": realtime_runner_stats(),
+        "max_session_id": db.session.query(func.max(RealtimeSession.id)).scalar() or 0,
+        "running_session_ids": [
+            id_
+            for (id_,) in db.session.query(RealtimeSession.id).filter_by(
+                status="running"
+            )
+        ],
+    }
+
+
+def live_game_stats(before, after, errored_bot_ids=(), startup_bot_ids=()):
+    """Return how the live game runners kept up between two :func:`live_game_snapshot` calls.
+
+    Parameters
+    ----------
+    before, after : dict
+        The snapshots.
+    errored_bot_ids : collection of int
+        The participant IDs of the bots that raised an error in the test.
+    startup_bot_ids : collection of int
+        Those of ``errored_bot_ids`` that raised it before the steady state.
+
+    Returns
+    -------
+    dict
+        Empty if the experiment played no live games. Otherwise ``runners``,
+        the runners running at the end; ``busy_s``, the seconds they spent
+        playing games rather than waiting; ``errored_players``, how many of
+        ``errored_bot_ids`` played in a failed game, which fails its players,
+        and ``startup_errored_players``, those of them in
+        ``startup_bot_ids``;
+        and ``games``, by each game's channel: the ``games`` played, those
+        that started in the test or were running when it started, how many
+        of those ``failed`` and their ``errors``, the last line of
+        each error with how many games it failed, the runner's ``passes``
+        over them and the ``seconds`` those took, and the ``tick_delays``
+        and ``message_delays``, the ticks and players' messages applied
+        within each range of delay of Dallinger's ``DELAY_BOUNDS``.
+    """
+    from dallinger.models import RealtimeSession
+    from sqlalchemy import and_, or_
+
+    started = {}
+    errored_players = set()
+    startup_errored_players = set()
+    errored_bot_ids = set(errored_bot_ids)
+    for session in RealtimeSession.query.filter(
+        or_(
+            and_(
+                RealtimeSession.id > before["max_session_id"],
+                RealtimeSession.id <= after["max_session_id"],
+            ),
+            RealtimeSession.id.in_(before["running_session_ids"]),
+        )
+    ):
+        games = started.setdefault(
+            session.game_type, {"games": 0, "failed": 0, "errors": Counter()}
+        )
+        games["games"] += 1
+        if session.status == "failed":
+            games["failed"] += 1
+            games["errors"][_last_line(session.error)] += 1
+            players = {int(m) for m in session.members} & errored_bot_ids
+            errored_players |= players
+            startup_errored_players |= players & set(startup_bot_ids)
+    from dallinger.realtime.store import DELAY_BOUNDS
+
+    no_passes = {
+        "passes": 0,
+        "seconds": 0.0,
+        "tick_delays": [0] * len(DELAY_BOUNDS),
+        "message_delays": [0] * len(DELAY_BOUNDS),
+    }
+    earlier = before["runner_stats"]["games"]
+    later = after["runner_stats"]["games"]
+    games = {}
+    # Dallinger counts a session it couldn't read under no channel.
+    for channel in (started.keys() | later.keys()) - {""}:
+        old = earlier.get(channel, {})
+        played = {
+            key: _subtract(value, old.get(key))
+            for key, value in later.get(channel, no_passes).items()
+        }
+        if played["passes"] or channel in started:
+            sessions = started.get(channel, {"games": 0, "failed": 0, "errors": {}})
+            games[channel] = {
+                **sessions,
+                "errors": dict(Counter(sessions["errors"]).most_common()),
+                **played,
+            }
+    if not games:
+        return {}
+
+    return dict(
+        delay_bounds=[None if math.isinf(b) else b for b in DELAY_BOUNDS],
+        runners=after["runner_stats"]["runners"],
+        busy_s=after["runner_stats"]["busy"] - before["runner_stats"]["busy"],
+        errored_players=len(errored_players),
+        startup_errored_players=len(startup_errored_players),
+        games=games,
+    )
+
+
+def _last_line(error):
+    """Return the last line of a traceback, which names the error, or ``"no error saved"``."""
+    lines = (error or "").strip().splitlines()
+    return lines[-1].strip()[:200] if lines else "no error saved"
+
+
+def _subtract(value, old):
+    """Return ``value`` less ``old``, element by element for lists of counts."""
+    if isinstance(value, list):
+        return [n - m for n, m in zip(value, old or [0] * len(value))]
+    return value - (old or 0)
 
 
 def worker_load(after_async_job_id, ended_at, boundary, outcomes):

@@ -28,9 +28,18 @@ virtual environment active. ``psynet <command> --help`` lists every option.
    * - ``psynet check-constraints``
      - Check that ``constraints.txt`` is up to date with
        ``requirements.txt``; see :doc:`/code/project/dependencies`.
+   * - ``psynet prepare``
+     - Rebuild the local database that a launch starts from, by running
+       the experiment's pre-deploy steps (for example creating assets). It
+       replaces the local database. The debug and deploy commands run it
+       themselves; ``--archive`` starts from a previous export.
    * - ``psynet debug local``
      - Run the experiment on your computer; see
        :doc:`/code/project/running_and_debugging`.
+   * - ``psynet deploy local``
+     - Run the experiment on your computer for data collection, for
+       example in the lab or in the field. Only the generic recruiter is
+       supported; see :doc:`/deploy/how_deployment_works`.
    * - ``psynet debug ssh --app NAME``
      - Run a debug deployment on a server. It uses the configured
        recruiter, so pilot with ``recruiter = generic``; see
@@ -49,9 +58,30 @@ virtual environment active. ``psynet <command> --help`` lists every option.
    * - ``psynet destroy ssh``
      - Remove one or more apps from a server; see
        :doc:`/deploy/running_a_study`.
+   * - ``psynet stats ssh``
+     - Show the CPU and memory use of each container on a server
+       (``docker stats``).
+   * - ``psynet debug heroku`` / ``deploy heroku`` / ``export heroku`` /
+       ``destroy heroku``
+     - The same commands for Heroku apps. They need the Heroku CLI (see
+       :doc:`/install`); app sizes and the region are set with the
+       :ref:`Heroku configuration variables <configuration_heroku>`.
+       ``deploy heroku``, ``export heroku`` and ``destroy heroku`` require
+       ``--app``. ``debug heroku`` can omit it.
    * - ``psynet export local`` / ``ssh``
      - Export the data to ``exports/latest/``; see
        :doc:`/data/exporting_data`.
+   * - ``psynet load PATH``
+     - Replace the local database with an export folder, such as
+       ``exports/latest``, or a zip file. Stop ``psynet debug`` first; see
+       :doc:`/data/analyzing_data`.
+   * - ``psynet db`` / ``psynet db heroku --app NAME``
+     - Print the connection URI of the local database or of a Heroku app's
+       database.
+   * - ``psynet experiment-variables``
+     - Print the experiment variables stored in the local database. With
+       ``heroku --app NAME`` or ``ssh --app NAME``, read them from a
+       deployed app.
    * - ``psynet assets cache info`` / ``list`` / ``prune``
      - Inspect or clear the local cache of exported asset files; see
        :doc:`/data/exporting_data`.
@@ -62,6 +92,15 @@ virtual environment active. ``psynet <command> --help`` lists every option.
      - Run bots against a debug deployment (experimental); it refuses an app
        deployed with ``psynet deploy ssh`` unless given ``--allow-live``. See
        :doc:`/test/backend`.
+   * - ``psynet run-bot``
+     - Send one bot through an experiment that is already running locally,
+       for example under ``psynet debug local``. Run it again to add more
+       bots. By default the bot goes as fast as it can; ``--time-factor F``
+       makes it stay on each page for ``F`` times the page's
+       ``time_estimate``.
+   * - ``psynet rpdb``
+     - Connect to an ``rpdb`` breakpoint (``nc 127.0.0.1 4444`` by
+       default); see :doc:`/code/project/running_and_debugging`.
    * - ``psynet performance-test local`` / ``ssh``
      - Measure how the server copes with many participants; see
        :doc:`/test/scalability`.
@@ -80,6 +119,9 @@ virtual environment active. ``psynet <command> --help`` lists every option.
    * - ``psynet installation update``
      - Update the installed PsyNet and Dallinger packages
        (see `Update the PsyNet/Dallinger installation (installation update)`_).
+   * - ``psynet generate-config --KEY VALUE ...``
+     - Write ``~/.dallingerconfig`` with the given configuration variables,
+       replacing the whole file. It asks first if the file exists.
    * - ``psynet install autocomplete``
      - Install shell tab completion (see :ref:`shell_completion`).
    * - ``psynet docs show PAGE`` / ``path``
@@ -92,6 +134,14 @@ virtual environment active. ``psynet <command> --help`` lists every option.
      - Print the folder that holds the demos' code for the installed PsyNet
        version (see :doc:`/demos/index`). Release installs include the demos'
        code and text files, but not their media.
+   * - ``psynet dev ...``, ``psynet list-experiment-dirs``,
+       ``psynet list-isolated-tests``
+     - Commands for developing PsyNet itself and for its CI; see
+       :doc:`/developer/index`.
+   * - ``psynet update``, ``psynet update-scripts``
+     - Deprecated aliases for ``psynet installation update`` and
+       ``psynet scripts update``. ``psynet sandbox`` only says to use
+       ``psynet debug heroku`` instead.
 
 Bundled demos in the PsyNet repository use the repository's development
 ``.venv``; ``psynet debug`` and ``psynet test`` prepare their boilerplate
