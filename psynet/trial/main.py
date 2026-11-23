@@ -526,6 +526,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     time_limit_reached = Column(Boolean)
     # The response timeout of trials prepared in advance counts from here.
     response_started_at = Column(DateTime)
+    # Pages shown in advance are compared by layout key, rendered once per trial.
+    layout_key = Column(String)
     _initial_assets = deferred(Column(PythonDict))
 
     time_credit_before_trial = Column(Float)
@@ -991,6 +993,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Returns a :class:`~psynet.timeline.Page` object,
         or alternatively a list of such objects,
         that solicits an answer from the participant.
+
+        A trial maker that prepares its trials in advance also calls this
+        method for upcoming trials, before the participant reaches them, to
+        show them without waiting for the server. It must then depend only on
+        the trial and its node, not on other trials' answers or scores, and
+        must not change anything.
 
         Parameters
         ----------
@@ -1794,6 +1802,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             and self.trial_maker is not None
         ):
             page = logic[0]
+            if self.id is None:
+                db.session.flush([self])
             page._page_key = self._page_key
             page.upcoming_pages, page.upcoming_media = self.trial_maker._upcoming(
                 self, page, experiment, participant
@@ -2880,23 +2890,37 @@ class TrialMaker(Module):
             if self.prepare_trials_in_advance
             else self.trial_class.creation_time
         )
-        trials_to_fail = (
-            self.trial_class.query.filter_by(complete=False, failed=False)
+        open_trials = self.trial_class.query.filter_by(
+            complete=False, failed=False
+        ).filter(
             # Custom prepare_trial code can create trials without a trial maker.
-            .filter(
-                or_(
-                    self.trial_class.trial_maker_id == self.id,
-                    self.trial_class.trial_maker_id.is_(None),
-                )
+            or_(
+                self.trial_class.trial_maker_id == self.id,
+                self.trial_class.trial_maker_id.is_(None),
             )
-            .filter(started < time_threshold)
-            .order_by(self.trial_class.id)
+        )
+
+        def lock(query):
             # A locked trial belongs to an in-flight request that may complete
             # it; the next check retries it if not.
-            .with_for_update(of=self.trial_class, skip_locked=True)
-            .populate_existing()
-            .all()
-        )
+            return (
+                query.order_by(self.trial_class.id)
+                .with_for_update(of=self.trial_class, skip_locked=True)
+                .populate_existing()
+                .all()
+            )
+
+        trials_to_fail = lock(open_trials.filter(started < time_threshold))
+        if self.prepare_trials_in_advance and trials_to_fail:
+            # These participants have stopped, and their trials waiting their
+            # turn would otherwise keep counting towards their nodes.
+            participant_ids = {trial.participant_id for trial in trials_to_fail}
+            trials_to_fail += lock(
+                open_trials.filter(
+                    self.trial_class.response_started_at.is_(None),
+                    self.trial_class.participant_id.in_(participant_ids),
+                )
+            )
         logger.info("Found %i old trial(s) to fail.", len(trials_to_fail))
         for trial in trials_to_fail:
             trial.fail(reason="response_timeout")
@@ -3038,15 +3062,18 @@ class TrialMaker(Module):
             corresponding to the current participant.
 
         trial
-            The :class:`~psynet.trial.main.Trial` that just finished.
+            The :class:`~psynet.trial.main.Trial` that just finished, or one
+            that hasn't been answered yet (see below).
 
         Returns
         -------
 
         Timeline logic, such as a page or a list of pages, or ``None``.
         A trial maker that prepares its trials in advance also calls this
-        method for upcoming trials, to find where the next trials stop being
-        predictable, so it must not change anything itself.
+        method for the current and upcoming trials before they are answered,
+        to find where the next trials stop being predictable. It must then
+        not change anything, nor rely on ``trial.answer`` or ``trial.score``,
+        which are still ``None``.
         """
         return None
 

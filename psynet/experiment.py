@@ -2070,7 +2070,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 n_bots=self.test_n_bots,
                 time_factor=self.test_time_factor,
                 stagger_interval_s=self.test_parallel_stagger_interval_s,
-                check_bots=self.test_check_bots,
+                check_bots=self._check_bots,
             )
         else:
             raise ValueError(f"Invalid test mode: {self.test_mode}")
@@ -2198,7 +2198,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         # rather than the BotDriver instances.
         with transaction():
             bots = Bot.query.all()
-            self.test_check_bots(bots)
+            self._check_bots(bots)
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
         """
@@ -2232,6 +2232,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             bot = BotDriver()
 
         bot.take_experiment(render_pages, time_factor)
+
+    def _check_bots(self, bots: List[Bot]):
+        """Run the experiment's bot checks, then PsyNet's own, which can't be overridden."""
+        self.test_check_bots(bots)
+        for trial_maker in self.timeline.trial_makers.values():
+            if getattr(trial_maker, "prepare_trials_in_advance", False):
+                for bot in bots:
+                    trial_maker._check_trials_shown_in_advance(bot)
 
     def test_check_bots(self, bots: List[Bot]):
         for b in bots:
@@ -7471,8 +7479,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def _pre_render(page, participant):
         """Run ``pre_render`` for the page and, on a timeline hold, its waiting screen."""
-        with forbid_commits(f"{type(page).__name__}.pre_render"):
-            page.pre_render()
+        if getattr(page, "_pre_rendered", False):
+            # Already pre-rendered for this request, to compare it with the
+            # trials prepared in advance.
+            page._pre_rendered = False
+        else:
+            with forbid_commits(f"{type(page).__name__}.pre_render"):
+                page.pre_render()
         if _is_timeline_hold(page):
             page.waiting_screen_page(participant)
 
@@ -7833,7 +7846,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         html = page.render(experiment, participant, partial_mode=True)
         payload = {"html": html, "page_uuid": participant.page_uuid}
         if page.upcoming_pages is not None:
-            payload["layout_key"] = page.layout_key(html)
+            payload["layout_key"] = page.layout_key(html, experiment, participant)
             payload["upcoming_pages"] = page._upcoming_pages_payload(
                 experiment, participant
             )
@@ -8217,27 +8230,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             clock.close("render")
             if fragment is None:
-                _p = get_translator(context=True)
+                payload = exp._stale_page_payload()
                 submission = "rejected"
-                return finish(
-                    exp.response_rejected(
-                        message=_p(
-                            "timeline_problem",
-                            "Synchronization problem detected. "
-                            "Are you running the same experiment in multiple browser tabs? "
-                            "Please close all other tabs and refresh the page.",
-                        )
-                    )
-                )
-            payload["timeline_fragment"] = fragment
-            return finish(success_response(**payload))
+            else:
+                payload["timeline_fragment"] = fragment
+                return finish(success_response(**payload))
 
         clock.close("render")
         if payload.get("submission") == "rejected":
-            if "retry_after" in payload:
+            if "retry_after" in payload or payload.get("stale_page"):
                 # Not the participant's to correct, so response_rejected
-                # isn't told: the page resends the response by itself.
-                logger.info("The response was refused for now: %r.", payload["message"])
+                # isn't told: the page resends the response or reloads.
+                logger.info("The response was refused: %r.", payload["message"])
                 return finish(success_response(**payload))
             return finish(exp.response_rejected(payload["message"]))
         return finish(success_response(**payload))
