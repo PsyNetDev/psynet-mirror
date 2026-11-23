@@ -3140,7 +3140,17 @@ def test_a_no_show_leaves_the_game_s_groups_so_the_next_barrier_doesn_t_wait(pai
     assert _barrier_link_released(played.id, "after_the_game")
 
 
-def test_absent_action_fail_fails_a_no_show_once_the_other_player_is_paid(pair):
+@pytest.mark.parametrize(
+    "reason, ending",
+    [
+        ("no_show", {"ready": [0]}),
+        # Away since 10 s, for the away_timeout of 60.
+        ("left_game", {"ready": [0, 1], "away": [(1, 10)], "ended_at": 70}),
+    ],
+)
+def test_absent_action_fail_fails_an_absent_player_once_everyone_is_paid(
+    pair, reason, ending
+):
     members, _ = pair
     cohort = SimpleSyncGroup(
         group_type="cohort",
@@ -3159,16 +3169,15 @@ def test_absent_action_fail_fails_a_no_show_once_the_other_player_is_paid(pair):
     for member in members:
         _arrive(play.barrier, member)
 
-    ids = _save_ending(_game_id(members[0], "absent"), ready=[0], outcome=[7, None])
+    ids = _save_ending(_game_id(members[0], "absent"), outcome=[7, 3], **ending)
 
-    played, no_show = (db.session.get(Participant, id_) for id_ in ids)
-    assert no_show.failed
-    assert {"live_game:absent", "fail_on_timeout", "no_show"} <= set(
-        no_show.failure_tags
-    )
+    played, absent = (db.session.get(Participant, id_) for id_ in ids)
+    assert absent.failed
+    assert {"live_game:absent", "fail_on_timeout", reason} <= set(absent.failure_tags)
     # Failing takes them out of every group, the cohort included.
-    assert no_show.sync_group_removal_reason("pair") == "no_show"
-    assert no_show.sync_group_removal_reason("cohort") == "left_experiment"
+    assert absent.sync_group_removal_reason("pair") == reason
+    assert absent.sync_group_removal_reason("cohort") == "left_experiment"
+    assert absent.performance_reward == pytest.approx(0.03)
     assert not played.failed
     assert played.performance_reward == pytest.approx(0.07)
     assert played.in_sync_group("cohort")

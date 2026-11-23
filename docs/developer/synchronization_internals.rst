@@ -88,11 +88,15 @@ Barrier checks and participant requests take their locks in this order:
    request waits up to a second for an open group (see below). A member who leaves or fails changes the group
    with an ``UPDATE``, which waits up to ``timeline_lock_timeout_seconds``.
    A live game's ending job removing absent players (``absent_action``)
-   locks the rows of the groups they leave in id order, waiting, and reloads
-   their member links, so sibling games sharing a group count each other's
-   leavers. With ``absent_action="fail"`` that is every group they're in,
-   which they leave before they are failed, so failing them, which then
-   locks their unfinished trials (step 5), takes no other group's row.
+   holds the remaining players' rows, and locks the rows of the groups they
+   leave in id order, waiting, and reloads their member links, so sibling
+   games sharing a group count each other's leavers. It does this before
+   paying anyone, which locks the players' trials (step 5). With
+   ``absent_action="fail"`` that is every group they're in, and they are
+   failed only after everyone is paid, so failing them, which locks their
+   unfinished trials, takes no other group's row. The author's
+   ``participant_fail_routines`` run while the job holds these locks, and
+   an error there rolls back the whole ending transaction, rewards included.
    A synchronized trial maker recording a run's choices in the group's
    ``trial_maker_runs`` also waits for the row, after locking any
    participant rows it needs.

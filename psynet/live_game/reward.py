@@ -127,8 +127,14 @@ def _handles_ending(self, game_code, session_row):
         if participant_id not in ended_early
     ]
     players = _locked_players(session_row, remaining) if remaining else []
-    from .play import _remove_absent_players, _stop_top_ups_soon
+    from .play import _fail_absent_players, _remove_absent_players, _stop_top_ups_soon
 
+    # Group rows are locked after the players' rows and before their trials,
+    # in the sync group lock order, so absent players leave their groups
+    # before anyone is paid, and are failed after.
+    failing, left = [], []
+    if session_row.status != "failed":
+        failing, left = _remove_absent_players(self, session_row, players)
     if _has_outcome(session_row.status, session_row.outcome):
         _pay_outcome_rewards(self, session_row, players)
         _record_outcome_on_round(session_row)
@@ -136,8 +142,7 @@ def _handles_ending(self, game_code, session_row):
     entry = (session_row.final_state or {}).get("psynet")
     if entry is not None and entry["stop_top_ups_at_end"]:
         _stop_top_ups_soon(entry["group_id"], session_row.id)
-    if session_row.status != "failed":
-        _remove_absent_players(self, session_row, players)
+    _fail_absent_players(session_row, failing, left)
     return game_code(_record_from_row(session_row))
 
 

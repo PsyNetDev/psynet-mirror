@@ -736,29 +736,34 @@ def _running_live_games(group):
 
 
 def _remove_absent_players(game, session_row, players):
-    """Fail the ``players`` who didn't play the game, or remove them from the
-    groups their PlayLiveGame names, as its ``absent_action`` says, with the
-    reasons that LiveGame.absences gives for the final state.
+    """Remove the ``players`` who didn't play the game from the groups their
+    PlayLiveGame's ``absent_action`` names, with the reasons that
+    LiveGame.absences gives for the final state.
 
-    Called as the game's ending is saved, with the players' rows locked. They
-    all leave before any group is dissolved below its quorum, so a pair of
-    no-shows both leave as no-shows. Each group's row is locked, in id
-    order, and its members reloaded first, so that sibling games sharing a
-    group (``also_leave``) and ending at once each count the other's leavers.
-    A failing player leaves every group they're in this way, the
-    PlayLiveGame's with their absence as the reason and the others as
-    ``"left_experiment"``, before they are failed, as a barrier fails a late
-    member, so failing them takes no other group's row.
+    Called as the game's ending is saved, with the players' rows locked, and
+    before their rewards are paid, which locks their trials: each group's
+    row is locked, in id order, and its members reloaded first, so that
+    sibling games sharing a group (``also_leave``) and ending at once each
+    count the other's leavers. With ``absent_action="fail"`` a player leaves
+    every group they're in, the PlayLiveGame's with their absence as the
+    reason and the others as ``"left_experiment"``, as a barrier removes a
+    late member it fails.
+
+    Returns
+    -------
+    tuple
+        The ``(participant, reason, play_id)`` of each player to fail, and
+        the groups they left, for :func:`_fail_absent_players`.
     """
     state = session_row.final_state
     if (state or {}).get("psynet") is None:
-        return
+        return [], []
     settings_by_player = [
         (participant, _absent_settings(participant, session_row.id))
         for participant in players
     ]
     if not any(leaves for _, (_, _, leaves) in settings_by_player):
-        return
+        return [], []
     absences = game.absences(state)
     leaving = []
     failing = []
@@ -793,6 +798,19 @@ def _remove_absent_players(game, session_row, players):
         if group.active and group._active_link(participant) is not None:
             group._remove_without_quorum_check(participant, reason)
             left[group_id] = group
+    return failing, list(left.values())
+
+
+def _fail_absent_players(session_row, failing, left):
+    """Fail the players :func:`_remove_absent_players` removed for
+    ``absent_action="fail"``, then dissolve the groups ``left`` below their
+    quorum.
+
+    Called once every player has been paid. The failing players are in no
+    group by then, so failing them only locks their unfinished trials, and
+    nobody is dissolved before all of them have left, so a pair of no-shows
+    both leave as no-shows.
+    """
     for participant, reason, play_id in failing:
         logger.info(
             "PlayLiveGame '%s': failing participant %s, who didn't play game %s (%s)",
@@ -805,7 +823,7 @@ def _remove_absent_players(game, session_row, players):
             f"live_game:{play_id}", "fail_on_timeout", reason
         )
         participant.fail()
-    for group in left.values():
+    for group in left:
         group.dissolve_if_below_quorum()
 
 
