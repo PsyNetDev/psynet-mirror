@@ -40,17 +40,9 @@ class TestBargainingLive:
         )
         assert demo.ROUND_DEADLINE_SECONDS > round_takes
 
-    @pytest.mark.parametrize(
-        "reason, text",
-        [
-            ("late", "You didn't arrive in time, so the game is over for you."),
-            ("no_show", "You didn't arrive in time, so the game is over for you."),
-            ("left_game", "You left the game, so it's over for you."),
-            (None, "That's the end of the game."),
-        ],
-    )
-    def test_a_player_who_left_the_cohort_without_playing_is_told_on_the_last_page(
-        self, demo, db_session, reason, text
+    @pytest.mark.parametrize("reason", [None, "removed_by_experimenter"])
+    def test_a_player_out_of_the_cohort_plays_no_more_rounds(
+        self, demo, db_session, reason
     ):
         experiment = get_experiment()
         cohort = SimpleSyncGroup(
@@ -76,7 +68,9 @@ class TestBargainingLive:
         if reason is not None:
             assert demo.round_status(player) == "no_cohort"
         leave_group("cohort").consume(experiment, player)
-        assert str(demo.end_of_game(player).content) == f"{text} Your bonus is $0.00."
+        assert str(demo.end_of_game(player).content) == (
+            "That's the end of the game. Your bonus is $0.00."
+        )
 
     @pytest.mark.parametrize(
         "answer",
@@ -100,17 +94,16 @@ class TestBargainingLive:
         columns = ["deal", "coins", "arrived", "partner_arrived"]
         assert [row[c] for c in columns] == [(answer or {}).get(c) for c in columns]
 
-    def _feedback(self, demo, answer, end_reason=None, removal_reason=None):
+    def _feedback(self, demo, answer, end_reason=None):
+        """Return the feedback page's text, which only a player who played
+        sees: absent_action fails the others."""
         trial = SimpleNamespace(
             answer=answer,
             live_game=SimpleNamespace(end_reason=end_reason),
             definition={"stake": 10},
         )
         trial.coins = lambda: demo.BargainTrial.coins(trial)
-        participant = SimpleNamespace(
-            sync_group_removal_reason=lambda _: removal_reason
-        )
-        return str(demo.BargainTrial.show_feedback(trial, None, participant).content)
+        return str(demo.BargainTrial.show_feedback(trial, None, None).content)
 
     def test_a_partner_who_never_opens_the_game_ends_it_at_the_start(self, demo):
         game = LocalGame(demo.Bargain, players=2, settings={"stake": 10}, start=False)
@@ -125,14 +118,10 @@ class TestBargainingLive:
         assert self._feedback(demo, game.answer(0)) == (
             "Your partner didn't arrive, so there was no game this round."
         )
-        assert self._feedback(demo, game.answer(1)) == (
-            "You didn't arrive in time, so there was no game this round."
-        )
+        assert game.game.absences(game.state) == [None, "no_show"]
 
     @pytest.mark.parametrize("reason", ["no_show", "not_joined"])
-    def test_players_who_both_miss_the_game_are_each_told_they_didn_t_arrive(
-        self, demo, reason
-    ):
+    def test_players_who_both_miss_the_game_are_both_no_shows(self, demo, reason):
         game = LocalGame(demo.Bargain, players=2, settings={"stake": 10}, start=False)
         if reason == demo.NO_SHOW:
             # They opened the game, then left before it started.
@@ -140,9 +129,6 @@ class TestBargainingLive:
             assert game.is_over() and game.end_reason() == demo.NO_SHOW
 
         for player in (0, 1):
-            assert self._feedback(demo, game.answer(player, reason)) == (
-                "You didn't arrive in time, so there was no game this round."
-            )
             assert game.view(player)["no_show"] == "you"
         assert game.outcome(reason)["no_shows"] == [0, 1]
 
@@ -161,9 +147,7 @@ class TestBargainingLive:
         assert self._feedback(demo, game.answer(0), PLAYERS_LEFT) == (
             "Your partner left the game, so there was no deal."
         )
-        assert self._feedback(demo, game.answer(1), PLAYERS_LEFT, "left_game") == (
-            "You left the game, so there was no deal."
-        )
+        assert game.game.absences(game.state) == [None, "left_game"]
 
     def test_accepting_a_proposal_makes_the_deal_it_offered(self, demo, game):
         game.send(0, demo.Propose(keep=7))
