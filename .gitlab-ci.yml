@@ -55,6 +55,8 @@ variables:
   DOCKER_HOST: tcp://docker:2375
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
+  # Retry git fetch in get_sources when GitLab's internal ci-gateway drops a connection.
+  GET_SOURCES_ATTEMPTS: 3
 
 before_script: &docker_setup
   - export POSTGRES_IP=$(getent ahostsv4 postgres | awk '{ print $1 }' | tail -n 1)
