@@ -345,11 +345,15 @@ def regroup_now(
     timeout: Optional[float] = 10.0,
     stop_at: Union[str, Sequence[str]] = (),
 ):
-    """Split the bots' pools at a :class:`~psynet.sync.Regrouper` now, then advance them past it.
+    """Pretend a :class:`~psynet.sync.Regrouper`'s deadline has passed, then move the bots on.
 
-    A bot test would otherwise wait out the regrouper's ``deadline`` or its
-    next ``every`` tick, for example to test a round that starts without a
-    member who is still reading their results. This moves two clocks back by
+    The bots' pools split now, as at the regrouper's ``deadline`` or next
+    ``every`` tick, and the bots move on into their new groups, as
+    :func:`advance_past_wait_pages` would move them. A bot test would
+    otherwise sleep until the deadline, for example to test a round that
+    starts without a member who is still reading their results.
+
+    This moves two clocks back by
     one ``deadline`` (or ``every`` period): the bots' arrival times at the
     regrouper and the creation times of the groups their pools' earlier
     splits formed. The next check then splits the pools as the deadline or
@@ -444,10 +448,14 @@ def make_late_now(
     timeout: Optional[float] = 10.0,
     stop_at: Union[str, Sequence[str]] = (),
 ):
-    """Make the members who haven't reached a :class:`~psynet.sync.GroupBarrier` late now, then advance the bots past it.
+    """Pretend a :class:`~psynet.sync.GroupBarrier`'s ``late_after`` has passed, then move the bots on.
 
-    A bot test would otherwise wait out the barrier's ``late_after`` in real
-    time to test a player who goes quiet. For each group of a bot waiting at
+    Members who haven't reached the barrier are now late, so the barrier's
+    ``late_action`` applies to them, and the bots waiting there move on, as
+    :func:`advance_past_wait_pages` would move them. A bot test would
+    otherwise sleep for ``late_after`` to test a player who goes quiet.
+
+    For each group of a bot waiting at
     the barrier, this moves the group's clocks back: the time it last passed
     a barrier, and its members' times of joining and page deadlines. They
     move back by ``late_after``, plus what is left of a quiet member's timed
