@@ -433,6 +433,7 @@ def test_prepared_partial_fragment_rendering_does_not_repeat_pre_render():
     page = MagicMock(upcoming_pages=None)
     page._upcoming_pages_payload.return_value = None
     page._previous_page_payload.return_value = None
+    page.layout_key.return_value = "key"
     page.pre_render.side_effect = lambda: calls.append("pre_render")
     page.render.side_effect = lambda *args, **kwargs: calls.append("render") or "<html>"
     participant = SimpleNamespace(page_uuid="uuid-123")
@@ -447,7 +448,7 @@ def test_prepared_partial_fragment_rendering_does_not_repeat_pre_render():
 
     assert calls == ["render"]
     experiment.prepare_voluntary_exit_plan.assert_not_called()
-    assert payload == {"html": "<html>", "page_uuid": "uuid-123"}
+    assert payload == {"html": "<html>", "page_uuid": "uuid-123", "layout_key": "key"}
 
 
 def test_same_session_page_payload_uses_pre_render_contents():

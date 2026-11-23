@@ -2868,7 +2868,12 @@ class Page(Elt):
                 page._progress = progress
                 html = page.render(experiment, participant, partial_mode=True)
                 payload.append(
-                    {"page_uuid": page_uuid, "html": html, "contents": page.contents}
+                    {
+                        "page_uuid": page_uuid,
+                        "html": html,
+                        "contents": page.contents,
+                        "layout_key": page.layout_key(html, experiment, participant),
+                    }
                 )
             else:
                 payload.append({"page_uuid": page_uuid, "contents": page.contents})
@@ -2894,6 +2899,7 @@ class Page(Elt):
             "page_uuid": previous._page_uuid,
             "html": html,
             "contents": previous.contents,
+            "layout_key": previous.layout_key(html, experiment, participant),
         }
 
     def _may_reject_answers(self):

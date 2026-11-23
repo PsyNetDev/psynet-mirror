@@ -1004,7 +1004,14 @@
         pageUuid: psynet.submissionPageUuid,
         nextPageUuid: page.page_uuid,
         nextContents: JSON.stringify(page.contents),
+        nextLayoutKey: page.layout_key,
       });
+      await psynet.swapInPage(page);
+      return true;
+    };
+
+    // Swap in a page rendered in advance and send the queued answers.
+    psynet.swapInPage = async function (page) {
       let swap = psynet.showTimelineFragment(page);
       let settled = swap
         .catch(() => {})
@@ -1012,24 +1019,33 @@
           if (psynet.pageSwap === settled) psynet.pageSwap = null;
         });
       psynet.pageSwap = settled;
+      // Sent at once rather than after the page is ready, which may wait for
+      // its media; a reply that comes first waits for the swap.
+      psynet.sendAnswers();
       try {
         await swap;
       } catch (error) {
         await psynet.handleTimelineTransitionFailure(error);
-        return true;
       }
-      psynet.sendAnswers();
-      return true;
     };
 
     // While a page is being swapped in, settles once it is shown or has
     // failed.
     psynet.pageSwap = null;
 
-    // Return true if the reply shows the trial shown after its answer.
+    // Return true if the reply shows the page swapped in after its answer, as
+    // it was rendered then.
     psynet.adoptRenderedReply = function (response) {
       let entry = psynet.answers.queue[0];
       if (entry?.pageUuid === undefined || !psynet.isPredictedReply(response)) {
+        return false;
+      }
+      if (entry.nextLayoutKey !== response.timeline_fragment?.layout_key) {
+        psynet.log.warn(
+          "The page shown in advance no longer matches the server's, so PsyNet " +
+            "loaded the server's. Its HTML may depend on an earlier answer; " +
+            "pass render_in_advance=False to such a page.",
+        );
         return false;
       }
       psynet.answers.queue.shift();
@@ -4189,24 +4205,7 @@
             metadata === undefined ? staged.metadata : metadata,
           );
         }
-        let answers = psynet.answers;
-        if (answers.sending) {
-          // Answers given in advance are sent first. This page's answer is
-          // dropped unless they all were and the page is still on screen.
-          let generation = psynet.pageModuleGeneration;
-          psynet.setTimelineTransitionBusy(true);
-          let result = await answers.sending;
-          psynet.setTimelineTransitionBusy(false);
-          if (
-            !result.sent ||
-            psynet.answers !== answers ||
-            psynet.pageModuleGeneration !== generation ||
-            psynet.timelineHold ||
-            psynet.pageFailureShown
-          ) {
-            return false;
-          }
-        }
+        if (!(await psynet.sendAnswersGivenAhead())) return false;
       }
       return await psynet.sendSubmission(
         rawAnswer,
@@ -4214,6 +4213,25 @@
         blobs,
         onRejection,
         options,
+      );
+    };
+
+    // Answers given in advance are sent before anything else. Return false if
+    // one wasn't, or the page has changed meanwhile, so that whatever waited
+    // for them is dropped.
+    psynet.sendAnswersGivenAhead = async function () {
+      let answers = psynet.answers;
+      if (!answers.sending) return true;
+      let generation = psynet.pageModuleGeneration;
+      psynet.setTimelineTransitionBusy(true);
+      let result = await answers.sending;
+      psynet.setTimelineTransitionBusy(false);
+      return (
+        result.sent &&
+        psynet.answers === answers &&
+        psynet.pageModuleGeneration === generation &&
+        !psynet.timelineHold &&
+        !psynet.pageFailureShown
       );
     };
 
@@ -4289,8 +4307,10 @@
     // advance are sent, so it goes back from the page shown.
     psynet.goBack = async function () {
       let page = psynet.previousPage;
-      if (!page || psynet.answers.queue.length || !psynet.pageReady) {
-        return psynet.nextPage(null, {}, {}, undefined, { back: true });
+      if (!psynet.pageReady || psynet.timelineHold) return false;
+      if (!page || psynet.answers.queue.length) {
+        if (!(await psynet.sendAnswersGivenAhead())) return false;
+        return psynet.sendSubmission(null, {}, {}, undefined, { back: true });
       }
       psynet.answers.queue.push({
         back: true,
@@ -4299,17 +4319,12 @@
         pageUuid: psynet.submissionPageUuid,
         nextPageUuid: page.page_uuid,
         nextContents: JSON.stringify(page.contents),
+        nextLayoutKey: page.layout_key,
       });
       // These belong to the page left; the reply brings the shown page's.
       psynet.upcomingPages = [];
       psynet.previousPage = null;
-      try {
-        await psynet.showTimelineFragment(page);
-      } catch (error) {
-        await psynet.handleTimelineTransitionFailure(error);
-        return true;
-      }
-      psynet.sendAnswers();
+      await psynet.swapInPage(page);
       return true;
     };
 

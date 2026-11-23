@@ -43,6 +43,10 @@ def test_built_in_pages_carry_the_next_trials_pages():
     assert upcoming[0]["page_uuid"] in upcoming[0]["html"]
     bot.take_page()
     assert Participant.query.get(bot.id).page_uuid == upcoming[0]["page_uuid"]
+    # The browser adopts the server's reply only if the page still renders
+    # as it did in advance.
+    served = _template_data(bot)["page"]["attributes"]["layout_key"]
+    assert served == upcoming[0]["layout_key"]
 
     # The browser has moved on by the time an answer would be turned down,
     # so pages whose answers the server may turn down aren't swapped in.
