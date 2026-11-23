@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,14 @@ def _template_data(bot):
     ).text
     script = BeautifulSoup(html, "html.parser").find(id="psynet-template-data")
     return json.loads(script.string)
+
+
+def _progress_shown(html):
+    return int(re.search(r'aria-valuenow="(\d+)"', html).group(1))
+
+
+def _progress_now(bot):
+    return round(Participant.query.get(bot.id).progress * 100)
 
 
 def _go_back(bot):
@@ -43,7 +52,8 @@ def test_back_returns_to_the_previous_page_and_replaces_its_answer():
     bot = BotDriver()
     assert _template_data(bot)["previousPage"] is None
     bot.take_page()
-    previous = _template_data(bot)["previousPage"]
+    data = _template_data(bot)
+    previous, [following] = data["previousPage"], data["upcomingPages"]
     assert "Welcome!" in previous["html"]
     credit = Participant.query.get(bot.id).time_credit
 
@@ -54,8 +64,13 @@ def test_back_returns_to_the_previous_page_and_replaces_its_answer():
     assert participant.time_credit == credit - 5
     # The browser can show the page before getting the reply.
     assert participant.page_uuid == previous["page_uuid"]
+    assert _progress_shown(previous["html"]) == _progress_now(bot)
 
-    for _ in range(4):
+    bot.take_page()
+    bot.take_page()
+    assert _progress_shown(following["html"]) == _progress_now(bot)
+
+    for _ in range(2):
         bot.take_page()
     bot.take_page(response="red")
     _go_back(bot)

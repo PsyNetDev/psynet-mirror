@@ -1558,6 +1558,8 @@ class Page(Elt):
     # Set on a page rendered for the browser to swap in later: the page
     # UUID it will have, which it carries rather than the participant's.
     _page_uuid = None
+    # Likewise the progress it will show.
+    _progress = None
     _rendered_in_advance = False
     _full_page_layout_key = None
 
@@ -2466,7 +2468,10 @@ class Page(Elt):
             "performance_reward": "%.2f" % participant.performance_reward,
             "total_reward": "%.2f"
             % (participant.performance_reward + participant.time_reward),
-            "progress_percentage": round(participant.progress * 100),
+            "progress_percentage": round(
+                (participant.progress if self._progress is None else self._progress)
+                * 100
+            ),
             "contact_email_on_error": config.get("contact_email_on_error"),
             "experiment_title": config.get("title"),
             "app_id": experiment.app_id,
@@ -2830,12 +2835,16 @@ class Page(Elt):
         if upcoming is None:
             return None
         payload = []
+        progress, answered = participant.progress, self
         for offset, page in enumerate(upcoming, start=1):
             page_uuid = make_page_uuid(
                 participant, participant.page_count + offset, page._page_key
             )
+            progress = participant._progress_after(answered.time_estimate, progress)
+            answered = page
             if page._rendered_in_advance:
                 page._page_uuid = page_uuid
+                page._progress = progress
                 html = page.render(experiment, participant, partial_mode=True)
                 payload.append({"page_uuid": page_uuid, "html": html})
             else:
@@ -2854,6 +2863,7 @@ class Page(Elt):
             participant.page_count + 1,
             ".".join(str(i) for i in previous.id),
         )
+        previous._progress = participant._progress_after(-previous.time_estimate)
         previous._rendered_in_advance = True
         previous.pre_render()
         html = previous.render(experiment, participant, partial_mode=True)
