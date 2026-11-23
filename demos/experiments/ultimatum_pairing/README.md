@@ -13,8 +13,8 @@ partner from an earlier round.
 
 Good reference for nesting a `Regrouper` inside persistent cohorts made by a
 `SimpleGrouper` with `start_short_after` and top-ups, with re-pairing that
-avoids last round's partner and alternates roles (short `form_groups` and
-`assign_roles` overrides in `pairing.py`) and `stop_top_ups_after_rounds`,
+avoids last round's partner (`avoid_repeats=True`) and alternates roles (a
+short `assign_roles` override in `pairing.py`) and `stop_top_ups_after_rounds`,
 which turns latecomers away once the cohort's second round starts. With
 `use_admission_points=True`, a latecomer is a pending member of
 the cohort until a split admits and pairs them, so nobody waits for them

@@ -45,8 +45,8 @@ A :class:`~psynet.sync.Regrouper` at the start of each round splits the
 cohort into new pairs. Each time a player reaches it, they leave last round's
 pair and wait for the next split. ``PairingRegrouper`` is the demo's own
 subclass of :class:`~psynet.sync.Regrouper`, defined in its ``pairing.py``
-(see :ref:`sync-regrouper-recipe`), which keeps last round's
-partners apart and alternates roles:
+(see :ref:`sync-regrouper-recipe`), which alternates roles;
+``avoid_repeats=True`` keeps last round's partners apart:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :start-at: pairing = PairingRegrouper(
@@ -489,10 +489,10 @@ the group has ended.
 
 **Your own grouping.** ``form_groups`` replaces the default grouping, for
 example to pair players by their earlier answers, and ``assign_roles``
-replaces the default random roles. The demo's regrouper overrides both, to
-keep last round's partners apart and to alternate roles (see
-:ref:`sync-regrouper-recipe`). With roles, each group needs
-one member per role. See
+replaces the default random roles. The demo's regrouper overrides
+``assign_roles`` to alternate roles (see :ref:`sync-regrouper-recipe`).
+With roles, each group needs one member per role. For players who keep
+their first role, pass ``keep_roles=True`` instead. See
 :class:`~psynet.sync.Regrouper` for this and the other settings.
 
 **A trial maker.** A trial maker with ``sync_group_type``, as in the
