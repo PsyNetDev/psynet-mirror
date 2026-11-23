@@ -374,7 +374,9 @@ def _visit_check_would_release(instance_id):
     try:
         nested = db.session.begin_nested()
         try:
-            instance = BarrierInstance.query.get(instance_id)
+            instance = BarrierInstance.query.options(undefer(BarrierInstance.spec)).get(
+                instance_id
+            )
             if instance is None:
                 result = False
             else:
@@ -1235,8 +1237,9 @@ class Barrier(EltCollection):
         ``GET /timeline`` uses this to decide whether to wait for the visit
         claim, and a barrier with ``waiting_logic`` uses it on each arrival
         to decide whether to skip the first pass of ``waiting_logic``
-        (showing a short wait page instead). It must not mutate
-        participants, groups, or the session.
+        (showing a short wait page instead). Bots on ``waiting_logic``
+        pages stop answering them while this is true, awaiting their
+        release. It must not mutate participants, groups, or the session.
         Last-arrival skip-in-one-GET waits only when this is true. Custom
         barriers that override :meth:`choose_who_to_release` should override
         this too. The default is ``True`` whenever anyone is waiting, so a
@@ -7271,6 +7274,23 @@ def waiting_page_config(page, participant):
     ):
         return None
     return {"barrier_id": barrier_id, "release_grace_ms": None}
+
+
+def _waiting_visit_would_release(page, participant):
+    """Return whether the barrier visit this page waits at would release someone now.
+
+    Bots on such a page stop answering until they are released: a release
+    must lock every waiter's row, and unpaced bots answering
+    ``waiting_logic`` pages nearly always hold one in their own request.
+    Read-only, like :meth:`Barrier.would_release`.
+    """
+    if waiting_page_config(page, participant) is None:
+        return False
+    barrier_id = participant.waiting_barrier_id
+    if barrier_id is None or _has_left_barrier(participant, barrier_id):
+        return False
+    instance_id = participant.active_barriers[barrier_id].barrier_instance_id
+    return instance_id is not None and _visit_check_would_release(instance_id)
 
 
 def waiting_status_payload(unique_id, barrier_id):

@@ -254,6 +254,12 @@ def _is_psynet_stale_timeline_response(response):
 
 
 _TIMELINE_HOLD_POLL_SECONDS = 0.1
+# Barrier sweeps run every 0.5 s. A bot not released by then answers the
+# page as usual, so the waiting loop's own time limits still apply.
+_AWAIT_RELEASE_MAX_SECONDS = 5.0
+# Release polls take no row locks, so they can't block a sweep; the interval
+# only bounds how long a released bot takes to notice.
+_AWAIT_RELEASE_POLL_SECONDS = 0.25
 _BOT_RECORDING_UPLOAD_ATTEMPTS = 5
 # Under load, a partner's barrier check can hold the participant row for
 # several seconds. A busy reply may itself take up to the lock timeout, so
@@ -1694,11 +1700,16 @@ class ParticipantDriver:
             )
         assert self.status is not None
 
+        still_on_page = True
         if not _status_is_timeline_hold(self.status):
             # Holds are paced by the poll sleep below, as browsers poll from
             # arrival; their time_estimate is expected_wait, not a poll gap.
             self._simulate_page_time(time_factor)
-        self._submit_response(self.status, self.response_files, response)
+            still_on_page = self._await_release()
+            if not self.is_working:
+                return False
+        if still_on_page:
+            self._submit_response(self.status, self.response_files, response)
         if render_pages:
             self._render_page()
             # GET /timeline can skip a ready hold after the submit fetch.
@@ -1719,15 +1730,19 @@ class ParticipantDriver:
         """Reload the cached page and response files from the experiment server."""
         self._fetch_status()
 
-    def _fetch_status(self):
+    def _fetch_status(self, release_poll=False):
         """
         Fetch the participant's current status and any associated response files,
         and store them in the participant driver's attributes
         (self.status and self.response_files).
+
+        With ``release_poll``, a bot awaiting its barrier's release gets a
+        minimal status without the page's bot response.
         """
         response = _retry_busy_http(
             lambda: self.experiment.authenticated_session.get(
-                f"{self.experiment.base_url}/participant_status/{self.id}"
+                f"{self.experiment.base_url}/participant_status/{self.id}",
+                params={"release_poll": 1} if release_poll else None,
             ),
             sleep=self._sleep,
         )
@@ -1787,6 +1802,36 @@ class ParticipantDriver:
             )
         wake_time = self.status_time_fetched + simulated_page_time
         self._sleep(max(wake_time - time.monotonic(), 0))
+
+    def _await_release(self):
+        """Poll instead of answering while the barrier this bot waits at is about to release it.
+
+        A release must lock every waiter's row, which a bot holds while the
+        server processes its answer, so bots that kept answering pages of
+        ``waiting_logic`` might never be released together.
+
+        Returns whether the bot is still on the page it arrived at, so it
+        should answer it; the server may end or replace the page meanwhile,
+        for example when the barrier fails the bot.
+        """
+        page_uuid = self.status["page_uuid"]
+        deadline = time.monotonic() + _AWAIT_RELEASE_MAX_SECONDS
+
+        def still_on_page():
+            return self.is_working and self.status["page_uuid"] == page_uuid
+
+        while (
+            still_on_page()
+            and self.status["page"].get("awaiting_release")
+            and time.monotonic() < deadline
+        ):
+            next_poll = self.status_time_fetched + _AWAIT_RELEASE_POLL_SECONDS
+            self._sleep(max(next_poll - time.monotonic(), 0))
+            self._fetch_status(release_poll=True)
+        if self.is_working and self.status["page"].get("awaiting_release"):
+            # Release polls return only part of the page, even if it was replaced.
+            self._fetch_status()
+        return still_on_page()
 
     def _sleep(self, seconds):
         """Sleep, raising :class:`DriverStopped` if ``stop_event`` is or becomes set."""
