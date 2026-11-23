@@ -526,9 +526,6 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     time_limit_reached = Column(Boolean)
     # The response timeout of trials prepared in advance counts from here.
     response_started_at = Column(DateTime)
-    # Issued when the trial is prepared in advance, so that the browser knows
-    # its page's UUID before the participant reaches it.
-    page_uuid = Column(String)
     _initial_assets = deferred(Column(PythonDict))
 
     time_credit_before_trial = Column(Float)
@@ -650,6 +647,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @property
     def var(self):
         return VarStore(self)
+
+    @property
+    def _page_key(self):
+        """What the page UUID of the trial's page says it is."""
+        return f"trial{self.id}"
 
     @property
     def live_game(self):
@@ -1792,7 +1794,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             and self.trial_maker is not None
         ):
             page = logic[0]
-            page._page_uuid = self.page_uuid
+            page._page_key = self._page_key
             page.upcoming_pages, page.upcoming_media = self.trial_maker._upcoming(
                 self, page, experiment, participant
             )

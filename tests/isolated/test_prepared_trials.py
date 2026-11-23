@@ -29,13 +29,7 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     trials = Trial.query.filter_by(participant_id=bot.id).order_by(Trial.position)
     trials = trials.all()
     assert len(trials) == 8
-    # Each trial's page UUID is issued in advance, so the browser can tell
-    # which page a reply is.
     participant = Participant.query.get(bot.id)
-    assert participant.page_uuid == trials[0].page_uuid
-    assert [p._page_uuid for p in page.upcoming_pages] == [
-        t.page_uuid for t in trials[1:4]
-    ]
     trial_maker = trials[0].trial_maker
     # A time limit is set up for each page, so such pages aren't predicted.
     page.time_limit = 10
@@ -58,6 +52,14 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
 @pytest.mark.usefixtures("launched_experiment")
 def test_a_break_does_not_count_towards_the_next_trial():
     bot = BotDriver()
+    bot.take_page()
+    # The browser is told the page UUIDs the next trials' pages will have,
+    # so it can tell which page a reply is.
+    page = bot.get_current_page()
+    upcoming = page._upcoming_pages_payload(Participant.query.get(bot.id))
+    for expected in upcoming:
+        bot.take_page()
+        assert Participant.query.get(bot.id).page_uuid == expected["page_uuid"]
     while "break" not in str(bot.get_current_page().prompt.text).lower():
         bot.take_page()
     # Bots report each page's time_estimate as its time_taken.

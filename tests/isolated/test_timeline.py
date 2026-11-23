@@ -369,18 +369,6 @@ def test_timeline_fragment_ignores_commented_div_close():
     assert "still inside" in fragment
 
 
-def test_new_page_uuid_does_not_follow_seeded_random():
-    import random
-
-    from psynet.timeline import new_page_uuid
-
-    random.seed(0)
-    first = new_page_uuid()
-    random.seed(0)
-    second = new_page_uuid()
-    assert first != second
-
-
 def test_partial_body_extraction_requires_named_fragment_wrapper():
     with pytest.raises(ValueError, match="could not find fragment root"):
         Page._extract_partial_body("<div id='main-body'></div>")

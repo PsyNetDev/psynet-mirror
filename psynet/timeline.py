@@ -12,7 +12,6 @@ import json
 import random
 import re
 import time
-import uuid
 import warnings
 from collections import Counter
 from contextlib import contextmanager
@@ -1226,13 +1225,15 @@ def _is_timeline_hold(page):
     return bool(getattr(page, "is_timeline_hold", False))
 
 
-def new_page_uuid():
-    """Return a page uuid that does not depend on seeded ``random``.
+def make_page_uuid(participant, visit, page_key):
+    """Identify the participant's ``visit``-th page, which is ``page_key``.
 
-    ``Experiment.make_uuid()`` draws from the process RNG, which bots seed.
-    Timeline hold records have a global unique constraint on ``page_uuid``.
+    The page UUID follows from the page and when it is shown, so the server
+    can tell the browser the page UUIDs of pages it shows in advance without
+    storing them. Visits are counted, so page UUIDs never repeat, which
+    timeline hold records rely on. Nothing relies on them being hard to guess.
     """
-    return str(uuid.uuid4())
+    return f"{participant.id}-{visit}-{page_key}"
 
 
 def _arrival_updates_for(page, participant):
@@ -1534,9 +1535,9 @@ class Page(Elt):
     # the URLs of the next pages' files by media type.
     upcoming_pages = None
     upcoming_media = None
-    # The page UUID the participant gets on reaching the page, if it was
-    # issued in advance; otherwise a new one is drawn then.
-    _page_uuid = None
+    # What the page UUID says the page is, set by trials for their pages;
+    # otherwise the page's position in the timeline.
+    _page_key = None
     _full_page_layout_key = None
 
     def __init__(
@@ -1966,8 +1967,10 @@ class Page(Elt):
         return ""
 
     def consume(self, experiment, participant):
-        participant.page_uuid = self._page_uuid or new_page_uuid()
         participant.page_count += 1
+        participant.page_uuid = make_page_uuid(
+            participant, participant.page_count, self._key(participant)
+        )
         notice = participant.group_removal_notice
         if notice is not None and notice.get("next_page"):
             # A notice for the next page, such as after timing out at a barrier.
@@ -2458,7 +2461,7 @@ class Page(Elt):
             "contents": self.contents,
             # A reply carries these beside its fragment.
             "upcoming_pages": (
-                None if partial_mode else self._upcoming_pages_payload()
+                None if partial_mode else self._upcoming_pages_payload(participant)
             ),
             "locale": locale,
             "partial_mode": partial_mode,
@@ -2769,13 +2772,22 @@ class Page(Elt):
             and not self.media.urls
         )
 
-    def _upcoming_pages_payload(self):
-        """Describe ``upcoming_pages`` for the browser, each by its page UUID."""
+    def _key(self, participant):
+        """What the page UUID says the page is: its trial's, or its position in the timeline."""
+        return self._page_key or ".".join(str(i) for i in participant.elt_id)
+
+    def _upcoming_pages_payload(self, participant):
+        """Describe ``upcoming_pages`` for the browser, each by the page UUID it will have."""
         if self.upcoming_pages is None:
             return None
         return [
-            {"page_uuid": page._page_uuid, "contents": page.contents}
-            for page in self.upcoming_pages
+            {
+                "page_uuid": make_page_uuid(
+                    participant, participant.page_count + offset, page._page_key
+                ),
+                "contents": page.contents,
+            }
+            for offset, page in enumerate(self.upcoming_pages, start=1)
         ]
 
     def layout_key(self, fragment_html):
