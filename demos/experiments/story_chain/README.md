@@ -16,20 +16,21 @@ ended. The bot test plays a full story in which one writer runs out of time.
 - A writer who runs out of time adds nothing that turn (the sentence is
   `None`) and stays in the group.
 - A member who returns the study, or takes more than `LATE_AFTER` seconds to
-  finish a turn, leaves the group and plays no more turns. If they were due to
-  write, the member in the next seat writes instead, so turns become uneven
-  (for example A, C, C).
-- A writer who has left the group stores nothing, unless the group dissolved
-  while they wrote, in which case their sentence ends the story. When a
-  member's trial finishes and the turn still has no sentence, it stores
-  `None`, so every finished turn has a `sentence`. The writer trial's
-  `sync_group_outcome` says why a sentence is `None`: `"stayed"` if they ran
-  out of time, otherwise why they left the group.
+  finish a turn, is failed (`late_action="fail"`), which takes them out of
+  the group. If they were due to write, the member in the next seat writes
+  instead, so turns become uneven (for example A, C, C).
+- A writer who has left the group stores nothing. When a member's trial
+  finishes and the turn still has no sentence, it stores `None`, so every
+  finished turn has a `sentence`. The writer trial's `sync_group_outcome`
+  says why a sentence is `None`: `"stayed"` if they ran out of time,
+  otherwise why they left the group.
 - The group continues while two members remain. When only one is left, the
-  group dissolves and that member goes on to the story so far. A sentence
-  written while the group dissolved still counts.
-- Someone who finds no group within `GROUPER_WAIT` seconds is told so and
-  finishes.
+  group dissolves and that member is failed (`below_quorum="fail"`), because
+  nobody writes a group story alone.
+- Someone who finds no group within `GROUPER_WAIT` seconds is failed (the
+  grouper's default `max_wait_action="fail"`).
+- Failing isn't a penalty here: it ends the session promptly, and failed
+  participants are paid for what they completed.
 - A member the experimenter removes on the dashboard writes no more turns
   and is told they were removed from their group.
 

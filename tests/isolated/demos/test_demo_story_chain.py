@@ -66,19 +66,14 @@ def _play_turn(demo, turn, players, sentence):
 
 
 @in_story_chain
-@pytest.mark.parametrize(
-    "late, saved", [("nobody", True), ("others", True), ("writer", False)]
-)
-def test_the_writer_s_sentence_is_kept_unless_they_were_late(
-    in_experiment_directory, db_session, late, saved
+@pytest.mark.parametrize("removed, saved", [(False, True), (True, False)])
+def test_the_writer_s_sentence_is_kept_unless_they_were_removed(
+    in_experiment_directory, db_session, removed, saved
 ):
     demo, group, members = _story_group(get_experiment())
     writer = _cue_turn(demo, 0, members)
-    others = [m for m in members if m is not writer]
-    # Removing both others dissolves the group, leaving the writer on their own.
-    removed = {"nobody": [], "writer": [writer], "others": others}[late]
-    for participant in removed:
-        group.remove_participant(participant, reason="late")
+    if removed:
+        group.remove_participant(writer, reason="removed_by_experimenter")
     trial = writer.current_trial
     writer.answer = "Once upon a time."
     trial.save_sentence(writer)
@@ -88,18 +83,18 @@ def test_the_writer_s_sentence_is_kept_unless_they_were_late(
 
 
 @in_story_chain
-def test_the_last_page_says_why_the_story_ended_early(
+def test_the_last_page_tells_a_removed_member_why_the_story_ended_early(
     in_experiment_directory, db_session
 ):
     demo, group, (first, second, third) = _story_group(get_experiment())
     for participant in (first, second, third):
         demo.remember_group(participant)
     _play_turn(demo, 0, [first, second, third], "Once upon a time.")
-    group.remove_participant(second, reason="late")
+    group.remove_participant(second, reason="removed_by_experimenter")
     db.session.commit()
 
     assert demo.final_page(second).prompt.text == (
-        "You were away for too long, so your group went on without you. "
+        "You were removed from your group. "
         "Here is the story so far: Once upon a time. How much do you like the story?"
     )
     assert demo.final_page(third).prompt.text.startswith(
