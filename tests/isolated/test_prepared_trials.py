@@ -117,3 +117,35 @@ def test_prepared_trials_reject_options_they_cant_support(option):
             prepare_trials_in_advance=True,
             **option,
         )
+
+
+@pytest.mark.parametrize("experiment_directory", [EXPERIMENT], indirect=True)
+@pytest.mark.usefixtures("launched_experiment")
+def test_a_trial_whose_page_has_a_different_layout_is_not_shown_in_advance():
+    bot = BotDriver()
+    bot.take_page()
+    trials = Trial.query.filter_by(participant_id=bot.id).order_by(Trial.position)
+    trials = trials.all()
+    # Each trial's page is rendered once to compare layouts.
+    assert trials[0].layout_key is not None
+    assert {trial.layout_key for trial in trials[:4]} == {trials[0].layout_key}
+
+    trials[3].layout_key = "another layout"
+    db.session.commit()
+    participant = Participant.query.get(bot.id)
+    reply = bot.http_session.post(
+        f"{bot.experiment.base_url}/response",
+        data={
+            "json": json.dumps(
+                {
+                    "participant_id": bot.id,
+                    "page_uuid": participant.page_uuid,
+                    "unique_id": participant.unique_id,
+                    "raw_answer": 3,
+                    "metadata": {},
+                }
+            )
+        },
+    ).json()
+    upcoming = reply["timeline_fragment"]["upcoming_pages"]
+    assert [page["contents"]["name"] for page in upcoming] == ["yellow star"]

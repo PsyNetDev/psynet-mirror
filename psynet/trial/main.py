@@ -526,6 +526,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     time_limit_reached = Column(Boolean)
     # The response timeout of trials prepared in advance counts from here.
     response_started_at = Column(DateTime)
+    # Pages shown in advance are compared by layout key, rendered once per trial.
+    layout_key = Column(String)
     _initial_assets = deferred(Column(PythonDict))
 
     time_credit_before_trial = Column(Float)

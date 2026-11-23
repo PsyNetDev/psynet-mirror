@@ -76,6 +76,34 @@ class StaticTrial(ChainTrial):
         raise NotImplementedError
 
 
+def _layout_key(trial, page, experiment, participant):
+    """Return the layout key of ``trial``'s ``page``, rendering it only once per trial."""
+    if trial.layout_key is None:
+        html = page.render(experiment, participant, partial_mode=True)
+        trial.layout_key = page.layout_key(html)
+    return trial.layout_key
+
+
+def _same_layout(trial, page, following, following_page, experiment, participant):
+    """Whether ``following``'s page has the same layout as ``trial``'s, warning if not.
+
+    The browser shows a trial in advance inside the current page's HTML, so
+    a trial whose page renders different HTML or JavaScript waits for the
+    server instead.
+    """
+    key = _layout_key(trial, page, experiment, participant)
+    if key is not None and key == _layout_key(
+        following, following_page, experiment, participant
+    ):
+        return True
+    logger.warning(
+        "The next trial's page has different HTML or JavaScript, so it can't be "
+        "shown in advance. Put what changes between trials in the page's "
+        "contents."
+    )
+    return False
+
+
 def _page_config_differs(config, page, experiment, participant):
     """Whether ``page``'s ``js_vars`` differ from ``config``, warning if they do.
 
@@ -608,6 +636,9 @@ class StaticTrialMaker(ChainTrialMaker):
                 and isinstance(pages[0], Page)
                 and pages[0]._show_in_advance()
                 and not _page_config_differs(config, pages[0], experiment, participant)
+                and _same_layout(
+                    trial, page, following, pages[0], experiment, participant
+                )
             ):
                 pages[0]._page_key = following._page_key
                 shown.append(pages[0])
