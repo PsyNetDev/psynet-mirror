@@ -27,6 +27,7 @@ from psynet.modular_page import (
     Prompt,
     PushButtonControl,
     RadioButtonControl,
+    SliderControl,
 )
 from psynet.page import InfoPage, SuccessfulEndPage, UnsuccessfulEndPage
 from psynet.participant import Participant
@@ -140,6 +141,12 @@ def test_only_pages_whose_answers_may_be_turned_down_say_so():
 
     assert not page(PushButtonControl(["a", "b"]))._may_reject_answers()
     assert page(RadioButtonControl(["a", "b"]))._may_reject_answers()
+    assert not page(
+        RadioButtonControl(["a", "b"], force_selection=False)
+    )._may_reject_answers()
+    assert not page(
+        SliderControl(start_value=0, min_value=0, max_value=1)
+    )._may_reject_answers()
     assert page(
         PushButtonControl(["a"]), validate=lambda answer: None
     )._may_reject_answers()
@@ -149,6 +156,14 @@ def test_only_pages_whose_answers_may_be_turned_down_say_so():
             return None
 
     assert page(WaitingControl(["a"]))._may_reject_answers()
+
+    class WaitingPage(ModularPage):
+        def check_ready_for_response(self, experiment, participant):
+            return None
+
+    assert WaitingPage(
+        "q", Prompt("?"), PushButtonControl(["a"]), time_estimate=1
+    )._may_reject_answers()
 
 
 def test_only_pages_built_from_declared_components_are_swapped_in():
@@ -178,6 +193,15 @@ def test_layout_key_covers_main_body_and_js_vars():
     assert key("task", timing=1) != key("other task", timing=1)
     assert key("task", timing=1) != key("task", timing=2)
     assert key("task", timing=None) != key("task")
+
+    page = Page(
+        time_estimate=1, template_str="", media=MediaSpec(audio={"a": "/1.wav"})
+    )
+    other = Page(
+        time_estimate=1, template_str="", media=MediaSpec(audio={"a": "/2.wav"})
+    )
+    html = '<div id="main-body">task</div>'
+    assert page.layout_key(html, None, None) != other.layout_key(html, None, None)
 
 
 def test_timeline_template_emits_js_dependencies_as_blocking_head_scripts():
@@ -433,6 +457,7 @@ def test_prepared_partial_fragment_rendering_does_not_repeat_pre_render():
     page = MagicMock(upcoming_pages=None)
     page._upcoming_pages_payload.return_value = None
     page.layout_key.return_value = "key"
+    page._not_swappable_because.return_value = None
     page.pre_render.side_effect = lambda: calls.append("pre_render")
     page.render.side_effect = lambda *args, **kwargs: calls.append("render") or "<html>"
     participant = SimpleNamespace(page_uuid="uuid-123")
