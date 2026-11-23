@@ -126,9 +126,18 @@ Rounds need a plan for slow players, because a player who stops responding
 holds up their partners. Give decision pages a time limit. A player who runs
 out of time moves on, and their partners see that they ran out of time instead
 of waiting. A player who falls further behind, for example because they closed
-the tab, is late at the barrier after the decision: they are removed from
-the group, and either rejoin in the next round or, as in
-``ultimatum_pairing``, end their game.
+the tab, is late at the barrier after the decision. Usually, fail them: a
+failed participant's contribution is no longer useful, so their session
+ends promptly, and they are paid for what they completed. Their partners
+carry on where the design allows. In ``ultimatum_pairing``, the partner of
+a player failed this way is released alone and paired again in the next
+round; in a fixed group, the others carry on while the group keeps its
+quorum. Letting the late player carry on without their group is an
+advanced option, for designs where that is meaningful.
+
+After any barrier, a partner may be gone, so a page that uses a partner's
+input must handle it being missing (see
+:ref:`late-remaining-players`).
 
 Decide when the game ends: after a fixed number of rounds, when a player has
 sat out too often, or when too few players remain to form a group.
@@ -179,7 +188,7 @@ others wait at a barrier that shows them the story so far. The writer's
 sentence is stored on the turn as soon as they submit it. A writer who runs
 out of time adds nothing that turn; a member who leaves plays no more turns,
 and the next member in seat order writes in their place. The last one left
-goes on to the story so far.
+is failed, because nobody writes a group story alone.
 
 .. figure:: ../_static/images/design/groups/story_chain.svg
    :alt: A grouper forms groups of three. Then, for each turn, the writer adds a sentence while the others wait at a barrier that shows them the story so far. Finally everyone rates the story.
@@ -206,10 +215,10 @@ wisdom-of-crowds game; a group of three may start after a short wait. For
 each of two questions, every member estimates the answer, a barrier shares
 the group's median, and members see everyone's estimate and may revise their
 own. A group needs three members, because the median of two estimates is
-just their mean, so the group's quorum is three. Nobody is failed for
-waiting or for what another player did: a participant who finds no group,
-whose group ends, or who was removed for being late answers the remaining
-questions alone.
+just their mean, so the group's quorum is three. A member who stops
+responding is failed, and the others carry on while at least three remain.
+Nobody answers alone: a participant who finds no group, or whose group
+falls below three, is failed too.
 
 .. figure:: ../_static/images/design/groups/crowd_estimate.svg
    :alt: A grouper forms groups of up to four that latecomers can join, and a barrier starts the game and closes the group to latecomers. Then, for each question, members estimate, a barrier shares the group's median, and members revise their estimate on a group page that shows everyone's estimate.
@@ -222,7 +231,8 @@ or of two or three once the first player has waited a minute. Each round, the
 regrouper splits the cohort into pairs of a proposer and a responder. The
 proposer offers part of 10 coins, and the responder accepts or rejects the
 offer. A latecomer can join a cohort that started short, and is admitted at
-the next split, which is an admission point.
+the next split, which is an admission point. A player who stops responding
+is failed, and their partner is paired again at the next split.
 
 .. figure:: ../_static/images/design/groups/ultimatum_pairing.svg
    :alt: A grouper forms cohorts of four that latecomers can join. Then, for each round, a regrouper admits latecomers and splits the cohort into pairs, players decide with a time limit, a barrier waits for the partner, and both see the outcome.
@@ -242,11 +252,11 @@ within a time limit; the pot grows by half and is shared between the players
 of that round, who then see everyone's contributions and what they earned,
 paid as a bonus. A player who runs out of time puts nothing in, but keeps
 their tokens and their share. A player who returns the study or stops
-responding leaves the group and earns nothing for that round, and the other
-two carry on and share the pot between them. When only one player is left, the
-game ends: that round is cancelled and they keep their tokens for it. Nobody is failed because others left;
-the last player, a player who comes back after being removed, and a
-participant for whom no group formed each see why the game ended for them.
+responding is failed and earns nothing for that round, and the other
+two carry on and share the pot between them. When only one player is left,
+that round is cancelled and that player is failed too, as is a participant
+for whom no group formed; failed participants are paid for the rounds they
+completed.
 Each round is one trial per player that pays that round's bonus, so the data
 and the payments agree.
 
@@ -281,7 +291,9 @@ others fish, and each member leaves in their own time.
 What to check when reviewing round-based experiments
 ----------------------------------------------------
 
-- What do a player's partners see when the player runs out of time?
+- What do a player's partners see when the player runs out of time, or is
+  failed for being late? Does every page after a barrier handle a partner's
+  input being missing?
 - Is sitting out fair, and do rounds a player sits out count towards their
   total?
 - Does each round's record hold what the analysis needs from the group?

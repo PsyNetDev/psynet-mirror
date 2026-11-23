@@ -54,8 +54,6 @@ def _crowd(n_members):
 @pytest.mark.parametrize(
     "outcome, median, in_median, timed_out, expected",
     [
-        ("late", 5, None, False, "didn't reach your group in time"),
-        ("group_dissolved", 5, None, False, "Your group ended"),
         ("removed_by_experimenter", 5, None, False, "You were removed from your group"),
         ("stayed", None, None, False, "Too few estimates"),
         ("stayed", 5, False, True, "You didn't give an estimate in time"),
