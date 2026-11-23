@@ -2827,7 +2827,9 @@ class Page(Elt):
             if page._rendered_in_advance:
                 page._page_uuid = page_uuid
                 html = page.render(experiment, participant, partial_mode=True)
-                payload.append({"page_uuid": page_uuid, "html": html})
+                payload.append(
+                    {"page_uuid": page_uuid, "html": html, "contents": page.contents}
+                )
             else:
                 payload.append({"page_uuid": page_uuid, "contents": page.contents})
         return payload

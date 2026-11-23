@@ -992,6 +992,7 @@
         },
         pageUuid: psynet.submissionPageUuid,
         nextPageUuid: page.page_uuid,
+        nextContents: JSON.stringify(page.contents),
       });
       try {
         await psynet.showTimelineFragment(page);
@@ -4152,7 +4153,7 @@
           if (psynet.pageModuleGeneration !== generation) return false;
         }
       }
-      if (psynet.nextPagePending && !options.background) {
+      if (psynet.nextPagePending && options.pageUuid === undefined) {
         psynet.log.info("Blocked nextPage because nextPagePending is true.");
         psynet.log.debug(
           "Skipping nextPage request as nextPage is already pending.",
