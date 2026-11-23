@@ -157,6 +157,14 @@ def test_only_pages_whose_answers_may_be_turned_down_say_so():
 
     assert page(WaitingControl(["a"]))._may_reject_answers()
 
+    class WaitingPage(ModularPage):
+        def check_ready_for_response(self, experiment, participant):
+            return None
+
+    assert WaitingPage(
+        "q", Prompt("?"), PushButtonControl(["a"]), time_estimate=1
+    )._may_reject_answers()
+
 
 def test_only_pages_built_from_declared_components_are_swapped_in():
     class CustomControl(PushButtonControl):
@@ -448,6 +456,7 @@ def test_prepared_partial_fragment_rendering_does_not_repeat_pre_render():
     calls = []
     page = MagicMock(upcoming_pages=None)
     page.layout_key.return_value = "key"
+    page._not_swappable_because.return_value = None
     page.pre_render.side_effect = lambda: calls.append("pre_render")
     page.render.side_effect = lambda *args, **kwargs: calls.append("render") or "<html>"
     participant = SimpleNamespace(page_uuid="uuid-123")

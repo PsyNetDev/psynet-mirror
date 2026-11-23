@@ -3250,14 +3250,14 @@
     psynet.media.prefetched = new Map();
     psynet.media.prefetchedImages = new Map();
 
-    // Counts the requests to prefetch, so that a deferred one is dropped once
-    // a later one is made.
+    // Counts the prefetches with files to fetch, so that a deferred one is
+    // dropped once a later one is made.
     psynet.media.prefetchToken = 0;
 
     psynet.media.prefetch = function (urls) {
-      psynet.media.prefetchToken += 1;
       // Pages between trials, such as a break, keep the files for later trials.
       if (!urls) return;
+      psynet.media.prefetchToken += 1;
       let files = new Set(
         ["audio", "video", "html"].flatMap((type) => urls[type] || []),
       );

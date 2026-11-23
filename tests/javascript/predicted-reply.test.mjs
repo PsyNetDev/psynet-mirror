@@ -114,3 +114,35 @@ describe("adoptRenderedReply", () => {
     assert.deepEqual(adopt("k2"), [false, 1]);
   });
 });
+
+const prefetchCode = SOURCE.match(
+  /psynet\.media\.prefetchToken = 0;[\s\S]*?psynet\.media\.prefetch = function[\s\S]*?\n    \};/
+)[0];
+
+describe("prefetch after adopting a reply mid-swap", () => {
+  it("still fetches the next pages' media once the swap ends", async () => {
+    let endSwap;
+    const psynet = {
+      answers: { queue: [{ ...entry, pageUuid: "1-4-p-xyz", nextLayoutKey: "k1" }] },
+      log: { warn() {} },
+      media: { prefetched: new Map([["/a.wav", null]]), prefetchedImages: new Map() },
+      pageSwap: new Promise((resolve) => (endSwap = resolve)),
+    };
+    const fetch = async () => ({ ok: true, blob: async () => null });
+    new Function("psynet", "psynetTemplateData", "fetch", prefetchCode + adoptionCode.join("\n"))(
+      psynet,
+      { flags: {} },
+      fetch
+    );
+    psynet.adoptRenderedReply({
+      page: page({ name: "yellow star" }, { upcoming_media: { audio: ["/b.wav"] } }),
+      timeline_fragment: { layout_key: "k1" },
+    });
+    // The swapped-in page has no upcoming media of its own.
+    psynet.media.prefetch(undefined);
+    assert.ok(psynet.media.prefetched.has("/a.wav"));
+    endSwap();
+    await psynet.pageSwap;
+    assert.deepEqual([...psynet.media.prefetched.keys()], ["/b.wav"]);
+  });
+});
