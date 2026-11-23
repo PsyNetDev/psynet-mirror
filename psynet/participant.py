@@ -1828,8 +1828,8 @@ class ParticipantDriver:
             next_poll = self.status_time_fetched + _AWAIT_RELEASE_POLL_SECONDS
             self._sleep(max(next_poll - time.monotonic(), 0))
             self._fetch_status(release_poll=True)
-        if still_on_page() and self.status["page"].get("awaiting_release"):
-            # Release polls omit the bot response, so fetch it to answer the page.
+        if self.is_working and self.status["page"].get("awaiting_release"):
+            # Release polls return only part of the page, even if it was replaced.
             self._fetch_status()
         return still_on_page()
 

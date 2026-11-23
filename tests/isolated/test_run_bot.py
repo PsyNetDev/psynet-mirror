@@ -506,7 +506,9 @@ def test_paced_bots_stay_on_a_page_for_at_least_its_min_duration(
     assert sleeps[0] == pytest.approx(expected_sleep, abs=0.05)
 
 
-@pytest.mark.parametrize("outcome", ["released", "unreleased", "ended", "replaced"])
+@pytest.mark.parametrize(
+    "outcome", ["released", "unreleased", "ended", "replaced", "replaced_waiting"]
+)
 def test_bots_poll_instead_of_answering_until_their_barrier_releases_them(
     monkeypatch, outcome
 ):
@@ -525,11 +527,11 @@ def test_bots_poll_instead_of_answering_until_their_barrier_releases_them(
     def fetch(release_poll=False):
         events.append("poll" if release_poll else "fetch")
         driver.status_time_fetched = clock[0]
-        page_uuid = "page-b" if outcome == "replaced" else "page-a"
+        page_uuid = "page-b" if outcome.startswith("replaced") else "page-a"
         driver.status = {**_driver_page_status(page_uuid), "status": "working"}
         if outcome == "ended":
             driver.status = {"status": "abandoned", "page_uuid": page_uuid}
-        elif release_poll and outcome == "unreleased":
+        elif release_poll and outcome in ("unreleased", "replaced_waiting"):
             driver.status["page"] = {"awaiting_release": True}
 
     def sleep(seconds):
@@ -553,6 +555,10 @@ def test_bots_poll_instead_of_answering_until_their_barrier_releases_them(
     elif outcome == "unreleased":
         assert events == ["poll"] * 20 + ["fetch", "ok"]
         assert clock[0] == pytest.approx(5.0)
+    elif outcome == "replaced_waiting":
+        # The bot answers the new page on its next take_page, so needs all of it.
+        assert events == ["poll", "fetch"]
+        assert "time_estimate" in driver.status["page"]
     else:
         assert events == ["poll"]
 
