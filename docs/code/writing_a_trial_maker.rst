@@ -369,7 +369,9 @@ and sends the answers to the server in the background, one at a time and in
 order. The swapped-in page runs as usual, so trial events and page scripts
 need no changes. The server still checks each answer: if it turns one down,
 the browser shows its message and loads that trial again, and drops the
-answers given after it.
+answers given after it. If the server's page for a trial differs from the one
+swapped in, for example because it shows something that an earlier answer
+changed, the browser replaces it with the server's page and logs a warning.
 
 .. _prepared_trials_swapped_in:
 

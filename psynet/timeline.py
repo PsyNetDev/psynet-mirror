@@ -2841,7 +2841,12 @@ class Page(Elt):
                 page._page_uuid = page_uuid
                 html = page.render(experiment, participant, partial_mode=True)
                 payload.append(
-                    {"page_uuid": page_uuid, "html": html, "contents": page.contents}
+                    {
+                        "page_uuid": page_uuid,
+                        "html": html,
+                        "contents": page.contents,
+                        "layout_key": page.layout_key(html, experiment, participant),
+                    }
                 )
             else:
                 payload.append({"page_uuid": page_uuid, "contents": page.contents})

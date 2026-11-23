@@ -7844,9 +7844,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         can stay read-only.
         """
         html = page.render(experiment, participant, partial_mode=True)
-        payload = {"html": html, "page_uuid": participant.page_uuid}
-        if page.upcoming_pages is not None:
-            payload["layout_key"] = page.layout_key(html, experiment, participant)
+        # The key also tells the browser whether a page it swapped in, rendered
+        # earlier, still shows what the server shows now.
+        payload = {
+            "html": html,
+            "page_uuid": participant.page_uuid,
+            "layout_key": page.layout_key(html, experiment, participant),
+        }
         upcoming = page._upcoming_pages_payload(experiment, participant)
         if upcoming is not None:
             payload["upcoming_pages"] = upcoming

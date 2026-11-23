@@ -1001,6 +1001,7 @@
         pageUuid: psynet.submissionPageUuid,
         nextPageUuid: page.page_uuid,
         nextContents: JSON.stringify(page.contents),
+        nextLayoutKey: page.layout_key,
       });
       let swap = psynet.showTimelineFragment(page);
       let settled = swap
@@ -1009,13 +1010,14 @@
           if (psynet.pageSwap === settled) psynet.pageSwap = null;
         });
       psynet.pageSwap = settled;
+      // Sent at once rather than after the page is ready, which may wait for
+      // its media; a reply that comes first waits for the swap.
+      psynet.sendAnswers();
       try {
         await swap;
       } catch (error) {
         await psynet.handleTimelineTransitionFailure(error);
-        return true;
       }
-      psynet.sendAnswers();
       return true;
     };
 
@@ -1023,10 +1025,19 @@
     // failed.
     psynet.pageSwap = null;
 
-    // Return true if the reply shows the trial shown after its answer.
+    // Return true if the reply shows the page swapped in after its answer, as
+    // it was rendered then.
     psynet.adoptRenderedReply = function (response) {
       let entry = psynet.answers.queue[0];
       if (entry?.pageUuid === undefined || !psynet.isPredictedReply(response)) {
+        return false;
+      }
+      if (entry.nextLayoutKey !== response.timeline_fragment?.layout_key) {
+        psynet.log.warn(
+          "The page shown in advance no longer matches the server's, so PsyNet " +
+            "loaded the server's. Its HTML may depend on an earlier answer; " +
+            "pass render_in_advance=False to such a page.",
+        );
         return false;
       }
       psynet.answers.queue.shift();

@@ -12,14 +12,14 @@ from psynet.trial.main import Trial
 BUILT_IN = str(Path(__file__).parents[2] / "demos/features/rapid_ratings_built_in")
 
 
-def _upcoming_pages_in_browser(bot):
-    """The upcoming pages that the bot's current page sends the browser."""
+def _template_data(bot):
+    """The data that the bot's current page sends the browser."""
     html = bot.http_session.get(
         f"{bot.experiment.base_url}/timeline",
         params={"unique_id": bot.participant_unique_id},
     ).text
     script = BeautifulSoup(html, "html.parser").find(id="psynet-template-data")
-    return json.loads(script.string)["upcomingPages"]
+    return json.loads(script.string)
 
 
 @pytest.mark.parametrize("experiment_directory", [BUILT_IN], indirect=True)
@@ -28,13 +28,13 @@ def test_built_in_pages_carry_the_next_trials_pages():
     bot = BotDriver()
     # The instructions page directly after the intro is rendered in advance,
     # with the page UUID the participant gets on reaching it.
-    [instructions] = _upcoming_pages_in_browser(bot)
+    [instructions] = _template_data(bot)["upcomingPages"]
     assert "Rate each picture" in instructions["html"]
     bot.take_page()
     assert bot.current_page_uuid == instructions["page_uuid"]
 
     bot.take_page()
-    upcoming = _upcoming_pages_in_browser(bot)
+    upcoming = _template_data(bot)["upcomingPages"]
     # The break after the fourth trial ends the pages sent in advance.
     pictures = ["orange-triangle", "yellow-star", "green-square"]
     assert len(upcoming) == len(pictures)
@@ -45,6 +45,10 @@ def test_built_in_pages_carry_the_next_trials_pages():
     assert upcoming[0]["page_uuid"] in upcoming[0]["html"]
     bot.take_page()
     assert Participant.query.get(bot.id).page_uuid == upcoming[0]["page_uuid"]
+    # The browser adopts the server's reply only if the page still renders
+    # as it did in advance.
+    served = _template_data(bot)["page"]["attributes"]["layout_key"]
+    assert served == upcoming[0]["layout_key"]
 
     # The browser has moved on by the time an answer would be turned down,
     # so pages whose answers the server may turn down aren't swapped in.

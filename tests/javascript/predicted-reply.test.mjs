@@ -78,3 +78,39 @@ describe("sendAnswers", () => {
     assert.equal(psynet.calls, 1);
   });
 });
+
+const adoptionCode = ["psynet\\.isPredictedReply", "psynet\\.adoptRenderedReply"].map(
+  (name) => {
+    const found = SOURCE.match(new RegExp(`${name} = function[\\s\\S]*?\\n    \\};`));
+    assert.ok(found, `could not extract ${name}`);
+    return found[0];
+  }
+);
+
+describe("adoptRenderedReply", () => {
+  const adopt = (layoutKey) => {
+    const psynet = {
+      answers: {
+        queue: [{ ...entry, pageUuid: "1-4-p-xyz", nextLayoutKey: "k1" }],
+      },
+      log: { warn() {} },
+      media: { prefetch() {} },
+    };
+    new Function("psynet", "psynetTemplateData", adoptionCode.join("\n"))(psynet, {
+      flags: {},
+    });
+    const adopted = psynet.adoptRenderedReply({
+      page: page({ name: "yellow star" }),
+      timeline_fragment: { layout_key: layoutKey },
+    });
+    return [adopted, psynet.answers.queue.length];
+  };
+
+  it("adopts a reply that shows the page as it was swapped in", () => {
+    assert.deepEqual(adopt("k1"), [true, 0]);
+  });
+
+  it("rejects a reply whose page has changed since it was swapped in", () => {
+    assert.deepEqual(adopt("k2"), [false, 1]);
+  });
+});
