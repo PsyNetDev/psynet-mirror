@@ -18,7 +18,7 @@ from psynet.trial.chain import (
 )
 
 from ..sync import LateAction
-from ..timeline import Page, join, new_page_uuid
+from ..timeline import Page, join
 from ..utils import (
     NoArgumentProvided,
     call_function_with_context,
@@ -523,7 +523,6 @@ class StaticTrialMaker(ChainTrialMaker):
             trial, status = super().prepare_trial(experiment, participant)
             if trial is None:
                 break
-            trial.page_uuid = new_page_uuid()
             trials.append(trial)
             # Selection skips nodes once their trials are finalized, which
             # trials waiting their turn aren't yet.
@@ -593,7 +592,7 @@ class StaticTrialMaker(ChainTrialMaker):
                 )
             )
             if ahead:
-                next_page._page_uuid = following.page_uuid
+                next_page._page_key = following._page_key
                 if swappable:
                     next_page._rendered_in_advance = True
                     next_page.pre_render()

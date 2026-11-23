@@ -32,16 +32,14 @@ def test_built_in_pages_carry_the_next_trials_pages():
     assert bot.current_page_uuid == instructions["page_uuid"]
 
     bot.take_page()
-    upcoming = bot.get_current_page().upcoming_pages
+    upcoming = _upcoming_pages_in_browser(bot)
     # The break after the fourth trial ends the pages sent in advance.
-    assert [page.prompt.url for page in upcoming] == [
-        "/static/pictures/orange-triangle.svg",
-        "/static/pictures/yellow-star.svg",
-        "/static/pictures/green-square.svg",
-    ]
+    pictures = ["orange-triangle", "yellow-star", "green-square"]
+    assert len(upcoming) == len(pictures)
+    assert all(name in page["html"] for name, page in zip(pictures, upcoming))
 
-    participant = Participant.query.get(bot.id)
-    assert upcoming[0]._browser_page_uuid(participant) != participant.page_uuid
+    # A page rendered in advance carries the page UUID the participant gets
+    # on reaching it, so the browser can answer it before the server is there.
+    assert upcoming[0]["page_uuid"] in upcoming[0]["html"]
     bot.take_page()
-    participant = Participant.query.get(bot.id)
-    assert participant.page_uuid == upcoming[0]._browser_page_uuid(participant)
+    assert Participant.query.get(bot.id).page_uuid == upcoming[0]["page_uuid"]
