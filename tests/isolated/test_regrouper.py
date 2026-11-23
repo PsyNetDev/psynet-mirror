@@ -3,6 +3,7 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from dallinger import db
@@ -1348,6 +1349,23 @@ def test_regroup_now_needs_a_timed_regrouper_and_a_waiting_bot(
         regroup_now(
             [bot], Regrouper("pair", within="cohort", group_size=2, deadline=30)
         )
+
+
+@in_consents_experiment
+def test_regroup_now_leaves_bots_at_stop_at_barriers(
+    in_experiment_directory, db_session
+):
+    """``regroup_now`` passes ``stop_at`` on, but not for the regrouper itself."""
+    exp = get_experiment()
+    pairs = Regrouper("pair", group_size=2, deadline=30)
+    participant = _working_participants(exp, 1)[0]
+    responder = MagicMock(id=participant.id)
+    responder.status = {"page": {"is_timeline_hold": True, "barrier_id": "offer"}}
+    _arrive(exp, pairs, [participant])
+    regroup_now([responder], pairs, stop_at="offer")
+    responder.take_page.assert_not_called()
+    with pytest.raises(ValueError, match="can't name the regrouper"):
+        regroup_now([responder], pairs, stop_at=["offer", pairs.id])
 
 
 @in_consents_experiment

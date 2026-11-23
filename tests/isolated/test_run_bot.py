@@ -185,6 +185,24 @@ def test_advance_past_wait_pages_moves_on_bots_a_stop_at_barrier_released():
     bot.take_page.assert_called_once()
 
 
+def test_advance_past_wait_pages_polls_current_visits_and_stops_at_the_next():
+    from psynet.bot import _advance_past_wait_pages
+
+    def at_turn(page_uuid):
+        page = {"is_timeline_hold": True, "barrier_id": "turn", "can_resume": False}
+        return {"page_uuid": page_uuid, "page": page}
+
+    bot = MagicMock()
+    bot.status = at_turn("current")
+    # The first poll doesn't release the bot; the second moves it on to the
+    # barrier's next visit.
+    visits = iter(["current", "next"])
+    bot.take_page.side_effect = lambda: setattr(bot, "status", at_turn(next(visits)))
+    _advance_past_wait_pages([bot], 10, "turn", current_visits={"current"})
+    assert bot.take_page.call_count == 2
+    assert bot.status["page_uuid"] == "next"
+
+
 def _driver_page_status(page_uuid, answer="ok"):
     return {
         "page_uuid": page_uuid,
