@@ -12,6 +12,7 @@ from .messages import LiveMessage
 from .psynet_entry import (
     _SESSION_BOOKKEEPING,
     _UNCHANGED,
+    FINISHED,
     PLAYERS_LEFT,
     TIMEOUT,
     TOO_LATE,
@@ -209,7 +210,7 @@ def _psynet_end_reason(self, state):
     players are left, or None."""
     entry = _psynet_entry(state)
     if entry["time_up"]:
-        return "finished" if self.duration is not None else TIMEOUT
+        return FINISHED if self.duration is not None else TIMEOUT
     if entry["players_left"]:
         return PLAYERS_LEFT
     return None

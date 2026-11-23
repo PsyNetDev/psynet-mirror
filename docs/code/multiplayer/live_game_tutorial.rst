@@ -207,8 +207,10 @@ game as soon as it returns ``True``.
 
 ``outcome`` is the game's result for the whole pair, which is saved with the
 experiment's data: here, the choices of each throw. ``reason`` says why the
-game ended. For example, it is ``"finished"`` when ``is_over`` ended the
-game, and ``"timeout"`` when the game's ``timeout`` did.
+game ended. For example, it is :data:`~psynet.live_game.FINISHED`
+(``"finished"``) when ``is_over`` ended the game, and
+:data:`~psynet.live_game.TIMEOUT` (``"timeout"``) when the game's
+``timeout`` did.
 
 ``answer`` turns the outcome into each player's answer on the game page:
 their own throws, with both choices and the result for them, the throws each
@@ -872,7 +874,7 @@ and that each trial's score and reward match the throws the bot won:
 
 ``bot.live_games`` gives, for each ``PlayLiveGame`` the participant reached,
 keyed by its ``id_``, which is the game's ``name`` unless given, the record of their latest game there, here their
-second game: whether it ``finished``, its outcome, the participant's answer
+second game: its ``end_reason``, its outcome, the participant's answer
 and the game's messages. Snake's result page reads its player's answer the same way.
 
 To test a game's rules without starting the experiment, play it in Python
