@@ -1,1 +1,0 @@
-Documented how timeline holds resume on ``GET /timeline`` versus ``POST /response``, including last-arrival traces and the invariants tests must witness. Playwright hold-release tests log overlay linger and fail only if it exceeds a 30-second hung-overlay cap.

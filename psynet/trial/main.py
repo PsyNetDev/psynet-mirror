@@ -650,9 +650,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         :class:`~psynet.live_game.PlayLiveGame` that its ``show_trial``
         returned, as the participant's
         :class:`~psynet.live_game.LiveGameRecord`, with their ``answer``.
-        Its ``status`` is ``"not_started"`` if the group started no game in
-        the trial's round, and it's ``None`` for a trial that wasn't played
-        in a group's round.
+        Its ``status`` is
+        :attr:`LiveGameStatus.NOT_STARTED <psynet.live_game.LiveGameStatus.NOT_STARTED>`
+        if the group started no game in the trial's round, and it's ``None``
+        for a trial that wasn't played in a group's round.
         """
         from ..live_game.record import LiveGameRecord
 
@@ -2173,7 +2174,7 @@ class TrialMaker(Module):
         Users are invited to override this.
 
     response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+        How long until a trial's response times out, in seconds (default = 300)
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
@@ -3589,7 +3590,7 @@ class NetworkTrialMaker(TrialMaker):
         Users are invited to override this.
 
     response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+        How long until a trial's response times out, in seconds (default = 300)
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,

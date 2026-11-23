@@ -75,6 +75,26 @@ class GrowingPicks(PickNumbers):
         return state["picks"][player] is not None
 
 
+class TakesThree(PickNumbers):
+    """Pick numbers, which players can join while it runs, until it has
+    three."""
+
+    name = "takes_three"
+    min_players = 1
+
+    def on_add(self, state, player, now):
+        state["picks"].append(None)
+
+    def outcome(self, state, reason):
+        # PsyNet doesn't ask the game for the outcome of a player who came
+        # too late.
+        assert reason != "too_late"
+        return super().outcome(state, reason)
+
+    def accepts_players(self, state):
+        return len(state["picks"]) < 3
+
+
 class Exp(psynet.experiment.Experiment):
     label = "Live game test experiment"
     test_n_bots = 2

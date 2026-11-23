@@ -1817,6 +1817,11 @@ class Page(Elt):
 
         if not isinstance(res, BotResponse):
             res = BotResponse(answer=res)
+        if res.time_limit_reached and self.time_limit is None:
+            raise ValueError(
+                f"The bot returned BotResponse(time_limit_reached=True), but page "
+                f"'{self.label}' has no time_limit to run out."
+            )
 
         return res
 
@@ -1979,9 +1984,15 @@ class Page(Elt):
         """Return the seconds left if the browser reports the time limit too early.
 
         The browser's flag is trusted only around the deadline, so an edited
-        or early page cannot end the time limit early.
+        or early page cannot end the time limit early. A bot's flag, from
+        ``BotResponse(time_limit_reached=True)``, counts at once, so bot tests
+        need not wait for the deadline.
         """
+        from .bot import Bot
+
         if metadata.get("time_limit_reached") is not True:
+            return None
+        if isinstance(participant, Bot):
             return None
         seconds_left = self._time_limit_seconds_left(participant)
         if seconds_left is None or seconds_left <= TIME_LIMIT_EARLY_SECONDS:

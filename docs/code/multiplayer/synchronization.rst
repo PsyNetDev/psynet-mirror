@@ -234,20 +234,73 @@ the round on their own.
 
 By default, players are grouped at random, those who have played the most
 rounds sit out when not everyone fits, and roles are shuffled across each
-group's members. Override :meth:`~psynet.sync.Regrouper.form_groups` for
-other grouping rules and :meth:`~psynet.sync.Regrouper.assign_roles` for
-other role rules. The ``ultimatum_pairing`` demo overrides both, to keep
-last round's partners apart and to give each role to whoever has held it
-least often, so that roles alternate. Its ``pairing.py`` defines:
+group's members. Two options change this:
+
+- ``avoid_repeats=True`` keeps players apart from their last group's
+  members where it can. It looks back only one group, so a pair can meet
+  again two rounds later; with two players per role, for example, pairs
+  simply alternate. A player who has played more rounds still sits out
+  before one who has played fewer (with ``keep_roles``, one of the same
+  role); among players with equal rounds, who sits out may be chosen to
+  avoid a repeat. It is a search heuristic: in simulations of pairs, trios
+  and groups with roles, including pools where some players sit out, it
+  found a grouping without repeats whenever one existed, but that isn't
+  guaranteed.
+- ``keep_roles=True`` lets each player keep the role of their first group,
+  for example a proposer who stays a proposer. A newcomer gets the role
+  fewest of the waiting players have, then the one fewest current members
+  have: the active members of the ``within`` group, or without ``within``,
+  everyone waiting at the regrouper (including those who arrived after an
+  ``every`` tick) plus those still active in a group the regrouper formed.
+  After a player's last round, put :func:`~psynet.sync.leave_group` so
+  that they stop counting: with the ``within`` group type if there is one,
+  for example ``leave_group("cohort")``, otherwise with the regrouper's
+  group type, for example ``leave_group("pair")``. Players of a role with
+  too few partners are left over, those who have played most first, so a
+  player of a scarce role still plays even if players of another role with
+  fewer rounds sit out. Use ``left_over="sit_out"`` if a role can run out:
+  with ``"wait"``, players whose role has no partner wait until one comes,
+  up to ``max_wait_time``.
+
+:meth:`~psynet.sync.Regrouper.role` returns a player's role from their
+latest group, which with ``keep_roles`` is the role they keep. It is
+``None`` until a player's first group, for example for a newcomer who sits
+out their first split, so check for that before branching on the role:
+
+.. code-block:: python
+
+    pairing = Regrouper(
+        "pair",
+        roles=["proposer", "responder"],
+        keep_roles=True,
+        avoid_repeats=True,
+        every=40,
+        left_over="sit_out",
+    )
+
+    def role_text(participant):
+        role = pairing.role(participant)
+        if role is None:
+            return "You will get your role in your first round."
+        return f"You are the {role}."
+
+The kept role is not a participant column. The export has it per group, as
+``role`` in ``participant_link_sync_group.csv``, and per trial, as
+``sync_group_role``. To export it per participant, add
+``pairing.role(participant)`` to a participant table in ``get_basic_data``
+yourself (see :ref:`basic_data_regrouper`). ``role()`` queries the
+database each call, so read each role once when looping over many players.
+
+Override :meth:`~psynet.sync.Regrouper.form_groups` for other grouping
+rules and :meth:`~psynet.sync.Regrouper.assign_roles` for other role rules.
+The ``ultimatum_pairing`` demo alternates roles rather than keeping them:
+it keeps last round's partners apart with ``avoid_repeats=True`` and
+overrides ``assign_roles`` to give each role to whoever has held it least
+often. For fixed roles you need only ``keep_roles=True``, as above, not the
+demo's ``PairingRegrouper``. Its ``pairing.py`` defines:
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
    :pyobject: PairingRegrouper
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
-   :pyobject: is_rematch
-
-.. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
-   :pyobject: last_partner_id
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/pairing.py
    :pyobject: times_held
@@ -614,7 +667,8 @@ or to leave it out:
 
 By default the participant's last page stays on screen, greyed out, while
 they wait. To show something else instead, pass ``waiting_screen``; to give
-them something to do, such as filler trials, pass ``waiting_logic``
+them something to do, such as filler trials or
+:ref:`quiz questions <sync-waiting-quiz>`, pass ``waiting_logic``
 instead. A waiting screen can be text,
 a prompt, or a :class:`~psynet.modular_page.ModularPage` without a Next
 button (``NullControl(show_next_button=False)``), or a module-level
@@ -1411,8 +1465,10 @@ settings together decide both fates:
 ``"fail"`` stops a pair or group from carrying on short-handed. Combined
 with ``late_action="leave_group"`` it would let the late member carry on
 while failing the partner who was on time, so the experiment rejects that
-combination when it loads; for a barrier it can't see then, such as one
-built in ``show_trial``, PsyNet logs a warning when it happens. To let the
+combination when it loads. A barrier built in ``show_trial`` is checked when
+the trial is shown, which raises the same error; for one built in a
+``for_loop`` or another ``PageMaker``, PsyNet logs a warning when it
+happens. To let the
 members who were on time carry on, set
 ``below_quorum="continue_without_group"`` on the grouper:
 
@@ -1785,7 +1841,21 @@ repeat often enough to fill that time, rounded up to whole passes; here,
 Keep ``waiting_logic`` atomic, as in ``sync_quorum``: one short trial or
 page per pass, letting the loop repeat it, rather than several trials per
 pass. A release then fails at most the trial on screen and creates no
-unseen trials (see below).
+unseen trials (see below). A participant whose arrival releases them at
+once, such as the one who completes a group, normally doesn't start
+``waiting_logic``. Participants who arrive at the same moment don't see
+each other's arrivals yet, so each of them may still start it, and the
+release then fails those unseen trials.
+
+If a pass of ``waiting_logic`` has nothing to show, for example because a
+trial maker has no trial left for the participant or a
+:func:`~psynet.timeline.conditional` in it is false, PsyNet shows a
+waiting page ("Waiting for other participants…") for about 2 seconds
+and then runs the waiting logic again, so that trials that become
+available later are shown. Each of these waiting pages costs a request
+and stores a response (leaving ``participant.answer`` unchanged), so give
+the waiting logic enough to do for the expected wait. A release ends the
+waiting page at once.
 
 When the barrier releases a participant who is on a waiting page, the page
 ends ``release_grace`` seconds (default 3; see
@@ -1795,8 +1865,7 @@ answer is then not saved: its response is stored with ``"interrupted": True``
 in ``metadata``, its ``on_complete`` doesn't run, and ``participant.answer``
 keeps its previous value (``participant.answer_is_fresh`` is ``False``).
 The rest of the participant's pass of ``waiting_logic`` is then run through
-without showing its pages, and so is the whole pass for the participant
-whose arrival completes the group. Code blocks in it still run, and so do
+without showing its pages. Code blocks in it still run, and so do
 the ends of modules, loops and fixed time credit. Each
 :func:`~psynet.timeline.while_loop` in the pass ends at its next check,
 since its condition might wait for answers that the skipped pages never
@@ -1806,8 +1875,8 @@ waiting for a trial to become available or for asynchronous processing.
 run all their iterations, so a very long one makes the release raise an
 error after 1000 skipped pages. Pass
 ``release_grace=None`` to :class:`~psynet.sync.Barrier`,
-:class:`~psynet.sync.GroupBarrier` or a grouper to let every waiting page
-run to its end.
+:class:`~psynet.sync.GroupBarrier` or a grouper to let every page of
+``waiting_logic`` run to its end.
 
 A release ends trial pages too, such as the animal trials in
 ``sync_quorum``. A trial whose page ends before it is answered is failed
@@ -1846,6 +1915,109 @@ when the grace period is over.
      document.getElementById("note").textContent =
        "Your partner is here. Finish your sentence!";
    });
+
+.. _sync-waiting-quiz:
+
+Quiz questions while waiting
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To give waiting participants quiz questions with feedback and points, make
+each question a node of a :class:`~psynet.trial.static.StaticTrialMaker` and
+cue one question per pass of ``waiting_logic``, as ``sync_quorum`` does with
+its filler trials. This is a recipe, not a dedicated API: everything below is
+existing trial and timeline API. The ``waiting_quiz`` test experiment
+(``tests/experiments/waiting_quiz``) runs it with bots:
+
+.. literalinclude:: ../../../tests/experiments/waiting_quiz/experiment.py
+   :start-at: QUESTIONS = [
+   :end-before: class Exp
+
+Wrap the grouper in the trial maker's
+:meth:`~psynet.trial.main.TrialMaker.custom`, so that the trial maker is set
+up for each participant before it cues their first question:
+
+.. literalinclude:: ../../../tests/experiments/waiting_quiz/experiment.py
+   :start-at: quiz.custom(
+   :end-before: InfoPage("Your group is ready."
+   :dedent: 8
+
+``custom()`` takes any timeline elements, so later parts of the
+experiment, even other trial makers, may go inside it too. Keeping only
+the grouper inside is simplest: the quiz's module then finishes, and the
+trial maker's ``on_complete`` runs, when the wait ends.
+
+How the pieces fit:
+
+- **Scoring and feedback.** :meth:`~psynet.trial.main.Trial.score_answer`
+  scores each answer, and :meth:`~psynet.trial.main.Trial.show_feedback`
+  then shows a page with the trial's ``score`` already set. The feedback
+  page has a ``time_limit`` and no Next button, so it moves on by itself;
+  the ``data-psynet-seconds-left`` span shows its countdown in place of
+  PsyNet's "N s left" chip. An :class:`~psynet.page.InfoPage` would need a
+  click instead. Each question then takes two page loads, one for the
+  question and one for the feedback. Feedback on the question page
+  itself would need your own JavaScript and route.
+- **Time limits.** When a question's ``time_limit`` runs out, its answer
+  is ``None`` (the page's ``time_limit_answer``), so ``score_answer``
+  receives ``None``, here scoring 0. ``show_feedback`` still runs: return
+  ``None`` from it to skip the feedback, as here. Test ``self.answer``
+  rather than ``self.time_limit_reached``, which pages shown while
+  waiting at a barrier don't set.
+- **Answers stay on the server.** The browser only receives the page that
+  ``show_trial`` builds, here the question and its choices. The correct
+  answer stays in the trial's definition on the server.
+- **Points and bonus.** :meth:`~psynet.trial.main.Trial.compute_performance_reward`
+  adds each trial's reward to the participant's performance reward, which
+  is paid with the rest of their bonus. Count points from the participant's
+  finalized trials, as ``quiz_points`` does, rather than keeping a separate
+  total. ``custom()`` doesn't run the trial maker's performance checks, so
+  ``check_performance_at_end`` and ``check_performance_every_trial`` have
+  no effect here. A check or summary of
+  your own should leave out failed trials, as ``quiz_points`` does, since
+  interrupted trials are among the participant's trials (see above).
+- **Expected trials.** Progress and time credit for the wait come from the
+  barrier's ``expected_wait``, not from the trial maker. With ``custom()``,
+  ``expected_trials_per_participant`` plays no part in recruitment and
+  isn't shown in the timeline overview, but a static trial maker requires
+  it and performance tests report it. Set it to the number of questions a
+  typical wait fills, as the example does, not to the size of the pool.
+- **Running out of questions.** A static trial maker doesn't give a
+  participant a question they have answered again. Once a participant has
+  answered every question, ``cue_trial`` finds no trial and shows nothing,
+  so PsyNet shows its waiting page instead until the group forms (see
+  above). To avoid this, give the pool at least ``max_wait_time`` divided by
+  the time of the fastest question and its feedback. Or reuse questions:
+  pass ``allow_repeated_nodes=True``, a ``max_trials_per_participant``, and
+  a planned ``node_order`` that lists the pool several times, reshuffled
+  each time (see :ref:`trial_order`). The default ``"balanced"`` order
+  counts every participant's trials, so it doesn't stop a question from
+  coming back soon. The trial maker then logs a warning that the plan is
+  longer than ``expected_trials_per_participant``, which is harmless here.
+
+  .. code-block:: python
+
+     StaticTrialMaker(
+         ...,
+         allow_repeated_nodes=True,
+         max_trials_per_participant=3 * len(QUESTIONS),
+         node_order=lambda nodes: [
+             node for _ in range(3) for node in random.sample(nodes, len(nodes))
+         ],
+     )
+
+- **When the group forms.** The participant whose arrival completes the
+  group normally skips the quiz. Rarely, when several participants arrive
+  at the same moment, each of them can get a question they never see,
+  failed with ``failed_reason="interrupted_by_release"`` and not paid, so count
+  only trials that aren't failed in analyses, as ``quiz_points`` does.
+  Anyone else who is on a question has
+  ``release_grace`` seconds (default 3) to answer it: their answer is then
+  scored and paid, and the feedback page is skipped. A question left
+  unanswered is failed with ``failed_reason="interrupted_by_release"``,
+  earns nothing, and isn't counted as answered. Raise ``release_grace`` for
+  questions that take longer to answer. Someone on a feedback page has
+  already been scored and paid; the page ends after the grace period or
+  its own time limit, whichever comes first.
 
 Time credit
 ~~~~~~~~~~~

@@ -300,6 +300,8 @@ in 3 s." and counts down:
 The rejected-consent page has no Finish button, so
 :class:`~psynet.end.RejectedConsentLogic` does not take ``time_limit``.
 
+.. _time_limits:
+
 Time limits
 -----------
 
@@ -334,7 +336,9 @@ the page's content, for example
 Answers given because of the time limit skip validation, and their
 :attr:`~psynet.timeline.Response.time_limit_reached` is ``True``. A later page
 maker or code block can check the previous page with
-``participant.response.time_limit_reached``.
+``participant.response.time_limit_reached``. To cover this in bot tests, give
+the page's bots the response ``BotResponse(time_limit_reached=True)`` (see
+:doc:`/test/backend`).
 
 In a group experiment, a time limit covers only its page. A following
 :class:`~psynet.sync.GroupBarrier` with ``late_after`` counts the late limit

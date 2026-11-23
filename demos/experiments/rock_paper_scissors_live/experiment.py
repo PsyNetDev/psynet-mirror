@@ -25,6 +25,7 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.live_game import (
+    FINISHED,
     LiveGame,
     LiveGamePage,
     LiveMessage,
@@ -152,7 +153,7 @@ class RockPaperScissors(LiveGame):
         whether the game was played to the end."""
         results = throws_seen_by(player, outcome["throws"])
         return {
-            "finished": reason == "finished",
+            "finished": reason == FINISHED,
             "throws": results,
             "wins": count(results, "win"),
             "partner_wins": count(results, "loss"),
@@ -366,7 +367,7 @@ class Exp(psynet.experiment.Experiment):
         ]
         # The bot's latest game is its second.
         game = bot.live_games["rock_paper_scissors"]
-        assert game.finished, game.error
+        assert game.end_reason == FINISHED, game.error
         assert trials[-1].live_game == game
         reward = 0
         for trial in trials:

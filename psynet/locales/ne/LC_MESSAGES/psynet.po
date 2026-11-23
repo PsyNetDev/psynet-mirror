@@ -7,6 +7,64 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This page can record optional camera or screen video. You may continue "
+"without recording."
+msgstr ""
+"यस पृष्ठमा वैकल्पिक रूपमा क्यामेरा वा स्क्रिनको भिडियो रेकर्ड गर्न सकिन्छ। "
+"रेकर्ड नगरी पनि तपाईं अगाडि बढ्न सक्नुहुन्छ।"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid ""
+"This trial needs camera or screen video. If you continue without recording, "
+"your answer is saved but the trial cannot be completed successfully."
+msgstr ""
+"यो परीक्षणका लागि क्यामेरा वा स्क्रिनको भिडियो आवश्यक छ। रेकर्ड नगरी अगाडि "
+"बढ्नुभयो भने तपाईंको जवाफ सुरक्षित हुनेछ, तर परीक्षण सफलतापूर्वक पूरा हुन "
+"सक्नेछैन।"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Enable camera"
+msgstr "क्यामेरा सक्षम गर्नुहोस्"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording"
+msgstr "रेकर्डिङ"
+
+#: psynet/background_recording.py
+#, fuzzy
+msgid "Recording stopped"
+msgstr "रेकर्डिङ रोकियो"
+
+#: psynet/chatroom.py
+#, fuzzy
+msgctxt "chat sender"
+msgid "You"
+msgstr "तपाईं"
+
+#: psynet/chatroom.py
+#, fuzzy, python-brace-format
+msgctxt "chat participant list"
+msgid "{NAME} (you)"
+msgstr "{NAME} (तपाईं)"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your partner"
+msgstr "तपाईंको जोडी"
+
+#: psynet/chatroom.py psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Another player"
+msgstr "अर्को खेलाडी"
+
 #: psynet/demography/general.py
 #, fuzzy
 msgctxt "gender"
@@ -268,46 +326,46 @@ msgstr "म कहिल्यै नाच्दिन"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "When was the last time you danced? (choose the most accurate answer):"
 msgstr ""
-"तपाईंले अन्तिम पटक कहिले नाच्नुभयो? (सबैभन्दा सही उत्तर चयन गर्नुहोस्):"
+"तपाईंले अन्तिम पटक कहिले नाच्नुभयो? (सबैभन्दा मिल्दो उत्तर छान्नुहोस्):"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This week"
-msgstr "यो हप्ता"
+msgstr "यस हप्ता"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This month"
-msgstr "यो महिना"
+msgstr "यस महिना"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "This year"
-msgstr "यो वर्ष"
+msgstr "यस वर्ष"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Some years ago"
-msgstr "केही वर्ष पहिले"
+msgstr "केही वर्षअघि"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "Many years ago"
-msgstr "धेरै वर्ष पहिले"
+msgstr "धेरै वर्षअघि"
 
 #: psynet/demography/general.py
 #, fuzzy
-msgctxt "dance"
+msgctxt "last_time_danced"
 msgid "I never danced"
-msgstr "म कहिल्यै नाचिन"
+msgstr "मैले कहिल्यै नाचेको छैन"
 
 #: psynet/demography/general.py
 #, fuzzy
@@ -438,35 +496,52 @@ msgstr "समाप्त गर्नुहोस्"
 msgctxt "final-page-rewards"
 msgid ""
 "You will receive a reward of <strong>{CURRENCY}{TIME_REWARD}</strong> for "
-"the time you spent on the experiment. You have also been awarded a "
-"performance reward of <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>! "
+"the time you spent. "
 msgstr ""
-"तपाईंले प्रयोगमा बिताएको समयको लागि <strong>{CURRENCY}{TIME_REWARD}</strong>"
-" पुरस्कार प्राप्त गर्नुहुनेछ। तपाईंलाई "
-"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong> प्रदर्शन पुरस्कार पनि प्रदान"
-" गरिएको छ!"
+"तपाईंले बिताएको समयको लागि तपाईंलाई <strong>{CURRENCY}{TIME_REWARD}</strong>"
+" को इनाम प्राप्त हुनेछ।"
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgctxt "final-page-performance-reward"
+msgid ""
+"You have also been awarded a performance reward of "
+"<strong>{CURRENCY}{PERFORMANCE_REWARD}</strong>. "
+msgstr ""
+"तपाईंलाई <strong>{CURRENCY}{PERFORMANCE_REWARD}</strong> को प्रदर्शन इनाम "
+"पनि प्रदान गरिएको छ।"
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to return to your panel."
+msgstr "तपाईंको प्यानलमा फर्कन समाप्त गर्नुहोस् क्लिक गर्नुहोस्।"
+
+#: psynet/end.py
+#, fuzzy
+msgid "Click Finish to finalize the session."
+msgstr "सत्रलाई अन्तिम रूप दिन समाप्त गर्नुहोस् क्लिक गर्नुहोस्।"
+
+#: psynet/end.py
+#, fuzzy, python-brace-format
+msgid "This page continues by itself in {SECONDS} s."
+msgstr "यो पृष्ठ {SECONDS} सेकेन्डमा स्वतः जारी रहनेछ।"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_successful"
-msgid "That's the end of the experiment!"
-msgstr "यो प्रयोगको अन्त्य हो!"
+msgid "That's the end!"
+msgstr "यो अन्त्य हो!"
 
-#: psynet/end.py
+#: psynet/end.py psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
 msgid "Thank you for taking part."
 msgstr "भाग लिनुभएकोमा धन्यवाद।"
 
 #: psynet/end.py
 #, fuzzy
-msgid "Please click \"Finish\" to finalize the session."
-msgstr "कृपया HIT पूरा गर्न \"Finish\" मा क्लिक गर्नुहोस्।"
-
-#: psynet/end.py
-#, fuzzy
 msgctxt "final_page_unsuccessful"
-msgid "Unfortunately the experiment must end early."
-msgstr "दुर्भाग्यवश प्रयोगलाई चाँडै अन्त्य गर्नुपर्छ।"
+msgid "Unfortunately we have to stop early."
+msgstr "दुर्भाग्यवश हामीलाई चाँडै रोक्नुपर्छ।"
 
 #: psynet/end.py
 #, fuzzy
@@ -476,20 +551,46 @@ msgstr "यद्यपि, तपाईंले पहिले नै बि�
 
 #: psynet/end.py
 #, fuzzy
-msgid "You will be redirected."
-msgstr "तपाईं पुन: निर्देशित हुनुहुनेछ।"
+msgctxt "final_page_unsuccessful"
+msgid "You took too long to reach the next step, so we ended your session."
+msgstr ""
+"तपाईंलाई अर्को चरणमा पुग्न धेरै समय लागेकाले हामीले तपाईंको सत्र समाप्त "
+"गर्‍यौं।"
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid ""
+"Too few members of your group remained to continue, so we ended your "
+"session."
+msgstr ""
+"तपाईंको समूहका धेरै कम सदस्यहरू मात्र बाँकी रहेकाले जारी राख्न सम्भव भएन, "
+"त्यसैले हामीले तपाईंको सत्र समाप्त गर्‍यौं।"
+
+#: psynet/end.py
+#, fuzzy
+msgctxt "final_page_unsuccessful"
+msgid "We waited too long for other participants, so we ended your session."
+msgstr ""
+"हामीले अन्य सहभागीहरूका लागि धेरै लामो समयसम्म प्रतीक्षा गर्‍यौं, त्यसैले "
+"हामीले तपाईंको सत्र समाप्त गर्‍यौं।"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "Consent was rejected."
-msgstr "सहमति अस्वीकार गरियो।"
+msgid "You chose not to continue."
+msgstr "तपाईंले जारी नराख्ने निर्णय गर्नुभयो।"
 
 #: psynet/end.py
 #, fuzzy
 msgctxt "final_page_rejected_consent"
-msgid "End of experiment."
-msgstr "प्रयोगको अन्त्य।"
+msgid "You may close this page."
+msgstr "तपाईंले यो पृष्ठ बन्द गर्न सक्नुहुन्छ।"
+
+#: psynet/end.py
+#, fuzzy
+msgid "We will return you to your panel in a few seconds."
+msgstr "केही सेकेन्डमा हामी तपाईंलाई तपाईंको प्यानलमा फर्काउनेछौं।"
 
 #: psynet/equipment.py
 #, fuzzy
@@ -502,45 +603,6 @@ msgstr ""
 
 #: psynet/experiment.py
 #, fuzzy
-msgctxt "error-msg"
-msgid "There has been an error and so you are unable to continue, sorry!"
-msgstr "त्रुटि भएको छ र तपाईं जारी राख्न असमर्थ हुनुहुन्छ, माफ गर्नुहोस्!"
-
-#: psynet/experiment.py
-#, fuzzy, python-brace-format
-msgctxt "mturk_error"
-msgid ""
-"To enquire about compensation, please contact the researcher at {EMAIL} and "
-"describe what led to this error."
-msgstr ""
-"क्षतिपूर्तिको बारेमा सोधपुछ गर्न, कृपया अनुसन्धानकर्तालाई {EMAIL} मा सम्पर्क"
-" गर्नुहोस् र यस त्रुटिको कारण के भयो भनेर वर्णन गर्नुहोस्।"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "mturk_error"
-msgid "Please also quote the following information:"
-msgstr "कृपया निम्न जानकारी पनि उद्धृत गर्नुहोस्:"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid "Don't worry, your progress has been recorded."
-msgstr "चिन्ता नगर्नुहोस्, तपाईंको प्रगति रेकर्ड गरिएको छ।"
-
-#: psynet/experiment.py
-#, fuzzy
-msgctxt "prolific_error"
-msgid ""
-"To enquire about compensation, please send the researcher a message via the "
-"Prolific website and describe what led to your error."
-msgstr ""
-"क्षतिपूर्तिको बारेमा सोधपुछ गर्न, कृपया Prolific वेबसाइट मार्फत "
-"अनुसन्धानकर्तालाई सन्देश पठाउनुहोस् र तपाईंको त्रुटिको कारण के भयो भनेर "
-"वर्णन गर्नुहोस्।"
-
-#: psynet/experiment.py
-#, fuzzy
 msgctxt "timeline_problem"
 msgid ""
 "Synchronization problem detected. Are you running the same experiment in "
@@ -550,16 +612,89 @@ msgstr ""
 "चलाउँदै हुनुहुन्छ? कृपया सबै अन्य ट्याबहरू बन्द गर्नुहोस् र पृष्ठलाई रिफ्रेस"
 " गर्नुहोस्।"
 
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "This session has already ended. Please reload the page."
+msgstr "यो सत्र पहिले नै समाप्त भइसकेको छ। कृपया पृष्ठलाई पुनः लोड गर्नुहोस्।"
+
+#: psynet/experiment.py
+#, fuzzy
+msgid "The experiment is temporarily busy. Please try again."
+msgstr "प्रयोग अस्थायी रूपमा व्यस्त छ। कृपया फेरि प्रयास गर्नुहोस्।"
+
+#: psynet/experiment.py
+#, fuzzy
+msgctxt "error"
+msgid ""
+"This session is no longer available. It may have ended, or the study may "
+"have been restarted since you opened this page."
+msgstr ""
+"यो सत्र अब उपलब्ध छैन। यो समाप्त भएको हुन सक्छ, वा तपाईंले यो पृष्ठ "
+"खोल्नुभएपछि अध्ययन पुनः सुरु गरिएको हुन सक्छ।"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "has answered"
+msgstr "जवाफ दिनुभएको छ"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} has answered."
+msgstr "{NAME} ले जवाफ दिनुभएको छ।"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "ran out of time"
+msgstr "समय सकियो"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} ran out of time."
+msgstr "{NAME} को समय सकियो।"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Your group"
+msgstr "तपाईंको समूह"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "Group"
+msgstr "समूह"
+
+#: psynet/group_prompt.py
+#, fuzzy
+msgctxt "group prompt"
+msgid "You"
+msgstr "तपाईं"
+
+#: psynet/group_prompt.py
+#, fuzzy, python-brace-format
+msgctxt "group prompt"
+msgid "{NAME} (left)"
+msgstr "{NAME} (समूहबाट बाहिरिनुभयो)"
+
 #: psynet/modular_page.py
 #, fuzzy
 msgid "Play"
 msgstr "बजाउनुहोस्"
 
-#: psynet/modular_page.py
+#: psynet/modular_page.py psynet/templates/macros/control.html
 #, fuzzy
-msgctxt "validation"
-msgid "You need to check at least one answer!"
-msgstr "तपाईंले कम्तिमा एउटा उत्तर जाँच गर्न आवश्यक छ!"
+msgid "Stop"
+msgstr "रोक्नुहोस्"
+
+#: psynet/modular_page.py psynet/templates/macros/control.html
+#, fuzzy
+msgid "Loop"
+msgstr "लूप"
 
 #: psynet/modular_page.py
 #, fuzzy
@@ -570,8 +705,67 @@ msgstr "तपाईंले उत्तर चयन गर्न आवश�
 #: psynet/modular_page.py
 #, fuzzy
 msgctxt "validation"
+msgid "You need to check at least one answer!"
+msgstr "तपाईंले कम्तिमा एउटा उत्तर जाँच गर्न आवश्यक छ!"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgctxt "validation"
 msgid "You need to provide a number!"
 msgstr "तपाईंले संख्या प्रदान गर्न आवश्यक छ!"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Share your screen to record this answer. Continuing without recording may "
+"make this trial unsuccessful."
+msgstr ""
+"यो उत्तर रेकर्ड गर्न आफ्नो स्क्रिन साझा गर्नुहोस्। रेकर्ड नगरी अगाडि बढ्दा "
+"यो परीक्षण असफल हुन सक्छ।"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share your screen to record this answer."
+msgstr "यो उत्तर रेकर्ड गर्न आफ्नो स्क्रिन साझा गर्नुहोस्।"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Share screen"
+msgstr "स्क्रिन साझा गर्नुहोस्"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Continue without recording"
+msgstr "रेकर्ड नगरी जारी राख्नुहोस्"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid "Uploading your recording, please keep this page open."
+msgstr "तपाईंको रेकर्डिङ अपलोड हुँदैछ। कृपया यो पृष्ठ खुला राख्नुहोस्।"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"Your recording could not be captured. Please make sure your browser can "
+"access your camera or screen, then reload the page."
+msgstr ""
+"तपाईंको रेकर्डिङ खिच्न सकिएन। कृपया तपाईंको ब्राउजरले क्यामेरा वा स्क्रिनमा "
+"पहुँच गर्न सक्छ भन्ने सुनिश्चित गर्नुहोस्, त्यसपछि पृष्ठ पुनः लोड गर्नुहोस्।"
+
+#: psynet/modular_page.py
+#, fuzzy
+msgid ""
+"We could not confirm that your answer was received. Please check your "
+"connection and press Next again."
+msgstr ""
+"तपाईंको उत्तर प्राप्त भएको पुष्टि गर्न सकेनौँ। कृपया आफ्नो इन्टरनेट जडान "
+"जाँच गर्नुहोस् र फेरि अर्को थिच्नुहोस्।"
+
+#: psynet/page.py psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "status"
+msgid "Working..."
+msgstr "काम गर्दै..."
 
 #: psynet/prescreen/__init__.py
 #, fuzzy
@@ -619,6 +813,100 @@ msgid ""
 "Your task will be to judge <strong>which sound is the odd one out</strong>."
 msgstr ""
 "तपाईंको कार्य <strong>कुन ध्वनी फरक छ</strong> भनेर निर्णय गर्नु हुनेछ।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"This experiment needs to check that your microphone and camera are working."
+msgstr ""
+"यो प्रयोगले तपाईंको माइक्रोफोन र क्यामेराले काम गरिरहेको छ कि छैन जाँच्न "
+"आवश्यक छ।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser will ask for permission to access your microphone and camera."
+msgstr ""
+"तपाईंको ब्राउजरले तपाईंको माइक्रोफोन र क्यामेरा प्रयोग गर्न अनुमति माग्नेछ।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your microphone is working."
+msgstr ""
+"यो प्रयोगले तपाईंको माइक्रोफोनले काम गरिरहेको छ कि छैन जाँच्न आवश्यक छ।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your microphone."
+msgstr "तपाईंको ब्राउजरले तपाईंको माइक्रोफोन प्रयोग गर्न अनुमति माग्नेछ।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "This experiment needs to check that your camera is working."
+msgstr "यो प्रयोगले तपाईंको क्यामेराले काम गरिरहेको छ कि छैन जाँच्न आवश्यक छ।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser will ask for permission to access your camera."
+msgstr "तपाईंको ब्राउजरले तपाईंको क्यामेरा प्रयोग गर्न अनुमति माग्नेछ।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Please click Allow when prompted."
+msgstr "अनुमति माग्दा कृपया अनुमति दिनुहोस् मा क्लिक गर्नुहोस्।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your microphone. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"हामी तपाईंको माइक्रोफोनमा पहुँच गर्न सकेनौं। यो अर्को एपले प्रयोग गरिरहेको "
+"हुन सक्छ, तपाईंको उपकरणमा उपलब्ध नहुन सक्छ, वा पहुँचको अनुमति नदिइएको हुन "
+"सक्छ।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"We were unable to access your camera. It may be in use by another app, "
+"unavailable on your device, or access was not granted."
+msgstr ""
+"हामी तपाईंको क्यामेरामा पहुँच गर्न सकेनौं। यो अर्को एपले प्रयोग गरिरहेको हुन"
+" सक्छ, तपाईंको उपकरणमा उपलब्ध नहुन सक्छ, वा पहुँचको अनुमति नदिइएको हुन सक्छ।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support screen capture."
+msgstr "तपाईंको ब्राउजरले स्क्रिन क्याप्चरलाई समर्थन गर्दैन।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support video recording."
+msgstr "तपाईंको ब्राउजरले भिडियो रेकर्डिङलाई समर्थन गर्दैन।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid "Your browser does not support audio playback."
+msgstr "तपाईंको ब्राउजरले अडियो प्लेब्याकलाई समर्थन गर्दैन।"
+
+#: psynet/prescreen/__init__.py
+#, fuzzy
+msgctxt "browser_capability_check"
+msgid ""
+"Your browser does not meet the technical requirements for this experiment."
+msgstr "तपाईंको ब्राउजरले यस प्रयोगका प्राविधिक आवश्यकताहरू पूरा गर्दैन।"
 
 #: psynet/prescreen/vocabtest.py
 #, fuzzy
@@ -748,214 +1036,1087 @@ msgstr ""
 msgid "The test will start on the next page."
 msgstr "परीक्षण अर्को पृष्ठमा सुरु हुनेछ।"
 
-#: psynet/recruiters.py
+#: psynet/pseudonym.py
 #, fuzzy
-msgctxt "recruiter_communication"
-msgid "Communicating with the recruiter..."
-msgstr "भर्तीकर्तासँग सञ्चार गर्दै..."
+msgctxt "pseudonym"
+msgid "Orange fox"
+msgstr "सुन्तला स्याल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange owl"
+msgstr "सुन्तला उल्लू"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange otter"
+msgstr "सुन्तला ओत"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange panda"
+msgstr "सुन्तला पाण्डा"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange tiger"
+msgstr "सुन्तला बाघ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange frog"
+msgstr "सुन्तला भ्यागुतो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange koala"
+msgstr "सुन्तला कोआला"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange penguin"
+msgstr "सुन्तला पेन्गुइन"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange rabbit"
+msgstr "सुन्तला खरायो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange whale"
+msgstr "सुन्तला ह्वेल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Orange cat"
+msgstr "सुन्तला बिरालो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue fox"
+msgstr "हल्का निलो स्याल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue owl"
+msgstr "हल्का निलो उल्लू"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue otter"
+msgstr "हल्का निलो ओत"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue panda"
+msgstr "हल्का निलो पाण्डा"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue tiger"
+msgstr "हल्का निलो बाघ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue frog"
+msgstr "हल्का निलो भ्यागुतो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue koala"
+msgstr "हल्का निलो कोआला"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue penguin"
+msgstr "हल्का निलो पेन्गुइन"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue rabbit"
+msgstr "हल्का निलो खरायो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue whale"
+msgstr "हल्का निलो ह्वेल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Light blue cat"
+msgstr "हल्का निलो बिरालो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green fox"
+msgstr "हरियो स्याल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green owl"
+msgstr "हरियो उल्लू"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green otter"
+msgstr "हरियो ओत"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green panda"
+msgstr "हरियो पाण्डा"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green tiger"
+msgstr "हरियो बाघ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green frog"
+msgstr "हरियो भ्यागुतो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green koala"
+msgstr "हरियो कोआला"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green penguin"
+msgstr "हरियो पेन्गुइन"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green rabbit"
+msgstr "हरियो खरायो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green whale"
+msgstr "हरियो ह्वेल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Green cat"
+msgstr "हरियो बिरालो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow fox"
+msgstr "पहेँलो स्याल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow owl"
+msgstr "पहेँलो उल्लू"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow otter"
+msgstr "पहेँलो ओत"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow panda"
+msgstr "पहेँलो पाण्डा"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow tiger"
+msgstr "पहेँलो बाघ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow frog"
+msgstr "पहेँलो भ्यागुतो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow koala"
+msgstr "पहेँलो कोआला"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow penguin"
+msgstr "पहेँलो पेन्गुइन"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow rabbit"
+msgstr "पहेँलो खरायो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow whale"
+msgstr "पहेँलो ह्वेल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Yellow cat"
+msgstr "पहेँलो बिरालो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue fox"
+msgstr "निलो स्याल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue owl"
+msgstr "निलो उल्लू"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue otter"
+msgstr "निलो ओत"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue panda"
+msgstr "निलो पाण्डा"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue tiger"
+msgstr "निलो बाघ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue frog"
+msgstr "निलो भ्यागुतो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue koala"
+msgstr "निलो कोआला"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue penguin"
+msgstr "निलो पेन्गुइन"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue rabbit"
+msgstr "निलो खरायो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue whale"
+msgstr "निलो ह्वेल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Blue cat"
+msgstr "निलो बिरालो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red fox"
+msgstr "रातो स्याल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red owl"
+msgstr "रातो उल्लू"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red otter"
+msgstr "रातो ओत"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red panda"
+msgstr "रातो पाण्डा"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red tiger"
+msgstr "रातो बाघ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red frog"
+msgstr "रातो भ्यागुतो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red koala"
+msgstr "रातो कोआला"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red penguin"
+msgstr "रातो पेन्गुइन"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red rabbit"
+msgstr "रातो खरायो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red whale"
+msgstr "रातो ह्वेल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Red cat"
+msgstr "रातो बिरालो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink fox"
+msgstr "गुलाबी स्याल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink owl"
+msgstr "गुलाबी उल्लू"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink otter"
+msgstr "गुलाबी ओत"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink panda"
+msgstr "गुलाबी पाण्डा"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink tiger"
+msgstr "गुलाबी बाघ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink frog"
+msgstr "गुलाबी भ्यागुतो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink koala"
+msgstr "गुलाबी कोआला"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink penguin"
+msgstr "गुलाबी पेन्गुइन"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink rabbit"
+msgstr "गुलाबी खरायो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink whale"
+msgstr "गुलाबी ह्वेल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Pink cat"
+msgstr "गुलाबी बिरालो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black fox"
+msgstr "कालो स्याल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black owl"
+msgstr "कालो उल्लू"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black otter"
+msgstr "कालो ओत"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black panda"
+msgstr "कालो पाण्डा"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black tiger"
+msgstr "कालो बाघ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black frog"
+msgstr "कालो भ्यागुतो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black koala"
+msgstr "कालो कोआला"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black penguin"
+msgstr "कालो पेन्गुइन"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black rabbit"
+msgstr "कालो खरायो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black whale"
+msgstr "कालो ह्वेल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym"
+msgid "Black cat"
+msgstr "कालो बिरालो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "orange"
+msgstr "सुन्तला"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "light blue"
+msgstr "हल्का निलो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "green"
+msgstr "हरियो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "yellow"
+msgstr "पहेँलो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "blue"
+msgstr "निलो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "red"
+msgstr "रातो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "pink"
+msgstr "गुलाबी"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym color"
+msgid "black"
+msgstr "कालो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "fox"
+msgstr "स्याल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "owl"
+msgstr "उल्लू"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "otter"
+msgstr "ओत"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "panda"
+msgstr "पाण्डा"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "tiger"
+msgstr "बाघ"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "frog"
+msgstr "भ्यागुतो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "koala"
+msgstr "कोआला"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "penguin"
+msgstr "पेन्गुइन"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "rabbit"
+msgstr "खरायो"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "whale"
+msgstr "ह्वेल"
+
+#: psynet/pseudonym.py
+#, fuzzy
+msgctxt "pseudonym animal"
+msgid "cat"
+msgstr "बिरालो"
+
+#: psynet/pseudonym.py
+#, fuzzy, python-brace-format, psynet-kept-source
+msgctxt "pseudonym"
+msgid "{COLOR} {ANIMAL}"
+msgstr "{COLOR} {ANIMAL}"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL} and"
+" quote reference code {REFERENCE_CODE}."
+msgstr ""
+"यदि तपाईंलाई यस त्रुटिबारे अनुसन्धानकर्तासँग सम्पर्क गर्न आवश्यक छ भने, "
+"{EMAIL} मा लेख्नुहोस् र सन्दर्भ कोड {REFERENCE_CODE} उद्धृत गर्नुहोस्।"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error"
+msgid ""
+"If you need to contact the researcher about this error, write to {EMAIL}."
+msgstr ""
+"यदि तपाईंलाई यस त्रुटिबारे अनुसन्धानकर्तासँग सम्पर्क गर्न आवश्यक छ भने, "
+"{EMAIL} मा लेख्नुहोस्।"
 
 #: psynet/recruiters.py
 #, fuzzy
-msgctxt "screen_out_successful"
+msgctxt "early_exit_error"
+msgid "You may close this page."
+msgstr "तपाईंले यो पृष्ठ बन्द गर्न सक्नुहुन्छ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Unfortunately an error occurred and we cannot continue."
+msgstr "दुर्भाग्यवश, एक त्रुटि भयो र हामी जारी राख्न सक्दैनौं।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "However, your responses so far have been saved."
+msgstr "तर, अहिलेसम्मका तपाईंका प्रतिक्रियाहरू सुरक्षित गरिएका छन्।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
 msgid ""
-"You have been credited for the time spent on the experiment. Because you "
-"could not progress to the main experiment your submission will appear as "
-"'screened out' in Prolific. You can now close this browser window."
+"If you leave now, you will not be able to continue later. Your responses so "
+"far will still be saved."
 msgstr ""
-"तपाईंलाई प्रयोगमा खर्चिएको समयको लागि श्रेय दिइएको छ। किनभने तपाईं मुख्य "
-"प्रयोगमा अगाडि बढ्न सक्नु भएन, तपाईंको सबमिशन Prolific मा 'स्क्रिन आउट' को "
-"रूपमा देखा पर्नेछ। अब तपाईंले यो ब्राउजर विन्डो बन्द गर्न सक्नुहुन्छ।"
+"यदि तपाईं अहिले छोड्नुहुन्छ भने, तपाईं पछि जारी राख्न सक्षम हुनुहुने छैन। "
+"अहिलेसम्मका तपाईंका प्रतिक्रियाहरू सुरक्षित गरिनेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit"
+msgid ""
+"You have earned {EARNED} so far. You need at least {THRESHOLD} to leave with"
+" payment. If you leave without payment, you will not be able to continue "
+"later. Your responses so far will still be saved."
+msgstr ""
+"तपाईंले अहिलेसम्म {EARNED} कमाउनुभएको छ। भुक्तानीसहित छोड्नको लागि तपाईंलाई "
+"कम्तिमा {THRESHOLD} आवश्यक छ। यदि तपाईं बिना भुक्तानी छोड्नुहुन्छ भने, तपाईं"
+" पछि जारी राख्न सक्षम हुनुहुने छैन। अहिलेसम्मका तपाईंका प्रतिक्रियाहरू "
+"सुरक्षित गरिनेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without payment"
+msgstr "बिना भुक्तानी छोड्नुहोस्"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave"
+msgstr "छोड्नुहोस्"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Leave without finishing?"
+msgstr "पूरा नगरी छोड्नुहोस्?"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit"
+msgid "Cancel"
+msgstr "रद्द गर्नुहोस्"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid"
+msgid "You may close this page."
+msgstr "तपाईंले यो पृष्ठ बन्द गर्न सक्नुहुन्छ।"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Because you have earned {EARNED} so "
+"far, a further {REMAINDER} will be paid as a bonus. Your responses so far "
+"will still be saved."
+msgstr ""
+"यदि तपाईं अहिले छोड्नुहुन्छ भने, तपाईं पछि जारी राख्न सक्षम हुनुहुने छैन। "
+"तपाईंले {FIXED} को स्थिर 'स्क्रिन-आउट' भुक्तानी प्राप्त गर्नुहुनेछ। तपाईंले "
+"अहिलेसम्म {EARNED} कमाउनुभएकोले, थप {REMAINDER} बोनसको रूपमा भुक्तान गरिनेछ।"
+" अहिलेसम्मका तपाईंका प्रतिक्रियाहरू सुरक्षित गरिनेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. Your responses so far will still be "
+"saved."
+msgstr ""
+"यदि तपाईं अहिले छोड्नुहुन्छ भने, तपाईं पछि जारी राख्न सक्षम हुनुहुने छैन। "
+"तपाईंले {FIXED} को स्थिर 'स्क्रिन-आउट' भुक्तानी प्राप्त गर्नुहुनेछ। "
+"अहिलेसम्मका तपाईंका प्रतिक्रियाहरू सुरक्षित गरिनेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED} plus a performance bonus of "
+"{PERFORMANCE}. You will not be paid for additional time. Your responses so "
+"far will still be saved."
+msgstr ""
+"यदि तपाईं अहिले छोड्नुहुन्छ भने, तपाईं पछि जारी राख्न सक्षम हुनुहुने छैन। "
+"तपाईंले {FIXED} को स्थिर 'स्क्रिन-आउट' भुक्तानी र {PERFORMANCE} को प्रदर्शन "
+"बोनस प्राप्त गर्नुहुनेछ। तपाईंलाई थप समयको लागि भुक्तान गरिने छैन। "
+"अहिलेसम्मका तपाईंका प्रतिक्रियाहरू सुरक्षित गरिनेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will receive a"
+" fixed 'screen-out' payment of {FIXED}. You will not be paid for additional "
+"time. Your responses so far will still be saved."
+msgstr ""
+"यदि तपाईं अहिले छोड्नुहुन्छ भने, तपाईं पछि जारी राख्न सक्षम हुनुहुने छैन। "
+"तपाईंले {FIXED} को स्थिर 'स्क्रिन-आउट' भुक्तानी प्राप्त गर्नुहुनेछ। तपाईंलाई"
+" थप समयको लागि भुक्तान गरिने छैन। अहिलेसम्मका तपाईंका प्रतिक्रियाहरू "
+"सुरक्षित गरिनेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_prolific"
+msgid ""
+"If you leave now, you will not be able to continue later. You will need to "
+"return your Prolific submission. You will then be paid {EARNED} as a bonus "
+"for the work you have completed so far. Your responses so far will still be "
+"saved."
+msgstr ""
+"यदि तपाईं अहिले छोड्नुहुन्छ भने, तपाईं पछि जारी राख्न सक्षम हुनुहुने छैन। "
+"तपाईंले आफ्नो Prolific सबमिशन फिर्ता गर्नुपर्नेछ। त्यसपछि तपाईंले अहिलेसम्म "
+"पूरा गर्नुभएको कामको लागि {EARNED} बोनसको रूपमा भुक्तान गरिनेछ। अहिलेसम्मका "
+"तपाईंका प्रतिक्रियाहरू सुरक्षित गरिनेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid "If you had already started, message the researcher through Prolific."
+msgstr ""
+"यदि तपाईंले पहिले नै सुरु गर्नुभएको थियो भने, Prolific मार्फत "
+"अनुसन्धानकर्तालाई सन्देश पठाउनुहोस्।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "prolific_error"
+msgid ""
+"Please message the researcher through Prolific and describe what led to this"
+" error."
+msgstr ""
+"कृपया Prolific मार्फत अनुसन्धानकर्तालाई सन्देश पठाउनुहोस् र यस त्रुटिमा के "
+"कारण भयो भनेर वर्णन गर्नुहोस्।"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will pay you for your progress so far: you will receive {FIXED} through "
+"Prolific."
+msgstr ""
+"हामी तपाईंलाई अहिलेसम्मको प्रगतिको लागि भुक्तान गर्नेछौं: तपाईंले Prolific "
+"मार्फत {FIXED} प्राप्त गर्नुहुनेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We will also pay {BONUS} as a bonus, bringing your total payment to {TOTAL}."
+msgstr ""
+"हामी {BONUS} बोनसको रूपमा पनि भुक्तान गर्नेछौं, जसले गर्दा तपाईंको कुल "
+"भुक्तानी {TOTAL} हुनेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid "We will also pay your {BONUS} performance bonus."
+msgstr "हामी तपाईंको {BONUS} प्रदर्शन बोनस पनि भुक्तान गर्नेछौं।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Any additional amount you earned will be paid as a bonus."
+msgstr "तपाईंले कमाएको कुनै पनि अतिरिक्त रकम बोनसको रूपमा भुक्तान गरिनेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Submit to Prolific to complete your submission."
+msgstr "तपाईंको सबमिशन पूरा गर्न Prolific मा सबमिट चयन गर्नुहोस्।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Submit to Prolific"
+msgstr "Prolific मा सबमिट गर्नुहोस्"
+
+#: psynet/recruiters.py
+#, fuzzy, python-brace-format
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive {EARNED} for the work you completed, you will need to return your"
+" submission on Prolific."
+msgstr ""
+"तपाईंले पूरा गर्नुभएको कामको लागि {EARNED} प्राप्त गर्न, तपाईंले Prolific मा"
+" आफ्नो सबमिशन फिर्ता गर्नुपर्नेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"To receive payment for the work you completed, you will need to return your "
+"submission on Prolific."
+msgstr ""
+"तपाईंले पूरा गर्नुभएको कामको लागि भुक्तानी प्राप्त गर्न, तपाईंले Prolific मा"
+" आफ्नो सबमिशन फिर्ता गर्नुपर्नेछ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Select Continue to payment instructions to complete these steps."
+msgstr ""
+"यी चरणहरू पूरा गर्न भुक्तानी निर्देशनहरूमा जारी राख्नुहोस् चयन गर्नुहोस्।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not open the payment instructions. Please try again. If this keeps "
+"happening, message the researcher through Prolific."
+msgstr ""
+"हामी भुक्तानी निर्देशनहरू खोल्न सकेनौं। कृपया पुन: प्रयास गर्नुहोस्। यदि यो "
+"बारम्बार हुन्छ भने, Prolific मार्फत अनुसन्धानकर्तालाई सन्देश पठाउनुहोस्।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Continue to payment instructions"
+msgstr "भुक्तानी निर्देशनहरूमा जारी राख्नुहोस्"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_unpaid_prolific"
+msgid ""
+"Your responses so far have been saved. Please return your submission on "
+"Prolific. You will not receive payment. You may close this page."
+msgstr ""
+"तपाईंका अहिलेसम्मका प्रतिक्रियाहरू सुरक्षित गरिएका छन्। कृपया आफ्नो सबमिशन "
+"Prolific मा फिर्ता गर्नुहोस्। तपाईंलाई भुक्तानी प्राप्त हुनेछैन। तपाईंले यो "
+"पृष्ठ बन्द गर्न सक्नुहुन्छ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "Your submission has been sent to Prolific."
+msgstr "तपाईंको सबमिशन Prolific मा पठाइएको छ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid "You may close this page."
+msgstr "तपाईंले यो पृष्ठ बन्द गर्न सक्नुहुन्छ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_error_prolific"
+msgid ""
+"We could not send your submission to Prolific. Please try again. If this "
+"keeps happening, message the researcher through Prolific."
+msgstr ""
+"हामी तपाईंको सबमिशन Prolific मा पठाउन सकेनौं। कृपया फेरि प्रयास गर्नुहोस्। "
+"यदि यो बारम्बार हुन्छ भने, Prolific मार्फत अनुसन्धानकर्तालाई सन्देश "
+"पठाउनुहोस्।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_assignment_instructions"
 msgid ""
 "Please return your submission via the Prolific interface and click Next. We "
-"will then automatically pay you a bonus for your time."
+"will then automatically pay you a bonus."
 msgstr ""
-"कृपया Prolific इन्टरफेस मार्फत आफ्नो सबमिशन फिर्ता गर्नुहोस् र 'नेक्स्ट' "
-"क्लिक गर्नुहोस्। त्यसपछि हामी तपाईंलाई तपाईंको समयको लागि स्वतः बोनस "
-"तिर्नेछौं।"
+"कृपया Prolific इन्टरफेस मार्फत आफ्नो सबमिशन फिर्ता गर्नुहोस् र 'Next' क्लिक "
+"गर्नुहोस्। त्यसपछि हामी तपाईंलाई स्वचालित रूपमा बोनस भुक्तानी गर्नेछौं।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "return_for_bonus_completed"
 msgid ""
-"That worked! You have been credited for the time spent on the experiment. "
-"Thank you for participating. You can now close this browser window."
+"That worked. You have been credited for the time you spent. Thank you for "
+"taking part. You may close this page."
 msgstr ""
-"त्यो काम गर्यो! तपाईंलाई प्रयोगमा खर्चिएको समयको लागि श्रेय दिइएको छ। सहभागी"
-" भएकोमा धन्यवाद। अब तपाईंले यो ब्राउजर विन्डो बन्द गर्न सक्नुहुन्छ।"
+"त्यो सफल भयो। तपाईंले खर्च गरेको समयको लागि तपाईंलाई क्रेडिट दिइएको छ। भाग "
+"लिएकोमा धन्यवाद। तपाईंले यो पृष्ठ बन्द गर्न सक्नुहुन्छ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "return_for_bonus_payment_failed"
+msgid ""
+"Your return was recorded, but we could not complete the bonus payment "
+"automatically. The researcher has been notified and will arrange payment. "
+"You may close this page."
+msgstr ""
+"तपाईंको फिर्ता रेकर्ड गरिएको थियो, तर हामीले स्वचालित रूपमा बोनस भुक्तानी "
+"पूरा गर्न सकेनौं। अनुसन्धानकर्तालाई सूचित गरिएको छ र उनीहरूले भुक्तानीको "
+"व्यवस्था गर्नेछन्। तपाईंले यो पृष्ठ बन्द गर्न सक्नुहुन्छ।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "assignment_return_retry"
 msgid ""
-"That didn't work. Are you sure you returned the submission for this study? "
-"Please go to the Prolific interface, make sure you have returned the "
-"submission, then click the 'Next' button."
+"That didn't work. Are you sure you returned the submission? Return it on "
+"Prolific, then click Next."
 msgstr ""
-"त्यो काम गरेन। के तपाईंले यो अध्ययनको लागि सबमिशन फिर्ता गर्नुभयो भन्ने कुरा"
-" पक्का छ? कृपया Prolific इन्टरफेसमा जानुहोस्, सुनिश्चित गर्नुहोस् कि तपाईंले"
-" सबमिशन फिर्ता गर्नुभएको छ, त्यसपछि 'नेक्स्ट' बटन क्लिक गर्नुहोस्।"
-
-#: psynet/recruiters.py
-#, fuzzy
-msgctxt "return_for_bonus_enabled"
-msgid ""
-"We are sorry that you could not proceed to the main experiment, but we will "
-"still pay you for your time spent so far. To receive this payment, we need "
-"you to return this assignment via the Prolific interface, then click the "
-"'Next' button below."
-msgstr ""
-"हामीलाई दुःख छ कि तपाईं मुख्य प्रयोगमा अगाडि बढ्न सक्नु भएन, तर हामी "
-"तपाईंलाई अहिलेसम्म खर्चिएको समयको लागि तिर्नेछौं। यो भुक्तानी प्राप्त गर्न, "
-"हामीलाई तपाईंले यो असाइनमेन्ट Prolific इन्टरफेस मार्फत फिर्ता गर्न आवश्यक छ,"
-" त्यसपछि तलको 'नेक्स्ट' बटन क्लिक गर्नुहोस्।"
+"त्यो सफल भएन। के तपाईंले पक्का सबमिशन फिर्ता गर्नुभयो? Prolific मा फिर्ता "
+"गर्नुहोस्, त्यसपछि 'Next' क्लिक गर्नुहोस्।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "screen_out_return_and_message_experimenter"
 msgid ""
-"We are sorry that you could not proceed to the main experiment. To receive "
-"this payment for your time, please return your assignment in Prolific and "
-"send a message to the experimenter via the Prolific messaging system. The "
-"experimenter will review your case and arrange payment if appropriate. Thank"
-" you for your understanding. You can now close this browser window."
+"To receive payment for the time you spent, return your submission on "
+"Prolific and message the researcher there. They will review your case and "
+"arrange payment if it is due. You may close this page."
 msgstr ""
-"हामीलाई दुःख छ कि तपाईं मुख्य प्रयोगमा अगाडि बढ्न सक्नु भएन। तपाईंको समयको "
-"लागि यो भुक्तानी प्राप्त गर्न, कृपया Prolific मा आफ्नो असाइनमेन्ट फिर्ता "
-"गर्नुहोस् र Prolific सन्देश प्रणाली मार्फत प्रयोगकर्तालाई सन्देश पठाउनुहोस्।"
-" प्रयोगकर्ता तपाईंको केस समीक्षा गर्नेछ र उपयुक्त भएमा भुक्तानीको व्यवस्था "
-"गर्नेछ। तपाईंको बुझाइको लागि धन्यवाद। अब तपाईंले यो ब्राउजर विन्डो बन्द गर्न"
-" सक्नुहुन्छ।"
+"तपाईंले खर्च गरेको समयको लागि भुक्तानी प्राप्त गर्न, आफ्नो सबमिशन Prolific "
+"मा फिर्ता गर्नुहोस् र त्यहाँ अनुसन्धानकर्तालाई सन्देश पठाउनुहोस्। उनीहरूले "
+"तपाईंको केसको समीक्षा गर्नेछन् र भुक्तानीको व्यवस्था गर्नेछन् यदि यो देय छ "
+"भने। तपाईंले यो पृष्ठ बन्द गर्न सक्नुहुन्छ।"
+
+#: psynet/recruiters.py
+#, fuzzy
+msgctxt "early_exit_lucid"
+msgid ""
+"If you leave now, you will not be able to continue later, and you will "
+"return to your panel provider. This session will not issue a payment; any "
+"payment depends on your panel provider's rules. Your responses so far will "
+"still be saved."
+msgstr ""
+"यदि तपाईं अहिले बाहिर जानुहुन्छ भने, तपाईं पछि जारी राख्न सक्षम हुनुहुने "
+"छैन, र तपाईं आफ्नो प्यानल प्रदायकमा फर्कनुहुनेछ। यस सत्रले कुनै भुक्तानी "
+"जारी गर्ने छैन; कुनै पनि भुक्तानी तपाईंको प्यानल प्रदायकको नियमहरूमा निर्भर "
+"गर्दछ। तपाईंका अहिलेसम्मका प्रतिक्रियाहरू सुरक्षित गरिनेछन्।"
 
 #: psynet/recruiters.py
 #, fuzzy
 msgctxt "lucid_error"
-msgid "Redirecting to Lucid Marketplace..."
-msgstr "Lucid Marketplace मा पुनर्निर्देश गर्दै..."
+msgid "We will return you to your panel in a few seconds."
+msgstr "हामी तपाईंलाई केही सेकेन्डमा तपाईंको प्यानलमा फर्काउनेछौं।"
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Aborting not possible."
-msgstr "रद्द गर्न सम्भव छैन।"
+msgctxt "early_exit_error_lucid"
+msgid "We will return you to your panel in a few seconds."
+msgstr "हामी तपाईंलाई केही सेकेन्डमा तपाईंको प्यानलमा फर्काउनेछौं।"
 
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
+msgctxt "early_exit_error_lucid"
 msgid ""
-"Aborting the experiment is not possible as the experimenter does not allow "
-"it at this time!"
+"We could not return you to your panel. Please try again. If this keeps "
+"happening, contact your panel provider."
 msgstr ""
-"प्रयोग रद्द गर्न सम्भव छैन किनभने प्रयोगकर्ताले यो समयमा अनुमति दिनु भएको "
-"छैन!"
+"हामी तपाईंलाई तपाईंको प्यानलमा फर्काउन सकेनौं। कृपया फेरि प्रयास गर्नुहोस्। "
+"यदि यो बारम्बार हुन्छ भने, आफ्नो प्यानल प्रदायकलाई सम्पर्क गर्नुहोस्।"
 
-#: psynet/templates/abort_not_possible.html
-#, fuzzy, python-format
-msgid ""
-"You have to accumulate <strong>at least "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> of reward to be "
-"able to be compensated."
-msgstr ""
-"तपाईंले क्षतिपूर्ति प्राप्त गर्नको लागि <strong>कम्तिमा "
-"%(CURRENCY)s%(MIN_ACCUMULATED_REWARD_FOR_ABORT)s</strong> जम्मा गर्नुपर्छ।"
-
-#: psynet/templates/abort_not_possible.html
+#: psynet/recruiters.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "See below information on your currently accumulated reward."
-msgstr "तपाईंको हालसम्म जम्मा भएको पुरस्कारको जानकारी तल हेर्नुहोस्।"
+msgctxt "early_exit_error_lucid"
+msgid "Return to your panel"
+msgstr "तपाईंको प्यानलमा फर्कनुहोस्।"
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
+#: psynet/sync.py psynet/timeline_hold.py
 #, fuzzy
-msgid "Assignment ID"
-msgstr "Assignment ID"
+msgctxt "timeline_hold"
+msgid "Waiting for other participants…"
+msgstr "अन्य सहभागीहरूको प्रतीक्षा गर्दै…"
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html psynet/templates/psynet_error.html
+#: psynet/sync.py
 #, fuzzy
-msgid "HIT ID"
-msgstr "HIT ID"
+msgctxt "timeline_hold"
+msgid "We couldn't find a partner for you in time. Please continue."
+msgstr "समयमै तपाईंका लागि साझेदार फेला पार्न सकेनौँ। कृपया जारी राख्नुहोस्।"
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
+#: psynet/sync.py
 #, fuzzy
-msgid "Accumulated reward"
-msgstr "जम्मा पुरस्कार"
+msgctxt "timeline_hold"
+msgid "We couldn't form a group for you in time. Please continue."
+msgstr "समयमै तपाईंका लागि समूह बनाउन सकेनौँ। कृपया जारी राख्नुहोस्।"
 
-#: psynet/templates/abort_not_possible.html
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgid "Close window"
-msgstr "विन्डो बन्द गर्नुहोस्"
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Your group is ready. Moving on in {SECONDS} s."
+msgstr "तपाईंको समूह तयार छ। {SECONDS} सेकेन्डमा अगाडि बढ्दैछौँ।"
 
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "Are you sure you want to abort the experiment?"
-msgstr "के तपाईं निश्चित हुनुहुन्छ कि तपाईंले प्रयोग समाप्त गर्न चाहनुहुन्छ?"
+#: psynet/sync.py
+#, fuzzy, python-brace-format
+msgctxt "waiting"
+msgid "Moving on in {SECONDS} s."
+msgstr "{SECONDS} सेकेन्डमा अगाडि बढ्दैछौँ।"
 
-#: psynet/templates/abort_possible.html
+#: psynet/sync.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid ""
-"If you click the Abort button, the experiment will end early, and you will "
-"be automatically paid the compensation you have earned so far."
-msgstr ""
-"यदि तपाईंले रद्द गर्नुहोस् बटनमा क्लिक गर्नुभयो भने, प्रयोग चाँडै समाप्त "
-"हुनेछ, र तपाईंले हालसम्म कमाएको क्षतिपूर्ति तपाईंलाई स्वचालित रूपमा भुक्तानी"
-" गरिनेछ।"
+msgctxt "timeline_hold"
+msgid "Your partner is no longer in your group. Please continue."
+msgstr "तपाईंका साझेदार अब तपाईंको समूहमा हुनुहुन्न। कृपया जारी राख्नुहोस्।"
 
-#: psynet/templates/abort_possible.html
+#: psynet/sync.py
 #, fuzzy
-msgctxt "abort_possible"
-msgid "Please only contact us if you have trouble receiving your payment."
-msgstr ""
-"कृपया हामीलाई केवल तपाईंको भुक्तानी प्राप्त गर्न समस्या भएमा मात्र सम्पर्क "
-"गर्नुहोस्।"
-
-#: psynet/templates/abort_possible.html
-#, fuzzy
-msgctxt "abort_possible"
-msgid "See the information below for details of your compensation."
-msgstr "तपाईंको क्षतिपूर्तिको विवरणको लागि तलको जानकारी हेर्नुहोस्।"
-
-#: psynet/templates/abort_possible.html psynet/templates/ad.html
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Abort experiment"
-msgstr "प्रयोग रद्द गर्नुहोस्"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Call for participants"
-msgstr "प्रतिभागीहरूको लागि आह्वान"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "The requirements to participate are as follows"
-msgstr "भाग लिनको लागि आवश्यकताहरू यस प्रकार छन्"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid ""
-"Please click the \"Accept HIT\" button on the Amazon site above to begin the"
-" task."
-msgstr ""
-"कृपया माथिको अमेजन साइटमा \"Accept HIT\" बटनमा क्लिक गरेर कार्य सुरु "
-"गर्नुहोस्।"
-
-#: psynet/templates/ad.html
-#, fuzzy
-msgctxt "ad"
-msgid "Thanks for accepting this HIT."
-msgstr "यस HIT लाई स्वीकार गर्नु भएकोमा धन्यवाद।"
+msgctxt "timeline_hold"
+msgid "Too few members of your group remained. Please continue."
+msgstr "तपाईंको समूहमा धेरै कम सदस्यहरू बाँकी रहे। कृपया जारी राख्नुहोस्।"
 
 #: psynet/templates/ad.html
 #, fuzzy
@@ -990,11 +2151,6 @@ msgstr "कृपया अगाडि बढ्नु अघि पप-अप 
 msgctxt "ad"
 msgid "Begin Experiment"
 msgstr "प्रयोग सुरु गर्नुहोस्"
-
-#: psynet/templates/ad.html psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Click the above button to be compensated in case of an error."
-msgstr "त्रुटि भएमा क्षतिपूर्ति पाउन माथिको बटनमा क्लिक गर्नुहोस्।"
 
 #: psynet/templates/consent.html
 #, fuzzy
@@ -2412,8 +3568,42 @@ msgstr "कार्य गरेर तपाईं विज्ञानला
 #: psynet/templates/exit_recruiter_lucid.html
 #, fuzzy
 msgctxt "exit_recruiter_lucid"
-msgid "Lucid Survey Submission"
-msgstr "लुसिड सर्वे सबमिशन"
+msgid "Returning you to your panel"
+msgstr "तपाईंलाई तपाईंको प्यानलमा फर्काउँदै"
+
+#: psynet/templates/exit_recruiter_lucid.html
+#, fuzzy
+msgctxt "exit_recruiter_lucid"
+msgid "Please wait."
+msgstr "कृपया पर्खनुहोस्।"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Submit to Prolific"
+msgstr "Prolific मा पेश गर्नुहोस्"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid ""
+"Click below to send your submission to Prolific. You will not need to enter "
+"a completion code."
+msgstr ""
+"तपाईंको पेश गर्न Prolific मा पठाउन तल क्लिक गर्नुहोस्। तपाईंलाई कुनै समाप्ति"
+" कोड प्रविष्ट गर्न आवश्यक हुनेछैन।"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Please wait."
+msgstr "कृपया पर्खनुहोस्।"
+
+#: psynet/templates/exit_recruiter_prolific_submitted.html
+#, fuzzy
+msgctxt "exit_recruiter_prolific"
+msgid "Try again"
+msgstr "फेरि प्रयास गर्नुहोस्"
 
 #: psynet/templates/keyboard.html
 #, fuzzy
@@ -2424,6 +3614,18 @@ msgstr "कुञ्जीपाटी लेआउट चयन गर्नु
 #, fuzzy
 msgid "You did not press all required keys."
 msgstr "तपाईंले सबै आवश्यक कुञ्जीहरू थिच्नुभएन।"
+
+#: psynet/templates/macros/browser-detect.html
+#, fuzzy
+msgctxt "browser_compatibility"
+msgid ""
+"Your browser is out of date and does not support features required by this "
+"experiment. Please update your browser to the latest version or install "
+"Google Chrome."
+msgstr ""
+"तपाईंको ब्राउजर पुरानो छ र यस अनुसन्धानका लागि आवश्यक सुविधाहरूलाई समर्थन "
+"गर्दैन। कृपया आफ्नो ब्राउजरलाई पछिल्लो संस्करणमा अपडेट गर्नुहोस् वा गुगल "
+"क्रोम स्थापना गर्नुहोस्।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2447,17 +3649,12 @@ msgstr "कृपया तलका निर्देशनहरू पाल
 #, fuzzy
 msgctxt "browser_compatibility"
 msgid ""
-"You need to use the latest version of Google Chrome to take part in the "
-"experiment."
+"We were unable to verify whether you are using a private browsing window. "
+"Please open an incognito window and try again."
 msgstr ""
-"अनुसन्धानमा भाग लिनको लागि तपाईले गुगल क्रोमको पछिल्लो संस्करण प्रयोग गर्नु "
-"पर्छ।"
-
-#: psynet/templates/macros/browser-detect.html
-#, fuzzy
-msgctxt "browser_compatibility"
-msgid "You are using:"
-msgstr "तपाईं प्रयोग गर्दै हुनुहुन्छ:"
+"तपाईं निजी ब्राउजिङ विन्डो प्रयोग गर्दै हुनुहुन्छ कि हुनुहुन्न भनेर हामी "
+"प्रमाणित गर्न सकेनौँ। कृपया इन्कग्निटो विन्डो खोल्नुहोस् र फेरि प्रयास "
+"गर्नुहोस्।"
 
 #: psynet/templates/macros/browser-detect.html
 #, fuzzy
@@ -2646,11 +3843,6 @@ msgstr "म सहमत छु"
 msgctxt "consent"
 msgid "No, thank you (return task)"
 msgstr "होइन, धन्यवाद (कार्य फिर्ता गर्नुहोस्)"
-
-#: psynet/templates/macros/consent.html
-#, fuzzy
-msgid "Scroll up/down to see all text"
-msgstr "सबै पाठ हेर्न माथि/तल स्क्रोल गर्नुहोस्"
 
 #: psynet/templates/macros/consent.html
 #, fuzzy
@@ -2945,6 +4137,12 @@ msgstr "रीसेट"
 
 #: psynet/templates/macros/control.html
 #, fuzzy
+msgctxt "audio_meter"
+msgid "Microphone level"
+msgstr "माइक्रोफोन स्तर"
+
+#: psynet/templates/macros/control.html
+#, fuzzy
 msgctxt "audio_meter_calibrate"
 msgid "Sliders"
 msgstr "स्लाइडरहरू"
@@ -3035,26 +4233,6 @@ msgstr "प्रम्प्ट प्ले गर्नुहोस्"
 msgid "Play recording"
 msgstr "रेकर्डिङ प्ले गर्नुहोस्"
 
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "रोक्नुहोस्"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Stop"
-msgstr "रोक्नुहोस्"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "लूप"
-
-#: psynet/templates/macros/control.html
-#, fuzzy
-msgid "Loop"
-msgstr "लूप"
-
 #: psynet/templates/macros/prompt.html
 #, fuzzy
 msgid "Video not found"
@@ -3065,56 +4243,137 @@ msgstr "भिडियो फेला परेन"
 msgid "Image not found"
 msgstr "तस्बिर फेला परेन"
 
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Comment stored."
+msgstr "टिप्पणी सुरक्षित गरियो।"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Please wait for the page to load."
+msgstr "कृपया पृष्ठ लोड हुन कुर्नुहोस्।"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Try again in a couple of seconds."
+msgstr "केही सेकेन्डमा पुन: प्रयास गर्नुहोस्।"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Getting ready, please wait..."
+msgstr "तयार हुँदैछ, कृपया पर्खनुहोस्..."
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Reward"
+msgstr "पुरस्कार"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "Reward earned so far"
+msgstr "अहिलेसम्म कमाएको पुरस्कार"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for time"
+msgstr "समयको लागि"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_reward"
+msgid "for performance"
+msgstr "प्रदर्शनको लागि"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline"
+msgid "Comment"
+msgstr "टिप्पणी"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave"
+msgstr "छोड्नुहोस्"
+
+#: psynet/templates/macros/timeline-shell.html
+#, fuzzy
+msgctxt "timeline_problem"
+msgid "Leave without finishing."
+msgstr "पूरा नगरी छोड्नुहोस्।"
+
 #: psynet/templates/psynet_error.html
 #, fuzzy
 msgctxt "error"
-msgid "Error!"
-msgstr "त्रुटि!"
+msgid "An error occurred"
+msgstr "त्रुटि भयो"
 
 #: psynet/templates/psynet_error.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"You may be able to abort the experiment using the <strong>Abort "
-"experiment</strong> button <strong>on the MTurk ad page</strong>."
+msgctxt "early_exit_error"
+msgid "Please wait."
+msgstr "कृपया पर्खनुहोस्।"
+
+#: psynet/templates/psynet_error.html
+#, fuzzy
+msgctxt "early_exit_error"
+msgid "Try again"
+msgstr "फेरि प्रयास गर्नुहोस्"
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You chose to leave."
+msgstr "तपाईंले छोड्ने निर्णय गर्नुभयो।"
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "You may close this page."
+msgstr "तपाईंले यो पृष्ठ बन्द गर्न सक्नुहुन्छ।"
+
+#: psynet/templates/psynet_exit_recruiter.html
+#, fuzzy
+msgctxt "exit"
+msgid "Your responses have been saved. You may close this page."
 msgstr ""
-"तपाईंले <strong>प्रयोग रोक्नुहोस्</strong> बटन <strong>MTurk विज्ञापन "
-"पृष्ठमा</strong> प्रयोग गरेर प्रयोग रोक्न सक्नुहुन्छ।"
+"तपाईंका प्रतिक्रियाहरू सुरक्षित गरिएका छन्। तपाईंले यो पृष्ठ बन्द गर्न "
+"सक्नुहुन्छ।"
 
-#: psynet/templates/psynet_error.html
+#: psynet/templates/psynet_exit_recruiter.html
 #, fuzzy
-msgctxt "mturk_error"
-msgid ""
-"Once aborted, there is no need to contact us to receive the compensation; "
-"this should be awarded to you automatically via MTurk a few minutes after."
-msgstr ""
-"एक पटक रोकिएपछि, क्षतिपूर्ति प्राप्त गर्न हामीलाई सम्पर्क गर्न आवश्यक छैन; "
-"यो MTurk मार्फत केही मिनेट पछि तपाईंलाई स्वचालित रूपमा प्रदान गरिनु पर्छ।"
-
-#: psynet/templates/psynet_error.html
-#, fuzzy, python-format
-msgid ""
-"If this is not the case, please contact us at %(EMAIL)s quoting the "
-"following information:"
-msgstr ""
-"यदि यो अवस्थामा छैन भने, कृपया हामीलाई %(EMAIL)s मा निम्न जानकारी उद्धृत "
-"गर्दै सम्पर्क गर्नुहोस्:"
-
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Error type"
-msgstr "त्रुटि प्रकार"
-
-#: psynet/templates/psynet_error.html
-#, fuzzy
-msgid "Worker ID"
-msgstr "Worker ID"
+msgctxt "exit"
+msgid "Reference code"
+msgstr "सन्दर्भ कोड"
 
 #: psynet/templates/start.html
 #, fuzzy
 msgctxt "start"
 msgid "Starting experiment..."
 msgstr "प्रयोग सुरु गर्दै..."
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid "Lots of people are taking part right now."
+msgstr "अहिले धेरै जना सहभागी भइरहनुभएको छ।"
+
+#: psynet/templates/start.html
+#, fuzzy
+msgctxt "start"
+msgid ""
+"Please keep this page open: you will join automatically as soon as there is "
+"space. You can also come back later."
+msgstr ""
+"कृपया यो पृष्ठ खुला राख्नुहोस्: ठाउँ उपलब्ध हुनेबित्तिकै तपाईं स्वतः सहभागी "
+"हुनुहुनेछ। तपाईं पछि पनि फर्केर आउन सक्नुहुन्छ।"
 
 #: psynet/templates/timeline-page.html
 #, fuzzy
@@ -3173,41 +4432,65 @@ msgctxt "timeline_resume"
 msgid "Resume"
 msgstr "पुनः सुरु गर्नुहोस्"
 
-#: psynet/templates/timeline-page.html
-#, fuzzy
-msgctxt "timeline"
-msgid "Reward"
-msgstr "पुरस्कार"
+#: psynet/timeline.py
+#, fuzzy, python-brace-format
+msgctxt "time_limit"
+msgid "{SECONDS} s left"
+msgstr "{SECONDS} सेकेन्ड बाँकी"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline"
-msgid "Comment"
-msgstr "टिप्पणी"
+msgctxt "timeline_hold"
+msgid "We couldn't add you to a group in time. Please continue."
+msgstr "हामीले तपाईंलाई समयमै समूहमा थप्न सकेनौँ। कृपया जारी राख्नुहोस्।"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Terminate the experiment early"
-msgstr "प्रयोगशाला चाँडै समाप्त गर्नुहोस्"
+msgctxt "timeline_hold"
+msgid "Your partner didn't arrive in time. Please continue."
+msgstr "तपाईंको साझेदार समयमै आइपुगेन। कृपया जारी राख्नुहोस्।"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Comment stored."
-msgstr "टिप्पणी सुरक्षित गरियो।"
+msgctxt "timeline_hold"
+msgid "Not everyone in your group arrived in time. Please continue."
+msgstr "तपाईंको समूहका सबै जना समयमै आइपुगेनन्। कृपया जारी राख्नुहोस्।"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Please wait for the page to load."
-msgstr "कृपया पृष्ठ लोड हुन कुर्नुहोस्।"
+msgctxt "timeline_hold"
+msgid "Your partner went on without you. Please continue."
+msgstr "तपाईंको साझेदार तपाईंविना अघि बढ्यो। कृपया जारी राख्नुहोस्।"
 
-#: psynet/templates/timeline-page.html
+#: psynet/timeline_hold.py
 #, fuzzy
-msgctxt "timeline_problem"
-msgid "Try again in a couple of seconds."
-msgstr "केही सेकेन्डमा पुन: प्रयास गर्नुहोस्।"
+msgctxt "timeline_hold"
+msgid "Your group went on without you. Please continue."
+msgstr "तपाईंको समूह तपाईंविना अघि बढ्यो। कृपया जारी राख्नुहोस्।"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Your partner is ready."
+msgstr "तपाईंको साझेदार तयार छ।"
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{ARRIVED}/{TOTAL} of your group are ready."
+msgstr "तपाईंको समूहका {ARRIVED}/{TOTAL} जना तयार छन्।"
+
+#: psynet/timeline_hold.py
+#, fuzzy, python-brace-format
+msgctxt "timeline_hold"
+msgid "{REMAINING} of {TOTAL} not ready yet"
+msgstr "{REMAINING} मध्ये {TOTAL} अझै तयार छैनन्"
+
+#: psynet/timeline_hold.py
+#, fuzzy
+msgctxt "timeline_hold"
+msgid "Please wait, the experiment should continue shortly..."
+msgstr "कृपया पर्खनुहोस्, प्रयोग केही बेरमा जारी रहनेछ..."
 
 #: psynet/translation/countries.py
 #, fuzzy

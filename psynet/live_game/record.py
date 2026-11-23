@@ -11,6 +11,7 @@ writes it. Checkpoints are Dallinger's own, which it saves at the game's
 
 import functools
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, List, Optional
 
 from dallinger import db
@@ -20,11 +21,33 @@ from .registry import _live_game_class
 
 # The effects PsyNet queues itself: when the game starts, which records the
 # start's Dallinger session time with the game's events, for
-# add_performance_reward, and for LiveGame.record.
+# add_performance_reward, for LiveGame.record, and when the game stops
+# taking players, by its accepts_players.
 _STARTED_EFFECT = "psynet_game_started"
 _REWARD_EFFECT = "psynet_performance_reward"
 _MOMENT_EFFECT = "psynet_moment"
-_PSYNET_EFFECTS = (_STARTED_EFFECT, _REWARD_EFFECT, _MOMENT_EFFECT)
+_CLOSED_EFFECT = "psynet_closed"
+_PSYNET_EFFECTS = (_STARTED_EFFECT, _REWARD_EFFECT, _MOMENT_EFFECT, _CLOSED_EFFECT)
+
+
+class LiveGameStatus(StrEnum):
+    """Where a live game is, as a game record's
+    :attr:`~LiveGameRecord.status` gives it. Each status is a string, such
+    as ``"ended"``, so it also compares equal to one."""
+
+    #: The participant's group didn't start a game, for example because it
+    #: broke up while it waited.
+    NOT_STARTED = "not_started"
+
+    #: The game is being played, or its result isn't saved yet.
+    RUNNING = "running"
+
+    #: The game is over and its result saved, whatever the reason it ended,
+    #: which :attr:`~LiveGameRecord.end_reason` gives.
+    ENDED = "ended"
+
+    #: The game's code raised an error, or its record couldn't be saved.
+    FAILED = "failed"
 
 
 class LiveGameRecord:
@@ -37,14 +60,16 @@ class LiveGameRecord:
     ::
 
         game = participant.live_games["rock_paper_scissors"]
-        if game.finished:
+        if game.status == LiveGameStatus.ENDED:
+            game.end_reason   # why it ended, such as FINISHED or PLAYERS_LEFT
             game.answer       # this participant's answer
             game.outcome      # what the game's outcome returned
             game.messages     # every message, in order
 
     A record from a participant or a trial is that participant's, so it has
-    their :attr:`answer`, :attr:`player` number and
-    :attr:`player_end_reason`. A group's record is the whole group's, and has
+    their :attr:`answer`, :attr:`player` number, and whether and why they
+    left the game before it ended, :attr:`left_early` and
+    :attr:`done_reason`. A group's record is the whole group's, and has
     only :attr:`answers`, each player's.
 
     Each attribute reads the database when you use it, so it's up to date
@@ -92,31 +117,28 @@ class LiveGameRecord:
         return _session_game_class(self._id)
 
     @property
-    def status(self) -> str:
-        """``"not_started"`` if the participant's group didn't start a game,
-        for example because it broke up while it waited; ``"running"`` until
-        the game's result is saved; then ``"ended"``, or ``"failed"`` if the
-        game's code raised an error, or its record couldn't be saved."""
-        return "not_started" if self._id is None else self._row().status
-
-    @property
-    def finished(self) -> bool:
-        """Whether the game ended with the reason ``"finished"``: through an
-        ``is_over`` that returned ``True``, or at the end of its
-        ``duration``. It's ``False`` for a game that ended early, such as
-        because players left or it reached its ``timeout``, and for one
-        whose ``end_reason`` gave a reason of its own, such as ``"deal"``."""
-        row = self._row()
-        return (
-            row is not None and row.status == "ended" and row.end_reason == "finished"
-        )
+    def status(self) -> LiveGameStatus:
+        """Where the game is, as a :class:`LiveGameStatus`, which says
+        whether it started, is running, has ended or failed. A game that ended for any
+        reason is :attr:`~LiveGameStatus.ENDED`, and :attr:`end_reason`
+        says why. It's about the whole game, so it stays
+        :attr:`~LiveGameStatus.RUNNING` for a participant who
+        :attr:`left_early`."""
+        if self._id is None:
+            return LiveGameStatus.NOT_STARTED
+        return LiveGameStatus(self._row().status)
 
     @property
     def end_reason(self) -> Optional[str]:
-        """Why the game ended: the ``reason`` that the game's ``outcome``
-        received, such as ``"finished"``, ``"timeout"`` or ``"failed"``.
-        It's ``None`` until the game has ended, or if its record couldn't be
-        saved."""
+        """Why the game ended, as the ``reason`` that the game's ``outcome``
+        received. That's :data:`~psynet.live_game.FINISHED` for a game whose
+        ``is_over`` returned ``True`` or that reached its ``duration``,
+        :data:`~psynet.live_game.TIMEOUT`,
+        :data:`~psynet.live_game.PLAYERS_LEFT` or
+        :data:`~psynet.live_game.FAILED`, ``"not_joined"`` if no player
+        opened the game page in time, or a reason that the game's own
+        ``end_reason`` gives, such as ``"deal"``. It's ``None`` until the
+        game has ended, or if its record couldn't be saved."""
         row = self._row()
         return None if row is None else row.end_reason
 
@@ -164,16 +186,27 @@ class LiveGameRecord:
         return ids.index(participant_id) if participant_id in ids else None
 
     @property
-    def player_end_reason(self) -> Optional[str]:
-        """Why the participant's own game ended: the game's ``done_reason``
-        for them, such as ``"retired"``, if the game's ``is_done`` ended it
-        before the game ended, and otherwise the game's :attr:`end_reason`.
-        It's ``None`` until then. A player whose ``is_done`` becomes true on
-        the step the game ends gets the game's :attr:`end_reason`, so read
-        per-player results from the game's :attr:`outcome`."""
-        participant_id = self._own_participant_id("player_end_reason")
-        ending = None if self._id is None else _player_ending(self._id, participant_id)
-        return self.end_reason if ending is None else ending.reason
+    def left_early(self) -> bool:
+        """Whether the participant's own game ended before the game did,
+        because the game's ``is_done`` ended it, such as when they retired,
+        or because they joined after the game's ``accepts_players`` returned
+        ``False`` or as the game ended. :attr:`done_reason` says why. The game
+        may still be running, so :attr:`status` and :attr:`end_reason`, which are
+        the whole game's, don't say anything about such a player."""
+        return self._own_done_reason("left_early") is not None
+
+    @property
+    def done_reason(self) -> Optional[str]:
+        """Why the participant left the game early, such as ``"retired"``:
+        the game's ``done_reason`` for them, or
+        :data:`~psynet.live_game.TOO_LATE` for a participant who joined after
+        the game stopped taking players or as it ended. It's ``None`` for a participant who
+        didn't leave early
+        (see :attr:`left_early`), whose game ended with the game, for the
+        game's :attr:`end_reason`. A player whose ``is_done`` becomes true
+        on the step the game ends didn't leave early, so read per-player
+        results from the game's :attr:`outcome`."""
+        return self._own_done_reason("done_reason")
 
     @property
     def answer(self) -> Any:
@@ -255,6 +288,12 @@ class LiveGameRecord:
     def _own_participant_id(self, attribute):
         return self._own_participant(attribute).id
 
+    def _own_done_reason(self, attribute):
+        participant_id = self._own_participant_id(attribute)
+        if self._id is None:
+            return None
+        return _done_reason(self._id, participant_id, self._row())
+
     def _row(self):
         if self._id is None:
             return None
@@ -295,9 +334,11 @@ def _computed_answer(session_id, participant_id, row=None):
     """Return the game's ``answer`` for a player once their game has ended:
     from their own ending if the game's ``is_done`` ended it early, and
     otherwise from the game's outcome once the game has ended. Return None
-    before then, if they aren't among the game's players, or if the game
-    failed without ending theirs first. ``row`` is the game's
+    before then, if they aren't among the game's players, if they came too
+    late, or if the game failed without ending theirs first. ``row`` is the game's
     ``realtime_session`` row, if the caller has read it already."""
+    from .psynet_entry import TOO_LATE
+
     game = _answer_columns(session_id) if row is None else row
     participant_ids = _player_ids(game.members)
     if participant_id not in participant_ids:
@@ -305,6 +346,9 @@ def _computed_answer(session_id, participant_id, row=None):
     ending = _player_ending(session_id, participant_id)
     if ending is not None:
         reason, outcome = ending
+        if reason == TOO_LATE:
+            # The game never saw them.
+            return None
     elif game.status == "ended":
         outcome, reason = game.outcome, game.end_reason
     else:
@@ -353,6 +397,53 @@ def _has_outcome(status, outcome):
     # A failed game has no outcome if its record couldn't be saved, or if
     # Dallinger couldn't get one from the game's outcome method.
     return status != "failed" or outcome is not None
+
+
+def _done_reason(session_id, participant_id, row=None):
+    """Return why a player's game ended before the game did, or None.
+
+    That's the reason saved with their own ending, or
+    :data:`~psynet.live_game.TOO_LATE` for a participant whom PsyNet pointed
+    at the game but whom Dallinger never added, because the game had
+    already ended when it got to them. Dallinger writes a game's records in
+    order, so a game whose ending is saved lists every player it added.
+    Before then, the game's ending is in redis, without the player among
+    its members. A failed game may not have written its players, so it says
+    nothing about them. ``row`` has the game's ``status`` and ``members``,
+    if the caller has read them."""
+    from dallinger.realtime import store
+    from dallinger.realtime.game import FAILED
+
+    from .psynet_entry import TOO_LATE
+
+    ending = _player_ending(session_id, participant_id)
+    if ending is not None:
+        return ending.reason
+    if row is None:
+        row = _session_columns(session_id, "status", "members")
+    if participant_id in _player_ids(row.members):
+        return None
+    if row.status == "ended":
+        return TOO_LATE
+    if row.status != "running" or str(participant_id) in store.session_members(
+        session_id
+    ):
+        return None
+    ending = store.load_ending(session_id)
+    if ending is None or ending["reason"] == FAILED:
+        return None
+    return TOO_LATE
+
+
+def _too_late_players(session_id):
+    """Return the participant ids of the players whom the game ended at once,
+    as they joined after it had stopped taking players."""
+    from .psynet_entry import TOO_LATE
+
+    endings = db.session.query(
+        RealtimeEvent.participant_id, RealtimeEvent.reason
+    ).filter_by(session_id=session_id, event_type="player_end")
+    return {participant_id for participant_id, reason in endings if reason == TOO_LATE}
 
 
 def _player_ending(session_id, participant_id):

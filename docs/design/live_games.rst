@@ -110,7 +110,12 @@ Some games keep going while their members change. A newcomer who reaches the
 game while their group is playing joins it, and the game makes room for them,
 such as a new boat on the lake. Each player can also finish in their own
 time, such as after a set time on the lake, while the others play on. Such
-games suit designs about what a group passes on as its members change.
+games suit designs about what a group passes on as its members change. A
+game can also take newcomers only for a while, such as until its first
+round: the group then takes no more, and a newcomer who arrives just too
+late is told so and moves on without playing. Once a game ends, its group
+takes no more newcomers, unless the experiment wants them for the next
+game.
 
 Pay
 ~~~

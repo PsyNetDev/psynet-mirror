@@ -28,6 +28,7 @@ for a game played outside a trial, which has no round.
 
 import inspect
 import json
+import time
 from typing import Optional
 
 from dallinger import db
@@ -44,6 +45,7 @@ from ..sync import (
     BarrierBehaviorMismatch,
     GroupBarrier,
     ParticipantLinkSyncGroup,
+    SimpleSyncGroup,
     _lock_sync_group,
     _round_trial,
     _validate_group_timeouts,
@@ -51,10 +53,14 @@ from ..sync import (
 from ..timeline import CodeBlock, EltCollection, conditional, join
 from ..utils import get_logger
 from .game import LiveGame
-from .psynet_entry import _new_session_settings
+from .psynet_entry import _new_session
 from .record import LiveGameRecord, _player_ending
 
 logger = get_logger()
+
+# Tries at stopping a game's group's top-ups, which a deadlock or a lock
+# timeout can make fail.
+_STOP_TOP_UPS_ATTEMPTS = 3
 
 
 class PlayLiveGame(EltCollection):
@@ -114,15 +120,18 @@ class PlayLiveGame(EltCollection):
         that a :class:`~psynet.sync.GroupBarrier`'s ``on_release`` can take,
         such as ``trials`` and ``group_round``, and also ``live_game``,
         the new game's :class:`LiveGameRecord`, whose ``status`` is
-        ``"not_started"`` if no game started.
+        :attr:`LiveGameStatus.NOT_STARTED <psynet.live_game.LiveGameStatus.NOT_STARTED>`
+        if no game started.
 
     join_running_game
         Whether a member who reaches the step while their group is playing
         a game from it joins that game, rather than waiting for the group's
         next game. The game must define ``on_add``, and the group's
         :class:`~psynet.sync.Grouper` needs ``join_existing_groups=True``. A
-        game played in a trial can't take newcomers
-        (see :ref:`live-games-join-and-finish`). Default: ``False``.
+        game can stop taking players through its
+        :meth:`~LiveGame.accepts_players`. A game played in a trial can't
+        take newcomers (see :ref:`live-games-join-and-finish`). Default:
+        ``False``.
 
     absent_action
         ``"leave_group"`` to remove a player who didn't play the game, a
@@ -134,6 +143,18 @@ class PlayLiveGame(EltCollection):
         need ``below_quorum="continue_without_group"``
         (see :ref:`live-games-absent`). Default: ``None``, which leaves them
         in their groups.
+
+    stop_top_ups_at_end
+        Whether the group stops taking newcomers, as
+        :meth:`~psynet.sync.SimpleSyncGroup.stop_top_ups` does, once each
+        game it plays here has ended, so nobody joins a group whose game is
+        over. It only affects a group whose grouper has
+        ``join_existing_groups=True``. As ``stop_top_ups`` does, it also
+        turns away pending members, and dissolves a group already below its
+        quorum, which fails the members left with
+        ``below_quorum="fail"``. Set it to ``False`` for a group that takes
+        newcomers for the next game it plays, or should keep waiting for
+        them. Default: ``True``.
 
     id_
         A name for this step, the game's ``name`` unless given, which
@@ -160,6 +181,7 @@ class PlayLiveGame(EltCollection):
         on_release=None,
         join_running_game: bool = False,
         absent_action: Optional[str] = None,
+        stop_top_ups_at_end: bool = True,
         id_: str = None,
         **kwargs,
     ):
@@ -216,6 +238,7 @@ class PlayLiveGame(EltCollection):
             settings,
             on_release,
             join_running_game=join_running_game,
+            stop_top_ups_at_end=stop_top_ups_at_end,
             names=page.control.names,
             absent_leave=(
                 [group_type, *also_leave] if absent_action == "leave_group" else []
@@ -225,7 +248,22 @@ class PlayLiveGame(EltCollection):
         self.page = page
 
     def resolve(self):
-        return join(self.barrier, self.page)
+        return join(CodeBlock(self._save_player_info), self.barrier, self.page)
+
+    def _save_player_info(self, participant):
+        # Saved on each visit, so a later page without player_info doesn't
+        # show what an earlier one gave.
+        player_info = self.page.control.player_info
+        info = None if player_info is None else player_info(participant)
+        try:
+            info = json.loads(json.dumps(info, allow_nan=False))
+        except (TypeError, ValueError) as error:
+            raise TypeError(
+                f"The player_info of the PlayLiveGame {self.barrier.id!r}'s "
+                f"page returned {info!r}, which can't be saved as JSON: {error}"
+            ) from None
+        data = _live_game_data(participant).get(self.barrier.id, {})
+        _set_data(participant, self.barrier.id, {**data, "info": info})
 
 
 class _LiveGameBarrier(GroupBarrier):
@@ -241,6 +279,7 @@ class _LiveGameBarrier(GroupBarrier):
         settings=None,
         on_release=None,
         join_running_game=False,
+        stop_top_ups_at_end=True,
         names="shown",
         absent_leave=(),
         **kwargs,
@@ -256,6 +295,7 @@ class _LiveGameBarrier(GroupBarrier):
         self.settings = settings
         self.on_game_release = on_release
         self.join_running_game = join_running_game
+        self.stop_top_ups_at_end = bool(stop_top_ups_at_end)
         # The game page's names, kept with each member's game, so that the
         # players route sends pseudonyms only to pages that show them.
         self.names = names
@@ -414,7 +454,13 @@ class _LiveGameBarrier(GroupBarrier):
         # pages do.
         seats = group.seats
         participants = sorted(participants, key=lambda member: seats[member.id])
-        token = _new_session_settings.set(self.settings)
+        token = _new_session.set(
+            {
+                "settings": self.settings,
+                "group_id": group.id,
+                "stop_top_ups_at_end": self.stop_top_ups_at_end,
+            }
+        )
         try:
             session_id = create_realtime_session(
                 game_class,
@@ -422,7 +468,7 @@ class _LiveGameBarrier(GroupBarrier):
                 bots=[member.id for member in participants if isinstance(member, Bot)],
             )
         finally:
-            _new_session_settings.reset(token)
+            _new_session.reset(token)
         for member in participants:
             _set_live_game_id(member, self.id, session_id)
         if group_round is not None:
@@ -530,8 +576,9 @@ def _live_game_data(participant):
     reached, keyed by its id: the ``id`` of their latest game there, or None
     if their group didn't start one, the ``history`` of every game they
     played there, as ``{"id": game_id, "answer": answer}``, oldest first, its
-    game page's ``names``, ``"shown"`` or ``"anonymous"``, and the group types
-    a player who doesn't play leaves, its ``absent_leave``."""
+    game page's ``names``, ``"shown"`` or ``"anonymous"``, the group types
+    a player who doesn't play leaves, its ``absent_leave``, and what its
+    page's ``player_info`` gave, its ``info``."""
     return participant.live_game_data or {}
 
 
@@ -551,8 +598,15 @@ def _set_live_game_id(participant, play_id, game_id, names=None, absent_leave=No
             "history": history,
             "names": names,
             "absent_leave": absent_leave,
+            "info": data.get("info"),
         },
     )
+
+
+def _player_info(participant, play_id):
+    """Return what the participant's game page's ``player_info`` gave when
+    they last reached the PlayLiveGame ``play_id``, or None."""
+    return _live_game_data(participant).get(play_id, {}).get("info")
 
 
 def _set_live_game_answer(participant, play_id, answer):
@@ -668,7 +722,9 @@ def _remove_absent_players(game, session_row, players):
     absences = game.absences(state)
     leaving = []
     for participant, leaves in leaves_by_player:
-        reason = absences[state["psynet"]["participant_ids"].index(participant.id)]
+        player = state["psynet"]["participant_ids"].index(participant.id)
+        # Players who came too late are numbered last, and have no absence.
+        reason = absences[player] if player < len(absences) else None
         if not leaves or reason is None:
             continue
         groups = participant.active_sync_groups
@@ -687,6 +743,72 @@ def _remove_absent_players(game, session_row, players):
             left[group_id] = group
     for group in left.values():
         group.dissolve_if_below_quorum()
+
+
+def _stop_top_ups_soon(group_id, session_id):
+    """Stop the group of id ``group_id``, game ``session_id``'s, taking
+    newcomers, in a job of its own once the current transaction commits. A
+    game's record is written in one transaction, which locks its players'
+    rows, and a group's row has to be locked after its members' rows, never
+    before, so whether the group still takes newcomers is read unlocked."""
+    from ..async_job import WorkerAsyncJob
+
+    accepts_top_ups = (
+        group_id is not None
+        and db.session.query(SimpleSyncGroup.accepts_top_ups)
+        .filter_by(id=group_id, active=True)
+        .scalar()
+    )
+    if accepts_top_ups:
+        WorkerAsyncJob(
+            _stop_top_ups,
+            arguments={"group_id": group_id, "session_id": session_id},
+            label="stop_live_game_top_ups",
+        ).enqueue()
+
+
+def _stop_top_ups(group_id, session_id=None):
+    """Stop the group of id ``group_id``, game ``session_id``'s, taking
+    newcomers, as SimpleSyncGroup.stop_top_ups does, if it still does, and
+    commit. Run by the job that :func:`_stop_top_ups_soon` enqueues, trying
+    again after a deadlock or a lock timeout. Stopping them twice does
+    nothing more."""
+    from sqlalchemy.exc import DBAPIError
+
+    from ..db import is_transient_transaction_error
+
+    for attempt in range(1, _STOP_TOP_UPS_ATTEMPTS + 1):
+        try:
+            group = _lock_sync_group_and_links(group_id)
+            if group is None or not group.active:
+                outcome = "the group is gone or no longer active"
+            elif not group.accepts_top_ups:
+                outcome = "they were already stopped"
+            else:
+                group.stop_top_ups()
+                outcome = "stopped them"
+            db.session.commit()
+        except DBAPIError as error:
+            db.session.rollback()
+            if attempt < _STOP_TOP_UPS_ATTEMPTS and is_transient_transaction_error(
+                error
+            ):
+                time.sleep(attempt)
+                continue
+            logger.warning(
+                "Couldn't stop the top-ups of sync group %s after live game %s.",
+                group_id,
+                session_id,
+                exc_info=True,
+            )
+            raise
+        logger.info(
+            "Stopping the top-ups of sync group %s after live game %s: %s.",
+            group_id,
+            session_id,
+            outcome,
+        )
+        return
 
 
 def _lock_sync_group_and_links(group_id):
