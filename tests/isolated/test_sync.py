@@ -7214,6 +7214,8 @@ def test_make_late_now_needs_a_waiting_bot_and_late_after(
     db_session.commit()
     with pytest.raises(ValueError, match="'round' has no late_after"):
         make_late_now(bots, "round")
+    with pytest.raises(ValueError, match="stop_at can't name 'round'"):
+        make_late_now(bots, "round", stop_at=["next", "round"])
 
 
 @pytest.mark.parametrize(
@@ -7222,7 +7224,10 @@ def test_make_late_now_needs_a_waiting_bot_and_late_after(
 def test_make_late_now_makes_a_member_on_a_timed_page_late(
     in_experiment_directory, db_session, monkeypatch
 ):
-    monkeypatch.setattr(psynet.bot, "advance_past_wait_pages", lambda *a, **k: None)
+    advanced = {}
+    monkeypatch.setattr(
+        psynet.bot, "advance_past_wait_pages", lambda *a, **k: advanced.update(k)
+    )
     exp = get_experiment()
     waiter, quiet = [new_participant(exp) for _ in range(2)]
     group = SimpleSyncGroup(group_type="main", initial_group_size=2)
@@ -7242,10 +7247,11 @@ def test_make_late_now_makes_a_member_on_a_timed_page_late(
     db_session.commit()
     group_id, waiter_id, quiet_id = group.id, waiter.id, quiet.id
 
-    make_late_now([SimpleNamespace(id=waiter_id)], "round")
+    make_late_now([SimpleNamespace(id=waiter_id)], "round", stop_at="next")
 
     late = barrier._late_between_barriers(SyncGroup.query.get(group_id), {waiter_id})
     assert [p.id for p in late] == [quiet_id]
+    assert advanced["stop_at"] == ("next",)
 
 
 @pytest.mark.parametrize(

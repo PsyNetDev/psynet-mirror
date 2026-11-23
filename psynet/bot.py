@@ -424,7 +424,10 @@ def _backdate_arrivals(barrier, participants, seconds):
 
 
 def make_late_now(
-    bots: List["BotDriver"], barrier_id: str, timeout: Optional[float] = 10.0
+    bots: List["BotDriver"],
+    barrier_id: str,
+    timeout: Optional[float] = 10.0,
+    stop_at: Union[str, Sequence[str]] = (),
 ):
     """Make the members who haven't reached a :class:`~psynet.sync.GroupBarrier` late now, then advance the bots past it.
 
@@ -448,12 +451,15 @@ def make_late_now(
         The barrier's ID.
     timeout : float, optional
         Passed to :func:`advance_past_wait_pages`.
+    stop_at : str or sequence of str
+        Passed to :func:`advance_past_wait_pages`: IDs of barriers after this
+        one, such as the next turn's, to leave bots waiting at.
 
     Raises
     ------
     ValueError
-        If none of the bots is waiting at the barrier, or it has no
-        ``late_after``.
+        If none of the bots is waiting at the barrier, it has no
+        ``late_after``, or ``stop_at`` names it.
 
     Examples
     --------
@@ -462,7 +468,16 @@ def make_late_now(
         bots[0].take_page(response=4)
         bots[1].take_page(response=8)
         make_late_now(bots, "round_finished")  # bots[2] goes quiet.
+
+        # The others finish the turn and wait at the next one's barrier.
+        make_late_now(bots, "turn_1", stop_at="turn_2")
     """
+    stop_at = (stop_at,) if isinstance(stop_at, str) else tuple(stop_at)
+    if barrier_id in stop_at:
+        raise ValueError(
+            f"stop_at can't name '{barrier_id}': its waiting bots must poll it "
+            "for it to make the others late."
+        )
     with transaction():
         participants = [Participant.query.get(bot.id) for bot in bots]
         waiting = [p for p in participants if barrier_id in p.active_barriers]
@@ -496,7 +511,7 @@ def make_late_now(
                     left = (link.page_deadline - now).total_seconds()
                     page_left = max(page_left, left + answer_arrival)
             _backdate_group(group, late_after + page_left + 1)
-    advance_past_wait_pages(bots, timeout=timeout)
+    advance_past_wait_pages(bots, timeout=timeout, stop_at=stop_at)
 
 
 def _backdate_group(group, seconds):

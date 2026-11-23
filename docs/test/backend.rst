@@ -282,7 +282,8 @@ Other helpers ask about a bot's group or act in it:
   then advances the bots waiting there, so a test of a player who goes
   quiet doesn't wait in real time, for example
   ``make_late_now(bots, "round_finished")`` after two of three players
-  have answered.
+  have answered. It takes ``stop_at`` too, for example to leave the others
+  at the next turn's barrier after a quiet player misses their turn.
 
 When several groups play in one test, finish one group's story before driving
 the next: a barrier's ``late_after`` clock keeps running for a group while the
