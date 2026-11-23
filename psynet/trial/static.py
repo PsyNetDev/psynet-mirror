@@ -599,7 +599,10 @@ class StaticTrialMaker(ChainTrialMaker):
             f"Trial maker {self.id!r} prepares trials in advance, but each "
             "trial's page had different HTML, JavaScript or js_vars from the "
             "previous one's, so none could be shown in advance. Put what changes "
-            "between trials in the page's contents; the server log names the trials."
+            "between trials in the page's contents; the server log names the trials. "
+            "This applies even if you only prepare trials in advance to download "
+            "their files early: a picture in the page's HTML, as with ImagePrompt, "
+            "makes every trial's page different, so pass it in contents instead."
         )
 
     def _upcoming(self, trial, page, experiment, participant):
