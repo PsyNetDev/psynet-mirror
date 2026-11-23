@@ -2349,7 +2349,8 @@ class Page(Elt):
         compare them; the request then skips running ``pre_render`` again.
         """
         if not self._pre_rendered:
-            self.pre_render()
+            with forbid_commits(f"{type(self).__name__}.pre_render"):
+                self.pre_render()
             self._pre_rendered = True
 
     def early_exit_available(self, experiment, participant) -> bool:

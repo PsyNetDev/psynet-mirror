@@ -4709,6 +4709,7 @@
       recordingUploadQueue?.allowUnload();
       answersMayBeLost = false;
     };
+    psynet.allowRecordingUnload = psynet.allowUnload;
     psynet.drainRecordingUploads = async function () {
       if (!recordingUploadQueue?.pendingBytes) return;
       psynet.setTimelineTransitionBusy(true);

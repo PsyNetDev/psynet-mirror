@@ -237,6 +237,9 @@ For this to work:
   before they are answered.
   Choose random values in
   :meth:`~psynet.trial.main.Trial.finalize_definition` instead.
+- The trial maker picks all the trials' nodes when the participant reaches
+  it, before any is answered, so ``custom_node_filter`` and ``select_node``
+  can't adapt to the participant's answers.
 - Pages with a ``time_limit``, background recording, ``media`` (such as an
   :class:`~psynet.modular_page.AudioPrompt`) or a full page reload aren't
   shown in advance, because PsyNet sets these up for each page. Their files

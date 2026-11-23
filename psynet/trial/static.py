@@ -334,6 +334,9 @@ class StaticTrialMaker(ChainTrialMaker):
         fail with it. As every block is prepared at once,
         ``participant.module_state.block`` is the last block prepared while
         the trials are taken; read a trial's own block from ``trial.block``.
+        Nodes are selected (``custom_node_filter``, ``select_node`` and the
+        node order) when the trials are created, before any is answered, so
+        selection can't adapt to the participant's answers.
         Can't be combined with
         ``sync_group_type``, ``check_performance_every_trial``,
         ``n_repeat_trials`` or ``recruit_mode="n_trials"``.
@@ -616,13 +619,21 @@ class StaticTrialMaker(ChainTrialMaker):
         shown = [] if adoptable else None
         config = page._js_vars_for(experiment, participant) if predict else None
         media = {}
-        upcoming = [
-            t
-            for t in self.get_participant_trials(participant)
-            if t.id > trial.id and not t.complete and not t.failed
-        ]
+        trial_class = self.trial_class
+        upcoming = (
+            trial_class.query.filter(
+                trial_class.participant_id == participant.id,
+                trial_class.trial_maker_id == self.id,
+                trial_class.id > trial.id,
+                trial_class.complete.isnot(True),
+                trial_class.failed.isnot(True),
+            )
+            .order_by(trial_class.id)
+            .limit(self.n_upcoming_trials)
+            .all()
+        )
         previous = trial
-        for following in upcoming[: self.n_upcoming_trials]:
+        for following in upcoming:
             between = join(
                 call_function_with_context(
                     self.show_after_trial,
