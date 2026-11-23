@@ -139,8 +139,25 @@ test("a game page open in two tabs moves the participant on once", { tag: "@both
       await expect
         .poll(
           async () => {
-            await tab.reload();
-            return tab.locator("#main-body").innerText();
+            try {
+              const text = await tab.locator("#main-body").innerText();
+              if (text.includes("The page after the game.")) {
+                return text;
+              }
+              await tab.reload();
+              return await tab.locator("#main-body").innerText();
+            } catch (error) {
+              // In legacy mode, the winning tab reloads on its own while we
+              // poll, which can abort our reload or destroy the context.
+              if (
+                /ERR_ABORTED|NS_BINDING_ABORTED|Execution context was destroyed|frame was detached|Navigation interrupted|Frame load interrupted/i.test(
+                  String(error)
+                )
+              ) {
+                return "";
+              }
+              throw error;
+            }
           },
           { timeout: STEP_TIMEOUT_MS }
         )
