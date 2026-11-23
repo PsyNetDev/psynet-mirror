@@ -2104,15 +2104,19 @@ class ParticipantDriver:
         """
         from .bot import BotResponse
 
-        deadline = self.with_participant(lambda participant: participant.page_deadline)
-        if deadline is None:
+        deadline, time_limit = self.with_participant(
+            lambda participant: (
+                participant.page_deadline,
+                participant.get_current_page().time_limit,
+            )
+        )
+        # page_deadline outlives its page, for a later barrier's late_after.
+        if deadline is None or time_limit is None:
             raise ValueError("The bot's current page has no time limit.")
         self._sleep(max(0.0, (deadline - timenow()).total_seconds()))
         page = {
             **self.status["page"],
-            "bot_response": BotResponse(
-                raw_answer=None, metadata={"time_limit_reached": True}
-            ).__json__(),
+            "bot_response": BotResponse(time_limit_reached=True).__json__(),
         }
         self._submit_response({**self.status, "page": page}, {})
         return self.is_working
