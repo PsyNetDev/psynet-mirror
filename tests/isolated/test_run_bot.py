@@ -506,33 +506,50 @@ def test_paced_bots_stay_on_a_page_for_at_least_its_min_duration(
     assert sleeps[0] == pytest.approx(expected_sleep, abs=0.05)
 
 
+@pytest.mark.parametrize("released", [True, False])
 def test_bots_poll_instead_of_answering_until_their_barrier_releases_them(
-    monkeypatch,
+    monkeypatch, released
 ):
-    """Waiters must not hold their rows while a barrier is ready to lock them all."""
+    """Waiters must not hold their rows while a barrier is ready to lock them all.
+
+    A bot that is not released within 5 s answers the page anyway.
+    """
     driver = ParticipantDriver.__new__(ParticipantDriver)
-    statuses = [_driver_page_status("page-a"), _driver_page_status("page-a")]
-    for status, awaiting in zip(statuses, [True, False]):
-        status["status"] = "working"
-        status["page"]["awaiting_release"] = awaiting
-    driver.status = statuses.pop(0)
+    driver.status = {**_driver_page_status("page-a"), "status": "working"}
+    driver.status["page"]["awaiting_release"] = True
     driver.response_files = {}
+    clock = [0.0]
     events = []
 
-    def fetch():
-        events.append("fetch")
-        driver.status = statuses.pop(0)
+    def fetch(release_poll=False):
+        events.append("poll" if release_poll else "fetch")
+        if release_poll and not released:
+            awaiting = {"status": "working", "page": {"awaiting_release": True}}
+            driver.status = {**awaiting, "page_uuid": "page-a"}
+        else:
+            driver.status = {**_driver_page_status("page-a"), "status": "working"}
 
+    def sleep(seconds):
+        clock[0] += seconds
+
+    monkeypatch.setattr("psynet.participant.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr(driver, "_sleep", sleep)
     monkeypatch.setattr(driver, "_fetch_status", fetch)
     monkeypatch.setattr(
-        driver, "_submit_response", lambda *args, **kwargs: events.append("submit")
+        driver,
+        "_submit_response",
+        lambda status, *args, **kwargs: events.append(status["page"]["bot_response"]),
     )
-    monkeypatch.setattr("psynet.participant.time.sleep", lambda s: None)
-    driver.status_time_fetched = time.monotonic()
+    driver.status_time_fetched = 0.0
 
     driver.take_page(render_pages=False)
 
-    assert events == ["fetch", "submit"]
+    submitted = {"answer": "ok", "metadata": {}, "blobs": {}}
+    if released:
+        assert events == ["poll", submitted]
+    else:
+        assert events == ["poll"] * 20 + ["fetch", submitted]
+        assert clock[0] == pytest.approx(5.0)
 
 
 def test_advance_past_wait_pages_names_bots_still_waiting():

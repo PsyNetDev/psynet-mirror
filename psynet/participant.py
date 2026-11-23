@@ -257,6 +257,9 @@ _TIMELINE_HOLD_POLL_SECONDS = 0.1
 # Barrier sweeps run every 0.5 s. A bot not released by then answers the
 # page as usual, so the waiting loop's own time limits still apply.
 _AWAIT_RELEASE_MAX_SECONDS = 5.0
+# Release polls take no row locks, so they can't block a sweep; the interval
+# only bounds how long a released bot takes to notice.
+_AWAIT_RELEASE_POLL_SECONDS = 0.25
 _BOT_RECORDING_UPLOAD_ATTEMPTS = 5
 # Under load, a partner's barrier check can hold the participant row for
 # several seconds. A busy reply may itself take up to the lock timeout, so
@@ -1725,15 +1728,19 @@ class ParticipantDriver:
         """Reload the cached page and response files from the experiment server."""
         self._fetch_status()
 
-    def _fetch_status(self):
+    def _fetch_status(self, release_poll=False):
         """
         Fetch the participant's current status and any associated response files,
         and store them in the participant driver's attributes
         (self.status and self.response_files).
+
+        With ``release_poll``, a bot awaiting its barrier's release gets a
+        minimal status without the page's bot response.
         """
         response = _retry_busy_http(
             lambda: self.experiment.authenticated_session.get(
-                f"{self.experiment.base_url}/participant_status/{self.id}"
+                f"{self.experiment.base_url}/participant_status/{self.id}",
+                params={"release_poll": 1} if release_poll else None,
             ),
             sleep=self._sleep,
         )
@@ -1807,7 +1814,10 @@ class ParticipantDriver:
             and self.status["page"].get("awaiting_release")
             and time.monotonic() < deadline
         ):
-            self._sleep(_TIMELINE_HOLD_POLL_SECONDS)
+            self._sleep(_AWAIT_RELEASE_POLL_SECONDS)
+            self._fetch_status(release_poll=True)
+        if self.is_working and self.status["page"].get("awaiting_release"):
+            # Release polls omit the bot response, so fetch it to answer the page.
             self._fetch_status()
 
     def _sleep(self, seconds):

@@ -6857,6 +6857,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         - status.json: the status
         - bot_response_files/: the files that the participant would upload as
           a response to the page
+
+        With ``?release_poll=1``, a bot that is awaiting its barrier's
+        release gets only ``status``, ``page_uuid`` and
+        ``page.awaiting_release``, so polling skips building the bot response.
         """
         from .sync import _waiting_visit_would_release
 
@@ -6872,6 +6876,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
 
         if participant.status == "working":
             current_page = participant.get_current_page()
+            awaiting_release = _waiting_visit_would_release(current_page, participant)
+            if awaiting_release and request.args.get("release_poll"):
+                status["page"] = {"awaiting_release": True}
+                status["page_uuid"] = participant.page_uuid
+                return jsonify(status)
             bot_response = current_page.call__get_bot_response(experiment, participant)
 
             if not isinstance(bot_response, BotResponse):
@@ -6893,9 +6902,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 "min_duration": current_page.min_duration,
                 "is_timeline_hold": _is_timeline_hold(current_page),
                 "is_wait_page": isinstance(current_page, WaitPage),
-                "awaiting_release": _waiting_visit_would_release(
-                    current_page, participant
-                ),
+                "awaiting_release": awaiting_release,
                 "barrier_id": getattr(current_page, "barrier_id", None),
                 "bot_response": bot_response.__json__(),
             }
