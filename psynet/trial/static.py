@@ -568,6 +568,7 @@ class StaticTrialMaker(ChainTrialMaker):
                     experiment=experiment,
                     participant=participant,
                     trial_maker=self,
+                    trial=following,
                 )
             )
             for elt in between + pages:

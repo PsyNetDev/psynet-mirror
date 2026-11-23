@@ -159,6 +159,15 @@ test("an answer that couldn't be sent brings its picture back", { tag: "@inplace
     await participant.getByRole("button", { name: "5", exact: true }).click();
     await expect(picture).toHaveAttribute("alt", "red circle");
     await participant.evaluate(() => (psynet.nextPagePending = false));
+
+    // As while the page is still loading: the picture stays under the alert.
+    await participant.evaluate(() => (psynet.pageReady = false));
+    await participant.getByRole("button", { name: "5", exact: true }).click();
+    await expect(participant.locator("#alert-modal")).toBeVisible();
+    await expect(picture).toHaveAttribute("alt", "red circle");
+    await participant.evaluate(() => (psynet.pageReady = true));
+    await participant.locator("#alert-button").click();
+    await expect(picture).toHaveAttribute("alt", "red circle");
     await participant.getByRole("button", { name: "5", exact: true }).click();
     await expect(picture).toHaveAttribute("alt", "orange triangle", { timeout: STEP_TIMEOUT_MS });
     await assertNoBackendError(participant);

@@ -820,7 +820,13 @@
             event_log: psynet.trial.eventLog.splice(0),
           };
           // showNextPredictedTrial sets nextPageUuid if it shows a trial next.
-          answers.queue.push({ value, metadata, nextPageUuid: undefined });
+          // Recordings are only this page's while it shows nothing in advance.
+          answers.queue.push({
+            value,
+            metadata,
+            nextPageUuid: undefined,
+            withRecordings: !answers.queue.length && !psynet.upcomingPages.length,
+          });
           // After the caller's own code, which may still tidy up this trial.
           queueMicrotask(psynet.showNextPredictedTrial);
           psynet.sendAnswers();
@@ -834,6 +840,9 @@
     psynet.showNextPredictedTrial = function () {
       let offset = psynet.answers.queue.length;
       if (
+        // Not while an answer that couldn't be sent waits to be shown again.
+        !psynet.answers.showAgain &&
+        !psynet.pageFailureShown &&
         psynet.answers.handle === null &&
         offset < psynet.predictedContents().length
       ) {
@@ -864,7 +873,7 @@
             entry.metadata,
             undefined,
             undefined,
-            { background: true },
+            { background: true, withRecordings: entry.withRecordings },
           );
           if (!accepted) {
             retry =
@@ -880,6 +889,7 @@
       if (retry) {
         // Show the rejected trial again.
         answers.queue = [];
+        answers.showAgain = false;
         await psynet.updatePageModules(0);
       }
     };
@@ -4802,9 +4812,11 @@
 
       let capturedRecordings = {};
       const submittedPageUuid = psynet.submissionPageUuid;
-      // Answers sent in the background carry no recordings, and the page's
-      // settings may already be the next trial's.
-      const withoutRecordings = options.timelineHoldResume || options.background;
+      // Answers sent in the background on a page showing trials in advance
+      // carry no recordings, as the page's settings may already be the next
+      // trial's.
+      const withoutRecordings =
+        options.timelineHoldResume || (options.background && !options.withRecordings);
       const background = withoutRecordings ? null : psynet.var.backgroundRecording;
       const sources = withoutRecordings ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
       const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;

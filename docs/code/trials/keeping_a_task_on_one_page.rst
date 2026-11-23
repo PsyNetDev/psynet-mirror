@@ -228,8 +228,10 @@ For this to work:
   ``js_vars``. The browser checks the HTML and JavaScript when the server's
   reply arrives; if they differ, it drops the answers given ahead, loads the
   server's page and logs a warning in the browser console. Changes to
-  ``js_vars`` aren't detected, so the trials shown in advance keep the first
-  trial's.
+  ``js_vars`` aren't detected, and ``psynet.var`` follows the last page the
+  server confirmed rather than the trial on screen. A prompt that puts the
+  stimulus in its HTML, such as ``ImagePrompt``, makes every trial's HTML
+  differ, so pass the stimulus in ``contents`` instead.
 - ``show_trial`` and ``show_after_trial`` must not change anything or
   choose at random, because PsyNet also calls them for upcoming trials,
   before they are answered.
