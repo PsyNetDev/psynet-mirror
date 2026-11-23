@@ -1,0 +1,1 @@
+A pass of a barrier's `waiting_logic` that shows no page, for example because a trial maker has no trial left for the participant, now shows a short waiting page and then tries the waiting logic again, instead of repeating on the server until `max_wait_time` failed the participant.

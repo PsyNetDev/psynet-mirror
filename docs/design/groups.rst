@@ -32,7 +32,9 @@ Forming groups
 
 A **grouper** in the timeline collects participants as they arrive and forms
 a group once enough are waiting, for example two for a two-player game.
-Participants wait on the page they are on until their group is complete. A
+Participants wait on the page they are on until their group is complete,
+or answer filler trials meanwhile, such as quiz questions that earn points
+(see :ref:`sync-waiting-quiz`). A
 grouper can also wait for a larger batch and then split it into groups; the
 built-in grouper splits it at random, and a custom grouper can choose the
 split, for example to balance groups. Waiting for a larger batch gives the
