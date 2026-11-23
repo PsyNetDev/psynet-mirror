@@ -734,8 +734,8 @@
     // shows its trial again.
     psynet.resetAnswers = function () {
       // ``handle`` belongs to the trial on screen until it is answered.
-      // ``showAgain`` is set when the server turns an answer down, as opposed
-      // to the page failing or moving on.
+      // ``showAgain`` is set when an answer is turned down or couldn't be
+      // sent yet, as opposed to the page failing or moving on.
       psynet.answers = {
         queue: [],
         handle: null,
@@ -4019,11 +4019,14 @@
       onRejection,
       options = {},
     ) {
+      // A queued answer refused here was never sent, so its trial is shown
+      // again to be answered later.
       if (!psynet.pageReady) {
         psynet.log.info("Blocked nextPage because pageReady is false.");
         if (!psynet.pageFailureShown) {
           psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
         }
+        psynet.answers.showAgain = Boolean(options.background);
         return false;
       }
       if (psynet.timelineHold && !options.timelineHoldResume) {
@@ -4037,6 +4040,7 @@
         psynet.log.debug(
           "Skipping nextPage request as nextPage is already pending.",
         );
+        psynet.answers.showAgain = Boolean(options.background);
         return false;
       }
       psynet.log.info("Submitting response via nextPage.");

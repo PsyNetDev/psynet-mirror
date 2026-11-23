@@ -2882,23 +2882,37 @@ class TrialMaker(Module):
             if self.prepare_trials_in_advance
             else self.trial_class.creation_time
         )
-        trials_to_fail = (
-            self.trial_class.query.filter_by(complete=False, failed=False)
+        open_trials = self.trial_class.query.filter_by(
+            complete=False, failed=False
+        ).filter(
             # Custom prepare_trial code can create trials without a trial maker.
-            .filter(
-                or_(
-                    self.trial_class.trial_maker_id == self.id,
-                    self.trial_class.trial_maker_id.is_(None),
-                )
+            or_(
+                self.trial_class.trial_maker_id == self.id,
+                self.trial_class.trial_maker_id.is_(None),
             )
-            .filter(started < time_threshold)
-            .order_by(self.trial_class.id)
+        )
+
+        def lock(query):
             # A locked trial belongs to an in-flight request that may complete
             # it; the next check retries it if not.
-            .with_for_update(of=self.trial_class, skip_locked=True)
-            .populate_existing()
-            .all()
-        )
+            return (
+                query.order_by(self.trial_class.id)
+                .with_for_update(of=self.trial_class, skip_locked=True)
+                .populate_existing()
+                .all()
+            )
+
+        trials_to_fail = lock(open_trials.filter(started < time_threshold))
+        if self.prepare_trials_in_advance and trials_to_fail:
+            # These participants have stopped, and their trials waiting their
+            # turn would otherwise keep counting towards their nodes.
+            participant_ids = {trial.participant_id for trial in trials_to_fail}
+            trials_to_fail += lock(
+                open_trials.filter(
+                    self.trial_class.response_started_at.is_(None),
+                    self.trial_class.participant_id.in_(participant_ids),
+                )
+            )
         logger.info("Found %i old trial(s) to fail.", len(trials_to_fail))
         for trial in trials_to_fail:
             trial.fail(reason="response_timeout")

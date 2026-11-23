@@ -141,3 +141,26 @@ test("an answer from a page the server has moved past reloads the page", { tag: 
     await expect(participant.locator("#alert-modal")).toBeHidden();
   });
 });
+
+test("an answer that couldn't be sent brings its picture back", { tag: "@inplace-only" }, async ({
+  page,
+  context
+}) => {
+  const dir = path.resolve("demos/features/rapid_ratings");
+
+  await withExperiment(page, context, dir, async (participant) => {
+    await completeInitialGateway(participant);
+    await participant.getByRole("button", { name: "Next", exact: true }).click();
+    const picture = participant.locator("#picture");
+    await expect(picture).toHaveAttribute("alt", "red circle", { timeout: STEP_TIMEOUT_MS });
+
+    // As while another submission is still being sent.
+    await participant.evaluate(() => (psynet.nextPagePending = true));
+    await participant.getByRole("button", { name: "5", exact: true }).click();
+    await expect(picture).toHaveAttribute("alt", "red circle");
+    await participant.evaluate(() => (psynet.nextPagePending = false));
+    await participant.getByRole("button", { name: "5", exact: true }).click();
+    await expect(picture).toHaveAttribute("alt", "orange triangle", { timeout: STEP_TIMEOUT_MS });
+    await assertNoBackendError(participant);
+  });
+});

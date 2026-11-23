@@ -253,5 +253,6 @@ Also keep in mind:
 Trials prepared in advance can't use sync groups, repeat trials, performance
 checks after every trial, or ``recruit_mode="n_trials"``. The browser only runs
 ahead with in-place timeline transitions, which are on by default. The response
-timeout of each trial counts from when the server first sends its page, and
-the participant can be one more answer ahead than ``n_upcoming_trials``.
+timeout of each trial counts from when the server first sends its page; once
+one times out, the participant's trials waiting their turn fail with it.
+The participant can be one more answer ahead than ``n_upcoming_trials``.

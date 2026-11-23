@@ -263,7 +263,9 @@ class StaticTrialMaker(ChainTrialMaker):
         :attr:`~psynet.timeline.Page.prefetch_urls`), which the browser
         downloads while the participant works on the current trial. Both need
         in-place timeline transitions, which are on by default. The response
-        timeout counts from when the server first sends each trial's page.
+        timeout counts from when the server first sends each trial's page;
+        once one times out, the participant's trials waiting their turn
+        fail with it.
         Can't be combined with
         ``sync_group_type``, ``check_performance_every_trial``,
         ``n_repeat_trials`` or ``recruit_mode="n_trials"``.

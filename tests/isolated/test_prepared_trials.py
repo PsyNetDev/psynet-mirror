@@ -43,10 +43,12 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     trial_maker.check_old_trials()
     assert not any(trial.failed for trial in trials)
 
+    # Once the trial on screen times out, the trials waiting their turn are
+    # failed too, so they stop counting towards their nodes.
     trials[0].response_started_at = month_ago
     db.session.commit()
     trial_maker.check_old_trials()
-    assert [trial.failed for trial in trials] == [True] + [False] * 7
+    assert all(trial.failed for trial in trials)
 
 
 @pytest.mark.parametrize("experiment_directory", [EXPERIMENT], indirect=True)
@@ -63,21 +65,26 @@ def test_a_break_does_not_count_towards_the_next_trial():
         bot.take_page()
         assert Participant.query.get(bot.id).page_uuid == expected["page_uuid"]
     # An answer from a page the server has moved past says so, for the
-    # browser to load the current page instead.
-    reply = bot.http_session.post(
-        f"{bot.experiment.base_url}/response",
-        data={
-            "json": json.dumps(
-                {
-                    "participant_id": bot.id,
-                    "page_uuid": first_page_uuid,
-                    "raw_answer": 1,
-                    "metadata": {},
-                }
-            )
-        },
-    ).json()
-    assert reply["submission"] == "rejected" and reply["stale_page"]
+    # browser to load the current page instead. Without the participant's
+    # unique_id, the current page's UUID can't be guessed either.
+    current = Participant.query.get(bot.id).page_uuid
+    guess = current.rsplit("-", 1)[0] + "-0123456789abcdef"
+    for page_uuid in [first_page_uuid, guess]:
+        reply = bot.http_session.post(
+            f"{bot.experiment.base_url}/response",
+            data={
+                "json": json.dumps(
+                    {
+                        "participant_id": bot.id,
+                        "page_uuid": page_uuid,
+                        "raw_answer": 1,
+                        "metadata": {},
+                    }
+                )
+            },
+        ).json()
+        assert reply["submission"] == "rejected" and reply["stale_page"]
+    assert Participant.query.get(bot.id).page_uuid == current
     while "break" not in str(bot.get_current_page().prompt.text).lower():
         bot.take_page()
     # Bots report each page's time_estimate as its time_taken.

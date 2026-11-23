@@ -7,6 +7,7 @@ if TYPE_CHECKING:
 import copy
 import enum
 import hashlib
+import hmac
 import inspect
 import json
 import random
@@ -1231,9 +1232,13 @@ def make_page_uuid(participant, visit, page_key):
     The page UUID follows from the page and when it is shown, so the server
     can tell the browser the page UUIDs of pages it shows in advance without
     storing them. Visits are counted, so page UUIDs never repeat, which
-    timeline hold records rely on. Nothing relies on them being hard to guess.
+    timeline hold records rely on. ``/response`` accepts an answer only for
+    the current page UUID, so the UUID ends with a hash keyed by the
+    participant's ``unique_id``, which other clients don't know.
     """
-    return f"{participant.id}-{visit}-{page_key}"
+    page = f"{participant.id}-{visit}-{page_key}"
+    key = participant.unique_id.encode()
+    return f"{page}-{hmac.new(key, page.encode(), hashlib.sha256).hexdigest()[:16]}"
 
 
 def _arrival_updates_for(page, participant):
