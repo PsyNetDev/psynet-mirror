@@ -184,11 +184,14 @@ Going back to the previous page
 
 For the same reason, a participant can go back to the page before the
 current one and answer it again, for example to reread instructions. Such
-pages show a Back button at the left of their buttons, so Next stays where
-it was. The browser already has the earlier page, so it appears at once.
-Going back takes back the time credit and progress the earlier page gave. Answering it again replaces its answer in ``participant.answer`` and
-records another :class:`~psynet.timeline.Response`; the earlier response is
-kept.
+pages show a Back button just left of Next, which stays where it was. The
+browser already has the earlier page, so it appears at once. Going back
+takes back the time credit and progress the earlier page gave. Answering it
+again replaces its answer in ``participant.answer`` and records another
+:class:`~psynet.timeline.Response`; the earlier response is kept. The
+`back_button demo
+<https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/back_button>`__
+shows a run of instruction pages and questions with Back buttons.
 
 A page shows a Back button only when it and the page before it are both
 :class:`~psynet.modular_page.ModularPage` pages, such as

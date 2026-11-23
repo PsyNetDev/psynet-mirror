@@ -108,6 +108,10 @@ Pages and controls
     with buttons, text boxes and audio recording. :doc:`/design/pages`,
     :doc:`/code/writing_pages`.
 
+`features/back_button <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/back_button>`__
+    Instruction pages and questions with Back buttons that show the previous
+    page at once. :ref:`going_back_to_the_previous_page`.
+
 `features/modular_page <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/modular_page>`__
     A gallery of prompt and control combinations, ending with custom
     ``Prompt`` and ``Control`` classes. :doc:`/code/pages/control_gallery`.

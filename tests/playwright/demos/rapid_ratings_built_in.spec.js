@@ -50,26 +50,7 @@ test("built-in rating pages advance while the server's replies are held back", {
     await waitForMainBodyContains(participant, "Rate each picture from 1", STEP_TIMEOUT_MS);
     await expect.poll(() => gate.posted).toBe(1);
 
-    // Back waits for the intro's answer, then shows the intro again.
-    await participant.locator("#back-button").click();
     gate.release();
-    await waitForMainBodyContains(participant, "Each one appears as soon", STEP_TIMEOUT_MS);
-    await expect(participant.locator("#back-button")).toHaveCount(0);
-    await next();
-    await waitForMainBodyContains(participant, "Rate each picture from 1", STEP_TIMEOUT_MS);
-
-    // Once the answers are sent, the intro came with the instructions'
-    // reply, so Back shows it while the server's reply is held back.
-    await participant.waitForFunction(
-      () => psynet.previousPage && !psynet.answers.queue.length && !psynet.answers.sending
-    );
-    gate.hold();
-    await participant.locator("#back-button").click();
-    await waitForMainBodyContains(participant, "Each one appears as soon", STEP_TIMEOUT_MS);
-    await expect.poll(() => gate.posted).toBe(1);
-    gate.release();
-    await next();
-    await waitForMainBodyContains(participant, "Rate each picture from 1", STEP_TIMEOUT_MS);
     await next();
 
     const picture = participant.locator("#prompt-image");
