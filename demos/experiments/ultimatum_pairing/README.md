@@ -2,10 +2,13 @@
 
 An ultimatum game played in cohorts. Players wait in a lobby until a cohort
 forms, or start in a smaller cohort if nobody else arrives in time. Every
-round, the cohort is randomly re-paired into proposers and responders, an odd
-player out sits out, and nobody is failed for being slow: a player who isn't
-back in time for a split joins the next round, and one who closes their tab
-mid-round is taken out of their pair and cohort, so nobody waits for them.
+round, the cohort is randomly re-paired into proposers and responders, and an
+odd player out sits out. A player who isn't back in time for a split joins
+the next round. One who closes their tab mid-round is failed once they are
+late (`late_action="fail"`), which takes them out of their pair and cohort,
+so nobody waits for them; their partner is told that the partner was away
+and is paired again at the next split, without any special handling in the
+trial.
 An anonymous `GroupPrompt` shows the pair,
 with a tick once the partner has decided, and then both decisions in speech
 bubbles; partners appear as the same grey figure, so nobody recognises a
