@@ -844,7 +844,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ``"left_experiment"`` (failed,
         including returning the study, and for a member's other groups
         when a barrier's ``late_action="fail"`` or ``max_wait_action="fail"``,
-        or a dissolving group's ``below_quorum="fail"``, fails them), or
+        a PlayLiveGame's ``absent_action="fail"``, or a dissolving group's
+        ``below_quorum="fail"``, fails them), or
         ``"removed_by_experimenter"`` (removed from the dashboard, or by
         :meth:`~psynet.sync.SyncGroup.remove_participant` with that reason).
         A player sat out of their first round was never in a group, so this

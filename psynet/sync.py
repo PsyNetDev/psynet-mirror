@@ -5337,7 +5337,8 @@ def _check_absent_leave(barrier, below_quorum, grouper_label):
             f"The PlayLiveGame '{barrier.id}' has absent_action='leave_group', "
             f"but {grouper_label} has below_quorum='fail', so a player who "
             "didn't play its game could leave the group below its quorum and "
-            "fail the players who did. Pass below_quorum='continue_without_group'."
+            "fail the players who did. Pass below_quorum='continue_without_group', "
+            "or absent_action='fail'."
         )
 
 

@@ -3183,6 +3183,37 @@ def test_absent_action_fail_fails_an_absent_player_once_everyone_is_paid(
     assert played.in_sync_group("cohort")
 
 
+def test_absent_action_fail_leaves_a_player_failed_already_as_they_were(pair):
+    members, _ = pair
+    play = _play("absent", absent_action="fail")
+    for member in members:
+        _arrive(play.barrier, member)
+    # They returned the study before the game ended.
+    members[1].fail()
+    db.session.commit()
+
+    ids = _save_ending(_game_id(members[0], "absent"), ready=[0])
+
+    returned = db.session.get(Participant, ids[1])
+    assert "fail_on_timeout" not in (returned.failure_tags or [])
+    assert returned.sync_group_removal_reason("pair") == "left_experiment"
+
+
+def test_absent_action_fail_dissolves_a_pair_below_quorum_after_paying(pair):
+    members, _ = pair
+    members[0].active_sync_groups["pair"].below_quorum = "fail"
+    play = _play("absent", absent_action="fail")
+    for member in members:
+        _arrive(play.barrier, member)
+
+    ids = _save_ending(_game_id(members[0], "absent"), ready=[0], outcome=[7, None])
+
+    played = db.session.get(Participant, ids[0])
+    assert played.failed
+    assert played.sync_group_removal_reason("pair") == "group_dissolved"
+    assert played.performance_reward == pytest.approx(0.07)
+
+
 @pytest.mark.parametrize("busy_sibling", [False, True])
 def test_no_shows_leave_a_shared_group_as_it_is_now_not_as_first_loaded(
     pair, busy_sibling

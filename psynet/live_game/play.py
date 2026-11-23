@@ -771,18 +771,24 @@ def _remove_absent_players(game, session_row, players):
         player = state["psynet"]["participant_ids"].index(participant.id)
         # Players who came too late are numbered last, and have no absence.
         reason = absences[player] if player < len(absences) else None
-        if not leaves or reason is None:
+        # A player failed already, such as by returning the study, has left
+        # their groups.
+        if not leaves or reason is None or participant.failed:
             continue
         groups = participant.active_sync_groups
         if action == "fail":
             failing.append((participant, reason, play_id))
+            # The PlayLiveGame's group first, as a barrier removes a late
+            # member, so it is also the first to dissolve below its quorum.
             leaving.extend(
                 (
                     participant,
                     reason if group_type in leaves else "left_experiment",
                     group.id,
                 )
-                for group_type, group in groups.items()
+                for group_type, group in sorted(
+                    groups.items(), key=lambda item: item[0] not in leaves
+                )
             )
             continue
         for group_type in leaves:

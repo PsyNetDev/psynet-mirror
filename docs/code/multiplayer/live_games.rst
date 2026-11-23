@@ -868,8 +868,8 @@ the ``PlayLiveGame``'s, and the others are the game's:
      - The wait for the group's members ends. With ``late_after``, a member
        still keeping the others waiting is late, and is failed or leaves
        the group, as ``late_action`` says; with
-       ``max_wait_time``, a member who has waited that long leaves it (see
-       `PlayLiveGame`_).
+       ``max_wait_time``, a member who has waited that long is failed or
+       leaves the group, as ``max_wait_action`` says (see `PlayLiveGame`_).
    * - ``ready_timeout``
      - 60 seconds after the wait
      - The game starts without the players who aren't ready yet, or ends
