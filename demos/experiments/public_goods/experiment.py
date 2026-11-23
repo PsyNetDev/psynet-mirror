@@ -58,9 +58,11 @@ def get_timeline():
             GROUP,
             initial_group_size=3,
             quorum=2,
-            below_quorum="continue_without_group",
+            # Two players carry on without a third; a player left alone is
+            # failed, as is one for whom no group forms (max_wait_action
+            # defaults to "fail").
+            below_quorum="fail",
             max_wait_time=GROUPING_WAIT,
-            max_wait_action="continue_without_group",
             waiting_message="Waiting for two other players to join…",
         ),
         Module(
@@ -70,22 +72,25 @@ def get_timeline():
                 iterate_over=range(N_ROUNDS),
                 logic=lambda i: ContributionTrial.cue(round=i),
                 time_estimate_per_iteration=ContributionTrial.time_estimate,
-                # Checked before each round. A started trial runs to its end,
-                # so the last player is still paid for the round in which the
-                # group dissolves.
-                stop_if=left_team,
+                # Checked before each round.
+                stop_if=removed_from_team,
             ),
         ),
         conditional(
             "game_over",
-            left_team,
-            PageMaker(game_ended_early, time_estimate=5),
+            removed_from_team,
+            PageMaker(removed_page, time_estimate=5),
             PageMaker(game_over, time_estimate=5),
         ),
     )
 
 
-def left_team(participant):
+def removed_from_team(participant):
+    """Return whether the experimenter has removed the player from their team on the dashboard.
+
+    Nothing else leaves a player without a team and still playing: a late
+    player is failed, and so is the last player of a team that ends.
+    """
     return not participant.in_sync_group(GROUP)
 
 
@@ -101,8 +106,10 @@ class ContributionTrial(Trial):
                 group_type=GROUP,
                 waiting_message="Waiting for the other players…",
                 waiting_screen=your_contribution,
+                # A player who closes their page is failed, and the others
+                # carry on without them.
                 late_after=LATE_AFTER,
-                late_action="leave_group",
+                late_action="fail",
                 # Releasing the team closes the round and scores it.
                 on_release=self.score_round,
             ),
@@ -111,8 +118,8 @@ class ContributionTrial(Trial):
     def contribution_page(self, participant):
         return ModularPage(
             "contribution",
-            # Ticks appear as the others decide. The loop's stop_if=left_team
-            # means the trial always has a group, so sync_group_round is set.
+            # Ticks appear as the others decide. The loop's stop_if means the
+            # trial always has a group, so sync_group_round is set.
             GroupPrompt(
                 f"Round {self.sync_group_round + 1} of {N_ROUNDS}. How many of "
                 f"your {ENDOWMENT} tokens do you put in the group pot?",
@@ -151,15 +158,11 @@ class ContributionTrial(Trial):
 
     def score_answer(self, answer, definition):
         """Return the tokens the player earned in the round."""
-        outcome = self.sync_group_outcome
-        if outcome == "stayed":
+        if self.sync_group_outcome == "stayed":
             return self.var.payoff
-        if outcome == "group_dissolved":
-            # The last player keeps their tokens for the cancelled round,
-            # whether or not they were already waiting at the barrier.
-            return ENDOWMENT
-        # "late" or "removed_by_experimenter". A player who returns the study
-        # ("left_experiment") is never scored: their trial doesn't finish.
+        # "removed_by_experimenter". A failed player, for example one who was
+        # late or the last of a team that ended, is never scored: their trial
+        # doesn't finish.
         return 0
 
     def compute_performance_reward(self, score):
@@ -209,19 +212,11 @@ def game_over(participant):
     return InfoPage(f"The game is over. {bonus_text(participant)}", time_estimate=5)
 
 
-# The ways a player can leave the team before the game's end and still see a
-# page; a player who returns the study ("left_experiment") sees no more pages.
-ENDED_EARLY_TEXTS = {
-    "no_group_formed": "We couldn't find two other players for you.",
-    "late": "You were away for too long, so the game ended early for you.",
-    "group_dissolved": "Too few players stayed, so the game ended early.",
-    "removed_by_experimenter": "You were removed from the game.",
-}
-
-
-def game_ended_early(participant):
-    text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason(GROUP)]
-    return InfoPage(f"{text} {bonus_text(participant)}", time_estimate=5)
+def removed_page(participant):
+    return InfoPage(
+        f"You were removed from the game. {bonus_text(participant)}",
+        time_estimate=5,
+    )
 
 
 def bonus_text(participant):
@@ -266,7 +261,8 @@ class Exp(psynet.experiment.Experiment):
                     # Whether the player ran out of time; None if they
                     # never answered.
                     "timed_out": t.time_limit_reached,
-                    # None if the player returned the study during the round.
+                    # None if the player was failed during the round, for
+                    # example for being late or returning the study.
                     "payoff": t.score,
                     "bonus": t.performance_reward,
                 }
@@ -311,18 +307,14 @@ class Exp(psynet.experiment.Experiment):
         _see_results(bots)
         bots[0].take_page(response=4)
         bots[1].take_page(response=8)
-        # bots[2] goes quiet, so the barrier removes them as late and the
+        # bots[2] goes quiet, so the barrier fails them as late and the
         # other two carry on. A pot of 12 becomes 18: 9 tokens each.
+        bots[2].allow_failure()
         make_late_now(bots, "round_finished")
+        assert bots[2].failed
         text = bots[0].current_page_text
         assert text.startswith("One player has left the group."), text
         assert "so you earned 15 tokens" in text, text
-        bots[2].take_page(response=5)
-        text = bots[2].current_page_text  # Paid for the first round only.
-        assert text == (
-            "You were away for too long, so the game ended early for you. "
-            "Your bonus is $0.18."
-        ), text
 
         _see_results(bots[:2])
         bots[0].take_page(response=6)
@@ -356,7 +348,8 @@ class Exp(psynet.experiment.Experiment):
         timed_out = [(r["participant_id"], r["round"]) for r in rows if r["timed_out"]]
         assert timed_out == [(bots[1].id, 2)], timed_out
         for bot in bots:
-            paid = sum(r["bonus"] for r in rows if r["participant_id"] == bot.id)
+            # A trial failed with its player has no bonus.
+            paid = sum(r["bonus"] or 0 for r in rows if r["participant_id"] == bot.id)
             reward = bot.with_participant(lambda p: p.performance_reward)
             assert abs(paid - reward) < 1e-9, (bot.id, paid, reward)
 
