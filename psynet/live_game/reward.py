@@ -2,9 +2,9 @@
 rewards from add_performance_reward, paid by effects queued during the game,
 the reward from the outcome of a player whose game ends before the game
 does, and, once the result is saved, the other players' rewards from the
-outcome, the copy of the outcome on the game's round, and the removal of
-players who didn't play from their groups, for a PlayLiveGame with
-``absent_action``. The group's top-ups stop when the game stops taking
+outcome, the copy of the outcome on the game's round, and, for a
+PlayLiveGame with ``absent_action``, failing the players who didn't play or
+removing them from their groups. The group's top-ups stop when the game stops taking
 players and, unless the PlayLiveGame says otherwise, when it ends. A
 player who came too late gets nothing from the game, which never saw
 them. A reward is also recorded on the trial

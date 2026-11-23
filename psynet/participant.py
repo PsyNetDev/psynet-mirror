@@ -829,7 +829,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ``late_after``, with any ``late_action``, from its group or a group
         listed in its ``also_leave``), ``"no_show"`` or ``"left_game"``
         (didn't play a :class:`~psynet.live_game.PlayLiveGame`'s game, or
-        left it for good, with its ``absent_action="leave_group"``),
+        left it for good, with its ``absent_action``),
         ``"waited_too_long"`` (waited at a
         barrier for longer than its ``max_wait_time``, with any
         ``max_wait_action``), ``"group_dissolved"`` (still in the group when it was

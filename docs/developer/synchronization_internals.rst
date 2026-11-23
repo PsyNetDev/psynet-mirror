@@ -90,7 +90,9 @@ Barrier checks and participant requests take their locks in this order:
    A live game's ending job removing absent players (``absent_action``)
    locks the rows of the groups they leave in id order, waiting, and reloads
    their member links, so sibling games sharing a group count each other's
-   leavers.
+   leavers. With ``absent_action="fail"`` that is every group they're in,
+   which they leave before they are failed, so failing them, which then
+   locks their unfinished trials (step 5), takes no other group's row.
    A synchronized trial maker recording a run's choices in the group's
    ``trial_maker_runs`` also waits for the row, after locking any
    participant rows it needs.

@@ -382,9 +382,11 @@ stay in their groups, so the group's next barrier, such as the pairing for
 the next round, waits for them until its own limit. The same goes for a
 player who leaves the game page for good.
 
-``absent_action="leave_group"`` removes them instead, when the game's
-result is saved, a few seconds after the game ends, even if they never come
-back. It removes two kinds of player:
+``absent_action="fail"`` fails them instead, when the game's result is
+saved, a few seconds after the game ends, even if they never come back. As
+with ``late_action="fail"``, failing isn't a penalty: it ends a session
+that can no longer contribute, and the player keeps what the game paid
+them. It fails two kinds of player:
 
 - a no-show: a player who isn't ready when the game ends, because they never
   opened the game page, or closed it before the game started and didn't come
@@ -392,16 +394,25 @@ back. It removes two kinds of player:
 - with the game's ``away_timeout``, a player who has been away from the game
   page for that long when the game ends. Their reason is ``"left_game"``.
   A player added by ``join_running_game`` once the game has started has no
-  ready step, so they count as ready, and leave only this way, away from
-  when they were added.
+  ready step, so they count as ready, and are failed only this way, away
+  from when they were added.
 
-They leave the ``PlayLiveGame``'s group, and the groups of the types in its
-``also_leave``, which also applies to ``late_action``. The groupers of those
-groups need ``below_quorum="continue_without_group"``. A later page can
-explain the end with
-:meth:`~psynet.participant.Participant.sync_group_removal_reason`. The
-``bargaining_live`` demo removes a partner who doesn't play from the cohort
-as well as the pair, so the next pairing goes on without them:
+The rule is the same for every game the ``PlayLiveGame`` starts, its last
+included: a player who leaves the last game for good is failed too. To
+leave them be, as nobody waits for them, give that ``PlayLiveGame`` no
+``absent_action``.
+
+Failing them takes them out of all their groups, the ``PlayLiveGame``'s with
+their reason, which
+:meth:`~psynet.participant.Participant.sync_group_removal_reason` returns,
+and the others as ``"left_experiment"``. Their failure tags are
+``"live_game:<id>"``, ``"fail_on_timeout"`` and their reason. Every
+player, the absent ones included, is paid from the game's outcome first.
+Each group then
+follows its ``below_quorum``, as it does when a member is late, so a
+grouper can have ``below_quorum="fail"``. The ``bargaining_live`` demo
+fails a partner who doesn't play, so the cohort's next pairing goes on
+without them:
 
 .. code-block:: python
 
@@ -410,20 +421,17 @@ as well as the pair, so the next pairing goes on without them:
         game_class=Bargain,
         page=bargaining_page(self.definition["stake"]),
         settings=self.definition,
-        late_after=30,
-        late_action="leave_group",
-        absent_action="leave_group",
-        also_leave=["cohort"],
+        late_after=LATE_AFTER,
+        late_action="fail",
+        absent_action="fail",
     )
 
-and its last page tells a returning player why the game ended for them:
-
-.. code-block:: python
-
-    def end_of_game(participant):
-        reason = participant.sync_group_removal_reason("cohort")
-        text = END_OF_GAME_TEXTS.get(reason, "That's the end of the game.")
-        return InfoPage(text, time_estimate=5)
+``absent_action="leave_group"`` is an advanced option, for designs where an
+absent player can meaningfully carry on without the group: it removes them
+from the ``PlayLiveGame``'s group, and the groups of the types in its
+``also_leave``, which also applies to ``late_action="leave_group"``, with
+their reason. The groupers of those groups need
+``below_quorum="continue_without_group"``.
 
 The game itself can tell who didn't play, and why, with or without
 ``absent_action``: :meth:`~psynet.live_game.LiveGame.absences` returns each

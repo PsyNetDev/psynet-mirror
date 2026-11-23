@@ -3062,7 +3062,14 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
 
 
 def _save_ending(
-    session_id, ready=(), away=(), ended_at=0, entry=None, status="ended", game=None
+    session_id,
+    ready=(),
+    away=(),
+    ended_at=0,
+    entry=None,
+    status="ended",
+    game=None,
+    outcome=(None, None),
 ):
     """Save the game's ending at ``ended_at``, as Dallinger does once it has
     started at 0, with the players of ``ready`` ready and those of ``away``,
@@ -3074,7 +3081,7 @@ def _save_ending(
     away_since = [None] * len(ids)
     for player, since in away:
         away_since[player] = since
-    row.status, row.end_reason, row.outcome = status, "finished", [None, None]
+    row.status, row.end_reason, row.outcome = status, "finished", list(outcome)
     row.end_time = timenow()
     if entry is None:
         entry = _psynet(
@@ -3131,6 +3138,40 @@ def test_a_no_show_leaves_the_game_s_groups_so_the_next_barrier_doesn_t_wait(pai
         _run_pending_barrier_checks(_take_pending_barrier_checks())
         db.session.commit()
     assert _barrier_link_released(played.id, "after_the_game")
+
+
+def test_absent_action_fail_fails_a_no_show_once_the_other_player_is_paid(pair):
+    members, _ = pair
+    cohort = SimpleSyncGroup(
+        group_type="cohort",
+        initial_group_size=2,
+        max_group_size=2,
+        quorum=1,
+        n_active_participants=2,
+        accepts_top_ups=False,
+        below_quorum="fail",
+    )
+    db.session.add(cohort)
+    for member in members:
+        cohort.add_participant(member)
+    db.session.commit()
+    play = _play("absent", absent_action="fail")
+    for member in members:
+        _arrive(play.barrier, member)
+
+    ids = _save_ending(_game_id(members[0], "absent"), ready=[0], outcome=[7, None])
+
+    played, no_show = (db.session.get(Participant, id_) for id_ in ids)
+    assert no_show.failed
+    assert {"live_game:absent", "fail_on_timeout", "no_show"} <= set(
+        no_show.failure_tags
+    )
+    # Failing takes them out of every group, the cohort included.
+    assert no_show.sync_group_removal_reason("pair") == "no_show"
+    assert no_show.sync_group_removal_reason("cohort") == "left_experiment"
+    assert not played.failed
+    assert played.performance_reward == pytest.approx(0.07)
+    assert played.in_sync_group("cohort")
 
 
 @pytest.mark.parametrize("busy_sibling", [False, True])
@@ -3295,9 +3336,9 @@ def test_the_players_of_a_failed_game_stay_in_their_groups(pair):
         assert member.sync_group_removal_reason("pair") is None
 
 
-def test_absent_action_needs_groups_that_carry_on_without_a_player():
-    with pytest.raises(ValueError, match="absent_action must be 'leave_group'"):
-        _play(absent_action="fail")
+def test_absent_action_leave_group_needs_groups_that_carry_on_without_a_player():
+    with pytest.raises(ValueError, match="absent_action must be 'fail', 'leave_group'"):
+        _play(absent_action="stay")
     play = _play(absent_action="leave_group", also_leave=["cohort"])
     assert play.barrier.absent_leave == ["pair", "cohort"]
     assert play.barrier.also_leave == []
@@ -3306,6 +3347,9 @@ def test_absent_action_needs_groups_that_carry_on_without_a_player():
     )
     with pytest.raises(ValueError, match="has absent_action='leave_group'"):
         check_group_dropout_policies([cohort, play.barrier])
+    # Failing absent players, like failing late ones, suits any below_quorum.
+    pair = SimpleGrouper(group_type="pair", initial_group_size=2, below_quorum="fail")
+    check_group_dropout_policies([pair, _play(absent_action="fail").barrier])
 
 
 def test_a_game_page_without_a_game_moves_on_with_no_answer(pair):

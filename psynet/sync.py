@@ -5206,7 +5206,7 @@ def check_group_dropout_policies(barriers):
                 )
         if barrier.stop_top_ups:
             top_ups_stopped.add(barrier.group_type)
-        for group_type in getattr(barrier, "absent_leave", []):
+        for group_type in _absent_leave_groups(barrier):
             for grouper in groupers.get(group_type, []):
                 _check_absent_leave(
                     barrier,
@@ -5257,7 +5257,7 @@ def check_late_removal_policies(barriers, participant):
     for barrier in barriers:
         if not isinstance(barrier, GroupBarrier):
             continue
-        absent_leave = getattr(barrier, "absent_leave", [])
+        absent_leave = _absent_leave_groups(barrier)
         if barrier.late_after is None and not absent_leave:
             continue
         if groups is None:
@@ -5317,6 +5317,17 @@ def _check_late_action(barrier, below_quorum, grouper_label):
             "carry on alone while the members who were on time are failed. "
             "Pass below_quorum='continue_without_group', or late_action='fail'."
         )
+
+
+def _absent_leave_groups(barrier):
+    """Return the group types a PlayLiveGame's ``absent_action="leave_group"`` removes absent players from.
+
+    With ``absent_action="fail"`` absent players are failed, which, like
+    ``late_action="fail"``, suits any ``below_quorum``.
+    """
+    if getattr(barrier, "absent_action", None) == "fail":
+        return []
+    return getattr(barrier, "absent_leave", [])
 
 
 def _check_absent_leave(barrier, below_quorum, grouper_label):
@@ -5787,7 +5798,7 @@ class SyncGroup(SQLBase, SQLMixin):
               ``late_action``).
             - ``"no_show"`` or ``"left_game"``: they didn't play a
               :class:`~psynet.live_game.PlayLiveGame`'s game, or left it for
-              good, and its ``absent_action="leave_group"`` removed them.
+              good, and its ``absent_action`` removed them, or failed them.
             - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
               for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
               formed isn't dissolved, failing the partner, when the first
