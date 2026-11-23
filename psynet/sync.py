@@ -125,6 +125,7 @@ import random
 import time
 import uuid
 import warnings
+from collections import Counter
 from contextlib import contextmanager
 from datetime import timedelta
 from functools import partial
@@ -3872,22 +3873,159 @@ def _latest_tick(now: float, period: float) -> float:
     return floor(now / period) * period
 
 
-def _balanced_groups(members, max_size, min_size):
-    """Shuffle members into balanced groups of at most ``max_size``.
+# Random starting groupings a Regrouper with avoid_repeats improves by
+# swapping members, between groups or with a left-over member of the same
+# rounds (and role), keeping the first without repeats or else the one with
+# the fewest. In simulations of small pools with left-over members (pairs and
+# trios without roles, and groups with 2 to 4 roles, from 3 to 9 players),
+# checked against every possible grouping, this found a grouping without
+# repeats whenever one existed, and it found one in each of 200 regroupings
+# of larger pools (up to 64 players in groups of up to 6).
+_REPEAT_AVOIDING_ATTEMPTS = 10
+# Most candidate swaps weighed in one split, so that a large pool whose
+# repeats can't all be avoided doesn't hold the regrouper's lock for long.
+_REPEAT_SWAP_BUDGET = 200_000
 
-    Members who do not fit a group of at least ``min_size`` are left out,
-    for example the odd one out when pairing.
+
+def _first_roles(links) -> Dict[int, str]:
+    """Return each participant's first role in these links, keyed by ID; the links go oldest first."""
+    roles = {}
+    for link in links:
+        if link.role is not None:
+            roles.setdefault(link.participant_id, link.role)
+    return roles
+
+
+def _last_groupmates(links) -> Dict[int, set]:
+    """Return the IDs of each participant's groupmates in their latest group in these links."""
+    latest = {link.participant_id: link.sync_group_id for link in links}
+    if not latest:
+        return {}
+    rows = db.session.query(
+        ParticipantLinkSyncGroup.sync_group_id, ParticipantLinkSyncGroup.participant_id
+    ).filter(ParticipantLinkSyncGroup.sync_group_id.in_(set(latest.values())))
+    members = {}
+    for group_id, participant_id in rows:
+        members.setdefault(group_id, set()).add(participant_id)
+    return {
+        participant_id: members[group_id] - {participant_id}
+        for participant_id, group_id in latest.items()
+    }
+
+
+def _repeat_partners(groupmates) -> Dict[int, set]:
+    """Return the IDs each participant would repeat a group with, keyed by ID.
+
+    Both directions count: after sitting out, a member's latest groupmate
+    may have played someone else since.
     """
-    members = random.sample(list(members), len(members))
-    n_groups = -(-len(members) // max_size)
-    if n_groups == 0:
-        return []
-    if len(members) // n_groups < min_size:
-        n_groups = len(members) // max_size
-        members = members[: n_groups * max_size]
-        if n_groups == 0:
-            return []
-    return [members[i::n_groups] for i in range(n_groups)]
+    partners = {}
+    for participant_id, mates in groupmates.items():
+        partners.setdefault(participant_id, set()).update(mates)
+        for mate in mates:
+            partners.setdefault(mate, set()).add(participant_id)
+    return partners
+
+
+def _n_repeats(groups, partners) -> int:
+    """Return how many pairs of members in ``groups`` were last grouped together."""
+    total = 0
+    for group in groups:
+        ids = {m.id for m in group}
+        total += sum(len(partners.get(m.id, _NO_IDS) & ids) for m in group)
+    return total // 2
+
+
+_NO_IDS = frozenset()
+
+
+def _fewest_repeats(make_groups, members, partners, rounds, roles):
+    """Return the grouping from ``make_groups()`` with the fewest repeats after swapping.
+
+    Tries up to ``_REPEAT_AVOIDING_ATTEMPTS`` groupings, stopping at the first
+    without repeats or when the swap budget runs out.
+    """
+    best, fewest = [], None
+    budget = _REPEAT_SWAP_BUDGET
+    for _ in range(_REPEAT_AVOIDING_ATTEMPTS):
+        groups = make_groups()
+        placed = {m.id for group in groups for m in group}
+        bench = [m for m in members if m.id not in placed]
+        budget -= _swap_away_repeats(groups, bench, partners, rounds, roles, budget)
+        repeats = _n_repeats(groups, partners)
+        if fewest is None or repeats < fewest:
+            best, fewest = groups, repeats
+        if repeats == 0 or budget <= 0:
+            break
+    return best
+
+
+def _swap_candidates(pools, g):
+    """Yield ``(h, j, b)`` for each member ``b = pools[h][j]`` outside ``pools[g]``."""
+    for h, other in enumerate(pools):
+        if h != g:
+            for j, b in enumerate(other):
+                yield h, j, b
+
+
+def _swap_away_repeats(groups, bench, partners, rounds, roles, budget) -> int:
+    """Swap members, in place, while a swap removes repeats; return the swaps weighed.
+
+    Members swap between ``groups``, or with a member of ``bench``, the
+    members left over, who have no repeats there. A placed member swaps with
+    a left-over one only if both have played the same number of rounds, so
+    whoever has played more still sits out. Only members with the same entry
+    in ``roles`` (an empty dict without kept roles) swap, so group sizes, and
+    with kept roles each group's roles, stay the same. Each swap removes at
+    least one repeat. Sweeps until a pass makes no swap, or ``budget``
+    candidate swaps have been weighed.
+    """
+    pools = groups + [bench]
+    ids = [{m.id for m in group} for group in groups] + [set()]
+    on_bench = len(groups)
+    weighed = 0
+    swapped = True
+    while swapped:
+        swapped = False
+        for g, group in enumerate(groups):
+            for i, a in enumerate(group):
+                if weighed >= budget:
+                    return weighed
+                a_partners = partners.get(a.id, _NO_IDS)
+                own = len(a_partners & ids[g])
+                if not own:
+                    continue
+                rest = ids[g] - {a.id}
+                a_there = [len(a_partners & pool_ids) for pool_ids in ids]
+                for h, j, b in _swap_candidates(pools, g):
+                    weighed += 1
+                    if roles.get(a.id) != roles.get(b.id) or (
+                        h == on_bench and rounds[a.id] != rounds[b.id]
+                    ):
+                        continue
+                    b_partners = partners.get(b.id, _NO_IDS)
+                    before = own + len(b_partners & ids[h])
+                    # Not counting b, who leaves pool h.
+                    a_after = a_there[h] - (b.id in ids[h] and b.id in a_partners)
+                    after = len(b_partners & rest) + a_after
+                    if after < before:
+                        group[i], pools[h][j] = b, a
+                        ids[g].remove(a.id)
+                        ids[g].add(b.id)
+                        if h != on_bench:
+                            ids[h].remove(b.id)
+                            ids[h].add(a.id)
+                        swapped = True
+                        break
+    return weighed
+
+
+def _n_placed(n, max_size, min_size) -> int:
+    """Return how many of ``n`` members fit balanced groups of ``min_size`` to ``max_size``."""
+    n_groups = -(-n // max_size)
+    if n_groups and n // n_groups < min_size:
+        return n // max_size * max_size
+    return n
 
 
 class Regrouper(Grouper):
@@ -3912,7 +4050,8 @@ class Regrouper(Grouper):
     fits into a group, those who have played the most rounds sit out. The
     regrouper counts each participant's rounds (:meth:`rounds_played`,
     :meth:`rounds_sat_out`, :meth:`sat_out`) and, with ``roles``, gives out roles
-    (read in a cued trial as :attr:`~psynet.trial.main.Trial.sync_group_role`),
+    (:meth:`role`, read in a cued trial as
+    :attr:`~psynet.trial.main.Trial.sync_group_role`),
     all while it holds its lock, so two splits cannot give
     out the same seat twice. Each group records the regrouper that formed
     it, and each member's link to it records their role, so these counts
@@ -3971,7 +4110,48 @@ class Regrouper(Grouper):
         group then has one member per role, so groups have ``len(roles)``
         members; ``group_size``, if given, must equal it. A cued trial reads its
         player's role as :attr:`~psynet.trial.main.Trial.sync_group_role`. Roles
-        are given out at random by default; see ``assign_roles``.
+        are given out at random by default; see ``keep_roles`` and
+        ``assign_roles``.
+
+    keep_roles
+        If ``True`` (needs ``roles``), each participant keeps the role of the
+        first group this regrouper puts them in for as long as they play, for
+        example a proposer who stays a proposer; read it with :meth:`role`. A
+        participant without a role yet gets the role fewest of the waiting
+        members have, so that as many as possible can play, then the one
+        fewest current members have, ties broken at random. Current members
+        are the active members of the ``within`` group, or without
+        ``within``, everyone waiting at this regrouper (including those who
+        arrived after an ``every`` tick) plus those still active in a group
+        this regrouper formed. Players who leave that group (the ``within``
+        group if there is one), for example with :func:`leave_group` after
+        their last round or a barrier's ``late_action="leave_group"``, stop
+        counting. A newcomer who is left
+        over stays without a role, so :meth:`role` returns ``None`` for them,
+        and gets one again at the next split. Members of a role with too few
+        partners are left over, those who have played the most rounds first,
+        and follow ``left_over``; so a member of a scarce role still plays
+        even if members of another role who have played fewer rounds sit
+        out. If a role has nobody waiting, no group forms: with
+        ``left_over="sit_out"`` the pool then sits the round out as usual,
+        but with ``"wait"`` it keeps waiting for a member of that role, up to
+        ``max_wait_time``. Use ``"sit_out"`` if a role can run out, for
+        example in a cohort that players leave.
+
+    avoid_repeats
+        If ``True``, the default grouping keeps members apart from those they
+        were grouped with in their latest group from this regrouper, where it
+        can. It looks back only one group, so a pair can meet again two
+        rounds later; with two players per role, for example, pairs simply
+        alternate. It never changes how many rounds decide who sits out, or the
+        roles: a member who has played more rounds still sits out before one
+        who has played fewer (with ``keep_roles``, one of the same role, see
+        above), but among members with equal rounds, who sits out may be
+        chosen to avoid a repeat. It is a bounded heuristic search, so it can
+        leave a repeat that another grouping would avoid. The search is part
+        of the default :meth:`form_groups`: passing a ``form_groups``
+        callable with it raises an error, and a subclass that overrides
+        :meth:`form_groups` runs the search only where it calls the default.
 
     form_groups
         Optional callable ``form_groups(members, within_group, barrier)``
@@ -3979,9 +4159,10 @@ class Regrouper(Grouper):
         the default grouping described above; ``barrier`` is this regrouper.
         Members who are not placed are left over. With ``roles``, each group
         needs one member per role; ``assign_roles`` then gives out the roles.
-        Subclasses can override :meth:`form_groups` instead, for
-        example calling the default and retrying until no one is paired with
-        last round's partner, as the ``ultimatum_pairing`` demo does. The
+        With ``keep_roles``, a group must not have two members who keep the
+        same role (see :meth:`role`); members without a role take the free
+        ones. Subclasses can override :meth:`form_groups` instead, for
+        example calling the default and retrying until a condition holds. The
         callable must be a module-level function so it can be
         stored with the barrier.
 
@@ -3990,10 +4171,12 @@ class Regrouper(Grouper):
         that returns ``{participant: role}`` for one group formed with
         ``roles``, giving each role to one member; ``barrier`` is this
         regrouper. It is called once per group, before the group is created,
-        replacing the default, which shuffles the roles across the group's
-        members. Subclasses can override :meth:`assign_roles` instead, for
+        with the members in the order ``form_groups`` listed them, replacing
+        the default, which shuffles the roles across the group's members.
+        Subclasses can override :meth:`assign_roles` instead, for
         example to give each role to whoever has held it least often, so that
-        roles alternate, as the ``ultimatum_pairing`` demo does. The callable
+        roles alternate, as the ``ultimatum_pairing`` demo does. Neither can be
+        combined with ``keep_roles``. The callable
         must be a module-level function so it can be stored with the barrier.
 
     left_over
@@ -4013,9 +4196,9 @@ class Regrouper(Grouper):
         Optional callback ``on_release(within_group, groups, left_over, barrier)``
         run after each split that forms at least one group, after roles are
         given out; ``barrier`` is this regrouper. The new ``groups`` already
-        have their ``id``, for example to save as a pair ID. A late member can make a split
-        of their own in the same round, so count rounds per participant (see
-        :meth:`rounds_played`) rather than here.
+        have their ``id``, for example to save as a pair ID. A late member
+        can make a split of their own in the same round, so count rounds per
+        participant (see :meth:`rounds_played`) rather than here.
 
     stop_top_ups_after_rounds
         Optional number of rounds during which newcomers can still join the
@@ -4034,8 +4217,9 @@ class Regrouper(Grouper):
     max_wait_time
         Longest a participant waits at the regrouper before ``max_wait_action``
         applies: being failed by default, or carrying on without a group with
-        ``max_wait_action="continue_without_group"``. Defaults to 300 seconds, or to twice the ``deadline`` (or ``every``
-        period) plus 60 seconds if that is longer. With ``left_over="sit_out"``
+        ``max_wait_action="continue_without_group"``. Defaults to 300
+        seconds, or to twice the ``deadline`` (or ``every`` period) plus 60
+        seconds if that is longer. With ``left_over="sit_out"``
         and ``within``, a value you pass must be longer than twice the
         period, so that a player waiting alone sits out instead of being
         failed.
@@ -4061,6 +4245,8 @@ class Regrouper(Grouper):
         deadline: Optional[float] = None,
         every: Optional[float] = None,
         roles: Optional[Sequence[str]] = None,
+        keep_roles: bool = False,
+        avoid_repeats: bool = False,
         form_groups: Optional[Callable] = None,
         assign_roles: Optional[Callable] = None,
         left_over: Literal["wait", "sit_out"] = "wait",
@@ -4093,8 +4279,24 @@ class Regrouper(Grouper):
                         f"{name} must equal len(roles) or be left out."
                     )
             group_size = smallest_group = len(roles)
+        elif keep_roles:
+            raise ValueError("keep_roles needs roles.")
         elif group_size is None:
             raise ValueError("Regrouper needs group_size, or roles.")
+        if keep_roles and assign_roles is not None:
+            raise ValueError(
+                "keep_roles gives out the roles, so leave out assign_roles."
+            )
+        if keep_roles and type(self).assign_roles is not Regrouper.assign_roles:
+            raise ValueError(
+                f"keep_roles gives out the roles, so {type(self).__name__} must "
+                "not override assign_roles."
+            )
+        if avoid_repeats and form_groups is not None:
+            raise ValueError(
+                "avoid_repeats applies to the default grouping, so it can't be "
+                "combined with form_groups."
+            )
         if smallest_group is None:
             smallest_group = min(2, group_size)
         if smallest_group < 1 or group_size < smallest_group:
@@ -4148,6 +4350,8 @@ class Regrouper(Grouper):
         self.deadline = deadline
         self.every = every
         self.roles = None if roles is None else list(roles)
+        self.keep_roles = keep_roles
+        self.avoid_repeats = avoid_repeats
         self.form_groups_function = form_groups
         self.assign_roles_function = assign_roles
         self.left_over = left_over
@@ -4195,23 +4399,158 @@ class Regrouper(Grouper):
 
         By default members are shuffled into balanced groups of at most
         ``group_size`` and at least ``smallest_group``, or into one group per
-        set of ``roles``. Those who have played the most rounds sit out.
+        set of ``roles``. Those who have played the most rounds sit out. With
+        ``keep_roles``, each group has one member per kept role, and with
+        ``avoid_repeats``, last round's groupmates are kept apart where
+        possible (see ``avoid_repeats`` in :class:`Regrouper`).
         """
         if self.form_groups_function is not None:
             return self.form_groups_function(
                 members=members, within_group=within_group, barrier=self
             )
-        rounds = self._rounds(members)
+        links = self._links([m.id for m in members])
+        rounds = {m.id: 0 for m in members}
+        for link in links:
+            rounds[link.participant_id] += 1
+        if self.keep_roles:
+            roles = self._roles_with_newcomers(members, links, within_group)
+            make_groups = partial(self._groups_by_kept_role, members, rounds, roles)
+        else:
+            roles = {}
+            make_groups = partial(self._random_groups, members, rounds)
+        if not self.avoid_repeats:
+            return make_groups()
+        partners = _repeat_partners(_last_groupmates(links))
+        return _fewest_repeats(make_groups, members, partners, rounds, roles)
+
+    def _random_groups(self, members, rounds):
+        """Return random balanced groups, sitting out those who have played the most rounds.
+
+        Members who don't fit a group of at least ``smallest_group`` sit out,
+        for example the odd one out when pairing.
+        """
         # Shuffled first, so that ties are broken at random.
         members = sorted(
             random.sample(members, len(members)), key=lambda m: rounds[m.id]
         )
-        n_placed = sum(
-            len(group)
-            for group in _balanced_groups(members, self.group_size, self.smallest_group)
+        n_placed = _n_placed(len(members), self.group_size, self.smallest_group)
+        members = random.sample(members[:n_placed], n_placed)
+        n_groups = -(-len(members) // self.group_size)
+        return [members[i::n_groups] for i in range(n_groups)]
+
+    def _groups_by_kept_role(self, members, rounds, roles):
+        """Return random groups of one member per role, sitting out the surplus who have played most."""
+        shuffled = random.sample(members, len(members))
+        by_role = [
+            sorted(
+                [m for m in shuffled if roles[m.id] == role], key=lambda m: rounds[m.id]
+            )
+            for role in self.roles
+        ]
+        n_groups = min(len(players) for players in by_role)
+        return [
+            list(group)
+            for group in zip(
+                *(random.sample(players[:n_groups], n_groups) for players in by_role)
+            )
+        ]
+
+    def _roles_with_newcomers(self, members, links, within_group) -> Dict[int, str]:
+        """Return each member's kept role by ID, choosing one for members without one.
+
+        Newcomers' roles are chosen as ``keep_roles`` in :class:`Regrouper` describes.
+        """
+        roles = _first_roles(links)
+        newcomers = [m for m in members if m.id not in roles]
+        if not newcomers:
+            return roles
+        waiting = Counter(roles.values())
+        if within_group is not None:
+            current_ids = {p.id for p in within_group.active_participants}
+        else:
+            current_ids = self._playing_or_waiting_ids()
+        current_ids -= {m.id for m in members}
+        current = waiting + Counter(self._kept_roles(current_ids).values())
+        for member in random.sample(newcomers, len(newcomers)):
+            role = min(
+                self.roles, key=lambda r: (waiting[r], current[r], random.random())
+            )
+            roles[member.id] = role
+            waiting[role] += 1
+            current[role] += 1
+        return roles
+
+    def _playing_or_waiting_ids(self) -> set:
+        """Return the IDs of working participants waiting here or still active in a group this regrouper formed.
+
+        One statement reads both, so that a player moving from their group
+        to this regrouper meanwhile is counted in one or the other.
+        """
+        link = ParticipantLinkSyncGroup
+        working = (Participant.status == "working", Participant.failed.is_(False))
+        playing = (
+            db.session.query(link.participant_id)
+            .join(SyncGroup, SyncGroup.id == link.sync_group_id)
+            .join(Participant, Participant.id == link.participant_id)
+            .filter(
+                SyncGroup.grouper_id == self.id,
+                SyncGroup.active.is_(True),
+                link.active.is_(True),
+                *working,
+            )
         )
-        return _balanced_groups(
-            members[:n_placed], self.group_size, self.smallest_group
+        waiting = (
+            db.session.query(ParticipantLinkBarrier.participant_id)
+            .join(Participant, Participant.id == ParticipantLinkBarrier.participant_id)
+            .filter(
+                ParticipantLinkBarrier.barrier_id == self.id,
+                ParticipantLinkBarrier.released.is_(False),
+                *working,
+            )
+        )
+        return {participant_id for (participant_id,) in playing.union(waiting)}
+
+    def _kept_roles(self, participant_ids) -> Dict[int, str]:
+        """Return these participants' first roles in this regrouper's groups, keyed by ID.
+
+        One row per participant is read.
+        """
+        if not participant_ids:
+            return {}
+        link = ParticipantLinkSyncGroup
+        rows = (
+            db.session.query(link.participant_id, link.role)
+            .join(SyncGroup, SyncGroup.id == link.sync_group_id)
+            .filter(
+                SyncGroup.grouper_id == self.id,
+                link.role.isnot(None),
+                link.participant_id.in_(participant_ids),
+            )
+            .distinct(link.participant_id)
+            .order_by(link.participant_id, link.id)
+        )
+        return dict(rows.all())
+
+    def role(self, participant) -> Optional[str]:
+        """Return the role ``participant`` had in the latest group this regrouper formed with them.
+
+        This is ``None`` without ``roles`` and before their first group,
+        including for a newcomer left over at their first split. A
+        participant who sat out or is waiting for the next split still has
+        their previous group's role. With ``keep_roles``, it is the role they
+        keep. Each call queries the database, so when calling it in a loop,
+        for example over a cohort, read each role once.
+        """
+        link = ParticipantLinkSyncGroup
+        return (
+            db.session.query(link.role)
+            .join(SyncGroup, SyncGroup.id == link.sync_group_id)
+            .filter(
+                SyncGroup.grouper_id == self.id, link.participant_id == participant.id
+            )
+            .order_by(link.id.desc())
+            .limit(1)
+            .scalar()
         )
 
     def rounds_played(self, participant) -> int:
@@ -4278,7 +4617,9 @@ class Regrouper(Grouper):
     def assign_roles(self, members, within_group=None) -> Dict[Participant, str]:
         """Return ``{participant: role}`` for one group's members, one member per role.
 
-        By default the roles are shuffled across the members.
+        ``members`` lists the group in the order :meth:`form_groups` returned
+        it. By default the roles are shuffled across the members. It isn't
+        used with ``keep_roles``, which gives out the roles itself.
         """
         if self.assign_roles_function is not None:
             return self.assign_roles_function(
@@ -4286,20 +4627,34 @@ class Regrouper(Grouper):
             )
         return dict(zip(random.sample(members, len(members)), self.roles))
 
-    def _rounds(self, members) -> Dict[int, int]:
-        """Return how many groups this regrouper has put each member in, keyed by ID."""
-        rounds = {m.id: 0 for m in members}
-        for link in self._links(list(rounds)):
-            rounds[link.participant_id] += 1
-        return rounds
+    def _give_kept_roles(self, members, kept) -> Dict[Participant, str]:
+        """Give one group's members their ``kept`` roles, and the free roles to those without one."""
+        held = [kept[m.id] for m in members if m.id in kept]
+        if len(set(held)) != len(held):
+            raise ValueError(
+                f"Regrouper '{self.id}': with keep_roles, form_groups must not "
+                "put two members who keep the same role in one group."
+            )
+        free = [r for r in self.roles if r not in held]
+        newcomers = [m for m in members if m.id not in kept]
+        return {
+            **{m: kept[m.id] for m in members if m.id in kept},
+            **dict(zip(newcomers, random.sample(free, len(free)))),
+        }
 
     def _planned_roles(self, plan, within_group) -> Dict[int, str]:
         """Return each planned member's role by ID, given out before the groups exist."""
         if not self.roles:
             return {}
+        kept = None
+        if self.keep_roles:
+            kept = self._kept_roles([m.id for group in plan for m in group])
         roles = {}
         for group_members in plan:
-            assigned = self.assign_roles(group_members, within_group=within_group)
+            if kept is not None:
+                assigned = self._give_kept_roles(group_members, kept)
+            else:
+                assigned = self.assign_roles(group_members, within_group=within_group)
             if not all(isinstance(m, Participant) for m in assigned):
                 raise TypeError(
                     f"Regrouper '{self.id}': assign_roles must return "
