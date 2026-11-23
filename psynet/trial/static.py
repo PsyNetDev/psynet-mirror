@@ -86,16 +86,16 @@ def _layout_key(trial, page, experiment, participant):
     if trial.layout_key is None:
         page._pre_render_once()
         html = page.render(experiment, participant, partial_mode=True)
-        trial.layout_key = page.layout_key(html) or ""
+        trial.layout_key = page.layout_key(html, experiment, participant) or ""
     return trial.layout_key
 
 
 def _same_layout(trial, page, following, following_page, experiment, participant):
     """Whether ``following``'s page has the same layout as ``trial``'s, warning if not.
 
-    The browser shows a trial in advance inside the current page's HTML, so
-    a trial whose page renders different HTML or JavaScript waits for the
-    server instead.
+    The browser shows a trial in advance inside the current page's HTML,
+    JavaScript and ``js_vars``, so a trial whose page differs in any of
+    these waits for the server instead.
     """
     if not has_app_context() and None in (trial.layout_key, following.layout_key):
         # Pages can only be rendered in the experiment's app, as in a request.
@@ -108,38 +108,13 @@ def _same_layout(trial, page, following, following_page, experiment, participant
         return False
     logger.warning(
         "Trial maker %r: the page of the trial at position %i has different "
-        "HTML or JavaScript from the one at position %i, so it can't be shown in advance and waits for the server. "
+        "HTML, JavaScript or js_vars from the one at position %i, so it can't be shown in advance and waits for the server. "
         "Put what changes between trials in the page's contents.",
         following.trial_maker_id,
         following.position,
         trial.position,
     )
     return False
-
-
-def _page_config_differs(config, trial, following, page, experiment, participant):
-    """Whether ``page``'s ``js_vars`` differ from ``config``, warning if they do.
-
-    ``js_vars`` configure the page, and trials shown in advance share it, so
-    a trial whose ``js_vars`` differ waits for the server instead.
-    """
-    other = page._js_vars_for(experiment, participant)
-    keys = sorted(
-        key
-        for key in config.keys() | other.keys()
-        if key not in config or key not in other or config[key] != other[key]
-    )
-    if keys:
-        logger.warning(
-            "Trial maker %r: the page of the trial at position %i has different "
-            "js_vars (%s) from the one at position %i, so it can't be shown in advance and waits for the "
-            "server. Put what changes between trials in the page's contents.",
-            following.trial_maker_id,
-            following.position,
-            ", ".join(keys),
-            trial.position,
-        )
-    return bool(keys)
 
 
 class StaticTrialMaker(ChainTrialMaker):
@@ -604,6 +579,24 @@ class StaticTrialMaker(ChainTrialMaker):
             )
         return trials, status
 
+    def _check_trials_shown_in_advance(self, participant):
+        """Fail a test if the participant's trial pages were compared but none matched.
+
+        Trials get a layout key once their pages are compared, so a pair of
+        consecutive trials with keys, but none with the same key, means no
+        trial could be shown in advance.
+        """
+        keys = [trial.layout_key for trial in self.get_participant_trials(participant)]
+        compared = [
+            (a, b) for a, b in zip(keys, keys[1:]) if a is not None and b is not None
+        ]
+        assert not compared or any(a and a == b for a, b in compared), (
+            f"Trial maker {self.id!r} prepares trials in advance, but each "
+            "trial's page had different HTML, JavaScript or js_vars from the "
+            "previous one's, so none could be shown in advance. Put what changes "
+            "between trials in the page's contents; the server log names the trials."
+        )
+
     def _upcoming(self, trial, page, experiment, participant):
         # Without in-place transitions each reply reloads the page, which would
         # drop the answers given ahead and the files downloaded early.
@@ -617,7 +610,6 @@ class StaticTrialMaker(ChainTrialMaker):
         adoptable = page._show_in_advance()
         predict = adoptable and not trial.gives_feedback(experiment, participant)
         shown = [] if adoptable else None
-        config = page._js_vars_for(experiment, participant) if predict else None
         media = {}
         trial_class = self.trial_class
         upcoming = (
@@ -665,9 +657,6 @@ class StaticTrialMaker(ChainTrialMaker):
                 and len(pages) == 1
                 and isinstance(pages[0], Page)
                 and pages[0]._show_in_advance()
-                and not _page_config_differs(
-                    config, trial, following, pages[0], experiment, participant
-                )
                 and _same_layout(
                     trial, page, following, pages[0], experiment, participant
                 )

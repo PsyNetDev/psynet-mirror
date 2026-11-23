@@ -2392,7 +2392,9 @@ class Page(Elt):
             # Fragments carry their key beside the HTML; a full page needs a
             # partial render to compute the same key.
             self._full_page_layout_key = self.layout_key(
-                self.render(experiment, participant, partial_mode=True)
+                self.render(experiment, participant, partial_mode=True),
+                experiment,
+                participant,
             )
 
         # Architecture: docs/developer/page_lifecycle.rst
@@ -2811,8 +2813,8 @@ class Page(Elt):
             for offset, page in enumerate(self.upcoming_pages, start=1)
         ]
 
-    def layout_key(self, fragment_html):
-        """Identify the page's ``#main-body`` and JavaScript in a partial render.
+    def layout_key(self, fragment_html, experiment, participant):
+        """Identify the page's ``#main-body``, JavaScript and ``js_vars`` in a partial render.
 
         A predicted trial page is only reused for the next trial if the two
         keys match, so that the page modules' ``update`` can show it.
@@ -2828,8 +2830,10 @@ class Page(Elt):
                 self.js_page_code,
                 self.legacy_js_links,
                 self.legacy_scripts,
+                self._js_vars_for(experiment, participant),
             ],
             default=str,
+            sort_keys=True,
         )
         return hashlib.sha256(layout.encode()).hexdigest()[:16]
 

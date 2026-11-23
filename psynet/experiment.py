@@ -2244,13 +2244,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         :meth:`~psynet.participant.ParticipantDriver.drop_out` or the test
         called :meth:`~psynet.participant.ParticipantDriver.allow_failure`
         for it, for example for group members failed because a partner
-        dropped out. Override this for other checks.
+        dropped out. A trial maker with ``prepare_trials_in_advance`` must
+        also have been able to show some of the bot's trials in advance, if
+        it tried. Override this for other checks.
         """
         assert (
             not bot.failed
             or bot.status == "returned"
             or bot.unique_id in _unique_ids_allowed_to_fail
         ), f"Bot {bot.id} failed (failure tags: {bot.failure_tags})."
+        for trial_maker in self.timeline.trial_makers.values():
+            if getattr(trial_maker, "prepare_trials_in_advance", False):
+                trial_maker._check_trials_shown_in_advance(bot)
 
     @classmethod
     def error_page(
@@ -7838,7 +7843,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         html = page.render(experiment, participant, partial_mode=True)
         payload = {"html": html, "page_uuid": participant.page_uuid}
         if page.upcoming_pages is not None:
-            payload["layout_key"] = page.layout_key(html)
+            payload["layout_key"] = page.layout_key(html, experiment, participant)
             payload["upcoming_pages"] = page._upcoming_pages_payload(participant)
         return payload
 

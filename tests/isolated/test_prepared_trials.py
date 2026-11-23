@@ -36,12 +36,6 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     # A time limit is set up for each page, so such pages aren't predicted.
     page.time_limit = 10
     assert trial_maker._upcoming(trials[0], page, None, participant)[0] is None
-    # Nor are pages whose js_vars differ from this page's.
-    page.time_limit = None
-    page.js_vars = {**page.js_vars, "picture": "red circle"}
-    assert trial_maker._upcoming(trials[0], page, None, participant)[0] == []
-    page.js_vars["picture"] = None
-    assert trial_maker._upcoming(trials[0], page, None, participant)[0] == []
 
     month_ago = datetime.datetime.now() - datetime.timedelta(days=30)
     for trial in trials:
@@ -176,3 +170,11 @@ def test_a_trial_whose_page_has_a_different_layout_is_not_shown_in_advance():
     assert [page["contents"]["name"] for page in upcoming] == ["yellow star"]
     # The browser compares the same key, computed from the page it receives.
     assert reply["timeline_fragment"]["layout_key"] == trials[1].layout_key
+
+    # Bot tests fail if no trial could be shown in advance.
+    trial_maker = trials[0].trial_maker
+    trial_maker._check_trials_shown_in_advance(participant)
+    for i, trial in enumerate(trials):
+        trial.layout_key = f"layout {i}"
+    with pytest.raises(AssertionError, match="none could be shown in advance"):
+        trial_maker._check_trials_shown_in_advance(participant)
