@@ -185,8 +185,8 @@ Going back to the previous page
 For the same reason, a participant can go back to the page before the
 current one and answer it again, for example to reread instructions. Such
 pages show a Back button at the left of their buttons, so Next stays where
-it was. Going back takes back the time credit and progress the earlier page
-gave. Answering it again replaces its answer in ``participant.answer`` and
+it was. The browser already has the earlier page, so it appears at once.
+Going back takes back the time credit and progress the earlier page gave. Answering it again replaces its answer in ``participant.answer`` and
 records another :class:`~psynet.timeline.Response`; the earlier response is
 kept.
 

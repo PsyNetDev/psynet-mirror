@@ -164,7 +164,6 @@ from .timeline import (
     DatabaseCheck,
     FailedValidation,
     ModuleState,
-    Page,
     ParticipantFailRoutine,
     PreDeployRoutine,
     RecruitmentCriterion,
@@ -176,7 +175,7 @@ from .timeline import (
     _is_timeline_hold,
     _timeline_step_name,
     _trial_owning_page,
-    new_page_uuid,
+    make_page_uuid,
 )
 from .translation.check import check_translations
 from .translation.translate import create_pot
@@ -6656,7 +6655,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         committed = plan.mark_committed()
         participant.exit_plan = committed.to_dict()
         if Experiment._skips_error_recovery_ui(recruiter, committed):
-            participant.page_uuid = new_page_uuid()
+            participant.page_count += 1
+            participant.page_uuid = make_page_uuid(
+                participant, participant.page_count, "skipped"
+            )
         return committed
 
     @staticmethod
@@ -7105,7 +7107,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not isinstance(participant, Bot):
                 participant.client_ip_address = cls.get_client_ip_address()
             page = cls.get_current_page(experiment, participant)
-            cls._prepare_page_offers(experiment, participant, page)
+            if page.early_exit_available(experiment, participant):
+                experiment.prepare_voluntary_exit_plan(participant)
             participant_id = participant.id
             unique_id = participant.unique_id
             db.session.commit()
@@ -7492,17 +7495,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if page is None:
             return page
         cls._pre_render(page, participant)
-        cls._prepare_page_offers(experiment, participant, page)
-        return page
-
-    @staticmethod
-    def _prepare_page_offers(experiment, participant, page):
-        """Store the page's Leave plan and the page UUID of the page the browser can show next."""
         available = getattr(page, "early_exit_available", None)
         if callable(available) and available(experiment, participant):
             experiment.prepare_voluntary_exit_plan(participant)
-        if isinstance(page, Page):
-            experiment.timeline._issue_upcoming_page_uuid(participant, page)
+        return page
 
     @staticmethod
     def _reapply_timeline_lock_timeout():
@@ -7854,6 +7850,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         upcoming = page._upcoming_pages_payload(experiment, participant)
         if upcoming is not None:
             payload["upcoming_pages"] = upcoming
+        previous = page._previous_page_payload(experiment, participant)
+        if previous is not None:
+            payload["previous_page"] = previous
         return payload
 
     @experiment_route("/timeline/arrival_notice", methods=["GET"])

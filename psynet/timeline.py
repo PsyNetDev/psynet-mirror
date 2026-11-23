@@ -12,7 +12,6 @@ import json
 import random
 import re
 import time
-import uuid
 import warnings
 from collections import Counter
 from contextlib import contextmanager
@@ -1226,13 +1225,15 @@ def _is_timeline_hold(page):
     return bool(getattr(page, "is_timeline_hold", False))
 
 
-def new_page_uuid():
-    """Return a page uuid that does not depend on seeded ``random``.
+def make_page_uuid(participant, visit, page_key):
+    """Identify the participant's ``visit``-th page, which is ``page_key``.
 
-    ``Experiment.make_uuid()`` draws from the process RNG, which bots seed.
-    Timeline hold records have a global unique constraint on ``page_uuid``.
+    The page UUID follows from the page and when it is shown, so the server
+    can tell the browser the page UUIDs of pages it shows in advance without
+    storing them. Visits are counted, so page UUIDs never repeat, which
+    timeline hold records rely on. Nothing relies on them being hard to guess.
     """
-    return str(uuid.uuid4())
+    return f"{participant.id}-{visit}-{page_key}"
 
 
 def _arrival_updates_for(page, participant):
@@ -1551,11 +1552,12 @@ class Page(Elt):
     # the URLs of the next pages' files by media type.
     upcoming_pages = None
     upcoming_media = None
-    # The page UUID the participant gets on reaching the page, if it was
-    # issued in advance; otherwise a new one is drawn then.
+    # What the page UUID says the page is, set by trials for their pages;
+    # otherwise the page's position in the timeline.
+    _page_key = None
+    # Set on a page rendered for the browser to swap in later: the page
+    # UUID it will have, which it carries rather than the participant's.
     _page_uuid = None
-    # Whether the page is rendered for the browser to swap in later, so it
-    # carries its own page UUID rather than the participant's current one.
     _rendered_in_advance = False
     _full_page_layout_key = None
 
@@ -1990,18 +1992,10 @@ class Page(Elt):
         return ""
 
     def consume(self, experiment, participant):
-        upcoming = participant.upcoming_page or {}
-        participant.upcoming_page = None
-        participant.page_uuid = (
-            self._page_uuid
-            or (
-                upcoming["page_uuid"]
-                if upcoming.get("elt_id") == participant.elt_id
-                else None
-            )
-            or new_page_uuid()
-        )
         participant.page_count += 1
+        participant.page_uuid = make_page_uuid(
+            participant, participant.page_count, self._key(participant)
+        )
         notice = participant.group_removal_notice
         if notice is not None and notice.get("next_page"):
             # A notice for the next page, such as after timing out at a barrier.
@@ -2500,6 +2494,11 @@ class Page(Elt):
                 if partial_mode
                 else self._upcoming_pages_payload(experiment, participant)
             ),
+            "previous_page": (
+                None
+                if partial_mode
+                else self._previous_page_payload(experiment, participant)
+            ),
             "locale": locale,
             "partial_mode": partial_mode,
             "inplace_timeline_transitions": inplace_timeline_transitions,
@@ -2815,8 +2814,12 @@ class Page(Elt):
             return self._page_uuid
         return participant.page_uuid
 
+    def _key(self, participant):
+        """What the page UUID says the page is: its trial's, or its position in the timeline."""
+        return self._page_key or ".".join(str(i) for i in participant.elt_id)
+
     def _upcoming_pages_payload(self, experiment, participant):
-        """Describe ``upcoming_pages`` for the browser, each by its page UUID.
+        """Describe ``upcoming_pages`` for the browser, each by the page UUID it will have.
 
         Page modules show a page from its ``contents``; other pages are sent
         rendered, for the browser to swap in.
@@ -2826,17 +2829,35 @@ class Page(Elt):
             upcoming = experiment.timeline._pages_rendered_in_advance(participant, self)
         if upcoming is None:
             return None
-        return [
-            (
-                {
-                    "page_uuid": page._page_uuid,
-                    "html": page.render(experiment, participant, partial_mode=True),
-                }
-                if page._rendered_in_advance
-                else {"page_uuid": page._page_uuid, "contents": page.contents}
+        payload = []
+        for offset, page in enumerate(upcoming, start=1):
+            page_uuid = make_page_uuid(
+                participant, participant.page_count + offset, page._page_key
             )
-            for page in upcoming
-        ]
+            if page._rendered_in_advance:
+                page._page_uuid = page_uuid
+                html = page.render(experiment, participant, partial_mode=True)
+                payload.append({"page_uuid": page_uuid, "html": html})
+            else:
+                payload.append({"page_uuid": page_uuid, "contents": page.contents})
+        return payload
+
+    def _previous_page_payload(self, experiment, participant):
+        """The page before this one, rendered for the Back button with the page UUID it will have."""
+        previous = experiment.timeline._page_to_go_back_to(participant, self)
+        if previous is None:
+            return None
+        # Timeline pages are shared by all participants.
+        previous = copy.copy(previous)
+        previous._page_uuid = make_page_uuid(
+            participant,
+            participant.page_count + 1,
+            ".".join(str(i) for i in previous.id),
+        )
+        previous._rendered_in_advance = True
+        previous.pre_render()
+        html = previous.render(experiment, participant, partial_mode=True)
+        return {"page_uuid": previous._page_uuid, "html": html}
 
     def _swap_in_advance(self):
         """Whether a rendered copy of the page can be swapped in before the server confirms it.
@@ -3505,28 +3526,15 @@ class Timeline:
         previous.consume(experiment, participant)
         return previous
 
-    def _issue_upcoming_page_uuid(self, participant, page):
-        """Issue the page UUID of the page that the browser can show after ``page``."""
+    def _pages_rendered_in_advance(self, participant, page):
+        """The pages that the browser can show after ``page``."""
         following = self._page_to_render_in_advance(participant, page)
         if following is None:
-            participant.upcoming_page = None
-        elif (participant.upcoming_page or {}).get("elt_id") != following.id:
-            participant.upcoming_page = {
-                "elt_id": following.id,
-                "page_uuid": new_page_uuid(),
-            }
-
-    def _pages_rendered_in_advance(self, participant, page):
-        """The pages that the browser can show after ``page``, with the page UUIDs issued for them."""
-        upcoming = participant.upcoming_page
-        if not upcoming:
             return None
-        following = self._page_to_render_in_advance(participant, page)
-        if following is None or following.id != upcoming["elt_id"]:
-            return None
-        # Timeline pages are shared by all participants.
+        # Timeline pages are shared by all participants, and the payload sets
+        # the page UUID it will have.
         following = copy.copy(following)
-        following._page_uuid = upcoming["page_uuid"]
+        following._page_key = ".".join(str(i) for i in following.id)
         following._rendered_in_advance = True
         following.pre_render()
         return [following]

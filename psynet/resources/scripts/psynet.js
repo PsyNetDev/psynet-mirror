@@ -760,6 +760,8 @@
     // ``{page_uuid, contents}`` for page modules or ``{page_uuid, html}`` for
     // pages swapped in whole. Every approved reply replaces them.
     psynet.upcomingPages = psynetTemplateData.upcomingPages ?? [];
+    // The page that Back shows, as ``{page_uuid, html}``, if it can go back.
+    psynet.previousPage = psynetTemplateData.previousPage ?? null;
 
     // Contents from the last confirmed page onwards.
     psynet.predictedContents = function () {
@@ -881,7 +883,7 @@
           entry.metadata,
           undefined,
           undefined,
-          { background: true, pageUuid: entry.pageUuid },
+          { background: true, pageUuid: entry.pageUuid, back: entry.back },
         );
         if (!accepted) {
           let showAgain =
@@ -4167,10 +4169,33 @@
       return passedValidation;
     };
 
-    // Show the page before this one again, once the answers given in advance
-    // are sent, so the server goes back from the page shown.
-    psynet.goBack = function () {
-      return psynet.nextPage(null, {}, {}, undefined, { back: true });
+    // Show the page before this one again. If the server sent it with this
+    // page, it is shown at once and the server is told in the background, as
+    // for an answer; otherwise the server is asked once the answers given in
+    // advance are sent, so it goes back from the page shown.
+    psynet.goBack = async function () {
+      let page = psynet.previousPage;
+      if (!page || psynet.answers.queue.length || !psynet.pageReady) {
+        return psynet.nextPage(null, {}, {}, undefined, { back: true });
+      }
+      psynet.answers.queue.push({
+        back: true,
+        value: null,
+        metadata: {},
+        pageUuid: psynet.submissionPageUuid,
+        nextPageUuid: page.page_uuid,
+      });
+      // These belong to the page left; the reply brings the shown page's.
+      psynet.upcomingPages = [];
+      psynet.previousPage = null;
+      try {
+        await psynet.showTimelineFragment(page);
+      } catch (error) {
+        await psynet.handleTimelineTransitionFailure(error);
+        return true;
+      }
+      psynet.sendAnswers();
+      return true;
     };
 
     psynet.alert = function (text) {
@@ -4276,6 +4301,7 @@
       psynet.log.debug("Response received successfully.");
       psynet.pageReceivedAt = Date.now();
       psynet.upcomingPages = response.timeline_fragment?.upcoming_pages ?? [];
+      psynet.previousPage = response.timeline_fragment?.previous_page ?? null;
 
       if (psynet.adoptRenderedReply(response)) {
         return true;

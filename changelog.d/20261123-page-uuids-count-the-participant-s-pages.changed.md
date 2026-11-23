@@ -1,0 +1,1 @@
+A participant's page UUID (`participant.page_uuid`) is no longer random: it is made from the participant's id, how many pages they have been shown and what the page is, such as `12-7-trial31`. Page UUIDs still never repeat. Code that only compares page UUIDs is unaffected.

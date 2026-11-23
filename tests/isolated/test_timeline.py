@@ -369,18 +369,6 @@ def test_timeline_fragment_ignores_commented_div_close():
     assert "still inside" in fragment
 
 
-def test_new_page_uuid_does_not_follow_seeded_random():
-    import random
-
-    from psynet.timeline import new_page_uuid
-
-    random.seed(0)
-    first = new_page_uuid()
-    random.seed(0)
-    second = new_page_uuid()
-    assert first != second
-
-
 def test_partial_body_extraction_requires_named_fragment_wrapper():
     with pytest.raises(ValueError, match="could not find fragment root"):
         Page._extract_partial_body("<div id='main-body'></div>")
@@ -392,6 +380,7 @@ def test_prepared_partial_fragment_rendering_does_not_repeat_pre_render():
     calls = []
     page = MagicMock(upcoming_pages=None)
     page._upcoming_pages_payload.return_value = None
+    page._previous_page_payload.return_value = None
     page.pre_render.side_effect = lambda: calls.append("pre_render")
     page.render.side_effect = lambda *args, **kwargs: calls.append("render") or "<html>"
     participant = SimpleNamespace(page_uuid="uuid-123")

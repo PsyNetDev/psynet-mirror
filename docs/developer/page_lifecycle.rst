@@ -46,25 +46,28 @@ participant answers, ``psynet.js`` swaps in the next one and queues the answer
 for ``/response``. A reply whose page UUID matches is adopted without another
 swap; any other reply replaces the page as usual.
 
-Trial makers that prepare trials in advance set ``Trial.page_uuid`` when they
-create the trials. For a top-level timeline page, the write phase
-(``Experiment._prepare_page_offers``) stores the next page's ``elt_id`` and
-page UUID in ``participant.upcoming_page``, because timeline pages are shared
-by all participants. The read-only render then renders a copy of that page
-(``Timeline._pages_rendered_in_advance``). ``Page.consume`` uses a page UUID
-issued in advance only on reaching that exact element, and clears it either
-way, so a page UUID is never used twice.
+A page UUID follows from the participant, how many pages they have been shown
+and what the page is (``make_page_uuid``), so the server knows each upcoming
+page's UUID without storing it: a trial page is keyed by its trial, other
+pages by their position in the timeline. ``_upcoming_pages_payload`` sets it
+on each page rendered in advance before rendering it. Timeline pages are
+shared by all participants, so ``Timeline._pages_rendered_in_advance`` renders
+a copy of the next page.
 
 Going back
 ~~~~~~~~~~
 
 The same rules decide whether a top-level page can go back to the page before
 it (``Timeline._page_to_go_back_to``); the render passes the result to the
-template as ``show_back_button``. The Back button sends a ``/response`` with
-``back`` set instead of an answer, through ``psynet.nextPage``, so it waits
-for answers given in advance to be sent first. ``Timeline.go_back`` then moves
-``elt_id`` back, takes back the earlier page's time credit and progress, and
-consumes that page again, which issues a new page UUID.
+template as ``show_back_button``. The page also sends the browser the earlier
+page as ``previous_page``, rendered with the page UUID it will get, like the
+pages rendered in advance. The Back button queues a ``/response`` with
+``back`` set instead of an answer. If no answers are queued, the browser shows
+``previous_page`` at once and sends the request in the background; otherwise
+it waits for the queued answers to be sent and shows the page in the reply.
+``Timeline.go_back`` moves ``elt_id`` back, takes back the earlier page's time
+credit and progress, and consumes that page again, so it gets the predicted
+page UUID. A rejected Back reloads the page.
 
 Server-side rendering
 ---------------------
@@ -357,8 +360,12 @@ an object ``{update, cleanup}``. PsyNet calls
 ``update({contents, upcomingContents, response})`` after the page is ready; see
 :doc:`/code/trials/keeping_a_task_on_one_page`. Answers given through
 ``response`` go to ``/response`` in the background, in order, from the answer
-queue in ``psynet.js``. A reply that repeats the shown page's layout key and
-the predicted ``contents`` is adopted without an in-place swap.
+queue in ``psynet.js``. A reply with the page UUID of the trial shown, and the
+shown page's layout key, is adopted without an in-place swap. A page UUID is
+made from the participant's id, how many pages they have been shown and what
+the page is (its trial, or its position in the timeline; see
+``make_page_uuid``), so the server can tell the browser the page UUIDs of the
+next trials' pages without storing them.
 
 Most page code and modules do not require cleanup because PsyNet already
 removes page DOM, stops trial-owned resources, and resets response state.
