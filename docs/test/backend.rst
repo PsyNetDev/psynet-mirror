@@ -270,17 +270,42 @@ Other helpers ask about a bot's group or act in it:
   each bot while they still wait for each other, as players a
   :class:`~psynet.sync.Regrouper` keeps pairing do: one bot run to the end
   alone would wait at the next barrier for the others.
-- :func:`~psynet.bot.regroup_now` makes a
-  :class:`~psynet.sync.Regrouper` split the bots' pools as its ``deadline``
-  or next ``every`` tick would, then advances them, so the test doesn't
-  wait for it, for example ``regroup_now(bots[:3], pairing)`` to start a
-  round without a fourth player who is still reading their results.
-- :func:`~psynet.bot.make_late_now` makes the members who haven't reached a
-  :class:`~psynet.sync.GroupBarrier` late, as its ``late_after`` would,
-  then advances the bots waiting there, so a test of a player who goes
-  quiet doesn't wait in real time, for example
-  ``make_late_now(bots, "round_finished")`` after two of three players
-  have answered.
+
+A group game has timers that a test would otherwise sleep through. Two
+helpers each pretend one timer has run out, then move the bots on, as
+:func:`~psynet.bot.advance_past_wait_pages` does:
+
+- :func:`~psynet.bot.regroup_now` for a :class:`~psynet.sync.Regrouper`'s
+  ``deadline`` (or ``every`` tick): the bots' pools split now, and the bots
+  move on into their new groups. For example, ``regroup_now(bots[:3],
+  pairing)`` starts a round without a fourth player who is still reading
+  their results.
+- :func:`~psynet.bot.make_late_now` for a
+  :class:`~psynet.sync.GroupBarrier`'s ``late_after``: members who haven't
+  reached the barrier are now late, so its ``late_action`` applies to them,
+  and the bots waiting there move on. For example,
+  ``make_late_now(bots, "round_finished")`` after two of three players have
+  answered.
+
+Without more, both move the bots past every wait. ``stop_at``, as for
+:func:`~psynet.bot.advance_past_wait_pages`, names barriers to leave them
+waiting at instead, which a turn-taking game needs: for example
+``regroup_now(bots, pairing, stop_at="offer_made")`` leaves the responders
+waiting for the proposers' offers. In ``story_chain``, every turn ends at
+one barrier, ``"turn_finished"``, so ``stop_at`` names the barrier the bots
+are waiting at, and they stop at its next visit:
+
+.. code-block:: text
+
+    turn 1   A: waiting at "turn_finished"
+             B: writing (goes quiet)
+             C: waiting at "turn_finished"
+
+    make_late_now(bots, "turn_finished", stop_at="turn_finished")
+             B is late, so their group goes on without them; A and C are released
+
+    turn 2   C: writing                        <- the test plays C's turn next
+             A: waiting at "turn_finished"     <- stopped at its next visit
 
 When several groups play in one test, finish one group's story before driving
 the next: a barrier's ``late_after`` clock keeps running for a group while the
