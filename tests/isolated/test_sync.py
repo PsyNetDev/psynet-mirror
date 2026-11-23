@@ -1288,9 +1288,18 @@ def test_manual_sync_group_participant_failure(in_experiment_directory, db_sessi
         n_active_participants=2,
         accepts_top_ups=False,
     )
-    db_session.add(group)
+    secondary_group = SimpleSyncGroup(
+        group_type="secondary",
+        initial_group_size=1,
+        max_group_size=2,
+        quorum=1,
+        n_active_participants=1,
+        accepts_top_ups=True,
+    )
+    db_session.add_all([group, secondary_group])
     for participant in participants:
         group.add_participant(participant)
+    secondary_group.add_participant(participants[0])
     group.leader = participants[0]
     db_session.commit()
 
@@ -1301,7 +1310,13 @@ def test_manual_sync_group_participant_failure(in_experiment_directory, db_sessi
     assert failed_participant.failed
     assert "manual_failure" in failed_participant.failure_tags
     assert participants[0] not in group.active_participants
+    assert participants[0] not in secondary_group.active_participants
     assert participants[1] in group.active_participants
+    for group_type in ["main", "secondary"]:
+        assert (
+            failed_participant.sync_group_removal_reason(group_type)
+            == "left_experiment"
+        )
 
 
 @pytest.mark.parametrize(

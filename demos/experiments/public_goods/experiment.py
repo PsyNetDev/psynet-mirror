@@ -8,8 +8,8 @@ group's contributions and what they earned, paid as a bonus of
 
 Each round is one ``ContributionTrial`` per player, cued with the loop value
 as ``round=``. The team's trials in a round share a ``SyncGroupRound``,
-which holds the team's pot; each trial holds the player's contribution and pays their
-payoff, according to its ``sync_group_outcome``. See ``README.md`` for what
+which holds the team's pot; each trial holds the player's contribution and,
+once the team finishes the round, pays their payoff. See ``README.md`` for what
 happens when players run out of time or leave.
 """
 

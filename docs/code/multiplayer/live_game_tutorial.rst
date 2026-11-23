@@ -438,7 +438,7 @@ then shows each player their score:
 - On the next page, ``participant.live_games`` has the participant's record
   of the game, keyed by the game's ``name``. Its ``answer`` is what the
   game's ``answer`` returned for them, or ``None`` if they have no answer,
-  for example because the game's code raised an error (see
+  for example because their group broke up before the game started (see
   :ref:`live-games-record`).
 
 Reference: :ref:`live-games-play`, including :ref:`the wait before the game
