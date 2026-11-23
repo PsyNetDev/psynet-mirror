@@ -8,7 +8,7 @@ reversals or eight trials. To run it from a PsyNet source checkout:
 
 ```console
 cd demos/features/trial_cue_adaptive
-psynet debug local
+psynet debug local --no-browsers
 ```
 
 The PsyNet features used here (`Trial.cue` with `on_trial_created` and

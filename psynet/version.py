@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-psynet_version = "14.0.0rc4"
+psynet_version = "15.0.0a0"
 
 # Specify Dallinger MAJOR.MINOR version to allow any patch in that series
 recommended_dallinger_major_minor = "13.1"

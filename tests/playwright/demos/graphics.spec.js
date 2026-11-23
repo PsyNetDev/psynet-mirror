@@ -134,7 +134,12 @@ async function getRenderedTextHeight(locator) {
   });
 }
 
-test("graphics demo", { tag: "@both" }, async ({ page, context }) => {
+test("graphics demo", { tag: "@both" }, async ({ page, context, browserName }) => {
+  test.skip(
+    browserName === "webkit",
+    "Found with Dallinger#10095: on WebKit, the click on the SVG text " +
+      "never finds it stable and hangs until the test times out."
+  );
   const absDir = path.resolve("demos/experiments/graphics");
   await withExperiment(page, context, absDir, async (experimentPage) => {
     const submitTracker = startResponseSubmitTracker(experimentPage);

@@ -42,15 +42,32 @@ Reading the tables
         unpack_json_column,
     )
 
-    trials = load_export_table("export.zip", "trial")
-    # Or: load_export_table("path/to/database", "trial")
-    # Or: load_export_table("path/to/extracted/export", "trial")
+    trials = load_export_table("exports/latest", "trial")
+    # Or the zip downloaded from the dashboard: load_export_table("export.zip", "trial")
     trials = unpack_json_column(trials, "definition", prefix="definition_")
-    participants = load_export_table("export.zip", "participant")
+    participants = load_export_table("exports/latest", "participant")
     participants = merge_participant_identifiers(
         participants.rename(columns={"id": "participant_id"}),
-        "participant_identifiers.csv",
+        "exports/latest/participant_identifiers.csv",
     )
+
+``psynet export`` leaves out tables with no rows, and ``load_export_table``
+raises ``KeyError`` for a table whose file is missing. Tables that only some
+experiments fill, such as the group tables below, may therefore be absent;
+``manifest.json`` lists the row count of each table in ``table_row_counts``.
+
+In JSON columns, PsyNet tags dictionary keys that are not strings with
+``json://``, so ``{12: "rock"}`` is stored as ``{"json://12": "rock"}``.
+``unpack_json_column`` removes the tag and names the column ``12``. If the
+same dictionary also has the string key ``"12"``, the integer key keeps its
+tag, so the two become the columns ``12`` and ``json://12``. Other
+non-string keys get their JSON form as the column name: the tuple key
+``(1, 2)`` becomes ``{"py/tuple": [1, 2]}``, and the keys ``None`` and
+``True`` become ``null`` and ``true``. Which key keeps its tag is decided
+row by row, so if only some rows have both ``12`` and ``"12"``, the column
+``12`` holds the integer key's value in the other rows. Column names can
+also clash: the float key ``1.5`` and the nested keys ``{1: {5: ...}}`` both
+become the column ``1.5``.
 
 An unfinished trial, abandoned or still running when the export was made,
 can have an ``answer``: the answer given so far, before ``format_answer``
@@ -68,7 +85,7 @@ the same round:
 
 .. code:: python
 
-    trials = load_export_table("export.zip", "trial")
+    trials = load_export_table("exports/latest", "trial")
     trials = trials[
         trials["sync_group_id"].notna() & trials["complete"] & ~trials["failed"]
     ]
@@ -98,8 +115,10 @@ each trial's ``sync_group_round_id`` points to its row, whose
 Loading an export into a local database
 ---------------------------------------
 
-``psynet load export.zip`` replaces the local database with the archive, so
-you can query it directly. Stop
+``psynet load exports/latest`` replaces the local database with an export,
+so you can query it directly. It takes the folder that ``psynet export``
+writes or a zip, such as the one the dashboard's **Export** tab downloads
+(``psynet load export.zip``). Stop
 ``psynet debug`` and any other client using the same database role first:
 PsyNet refuses to drop tables while another client using that role is
 connected.

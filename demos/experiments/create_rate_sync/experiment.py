@@ -70,7 +70,7 @@ class CreateRateTrial(StaticTrial):
     ):
         """Store every member's creation on the group's round."""
         group_round.var.creations = {
-            str(t.participant_id): t.answer["create"] for t in trials
+            t.participant_id: t.answer["create"] for t in trials
         }
 
     @classmethod
@@ -81,7 +81,7 @@ class CreateRateTrial(StaticTrial):
         ``"winner"`` (stored with the ``winner`` creation), ``"tie"`` or
         ``"no_votes"``.
         """
-        votes = {str(t.participant_id): t.answer["rate"] for t in trials}
+        votes = {t.participant_id: t.answer["rate"] for t in trials}
         counts = Counter(v for v in votes.values() if v is not None).most_common(2)
         if not counts:
             result, winner = "no_votes", None
@@ -111,7 +111,7 @@ class CreateRateTrial(StaticTrial):
         creations = [
             creation
             for participant_id, creation in self.group_round.var.creations.items()
-            if participant_id != str(self.participant_id)
+            if participant_id != self.participant_id
         ]
         random.shuffle(creations)
         return creations
@@ -119,7 +119,7 @@ class CreateRateTrial(StaticTrial):
     def show_ratings(self, participant):
         results = self.group_round.var
         votes = dict(results.votes)
-        own = votes.pop(str(participant.id))
+        own = votes.pop(participant.id)
         others = sorted(v for v in votes.values() if v is not None)
         you = "You ran out of time to vote" if own is None else f"You voted for {own}"
         if not others:

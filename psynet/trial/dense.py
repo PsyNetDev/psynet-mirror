@@ -163,7 +163,7 @@ class DenseTrialMaker(StaticTrialMaker):
         Users are invited to override this.
 
     response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+        How long until a trial's response times out, in seconds (default = 300)
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,

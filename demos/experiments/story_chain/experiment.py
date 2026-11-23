@@ -8,7 +8,7 @@ the story so far and wait at the turn's
 :class:`~psynet.sync.GroupBarrier`.
 
 The turn's definition stores the writer, chosen by seat with
-:func:`~psynet.sync.group_seats`. The writer stores their sentence in
+:attr:`~psynet.sync.SyncGroup.seats`. The writer stores their sentence in
 ``group_round.var.sentence`` as soon as they submit it, and a turn that ends without
 one stores ``None``. The last page reads the story with
 :meth:`SyncGroup.rounds <psynet.sync.SyncGroup.rounds>`. See ``README.md`` for
@@ -35,7 +35,6 @@ from psynet.sync import (
     SimpleGrouper,
     SyncGroup,
     SyncGroupRound,
-    group_seats,
 )
 from psynet.timeline import (
     CodeBlock,
@@ -53,7 +52,11 @@ GROUP_SIZE = 3
 N_ROUNDS = 2
 N_TURNS = N_ROUNDS * GROUP_SIZE
 WRITE_SECONDS = 20
-LATE_AFTER = 30
+# How long a member may take to finish a turn, counted from its start or, for
+# a writer who has opened the timed page, from 10 seconds after its time
+# limit, so that a sentence sent at the deadline can arrive. A writer who
+# closes their page is removed about 45 seconds into the turn.
+LATE_AFTER = 15
 GROUPER_WAIT = 30
 TURN_BARRIER = "turn_finished"
 
@@ -108,7 +111,7 @@ def choose_writer(group, turn: int) -> int:
     If that member has left, return the member in the next seat still in the
     group.
     """
-    seats = group_seats(group)
+    seats = group.seats
     by_seat = sorted(seats, key=seats.get)
     start = turn % GROUP_SIZE
     present = {participant.id for participant in group.active_participants}
@@ -300,7 +303,7 @@ def _seated(bots: List[BotDriver]) -> List[BotDriver]:
     return sorted(
         members,
         key=lambda bot: bot.with_participant(
-            lambda participant: group_seats(participant.sync_group)[participant.id]
+            lambda participant: participant.sync_group.seats[participant.id]
         ),
     )
 

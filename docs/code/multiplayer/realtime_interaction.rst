@@ -4,9 +4,17 @@
 Real-time interaction
 =====================
 
-Participants on the same page can interact live by exchanging WebSocket
-messages through the server, for example to take turns in a game or to edit a
-shared answer. The :doc:`chatroom <chatroom>` is built this way.
+This page is for live features that aren't games. Participants on the same
+page can interact live by exchanging WebSocket messages through the server,
+for example to chat or to edit a shared answer. The :doc:`chatroom
+<chatroom>` is built this way.
+
+.. note::
+
+   To build a game, use a live game instead: start with the :doc:`live game
+   tutorial <live_game_tutorial>`. A live game keeps its state and rules on
+   the server, plays its bots and saves its record, so you don't have to
+   build those from the messages on this page.
 
 How messages travel
 -------------------

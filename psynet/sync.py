@@ -130,6 +130,7 @@ from datetime import timedelta
 from functools import partial
 from math import ceil, floor
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -164,7 +165,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy.dialects.postgresql import aggregate_order_by
+from sqlalchemy.dialects.postgresql import JSONB, aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import (
     Session,
@@ -196,13 +197,14 @@ from psynet.db import (
 )
 from psynet.error import ErrorRecord
 from psynet.field import PythonClass, PythonDict, PythonObject
-from psynet.page import UnsuccessfulEndPage
+from psynet.page import UnsuccessfulEndPage, WaitPage
 from psynet.participant import Participant, _lock_and_load_participant
 from psynet.serialize import SerializedCallable, serialize_callable
 from psynet.timeline import (
     TIME_LIMIT_GRACE_SECONDS,
     CodeBlock,
     EltCollection,
+    PageMaker,
     _is_timeline_hold,
     _trial_owning_page,
     conditional,
@@ -229,6 +231,9 @@ from psynet.utils import (
     get_translator,
     warn_from_caller,
 )
+
+if TYPE_CHECKING:
+    from psynet.live_game import LiveGameRecord
 
 logger = get_logger()
 
@@ -286,6 +291,11 @@ def _barrier_walk_budget():
     for _ in range(_MAX_BARRIER_WALK_PASSES):
         yield True
     yield False
+
+
+class BarrierBehaviorMismatch(ValueError):
+    """A participant arrived at a barrier whose waiting pool was started by a
+    barrier with the same ID and different behavior."""
 
 
 class _BarrierAuthorHookError(Exception):
@@ -891,6 +901,38 @@ class _ReadOnlyParticipantList(list):
     __delitem__ = __iadd__ = __imul__ = __setitem__ = _raise_mutation_error
 
 
+# How long the wait page shown for a pass of waiting_logic without a page
+# lasts before the waiting logic runs again.
+_EMPTY_WAITING_PASS_SECONDS = 2.0
+
+
+# Participant.__dict__ key: page_count when each barrier's current pass of
+# waiting_logic began. A pass that shows no page starts and ends within one
+# Timeline.advance_page call, which stops at the first page, so the value
+# never needs to outlive the request. A pass that began in an earlier request
+# showed a page: a freshly loaded participant object has no entry for it, and
+# a reused one (expire_all keeps unmapped keys) holds a count from before
+# Page.consume raised page_count, so the comparison rejects it, and the next
+# pass overwrites it.
+_WAITING_PASS_PAGE_COUNTS = "_psynet_waiting_pass_page_counts"
+
+
+class _EmptyWaitingPassPage(WaitPage):
+    """Short wait shown when a pass of ``waiting_logic`` shows no page.
+
+    It saves no answer, and a release ends it at once, without the
+    barrier's ``release_grace`` countdown (see :func:`waiting_page_config`).
+    """
+
+    def __init__(self):
+        _p = get_translator(context=True)
+        super().__init__(
+            wait_time=_EMPTY_WAITING_PASS_SECONDS,
+            content=_p("timeline_hold", "Waiting for other participants…"),
+            save_answer=False,
+        )
+
+
 def _expected_repetitions(waiting_logic, expected_wait, default):
     """Return how often ``waiting_logic`` is expected to run to fill ``expected_wait``.
 
@@ -978,7 +1020,15 @@ class Barrier(EltCollection):
         one short trial or page per pass (the loop repeats it), such as
         ``PageMaker(trial_maker.cue_trial, ...)`` in the ``sync_quorum``
         demo: a release then fails at most the trial on screen and creates
-        no unseen trials (see ``release_grace``). A barrier with
+        no unseen trials (see ``release_grace``). A participant whose
+        arrival releases them at once, such as the one who completes a
+        group, normally doesn't start ``waiting_logic``. Participants who
+        arrive at the same moment don't see each other's arrivals yet, so
+        each of them may still start it, and the release then fails those
+        unseen trials. A pass
+        that shows no page, for example because the trial maker has no
+        trial left for the participant, shows a short waiting page
+        instead. A barrier with
         ``waiting_logic`` can't be inside a trial's own pages, such as in
         ``Trial.show_trial``; use ``waiting_screen`` there.
 
@@ -1064,7 +1114,9 @@ class Barrier(EltCollection):
         shows no feedback, and doesn't count towards the trial maker's
         targets of completed trials (it still counts towards
         ``max_trials_per_block`` and ``n_created_trials``).
-        ``None`` lets each waiting page run to its end. Default: 3 seconds.
+        ``None`` lets each page supplied in ``waiting_logic`` run to its
+        end; the short page PsyNet shows after a pass with nothing to show
+        still ends as soon as the participant is released. Default: 3 seconds.
         Only used with ``waiting_logic``; passing it without raises an error.
     """
 
@@ -1180,7 +1232,10 @@ class Barrier(EltCollection):
         """Return whether evaluating this visit would release anyone.
 
         ``GET /timeline`` uses this to decide whether to wait for the visit
-        claim. It must not mutate participants, groups, or the session.
+        claim, and a barrier with ``waiting_logic`` uses it on each arrival
+        to decide whether to skip the first pass of ``waiting_logic``
+        (showing a short wait page instead). It must not mutate
+        participants, groups, or the session.
         Last-arrival skip-in-one-GET waits only when this is true. Custom
         barriers that override :meth:`choose_who_to_release` should override
         this too. The default is ``True`` whenever anyone is waiting, so a
@@ -1203,7 +1258,27 @@ class Barrier(EltCollection):
                 condition=lambda participant: (
                     not self.can_participant_exit(participant)
                 ),
-                logic=self.waiting_logic,
+                logic=join(
+                    CodeBlock(self._start_waiting_pass),
+                    conditional(
+                        "waiting_pass_runs_logic",
+                        lambda participant: (
+                            not self._arrival_releases_at_once(participant)
+                        ),
+                        logic_if_true=self.waiting_logic,
+                        log_chosen_branch=False,
+                    ),
+                    conditional(
+                        "waiting_pass_showed_no_page",
+                        self._waiting_pass_showed_no_page,
+                        logic_if_true=PageMaker(
+                            _EmptyWaitingPassPage,
+                            time_estimate=_EMPTY_WAITING_PASS_SECONDS,
+                        ),
+                        time_estimate=0,
+                        log_chosen_branch=False,
+                    ),
+                ),
                 expected_repetitions=self._waiting_logic_repetitions,
                 max_loop_time=self._arrival_max_wait_time,
                 fix_time_credit=self.fix_time_credit,
@@ -1231,6 +1306,52 @@ class Barrier(EltCollection):
             if elt is not leave:
                 elt.links.setdefault("barrier", self)
         return elts
+
+    def _start_waiting_pass(self, participant):
+        """Remember how many pages the participant had seen when this pass of ``waiting_logic`` began."""
+        counts = participant.__dict__.setdefault(_WAITING_PASS_PAGE_COUNTS, {})
+        counts[self.id] = participant.page_count
+
+    def _arrival_releases_at_once(self, participant):
+        """Return whether the release check queued by this request's arrival is expected to release.
+
+        The check runs after the arrival commits, so the participant who
+        completes a group would otherwise start a pass of ``waiting_logic``,
+        such as a trial, that the release then fails unseen. Their pass
+        shows the short wait page instead, which the release skips. A wrong
+        "yes" only costs that wait page. The peek can't see arrivals that
+        other requests haven't committed yet, so simultaneous arrivals may
+        each get "no"; the release then fails the unseen trial as usual.
+        Waiting for those requests would serialise every arrival.
+        """
+        link = participant.active_barriers.get(self.id)
+        if link is None or link.barrier_instance is None:
+            return False
+        instance_id = link.barrier_instance.id
+        if instance_id not in _pending_barrier_checks.peek():
+            return False
+        # The peek rolls back a savepoint, which must not undo the arrival.
+        db.session.flush()
+        return _visit_check_would_release(instance_id)
+
+    def _waiting_pass_showed_no_page(self, participant):
+        """Return whether this pass of ``waiting_logic`` showed no page and the participant still waits.
+
+        Without a page, the waiting loop would repeat on the server until
+        ``max_wait_time``; a short wait page lets the next poll try again.
+        """
+        counts = participant.__dict__.get(_WAITING_PASS_PAGE_COUNTS, {})
+        if counts.pop(self.id, None) != participant.page_count:
+            return False
+        if self.can_participant_exit(participant):
+            return False
+        logger.debug(
+            "Barrier '%s': waiting_logic showed participant %s no page; "
+            "showing a wait page.",
+            self.id,
+            participant.id,
+        )
+        return True
 
     def handle_max_wait_timeout(self, participant: Participant):
         """Release the participant's active barrier link after a max-wait timeout."""
@@ -1650,10 +1771,12 @@ _JOIN_LOCK_WAIT_SECONDS = 1
 def _lock_sync_group(
     group_id, *, session=None, skip_locked=False, nowait=False, wait_seconds=None
 ) -> Optional["SyncGroup"]:
-    """Lock a sync group's row ``FOR NO KEY UPDATE`` and reload it, with its member links.
+    """Lock a sync group's row ``FOR NO KEY UPDATE`` and reload it.
 
-    ``populate_existing`` also reloads the member links this session has
-    loaded, so they include members who joined or left in other requests.
+    ``populate_existing`` refreshes the group's row and which links it has,
+    but link objects this session has already loaded keep their old
+    ``active`` and ``admitted_at``. Read the members after the lock, or
+    reload the links, to see members who joined or left in other requests.
     See the lock order in :doc:`/developer/synchronization_internals`.
 
     Parameters
@@ -1859,6 +1982,8 @@ RemovalReason = Literal[
     "removed_by_experimenter",
     "left_experiment",
     "late",
+    "no_show",
+    "left_game",
     "waited_too_long",
     "group_dissolved",
     "moved_on",
@@ -1998,9 +2123,12 @@ class GroupBarrier(Barrier):
         Acts on members who haven't reached this barrier yet: the longest each may take to reach it, in seconds,
         counted from the group's previous barrier pass or from when the group admitted them, whichever is later,
         before ``late_action`` is applied to them; pending members are never late, and nobody is late while
-        only pending members wait here. ``None`` (default) never treats anyone as late. A member on a
-        page with a ``time_limit`` is never late before that limit has run out plus 10 seconds, so that an
-        answer sent at the deadline can arrive; this timeout therefore need not cover the pages' time limits.
+        only pending members wait here. ``None`` (default) never treats anyone as late. For a member who
+        has started a page with a ``time_limit`` since then, the time counts from when that limit runs out
+        plus 10 seconds, so that an answer sent at the deadline can arrive, if that is later; this timeout
+        therefore needs to cover only the pages without a time limit. The same holds for a page whose
+        :meth:`~psynet.timeline.Page.ends_by` says when it ends at the latest, such as a live game's
+        page.
         Requires ``late_action``, and the grouper of ``group_type`` (and of each type in ``also_leave``)
         must then be given ``below_quorum``, which is checked when the experiment loads.
 
@@ -2852,10 +2980,10 @@ class GroupBarrier(Barrier):
         Each admitted member is timed from the group's last barrier pass or
         from when they were admitted, whichever is later, so newcomers are
         not late as soon as they take part; pending members are never late. A
-        member who has started a page with a time limit since then, outside
-        waiting logic, is not late until that limit has run out and an answer
-        sent at the deadline has had time to arrive, even if they have
-        already left the page.
+        member who has started a page with a time limit (or an ``ends_by``) since then, outside
+        waiting logic, is timed from when that limit runs out and an answer
+        sent at the deadline has had time to arrive instead, if that is
+        later, even if they have already left the page.
         """
         now = timenow()
         return [
@@ -2882,9 +3010,9 @@ class GroupBarrier(Barrier):
             starts = [t for t in (group.last_barrier_pass_time, link.admitted_at) if t]
             if not starts:
                 continue
-            late_at = max(starts) + timedelta(seconds=self.late_after)
             if link.page_deadline is not None:
-                late_at = max(late_at, link.page_deadline + answer_arrival)
+                starts.append(link.page_deadline + answer_arrival)
+            late_at = max(starts) + timedelta(seconds=self.late_after)
             times.append((link, late_at))
         return times
 
@@ -4720,6 +4848,13 @@ def check_group_dropout_policies(barriers):
                 )
         if barrier.stop_top_ups:
             top_ups_stopped.add(barrier.group_type)
+        for group_type in getattr(barrier, "absent_leave", []):
+            for grouper in groupers.get(group_type, []):
+                _check_absent_leave(
+                    barrier,
+                    grouper.below_quorum or "fail",
+                    f"SimpleGrouper '{grouper.id}'",
+                )
         if barrier.late_after is None:
             continue
         for group_type in [barrier.group_type, *barrier.also_leave]:
@@ -4762,10 +4897,21 @@ def check_late_removal_policies(barriers, participant):
     """
     groups = None
     for barrier in barriers:
-        if not isinstance(barrier, GroupBarrier) or barrier.late_after is None:
+        if not isinstance(barrier, GroupBarrier):
+            continue
+        absent_leave = getattr(barrier, "absent_leave", [])
+        if barrier.late_after is None and not absent_leave:
             continue
         if groups is None:
             groups = participant.active_sync_groups
+        for group_type in absent_leave:
+            group = groups.get(group_type)
+            if isinstance(group, SimpleSyncGroup):
+                _check_absent_leave(
+                    barrier, group.below_quorum or "fail", f"the '{group_type}' grouper"
+                )
+        if barrier.late_after is None:
+            continue
         group = groups.get(barrier.group_type)
         if isinstance(group, SimpleSyncGroup):
             _check_top_up_wait(
@@ -4812,6 +4958,17 @@ def _check_late_action(barrier, below_quorum, grouper_label):
             f"{grouper_label} has below_quorum='fail', so a late member would "
             "carry on alone while the members who were on time are failed. "
             "Pass below_quorum='continue_without_group', or late_action='fail'."
+        )
+
+
+def _check_absent_leave(barrier, below_quorum, grouper_label):
+    """Reject a PlayLiveGame's ``absent_action="leave_group"`` on a group whose ``below_quorum`` is ``"fail"``."""
+    if below_quorum == "fail":
+        raise ValueError(
+            f"The PlayLiveGame '{barrier.id}' has absent_action='leave_group', "
+            f"but {grouper_label} has below_quorum='fail', so a player who "
+            "didn't play its game could leave the group below its quorum and "
+            "fail the players who did. Pass below_quorum='continue_without_group'."
         )
 
 
@@ -4872,24 +5029,6 @@ def check_admission_points(barriers):
             UserWarning,
             stacklevel=2,
         )
-
-
-def group_seats(group) -> Dict[int, int]:
-    """Return ``{participant_id: seat}`` for everyone who has been admitted to ``group``.
-
-    Seats number members in the order they were first admitted. Links are
-    kept when members leave, so seats never change while the group exists,
-    and pages can refer to members without their IDs. Pending members get a
-    seat once admitted, and members turned away never get one.
-    """
-    seats = {}
-    links = sorted(
-        (link for link in group.participant_links if link.admitted_at is not None),
-        key=lambda link: (link.admitted_at, link.id is None, link.id or 0),
-    )
-    for link in links:
-        seats.setdefault(link.participant_id, len(seats))
-    return seats
 
 
 def leave_group(group_type: str, reason: RemovalReason = "finished"):
@@ -5073,6 +5212,50 @@ class SyncGroup(SQLBase, SQLMixin):
         """
         return [link.participant for link in self._working_links(admitted=False)]
 
+    @property
+    def seats(self) -> Dict[int, int]:
+        """``{participant_id: seat}`` for everyone who has been admitted to the group.
+
+        Seats number members in the order they were first admitted. Links are
+        kept when members leave, so seats never change while the group exists,
+        and pages can refer to members without their IDs. Pending members get a
+        seat once admitted, and members turned away never get one.
+        """
+        seats = {}
+        links = sorted(
+            (link for link in self.participant_links if link.admitted_at is not None),
+            key=lambda link: (link.admitted_at, link.id is None, link.id or 0),
+        )
+        for link in links:
+            seats.setdefault(link.participant_id, len(seats))
+        return seats
+
+    @property
+    def running_live_games(self) -> Dict[str, "LiveGameRecord"]:
+        """``{play_id: game}`` for each live game the group is playing now,
+        as a :class:`~psynet.live_game.LiveGameRecord`.
+
+        Keyed by the ``id_`` of the :class:`~psynet.live_game.PlayLiveGame`
+        that started the game, as :attr:`Participant.live_games
+        <psynet.participant.Participant.live_games>` is. A step whose game
+        has ended isn't in it. Read it again rather than keep it, since games
+        start and end.
+        """
+        from .live_game.play import _running_live_games
+
+        return _running_live_games(self)
+
+    def reached_barrier_after_time_limit(self, participant: Participant) -> bool:
+        """Return whether ``participant`` reached the group's barrier they wait at because a time limit ran out.
+
+        That is, they are waiting at a barrier of the group that they reached
+        after the time limit of their latest timed page ran out; untimed pages in
+        between, and a trial's feedback pages even if timed, don't count.
+        """
+        return any(
+            link.ran_out_of_time for _, link in _waiting_links(participant, self)
+        )
+
     def _active_link(self, participant) -> Optional["ParticipantLinkSyncGroup"]:
         """Return ``participant``'s active link to the group, or ``None``."""
         return next(
@@ -5244,6 +5427,9 @@ class SyncGroup(SQLBase, SQLMixin):
               ``"group_dissolved"``: they dropped out.
             - ``"late"``: a barrier removed them for being late (with any
               ``late_action``).
+            - ``"no_show"`` or ``"left_game"``: they didn't play a
+              :class:`~psynet.live_game.PlayLiveGame`'s game, or left it for
+              good, and its ``absent_action="leave_group"`` removed them.
             - ``"moved_on"``: for a member who left at a :class:`Regrouper`,
               for their next group or to sit the round out. A pair a :class:`SimpleGrouper`
               formed isn't dissolved, failing the partner, when the first
@@ -5374,7 +5560,7 @@ class SyncGroup(SQLBase, SQLMixin):
                 return []
             rounds = _open_rounds(self, removed)
             _mark_rounds_dissolved(rounds)
-            group_size = len(group_seats(self))
+            group_size = len(self.seats)
             fail = (self.below_quorum or "fail") == "fail"
             self._turn_away_pending()
             for participant in removed:
@@ -5521,6 +5707,16 @@ class SyncGroupRound(SQLBase, SQLMixin):
         a page after the barrier, and so does a round whose remaining
         members' trials had all ended before the group dissolved. Written
         under the members' row locks, so it is never set on a closed round.
+    live_game_id : int or None
+        The id of the live game that a
+        :class:`~psynet.live_game.PlayLiveGame` in the round's trials
+        started, or ``None``, for the export. In code, read a trial's
+        :attr:`~psynet.trial.main.Trial.live_game` instead.
+    live_game_outcome : object or None
+        What the ``outcome`` method of that game returned, copied here when
+        the game's result is saved, a few seconds after the game ends.
+        ``None`` before then, without a live game, or for a game that failed
+        without an outcome.
     trials : list of Trial
         The members' trials in the round, including failed ones.
     """
@@ -5543,6 +5739,8 @@ class SyncGroupRound(SQLBase, SQLMixin):
     definition = Column(PythonObject)
     closed_at = Column(DateTime)
     dissolved_at = Column(DateTime)
+    live_game_id = Column(Integer, index=True)
+    live_game_outcome = Column(JSONB)
 
     trials = relationship(
         "psynet.trial.main.Trial",
@@ -6249,7 +6447,7 @@ class BarrierInstance(SQLBase, SQLMixin):
     def _validate_behavior(self, behavior_hash):
         """Reject incompatible reuse of one active waiting pool."""
         if self.behavior_hash != behavior_hash:
-            raise ValueError(
+            raise BarrierBehaviorMismatch(
                 f"Barrier ID '{self.barrier_id}' was reused with different behavior "
                 "while its waiting pool is active. Use a different barrier ID."
             )
@@ -6273,7 +6471,8 @@ class ParticipantLinkSyncGroup(SQLBase, SQLMixin):
     removed_on_page = Column(String)
     # The member's role in the group (see ``Regrouper(roles=...)``).
     role = Column(String)
-    # The deadline of the latest timed page the member started outside
+    # The deadline of the latest page with a deadline, a timed page or one
+    # whose ``Page.ends_by`` gives one, that the member started outside
     # waiting logic since the group's last barrier pass; see
     # ``GroupBarrier.late_after``.
     page_deadline = Column(DateTime)
@@ -6549,7 +6748,7 @@ def arrival_notice_payload(unique_id):
 def _ready_seats_for(participant):
     """Return ``{group_id, seats, ran_out_of_time, members}`` for each of the participant's groups.
 
-    ``seats`` (see :func:`group_seats`) are those of the members waiting at
+    ``seats`` (see :attr:`SyncGroup.seats`) are those of the members waiting at
     a barrier of the group, as :class:`~psynet.group_prompt.GroupPrompt`
     ticks them, ``ran_out_of_time`` those of the waiting members who came
     after their latest timed page ran out of time, and ``members`` those of all
@@ -6558,7 +6757,7 @@ def _ready_seats_for(participant):
     """
     ready = []
     for group in participant.active_sync_groups.values():
-        seats = group_seats(group)
+        seats = group.seats
         members = group.active_participants
         waiting, timed_out = [], []
         for member in members:
@@ -6606,23 +6805,15 @@ def _is_waiting_at_barrier(participant, group) -> bool:
     return bool(_waiting_links(participant, group))
 
 
-def reached_barrier_after_time_limit(participant, group) -> bool:
-    """Return whether ``participant`` reached the barrier of ``group`` they wait at because a time limit ran out.
-
-    That is, they are waiting at a barrier of ``group`` that they reached
-    after the time limit of their latest timed page ran out; untimed pages in
-    between, and a trial's feedback pages even if timed, don't count.
-    """
-    return any(link.ran_out_of_time for _, link in _waiting_links(participant, group))
-
-
 def _interruptible_waiting_barrier(page, participant):
     """Return the barrier whose ``waiting_logic`` this page belongs to, if a release may end it.
 
     Every such page may end, including a trial's; see :func:`_end_waiting_page`.
     """
     barrier = (getattr(page, "links", None) or {}).get("barrier")
-    if not isinstance(barrier, Barrier) or barrier.release_grace is None:
+    if not isinstance(barrier, Barrier):
+        return None
+    if barrier.release_grace is None and not isinstance(page, _EmptyWaitingPassPage):
         return None
     if participant.waiting_barrier_id != barrier.id:
         return None
@@ -6709,10 +6900,13 @@ def waiting_page_config(page, participant):
         return None
     barrier = _interruptible_waiting_barrier(page, participant)
     if barrier is not None:
+        empty_pass = isinstance(page, _EmptyWaitingPassPage)
         return {
             "barrier_id": barrier.id,
-            "release_grace_ms": round(barrier.release_grace * 1000),
-            "release_notice": _release_notice(barrier),
+            "release_grace_ms": (
+                0 if empty_pass else round(barrier.release_grace * 1000)
+            ),
+            "release_notice": None if empty_pass else _release_notice(barrier),
         }
     barrier_id = participant.waiting_barrier_id
     if (
@@ -7386,8 +7580,8 @@ class GroupCloser(GroupBarrier):
         if "id_" not in kwargs:
             kwargs["id_"] = f"closer_{group_type}"
 
-        super().__init__(group_type=group_type, on_release=close_sync_group, **kwargs)
+        super().__init__(group_type=group_type, on_release=_close_sync_group, **kwargs)
 
 
-def close_sync_group(group):
+def _close_sync_group(group):
     group.close()
