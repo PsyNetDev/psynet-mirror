@@ -338,9 +338,7 @@ def regroup_now(
     one ``deadline`` (or ``every`` period): the bots' arrival times at the
     regrouper and the creation times of the groups their pools' earlier
     splits formed. The next check then splits the pools as the deadline or
-    tick would. It runs that check before advancing the bots, so ``stop_at``
-    can name the regrouper itself to leave its left-over bots waiting there.
-    Group memberships and roles are untouched, so a player still
+    tick would. Group memberships and roles are untouched, so a player still
     in last round's group keeps their role. ``max_wait_time`` doesn't
     move: it counts from the bots' real arrivals. A player waiting alone for
     cohort members who are still playing isn't released: that needs a second
@@ -357,13 +355,14 @@ def regroup_now(
     timeout : float, optional
         Passed to :func:`advance_past_wait_pages`.
     stop_at : str or sequence of str
-        Passed to :func:`advance_past_wait_pages`.
+        Passed to :func:`advance_past_wait_pages`: IDs of barriers after the
+        regrouper, such as one inside the round, to leave bots waiting at.
 
     Raises
     ------
     ValueError
-        If the regrouper has neither ``deadline`` nor ``every``, or none of
-        the bots is waiting at it.
+        If the regrouper has neither ``deadline`` nor ``every``, none of the
+        bots is waiting at it, or ``stop_at`` names the regrouper itself.
 
     Examples
     --------
@@ -376,8 +375,11 @@ def regroup_now(
         # Responders wait at "offer_made" while the test plays the proposers.
         regroup_now(bots, pairing, stop_at="offer_made")
     """
-    from .sync import check_barriers
-
+    if regrouper.id in ({stop_at} if isinstance(stop_at, str) else set(stop_at)):
+        raise ValueError(
+            f"stop_at can't name the regrouper '{regrouper.id}': the split happens "
+            "in the background, so bots waiting there would be left before it."
+        )
     period = regrouper.deadline or regrouper.every
     if period is None:
         raise ValueError(
@@ -396,7 +398,6 @@ def regroup_now(
             pools[group and group.id] = group
         for within_group in pools.values():
             _backdate_splits(regrouper, within_group, period)
-    check_barriers()
     advance_past_wait_pages(bots, timeout=timeout, stop_at=stop_at)
 
 
