@@ -128,6 +128,17 @@ def test_partial_render_makes_embedded_scripts_inert():
     assert 'type="text/html"' in inert_html
 
 
+def test_layout_key_covers_main_body_and_js_vars():
+    def key(body, **js_vars):
+        page = Page(time_estimate=1, template_str="", js_vars=js_vars)
+        return page.layout_key(f'<div id="main-body">{body}</div>', None, None)
+
+    assert key("task", timing=1) == key("task", timing=1)
+    assert key("task", timing=1) != key("other task", timing=1)
+    assert key("task", timing=1) != key("task", timing=2)
+    assert key("task", timing=None) != key("task")
+
+
 def test_timeline_template_emits_js_dependencies_as_blocking_head_scripts():
     from psynet import __file__ as psynet_file
 

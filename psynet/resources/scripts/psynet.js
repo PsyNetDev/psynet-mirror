@@ -735,8 +735,8 @@
     psynet.resetAnswers = function () {
       // ``handle`` belongs to the trial on screen until it is answered.
       // ``sending`` settles once the queue is sent or sending stops.
-      // ``showAgain`` is set when the server turns an answer down, as opposed
-      // to the page failing or moving on.
+      // ``showAgain`` is set when an answer is turned down or couldn't be
+      // sent yet, as opposed to the page failing or moving on.
       psynet.answers = {
         queue: [],
         handle: null,
@@ -821,9 +821,14 @@
             // The events of this trial only, as later trials share the page.
             event_log: psynet.trial.eventLog.splice(0),
           };
-          // The page shown next, which the answer's reply should be.
-          let nextPageUuid = psynet.upcomingPages[answers.queue.length]?.page_uuid;
-          answers.queue.push({ value, metadata, nextPageUuid });
+          // showNextPredictedTrial sets nextPageUuid if it shows a trial next.
+          // Recordings are only this page's while it shows nothing in advance.
+          answers.queue.push({
+            value,
+            metadata,
+            nextPageUuid: undefined,
+            withRecordings: !answers.queue.length && !psynet.upcomingPages.length,
+          });
           // After the caller's own code, which may still tidy up this trial.
           queueMicrotask(psynet.showNextPredictedTrial);
           psynet.sendAnswers();
@@ -837,9 +842,21 @@
     psynet.showNextPredictedTrial = function () {
       let offset = psynet.answers.queue.length;
       if (
+        // Not while an answer that couldn't be sent waits to be shown again.
+        !psynet.answers.showAgain &&
+        !psynet.pageFailureShown &&
         psynet.answers.handle === null &&
         offset < psynet.predictedContents().length
       ) {
+        // The page shown after the last answer, which its reply should be.
+        // Set here rather than on answering, as that trial may only become
+        // known from a later reply.
+        if (offset > 0) {
+          let next = psynet.upcomingPages[offset - 1];
+          let entry = psynet.answers.queue[offset - 1];
+          entry.nextPageUuid = next?.page_uuid;
+          entry.nextContents = JSON.stringify(next?.contents);
+        }
         psynet.updatePageModules(offset).catch((error) => {
           psynet.log.error(error.stack || String(error));
         });
@@ -860,9 +877,12 @@
         // Queued while the last reply was being handled.
         psynet.sendAnswers();
       } else if (retry) {
-        // Show the rejected trial again. The server's page is that trial, so
-        // a rendered page is replaced by loading it.
+        // Show the rejected trial again, with the comments made on it. The
+        // server's page is that trial, so a rendered page is replaced by
+        // loading it.
+        psynet.comments.unshift(...(retry.metadata.comments ?? []));
         answers.queue = [];
+        answers.showAgain = false;
         if (retry.pageUuid === undefined) {
           await psynet.updatePageModules(0);
         } else {
@@ -871,7 +891,8 @@
       }
     };
 
-    // Return the answer to show again, if the server turned it down.
+    // Return the answer to show again, if it was turned down or couldn't be
+    // sent yet.
     let sendQueuedAnswers = async function (answers) {
       while (psynet.answers === answers && answers.queue.length) {
         let entry = answers.queue[0];
@@ -881,7 +902,11 @@
           entry.metadata,
           undefined,
           undefined,
-          { background: true, pageUuid: entry.pageUuid },
+          {
+            background: true,
+            pageUuid: entry.pageUuid,
+            withRecordings: entry.withRecordings,
+          },
         );
         if (!accepted) {
           let showAgain =
@@ -894,12 +919,14 @@
       return null;
     };
 
-    // Whether the reply is the page shown after the oldest queued answer.
+    // Whether the reply is the page shown after the oldest queued answer,
+    // with the contents that were shown for it.
     psynet.isPredictedReply = function (response) {
-      let pageUuid = psynet.answers.queue[0]?.nextPageUuid;
+      let entry = psynet.answers.queue[0];
       return (
-        pageUuid !== undefined &&
-        response.page?.attributes?.page_uuid === pageUuid &&
+        entry?.nextPageUuid !== undefined &&
+        response.page?.attributes?.page_uuid === entry.nextPageUuid &&
+        JSON.stringify(response.page?.contents) === entry.nextContents &&
         !response.page?.attributes?.timeline_hold
       );
     };
@@ -965,6 +992,7 @@
         },
         pageUuid: psynet.submissionPageUuid,
         nextPageUuid: page.page_uuid,
+        nextContents: JSON.stringify(page.contents),
       });
       try {
         await psynet.showTimelineFragment(page);
@@ -2073,6 +2101,8 @@
       // to wait for the page to load (for example after an automatic submit).
       psynet.pageFailureShown = true;
       psynet.nextPagePending = false;
+      // Answers not yet sent are lost on reload, which needn't be confirmed.
+      psynet.resetAnswers();
       psynet.setTimelineTransitionBusy(false);
       psynet.response.disable();
       psynet.submit.disable();
@@ -4079,10 +4109,19 @@
       onRejection,
       options = {},
     ) {
-      if (!psynet.pageReady && !options.background) {
+      // A queued answer refused here was never sent, so its trial is shown
+      // again to be answered later, unless the page has failed. Answers to
+      // swapped-in pages name their own page, so the page now on screen
+      // needn't be ready.
+      if (!psynet.pageReady && options.pageUuid === undefined) {
         psynet.log.info("Blocked nextPage because pageReady is false.");
-        if (!psynet.pageFailureShown) {
-          psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        if (psynet.pageFailureShown) {
+          return false;
+        }
+        let alerted = psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        if (options.background) {
+          psynet.answers.showAgain = true;
+          await alerted;
         }
         return false;
       }
@@ -4114,11 +4153,14 @@
           if (psynet.pageModuleGeneration !== generation) return false;
         }
       }
-      if (psynet.nextPagePending && !options.background) {
+      if (psynet.nextPagePending && options.pageUuid === undefined) {
         psynet.log.info("Blocked nextPage because nextPagePending is true.");
         psynet.log.debug(
           "Skipping nextPage request as nextPage is already pending.",
         );
+        if (options.background) {
+          psynet.answers.showAgain = true;
+        }
         return false;
       }
       psynet.log.info("Submitting response via nextPage.");
@@ -4210,6 +4252,7 @@
 
     psynet.loadNextTimelinePageWithReload = async function () {
       await psynet.drainRecordingUploads();
+      psynet.resetAnswers();
       if (psynetTemplateData.flags.lucidRecruitment) {
         psynet.removeBeforeUnloadEventListener();
       }
@@ -4765,6 +4808,7 @@
       recordingUploadQueue?.allowUnload();
       answersMayBeLost = false;
     };
+    psynet.allowRecordingUnload = psynet.allowUnload;
     psynet.drainRecordingUploads = async function () {
       if (!recordingUploadQueue?.pendingBytes) return;
       psynet.setTimelineTransitionBusy(true);
@@ -4839,14 +4883,21 @@
     // The server may have accepted the answer, and an error page would lose its
     // recordings. Let the participant resend the same submission instead, so the
     // server can recover its original reply.
-    let offerRecordingResend = function (request) {
+    let offerRecordingResend = async function (request, options) {
       psynet.log.warn(
         `Recording submission outcome unknown (HTTP ${request.status}); keeping it for a resend.`,
       );
-      psynet.alert(
+      let message =
         (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.unconfirmed ||
-          "We could not confirm that your answer was received. Please check your connection and press Next again.",
-      );
+        "We could not confirm that your answer was received. Please check your connection and press Next again.";
+      if (options.background) {
+        // Showing the trial again lets the participant answer, which resends.
+        psynet.answers.handle = null;
+        psynet.answers.showAgain = true;
+        await psynet.alert(message);
+        return;
+      }
+      psynet.alert(message);
       psynet.restoreSubmissionControlState();
     };
 
@@ -4874,9 +4925,10 @@
 
       let capturedRecordings = {};
       const submittedPageUuid = options.pageUuid ?? psynet.submissionPageUuid;
-      // Answers sent in the background carry no recordings, and the page's
-      // settings may already be the next trial's.
-      const withoutRecordings = options.timelineHoldResume || options.background;
+      // Answers sent in the background carry no recordings unless queued with
+      // them, as the page's settings may already be the next trial's.
+      const withoutRecordings =
+        options.timelineHoldResume || (options.background && !options.withRecordings);
       const background = withoutRecordings ? null : psynet.var.backgroundRecording;
       const sources = withoutRecordings ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
       const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;
@@ -5047,7 +5099,7 @@
               } else if (Array.isArray(sources) && [0, 502, 503, 504].includes(request.status)) {
                 // Only a transport failure leaves acceptance unknown; PsyNet's
                 // own error replies go to its error recovery as before.
-                offerRecordingResend(request);
+                await offerRecordingResend(request, options);
               } else {
                 psynet.log.debug("Something went wrong.");
                 onErrorResponse(request);
@@ -5060,7 +5112,7 @@
               } else if (Array.isArray(sources) && unconfirmedRecordingSubmission) {
                 // The reply could not be read, so acceptance is still unknown.
                 psynet.log.warn(error.stack || String(error));
-                offerRecordingResend(request);
+                await offerRecordingResend(request, options);
               } else if (psynetTemplateData.flags.inplaceTimelineTransitions) {
                 await psynet.handleTimelineTransitionFailure(error);
               } else {

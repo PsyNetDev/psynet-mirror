@@ -228,16 +228,24 @@ lost and its clock starts again.
 
 For this to work:
 
-- Every trial page must render the same HTML and JavaScript, with everything
-  that changes between trials in ``contents`` rather than in the HTML or
-  ``js_vars``. The browser checks this when the server's reply arrives; if
-  the HTML differs, it drops the answers given ahead, loads the server's page
-  and logs a warning in the browser console.
+- Every trial page must have the same HTML, JavaScript and ``js_vars``.
+  ``js_vars`` configure the page, such as a task's timings, and stay as
+  they are for all the trials it shows. What changes between trials goes in
+  ``contents``, which each ``update()`` receives. PsyNet renders each
+  trial's page once to compare them; a trial whose HTML, JavaScript or
+  ``js_vars`` differ isn't shown in advance, but waits for the server, and
+  PsyNet logs a warning. If no trial at all could be shown in advance,
+  bot tests such as ``psynet test local`` fail. A prompt that puts the stimulus in its HTML,
+  such as ``ImagePrompt``, makes every trial's HTML differ, so pass the
+  stimulus in ``contents`` instead.
 - ``show_trial`` and ``show_after_trial`` must not change anything or
   choose at random, because PsyNet also calls them for upcoming trials,
   before they are answered.
   Choose random values in
   :meth:`~psynet.trial.main.Trial.finalize_definition` instead.
+- The trial maker picks all the trials' nodes when the participant reaches
+  it, before any is answered, so ``custom_node_filter`` and ``select_node``
+  can't adapt to the participant's answers.
 - Pages with a ``time_limit``, background recording, ``media`` (such as an
   :class:`~psynet.modular_page.AudioPrompt`) or a full page reload aren't
   shown in advance, because PsyNet sets these up for each page. Their files
@@ -258,5 +266,6 @@ Also keep in mind:
 Trials prepared in advance can't use sync groups, repeat trials, performance
 checks after every trial, or ``recruit_mode="n_trials"``. The browser only runs
 ahead with in-place timeline transitions, which are on by default. The response
-timeout of each trial counts from when the server first sends its page, and
-the participant can be one more answer ahead than ``n_upcoming_trials``.
+timeout of each trial counts from when the server first sends its page; once
+one times out, the participant's trials waiting their turn fail with it.
+The participant can be one more answer ahead than ``n_upcoming_trials``.

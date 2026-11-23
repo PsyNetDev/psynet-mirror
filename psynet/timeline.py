@@ -7,6 +7,7 @@ if TYPE_CHECKING:
 import copy
 import enum
 import hashlib
+import hmac
 import inspect
 import json
 import random
@@ -1231,9 +1232,13 @@ def make_page_uuid(participant, visit, page_key):
     The page UUID follows from the page and when it is shown, so the server
     can tell the browser the page UUIDs of pages it shows in advance without
     storing them. Visits are counted, so page UUIDs never repeat, which
-    timeline hold records rely on. Nothing relies on them being hard to guess.
+    timeline hold records rely on. ``/response`` accepts an answer only for
+    the current page UUID, so the UUID ends with a hash keyed by the
+    participant's ``unique_id``, which other clients don't know.
     """
-    return f"{participant.id}-{visit}-{page_key}"
+    page = f"{participant.id}-{visit}-{page_key}"
+    key = participant.unique_id.encode()
+    return f"{page}-{hmac.new(key, page.encode(), hashlib.sha256).hexdigest()[:16]}"
 
 
 def _arrival_updates_for(page, participant):
@@ -2349,6 +2354,19 @@ class Page(Elt):
         """
         pass
 
+    _pre_rendered = False
+
+    def _pre_render_once(self):
+        """Run ``pre_render``, unless it already ran for this request.
+
+        Trial makers that prepare trials in advance pre-render pages early to
+        compare them; the request then skips running ``pre_render`` again.
+        """
+        if not self._pre_rendered:
+            with forbid_commits(f"{type(self).__name__}.pre_render"):
+                self.pre_render()
+            self._pre_rendered = True
+
     def early_exit_available(self, experiment, participant) -> bool:
         """Return whether this page may offer the participant an early exit.
 
@@ -2388,7 +2406,9 @@ class Page(Elt):
             # Fragments carry their key beside the HTML; a full page needs a
             # partial render to compute the same key.
             self._full_page_layout_key = self.layout_key(
-                self.render(experiment, participant, partial_mode=True)
+                self.render(experiment, participant, partial_mode=True),
+                experiment,
+                participant,
             )
 
         # Architecture: docs/developer/page_lifecycle.rst
@@ -2778,12 +2798,15 @@ class Page(Elt):
 
         Only page modules can, as their ``update`` shows each trial, and only
         on pages that need nothing PsyNet sets up for each page: a time limit,
-        background recording, media or a full page reload.
+        recording, media or a full page reload.
         """
+        from .modular_page import RecordControl
+
         return (
             bool(self.js_page_modules)
             and self.time_limit is None
             and self.background_recording is None
+            and not isinstance(getattr(self, "control", None), RecordControl)
             and not self.requires_full_page_reload
             and not self.media.urls
         )
@@ -2817,7 +2840,9 @@ class Page(Elt):
             if page._rendered_in_advance:
                 page._page_uuid = page_uuid
                 html = page.render(experiment, participant, partial_mode=True)
-                payload.append({"page_uuid": page_uuid, "html": html})
+                payload.append(
+                    {"page_uuid": page_uuid, "html": html, "contents": page.contents}
+                )
             else:
                 payload.append({"page_uuid": page_uuid, "contents": page.contents})
         return payload
@@ -2857,8 +2882,8 @@ class Page(Elt):
             or type(self).validate is not Page.validate
         )
 
-    def layout_key(self, fragment_html):
-        """Identify the page's ``#main-body`` and JavaScript in a partial render.
+    def layout_key(self, fragment_html, experiment, participant):
+        """Identify the page's ``#main-body``, JavaScript and ``js_vars`` in a partial render.
 
         A predicted trial page is only reused for the next trial if the two
         keys match, so that the page modules' ``update`` can show it.
@@ -2874,8 +2899,10 @@ class Page(Elt):
                 self.js_page_code,
                 self.legacy_js_links,
                 self.legacy_scripts,
+                self._js_vars_for(experiment, participant),
             ],
             default=str,
+            sort_keys=True,
         )
         return hashlib.sha256(layout.encode()).hexdigest()[:16]
 
