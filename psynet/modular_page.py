@@ -152,6 +152,8 @@ class Prompt(JavaScriptContributor):
         in PsyNet's built-in ``prompt.html`` file.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         text: Union[None, str, Markup] = None,
@@ -324,6 +326,8 @@ class AudioPrompt(BaseAudioPrompt):
     kwargs
         Passed to :class:`~psynet.modular_page.Prompt`.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -601,6 +605,8 @@ class ImagePrompt(Prompt):
 
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         url: str,
@@ -683,6 +689,8 @@ class ColorPrompt(Prompt):
         CSS alignment of the text.
 
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -982,6 +990,8 @@ class NullControl(Control):
     """
     Here the participant just has a single button that takes them to the next page.
     """
+
+    can_swap_in_advance = True
 
     # The macro is named blank, not null, for back-compatibility reasons
     macro = "blank"
@@ -1394,6 +1404,8 @@ class PushButtonControl(OptionControl):
         Other arguments to pass to :class:`OptionControl`, such as ``restrict_to_choices``.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         choices: List[Union[str, float, int]],
@@ -1473,6 +1485,8 @@ class KeyboardPushButtonControl(PushButtonControl):
     kwargs:
         Other arguments to pass to :class:`~psynet.modular_page.PushButtonControl`.
     """
+
+    can_swap_in_advance = True
 
     macro = "keyboard_push_buttons"
 
@@ -1874,6 +1888,8 @@ class TextControl(Control):
         Whether to block the copy, cut and paste options in the text input box.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         one_line: bool = True,
@@ -2165,6 +2181,8 @@ class ModularPage(Page):
         including ``js_dependencies`` and ``js_page_modules``.
     """
 
+    can_swap_in_advance = True
+
     default_layout = ["prompt", "media", "progress", "control", "chatroom", "buttons"]
 
     def __init__(
@@ -2419,6 +2437,9 @@ class ModularPage(Page):
             return self.control.validate(response, **kwargs)
         else:
             return super().validate(response, **kwargs)
+
+    def _swap_components(self):
+        return [self, self.prompt, self.control]
 
     def _may_reject_answers(self):
         return (
@@ -4847,6 +4868,8 @@ class MultiRatingControl(SurveyJSControl):
         Whether to show question titles (default: True).
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         *scales: "RatingScale",
@@ -4921,6 +4944,8 @@ class RatingControl(MultiRatingControl):
     bot_response :
         An optional argument that can be used to specify a response delivered by automatic bots to this page.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,

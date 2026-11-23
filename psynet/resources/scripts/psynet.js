@@ -1459,14 +1459,19 @@
       },
 
       interrupt() {
-        if (!psynet.waiting.config) return;
-        if (psynet.nextPagePending) {
-          // A submission in flight may still be rejected, for example by
-          // validation; try again once it has settled.
+        if (!psynet.waiting.config || psynet.timelineHold) return;
+        if (
+          psynet.nextPagePending ||
+          psynet.answers.sending ||
+          !psynet.pageReady
+        ) {
+          // A submission in flight, including answers given in advance, may
+          // still be rejected, for example by validation; try again once it
+          // has settled and the page is ready.
           psynet.waiting.graceTimer = setTimeout(psynet.waiting.interrupt, 500);
           return;
         }
-        psynet.nextPage(null, { interrupted: true }, {}, undefined, {
+        psynet.sendSubmission(null, { interrupted: true }, {}, undefined, {
           interrupted: true,
         });
       },
@@ -1757,7 +1762,7 @@
       controller.resumeRequested = false;
       clearTimeout(controller.safetyTimer);
       try {
-        return await psynet.nextPage(null, {}, {}, undefined, {
+        return await psynet.sendSubmission(null, {}, {}, undefined, {
           timelineHoldResume: true,
         });
       } finally {
@@ -4147,17 +4152,13 @@
         }
         return false;
       }
-      if (psynet.timelineHold && !options.timelineHoldResume) {
+      if (psynet.timelineHold) {
         psynet.log.warn(
           "Blocked a page submission while the timeline is held.",
         );
         return false;
       }
-      if (
-        !options.background &&
-        !options.timelineHoldResume &&
-        !options.interrupted
-      ) {
+      if (!options.background) {
         let staged = psynet.response.staged;
         let uploads = Object.keys(blobs ?? staged.blobs ?? {}).length;
         if (
@@ -4189,6 +4190,26 @@
           }
         }
       }
+      return await psynet.sendSubmission(
+        rawAnswer,
+        metadata,
+        blobs,
+        onRejection,
+        options,
+      );
+    };
+
+    // Send a submission to the server unless one is in flight. Answers go
+    // through nextPage, which may show the next trial first; a barrier's
+    // release and a timeline hold's check aren't answers and are sent
+    // directly.
+    psynet.sendSubmission = async function (
+      rawAnswer,
+      metadata,
+      blobs,
+      onRejection,
+      options = {},
+    ) {
       if (psynet.nextPagePending && options.pageUuid === undefined) {
         psynet.log.info("Blocked nextPage because nextPagePending is true.");
         psynet.log.debug(

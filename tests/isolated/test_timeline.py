@@ -151,13 +151,22 @@ def test_only_pages_whose_answers_may_be_turned_down_say_so():
     assert page(WaitingControl(["a"]))._may_reject_answers()
 
 
-def test_pages_with_page_modules_or_a_session_are_not_swapped_in():
-    def page(**kwargs):
-        return Page(time_estimate=1, template_str="", **kwargs)
+def test_only_pages_built_from_declared_components_are_swapped_in():
+    class CustomControl(PushButtonControl):
+        pass
 
-    assert page()._swap_in_advance()
-    assert not page(js_page_modules=["/static/trial.js"])._swap_in_advance()
-    assert not page(session_id="game")._swap_in_advance()
+    def because(control=None, **kwargs):
+        control = control or PushButtonControl(["a"])
+        page = ModularPage("q", Prompt("?"), control, time_estimate=1, **kwargs)
+        return page._not_swappable_because()
+
+    assert because() is None
+    assert because(CustomControl(["a"])) == (
+        "CustomControl doesn't set can_swap_in_advance"
+    )
+    assert because(RadioButtonControl(["a"])).startswith("RadioButtonControl")
+    assert because(session_id="game") == "it has a session_id"
+    assert because(time_limit=5) == "it has a time limit"
 
 
 def test_layout_key_covers_main_body_and_js_vars():

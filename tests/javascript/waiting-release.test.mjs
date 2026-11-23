@@ -24,10 +24,13 @@ function waitingHarness({ statuses, cancelRelease = false }) {
   const psynet = {
     uniqueId: "participant-1",
     nextPagePending: false,
+    pageReady: true,
+    timelineHold: null,
+    answers: { sending: null },
     log: { warn() {} },
     showArrivalNotice: (message) => calls.push(`notice: ${message}`),
     hideArrivalNotice: () => calls.push("hide notice"),
-    nextPage: (answer, metadata) =>
+    sendSubmission: (answer, metadata) =>
       calls.push(`submit interrupted=${metadata.interrupted}`),
     loadNextTimelinePageWithReload: async () => calls.push("reload"),
   };
@@ -118,6 +121,17 @@ describe("psynet.waiting", () => {
     await harness.start(INTERRUPTIBLE);
     await harness.advance(3000);
     assert.deepEqual(harness.calls, ["hide notice", "submit interrupted=true"]);
+  });
+
+  it("waits for answers given in advance before submitting as interrupted", async () => {
+    const harness = waitingHarness({ statuses: [RELEASED] });
+    harness.psynet.answers.sending = Promise.resolve({ sent: true });
+    await harness.start(INTERRUPTIBLE);
+    await harness.advance(3000);
+    assert.ok(!harness.calls.includes("submit interrupted=true"));
+    harness.psynet.answers.sending = null;
+    await harness.advance(500);
+    assert.equal(harness.calls.at(-1), "submit interrupted=true");
   });
 
   it("reloads an interruptible page that the server has moved past", async () => {
