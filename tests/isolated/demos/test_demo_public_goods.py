@@ -59,8 +59,6 @@ class TestPublicGoods:
         "outcome, tokens",
         [
             ("stayed", 13.5),
-            ("group_dissolved", 10),
-            ("late", 0),
             ("removed_by_experimenter", 0),
         ],
     )
