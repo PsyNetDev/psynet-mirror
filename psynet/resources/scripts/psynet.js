@@ -819,9 +819,8 @@
             // The events of this trial only, as later trials share the page.
             event_log: psynet.trial.eventLog.splice(0),
           };
-          // The page shown next, which the answer's reply should be.
-          let nextPageUuid = psynet.upcomingPages[answers.queue.length]?.page_uuid;
-          answers.queue.push({ value, metadata, nextPageUuid });
+          // showNextPredictedTrial sets nextPageUuid if it shows a trial next.
+          answers.queue.push({ value, metadata, nextPageUuid: undefined });
           // After the caller's own code, which may still tidy up this trial.
           queueMicrotask(psynet.showNextPredictedTrial);
           psynet.sendAnswers();
@@ -838,6 +837,13 @@
         psynet.answers.handle === null &&
         offset < psynet.predictedContents().length
       ) {
+        // The page shown after the last answer, which its reply should be.
+        // Set here rather than on answering, as that trial may only become
+        // known from a later reply.
+        if (offset > 0) {
+          psynet.answers.queue[offset - 1].nextPageUuid =
+            psynet.upcomingPages[offset - 1]?.page_uuid;
+        }
         psynet.updatePageModules(offset).catch((error) => {
           psynet.log.error(error.stack || String(error));
         });

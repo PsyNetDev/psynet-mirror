@@ -1,4 +1,5 @@
 import datetime
+import json
 from pathlib import Path
 
 import pytest
@@ -56,10 +57,27 @@ def test_a_break_does_not_count_towards_the_next_trial():
     # The browser is told the page UUIDs the next trials' pages will have,
     # so it can tell which page a reply is.
     page = bot.get_current_page()
+    first_page_uuid = bot.current_page_uuid
     upcoming = page._upcoming_pages_payload(Participant.query.get(bot.id))
     for expected in upcoming:
         bot.take_page()
         assert Participant.query.get(bot.id).page_uuid == expected["page_uuid"]
+    # An answer from a page the server has moved past says so, for the
+    # browser to load the current page instead.
+    reply = bot.http_session.post(
+        f"{bot.experiment.base_url}/response",
+        data={
+            "json": json.dumps(
+                {
+                    "participant_id": bot.id,
+                    "page_uuid": first_page_uuid,
+                    "raw_answer": 1,
+                    "metadata": {},
+                }
+            )
+        },
+    ).json()
+    assert reply["submission"] == "rejected" and reply["stale_page"]
     while "break" not in str(bot.get_current_page().prompt.text).lower():
         bot.take_page()
     # Bots report each page's time_estimate as its time_taken.

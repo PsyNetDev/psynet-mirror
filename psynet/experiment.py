@@ -4822,11 +4822,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             f"Timeline hold skip did not settle after {_MAX_BARRIER_WALK_PASSES} steps."
         )
 
-    def response_rejected(self, message):
+    def response_rejected(self, message, **extra):
         logger.warning(
             "The response was rejected with the following message: '%s'.", message
         )
-        return success_response(submission="rejected", message=message)
+        return success_response(submission="rejected", message=message, **extra)
 
     @classmethod
     def busy_response(cls):
@@ -8237,7 +8237,12 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 # isn't told: the page resends the response by itself.
                 logger.info("The response was refused for now: %r.", payload["message"])
                 return finish(success_response(**payload))
-            return finish(exp.response_rejected(payload["message"]))
+            extra = {
+                key: value
+                for key, value in payload.items()
+                if key not in ("submission", "message")
+            }
+            return finish(exp.response_rejected(payload["message"], **extra))
         return finish(success_response(**payload))
 
     @classmethod

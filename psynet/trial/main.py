@@ -1794,6 +1794,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             and self.trial_maker is not None
         ):
             page = logic[0]
+            if self.id is None:
+                db.session.flush([self])
             page._page_key = self._page_key
             page.upcoming_pages, page.upcoming_media = self.trial_maker._upcoming(
                 self, page, experiment, participant
