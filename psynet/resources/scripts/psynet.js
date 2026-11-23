@@ -4195,7 +4195,6 @@
         let staged = psynet.response.staged;
         let uploads = Object.keys(blobs ?? staged.blobs ?? {}).length;
         if (
-          !options.back &&
           psynet.nextRenderedPage() &&
           !uploads &&
           !psynet.var.asynchronousUploadSources?.length
