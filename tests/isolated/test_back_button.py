@@ -48,7 +48,7 @@ def _go_back(bot):
 
 @pytest.mark.parametrize("experiment_directory", [DEMO], indirect=True)
 @pytest.mark.usefixtures("launched_experiment")
-def test_back_returns_to_the_previous_page_and_replaces_its_answer():
+def test_back_returns_to_pages_without_answers():
     bot = BotDriver()
     assert _template_data(bot)["previousPage"] is None
     bot.take_page()
@@ -70,15 +70,12 @@ def test_back_returns_to_the_previous_page_and_replaces_its_answer():
     bot.take_page()
     assert _progress_shown(following["html"]) == _progress_now(bot)
 
-    for _ in range(2):
-        bot.take_page()
-    bot.take_page(response="red")
-    _go_back(bot)
-    bot.take_page(response="blue")
-    assert Participant.query.get(bot.id).var.colour == "blue"
-
-    bot.take_page(response="owl")
-    # This page sets show_back_button=False, and a page maker builds the next.
+    bot.take_page()
+    bot.take_page()
+    # The question's page can go back to the instructions.
+    assert "page 3 of 3" in _template_data(bot)["previousPage"]["html"]
+    bot.take_page(response="green")
+    # But no page goes back to the question, and the last page opts out.
     assert _template_data(bot)["previousPage"] is None
     bot.take_page()
     assert _template_data(bot)["previousPage"] is None

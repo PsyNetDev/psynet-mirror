@@ -10,7 +10,7 @@ const {
 
 const STEP_TIMEOUT_MS = 120000;
 
-test("Back shows the previous timeline page at once and replaces its answer", {
+test("Back shows the previous page at once and never returns to a question", {
   tag: "@inplace-only"
 }, async ({ page, context }) => {
   const dir = path.resolve("demos/features/back_button");
@@ -54,23 +54,24 @@ test("Back shows the previous timeline page at once and replaces its answer", {
     await expect.poll(() => posted).toBe(1);
     release();
 
-    for (const text of ["page 1 of 3", "page 2 of 3", "page 3 of 3", "Pick a colour."]) {
+    for (const text of ["page 1 of 3", "page 2 of 3", "page 3 of 3", "Which colour"]) {
       await nextButton.click();
       await show(text);
     }
-    await participant.getByRole("button", { name: "red" }).click();
-    await show("Pick an animal.");
+    // The question can go back to the instructions...
     await answersSent();
     await back.click();
-    await show("Pick a colour.");
-    await participant.getByRole("button", { name: "blue" }).click();
-    await show("Pick an animal.");
-    await participant.getByRole("button", { name: "owl" }).click();
+    await show("page 3 of 3");
+    await nextButton.click();
+    await show("Which colour");
+    await participant.getByRole("textbox").fill("green");
+    await nextButton.click();
 
-    await show("Your answers are now final");
+    // ...but nothing goes back to the question, and the last page opts out.
+    await show("Thanks!");
     await expect(back).toHaveCount(0);
     await nextButton.click();
-    await show("You chose blue and owl.");
+    await show("hides its Back button");
     await expect(back).toHaveCount(0);
     await assertNoBackendError(participant);
   });

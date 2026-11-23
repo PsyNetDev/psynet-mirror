@@ -1517,12 +1517,13 @@ class Page(Elt):
 
     show_back_button
         Whether the page has a Back button where the participant can go back
-        to the page before it and answer it again (default ``True``). PsyNet
-        shows it only between pages directly next to each other in the
-        timeline that it could also render in advance, so not on trial pages
-        or after a code block, a conditional or a page whose ``on_complete``
-        is overridden. Only :class:`~psynet.modular_page.ModularPage` pages,
-        such as :class:`~psynet.page.InfoPage`, show it.
+        to the page before it (default ``True``). PsyNet shows it only on
+        :class:`~psynet.modular_page.ModularPage` pages with a Next button,
+        directly after a page that collects no answer, such as
+        :class:`~psynet.page.InfoPage`, and that it could also render in
+        advance. So it never returns to a question, a trial page, or past a
+        code block, a conditional or a page whose ``on_complete`` is
+        overridden.
 
 
     Attributes
@@ -3489,10 +3490,12 @@ class Timeline:
 
         As with pages rendered in advance, both pages must be next to each
         other directly in the timeline, so no code runs between them, and
-        must show the same to every participant. Answering the earlier page
-        again must only replace its answer, so its ``on_complete`` must not
-        be overridden and answers must not be collected into a dict.
+        must show the same to every participant. Back sits beside Next, so
+        ``page`` must have a Next button. The earlier page must collect no
+        answer, so going back never revises one, and must not override
+        ``on_complete``, which would run again.
         """
+        from .modular_page import ModularPage, NextButton, NullControl
         from .utils import get_config
 
         position = page.id
@@ -3501,6 +3504,7 @@ class Timeline:
             or len(position) != 2
             or position[1] == 0
             or not page.show_back_button
+            or not any(isinstance(b, NextButton) for b in getattr(page, "buttons", ()))
             or page.is_timeline_hold
             or not page._shows_the_same_to_everyone()
             or page._recording_capture_sources()
@@ -3512,7 +3516,8 @@ class Timeline:
         branch, index = position
         previous = self.elts[branch][index - 1]
         if (
-            isinstance(previous, Page)
+            isinstance(previous, ModularPage)
+            and isinstance(previous.control, NullControl)
             and not previous.is_timeline_hold
             and previous._shows_the_same_to_everyone()
             and type(previous).on_complete is Page.on_complete
@@ -3524,7 +3529,7 @@ class Timeline:
         """Show the participant the page before the current one again.
 
         The time credit and progress from answering that page are taken
-        back, as they are given again when it is answered again.
+        back, as they are given again when the participant moves on again.
         """
         page = self.get_current_elt(experiment, participant)
         previous = self._page_to_go_back_to(participant, page)

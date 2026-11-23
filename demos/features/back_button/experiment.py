@@ -1,25 +1,7 @@
 import psynet.experiment
-from psynet.modular_page import ModularPage, PushButtonControl
+from psynet.modular_page import ModularPage, TextControl
 from psynet.page import InfoPage
-from psynet.timeline import PageMaker, Timeline
-
-
-def question(label, prompt, choices):
-    return ModularPage(
-        label,
-        prompt,
-        PushButtonControl(choices, arrange_vertically=False),
-        time_estimate=5,
-        save_answer=label,
-    )
-
-
-def summary(participant):
-    return InfoPage(
-        f"You chose {participant.var.colour} and {participant.var.animal}. "
-        "This page has no Back button, because a page maker builds it.",
-        time_estimate=5,
-    )
+from psynet.timeline import Timeline
 
 
 class Exp(psynet.experiment.Experiment):
@@ -40,17 +22,25 @@ class Exp(psynet.experiment.Experiment):
             time_estimate=5,
         ),
         InfoPage(
-            "Instructions, page 3 of 3. Next come two questions. "
-            "Go back from the second to change your first answer.",
+            "Instructions, page 3 of 3. Next comes a question. "
+            "Its page can go back here, in case you want to reread the instructions.",
             time_estimate=5,
         ),
-        question("colour", "Pick a colour.", ["red", "green", "blue"]),
-        question("animal", "Pick an animal.", ["cat", "dog", "owl"]),
+        ModularPage(
+            "colour",
+            "Which colour do you like best?",
+            TextControl(),
+            time_estimate=5,
+        ),
         InfoPage(
-            "Your answers are now final, so this page hides its Back button "
-            "with show_back_button=False.",
+            "Thanks! This page has no Back button, because going back would "
+            "mean answering the question again.",
+            time_estimate=5,
+        ),
+        InfoPage(
+            "This page could go back, but hides its Back button with "
+            "show_back_button=False.",
             time_estimate=5,
             show_back_button=False,
         ),
-        PageMaker(summary, time_estimate=5),
     )

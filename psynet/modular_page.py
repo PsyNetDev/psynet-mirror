@@ -2492,19 +2492,12 @@ class ModularPage(Page):
         return self.import_internal_templates + self.import_external_templates
 
     def render_buttons(self):
-        back_button = (
-            "{% if show_back_button %}{{ psynet_controls.back_button() }}{% endif %}"
-        )
         if not self.buttons:
-            # Controls that answer on click, such as push buttons, have no Next.
-            return (
-                '{% if show_back_button %}<div class="psynet-actions">'
-                f"{back_button}</div>{{% endif %}}"
-            )
+            return ""
 
         logic = [
             '<div class="psynet-actions{% if show_back_button %} psynet-actions-with-back{% endif %}">',
-            back_button,
+            "{% if show_back_button %}{{ psynet_controls.back_button() }}{% endif %}",
         ]
         for i, button in enumerate(self.buttons):
             logic.append(f"{{% set button_params = buttons[{i}] %}}")

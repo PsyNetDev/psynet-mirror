@@ -58,10 +58,13 @@ Going back
 ~~~~~~~~~~
 
 The same rules decide whether a top-level page can go back to the page before
-it (``Timeline._page_to_go_back_to``); the render passes the result to the
-template as ``show_back_button``. The page also sends the browser the earlier
-page as ``previous_page``, rendered with the page UUID it will get, like the
-pages rendered in advance. The Back button queues a ``/response`` with
+it (``Timeline._page_to_go_back_to``). In addition, the page must have a Next
+button, for Back to sit beside, and the earlier page must collect no answer
+(its control is a ``NullControl``), so going back never revises an answer.
+The render passes the result to the template as ``show_back_button``. The
+page also sends the browser the earlier page as ``previous_page``, rendered
+with the page UUID and progress it will have, like the pages rendered in
+advance (``Page._page_uuid`` and ``Page._progress``). The Back button queues a ``/response`` with
 ``back`` set instead of an answer. If no answers are queued, the browser shows
 ``previous_page`` at once and sends the request in the background; otherwise
 it waits for the queued answers to be sent and shows the page in the reply.
