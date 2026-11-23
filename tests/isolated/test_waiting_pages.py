@@ -295,7 +295,9 @@ def test_a_waiter_busy_at_the_last_arrival_awaits_the_release(
             assert status["page"] == {"awaiting_release": True}
         assert len(bot_responses) == 2
         check_barriers()
-        assert not _bot_status(first_id, release_poll=True)["page"]["awaiting_release"]
+        status = _bot_status(first_id, release_poll=True)
+        assert not status["page"]["awaiting_release"]
+        assert status["page"]["bot_response"]["answer"] == "ok"
     finally:
         exp.timeline = original
 

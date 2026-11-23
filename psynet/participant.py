@@ -1700,14 +1700,16 @@ class ParticipantDriver:
             )
         assert self.status is not None
 
+        still_on_page = True
         if not _status_is_timeline_hold(self.status):
             # Holds are paced by the poll sleep below, as browsers poll from
             # arrival; their time_estimate is expected_wait, not a poll gap.
             self._simulate_page_time(time_factor)
-            self._await_release()
+            still_on_page = self._await_release()
             if not self.is_working:
                 return False
-        self._submit_response(self.status, self.response_files, response)
+        if still_on_page:
+            self._submit_response(self.status, self.response_files, response)
         if render_pages:
             self._render_page()
             # GET /timeline can skip a ready hold after the submit fetch.
@@ -1807,18 +1809,29 @@ class ParticipantDriver:
         A release must lock every waiter's row, which a bot holds while the
         server processes its answer, so bots that kept answering pages of
         ``waiting_logic`` might never be released together.
+
+        Returns whether the bot is still on the page it arrived at, so it
+        should answer it; the server may end or replace the page meanwhile,
+        for example when the barrier fails the bot.
         """
+        page_uuid = self.status["page_uuid"]
         deadline = time.monotonic() + _AWAIT_RELEASE_MAX_SECONDS
+
+        def still_on_page():
+            return self.is_working and self.status["page_uuid"] == page_uuid
+
         while (
-            self.is_working
+            still_on_page()
             and self.status["page"].get("awaiting_release")
             and time.monotonic() < deadline
         ):
-            self._sleep(_AWAIT_RELEASE_POLL_SECONDS)
+            next_poll = self.status_time_fetched + _AWAIT_RELEASE_POLL_SECONDS
+            self._sleep(max(next_poll - time.monotonic(), 0))
             self._fetch_status(release_poll=True)
-        if self.is_working and self.status["page"].get("awaiting_release"):
+        if still_on_page() and self.status["page"].get("awaiting_release"):
             # Release polls omit the bot response, so fetch it to answer the page.
             self._fetch_status()
+        return still_on_page()
 
     def _sleep(self, seconds):
         """Sleep, raising :class:`DriverStopped` if ``stop_event`` is or becomes set."""

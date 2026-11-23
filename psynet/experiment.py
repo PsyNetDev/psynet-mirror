@@ -6877,7 +6877,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if participant.status == "working":
             current_page = participant.get_current_page()
             awaiting_release = _waiting_visit_would_release(current_page, participant)
-            if awaiting_release and request.args.get("release_poll"):
+            if awaiting_release and request.args.get("release_poll") == "1":
                 status["page"] = {"awaiting_release": True}
                 status["page_uuid"] = participant.page_uuid
                 return jsonify(status)

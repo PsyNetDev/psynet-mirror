@@ -506,13 +506,14 @@ def test_paced_bots_stay_on_a_page_for_at_least_its_min_duration(
     assert sleeps[0] == pytest.approx(expected_sleep, abs=0.05)
 
 
-@pytest.mark.parametrize("released", [True, False])
+@pytest.mark.parametrize("outcome", ["released", "unreleased", "ended", "replaced"])
 def test_bots_poll_instead_of_answering_until_their_barrier_releases_them(
-    monkeypatch, released
+    monkeypatch, outcome
 ):
     """Waiters must not hold their rows while a barrier is ready to lock them all.
 
-    A bot that is not released within 5 s answers the page anyway.
+    A bot that is not released within 5 s answers the page anyway. If the
+    server ends or replaces the page meanwhile, the bot doesn't answer it.
     """
     driver = ParticipantDriver.__new__(ParticipantDriver)
     driver.status = {**_driver_page_status("page-a"), "status": "working"}
@@ -523,11 +524,13 @@ def test_bots_poll_instead_of_answering_until_their_barrier_releases_them(
 
     def fetch(release_poll=False):
         events.append("poll" if release_poll else "fetch")
-        if release_poll and not released:
-            awaiting = {"status": "working", "page": {"awaiting_release": True}}
-            driver.status = {**awaiting, "page_uuid": "page-a"}
-        else:
-            driver.status = {**_driver_page_status("page-a"), "status": "working"}
+        driver.status_time_fetched = clock[0]
+        page_uuid = "page-b" if outcome == "replaced" else "page-a"
+        driver.status = {**_driver_page_status(page_uuid), "status": "working"}
+        if outcome == "ended":
+            driver.status = {"status": "abandoned", "page_uuid": page_uuid}
+        elif release_poll and outcome == "unreleased":
+            driver.status["page"] = {"awaiting_release": True}
 
     def sleep(seconds):
         clock[0] += seconds
@@ -538,18 +541,20 @@ def test_bots_poll_instead_of_answering_until_their_barrier_releases_them(
     monkeypatch.setattr(
         driver,
         "_submit_response",
-        lambda status, *args, **kwargs: events.append(status["page"]["bot_response"]),
+        lambda status, *args: events.append(status["page"]["bot_response"]["answer"]),
     )
     driver.status_time_fetched = 0.0
 
-    driver.take_page(render_pages=False)
+    still_working = driver.take_page(render_pages=False)
 
-    submitted = {"answer": "ok", "metadata": {}, "blobs": {}}
-    if released:
-        assert events == ["poll", submitted]
-    else:
-        assert events == ["poll"] * 20 + ["fetch", submitted]
+    assert still_working == (outcome != "ended")
+    if outcome == "released":
+        assert events == ["poll", "ok"]
+    elif outcome == "unreleased":
+        assert events == ["poll"] * 20 + ["fetch", "ok"]
         assert clock[0] == pytest.approx(5.0)
+    else:
+        assert events == ["poll"]
 
 
 def test_advance_past_wait_pages_names_bots_still_waiting():

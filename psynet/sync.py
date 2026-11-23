@@ -373,7 +373,9 @@ def _visit_check_would_release(instance_id):
     try:
         nested = db.session.begin_nested()
         try:
-            instance = BarrierInstance.query.get(instance_id)
+            instance = BarrierInstance.query.options(undefer(BarrierInstance.spec)).get(
+                instance_id
+            )
             if instance is None:
                 result = False
             else:
@@ -1234,8 +1236,9 @@ class Barrier(EltCollection):
         ``GET /timeline`` uses this to decide whether to wait for the visit
         claim, and a barrier with ``waiting_logic`` uses it on each arrival
         to decide whether to skip the first pass of ``waiting_logic``
-        (showing a short wait page instead). It must not mutate
-        participants, groups, or the session.
+        (showing a short wait page instead). Bots on ``waiting_logic``
+        pages stop answering them while this is true, awaiting their
+        release. It must not mutate participants, groups, or the session.
         Last-arrival skip-in-one-GET waits only when this is true. Custom
         barriers that override :meth:`choose_who_to_release` should override
         this too. The default is ``True`` whenever anyone is waiting, so a
