@@ -55,6 +55,17 @@ by all participants. The read-only render then renders a copy of that page
 issued in advance only on reaching that exact element, and clears it either
 way, so a page UUID is never used twice.
 
+Going back
+~~~~~~~~~~
+
+The same rules decide whether a top-level page can go back to the page before
+it (``Timeline._page_to_go_back_to``); the render passes the result to the
+template as ``show_back_button``. The Back button sends a ``/response`` with
+``back`` set instead of an answer, through ``psynet.nextPage``, so it waits
+for answers given in advance to be sent first. ``Timeline.go_back`` then moves
+``elt_id`` back, takes back the earlier page's time credit and progress, and
+consumes that page again, which issues a new page UUID.
+
 Server-side rendering
 ---------------------
 

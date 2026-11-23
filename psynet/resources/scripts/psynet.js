@@ -4096,6 +4096,7 @@
         let staged = psynet.response.staged;
         let uploads = Object.keys(blobs ?? staged.blobs ?? {}).length;
         if (
+          !options.back &&
           psynet.nextRenderedPage() &&
           !uploads &&
           !psynet.var.asynchronousUploadSources?.length
@@ -4164,6 +4165,12 @@
         }
       }
       return passedValidation;
+    };
+
+    // Show the page before this one again, once the answers given in advance
+    // are sent, so the server goes back from the page shown.
+    psynet.goBack = function () {
+      return psynet.nextPage(null, {}, {}, undefined, { back: true });
     };
 
     psynet.alert = function (text) {
@@ -4380,6 +4387,10 @@
         psynet.waiting.start(psynet.page.attributes?.waiting);
       } else if (options.interrupted) {
         // This page is stale, e.g. another tab already moved on.
+        await psynet.loadNextTimelinePageWithReload();
+      } else if (options.back) {
+        // The server's page can't go back, for example because another tab
+        // already moved on.
         await psynet.loadNextTimelinePageWithReload();
       } else if (options.background && response.stale_page) {
         // The server has moved past this page, for example because the page
@@ -4723,6 +4734,7 @@
           ?.requires_full_page_reload,
         timeline_hold_resume: Boolean(options.timelineHoldResume),
         interrupted: Boolean(options.interrupted),
+        back: Boolean(options.back),
       });
     };
 

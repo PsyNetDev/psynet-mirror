@@ -58,6 +58,26 @@
     </button>
 {% endmacro %}
 
+{% macro back_button() %}
+    <script>
+        psynet.trial.onEvent("trialConstruct", function() {
+            let button = document.getElementById("back-button");
+            if (!button) {
+                return;
+            }
+            psynet.addPageEventListener(button, "click", function() {
+                psynet.captureSubmissionControlState();
+                psynet.showSubmissionSpinner(button);
+                psynet.goBack();
+            });
+        });
+    </script>
+
+    <button type="button" id="back-button" class="btn btn-outline-secondary btn-lg submit psynet-back-button">
+        {{ gettext("Back") }}
+    </button>
+{% endmacro %}
+
 {% macro reset_button(params) %}
     <script>
         let resetButtonState = (psynet.page.control.resetButton = {

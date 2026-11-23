@@ -4297,11 +4297,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         *,
         timeline_hold_resume=False,
         interrupted=False,
+        back=False,
     ):
         """Advance the participant after one ``/response`` write.
 
         Parameters
         ----------
+        back : bool
+            Set by the Back button: instead of answering the page, the
+            participant goes back to the page before it (see
+            ``show_back_button`` on :class:`~psynet.timeline.Page`).
+            Keyword-only.
         interrupted : bool
             Set by a barrier's waiting page that ends because the participant
             was released (see ``release_grace`` on
@@ -4428,6 +4434,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         page=page,
                     )
                 return ResponseResult(payload=self._stale_page_payload())
+            if back:
+                if self.timeline._page_to_go_back_to(participant, event) is None:
+                    return ResponseResult(payload=self._stale_page_payload())
+                page = self.timeline.go_back(self, participant)
+                return ResponseResult(
+                    payload=self._approved_payload(participant, page), page=page
+                )
             if _is_timeline_hold(event):
                 should_resume = event.prepare_resume_if_ready(self, participant)
                 event.account_wait(participant, settle=should_resume)
@@ -8085,15 +8098,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 json_data, "timeline_hold_resume", use_default=True, default=False
             )
         )
-        interrupted = bool(
-            get_arg_from_dict(json_data, "interrupted", use_default=True, default=False)
-        )
         client_ip_address = cls.get_client_ip_address()
-        # ``interrupted`` is only passed when true, so process_response
-        # overrides written before that keyword existed keep working.
-        flags = {}
-        if interrupted:
-            flags["interrupted"] = True
+        # These are only passed when true, so process_response overrides
+        # written before the keywords existed keep working.
+        flags = {
+            flag: True
+            for flag in ("interrupted", "back")
+            if get_arg_from_dict(json_data, flag, use_default=True, default=False)
+        }
 
         try:
             result = exp.process_response(

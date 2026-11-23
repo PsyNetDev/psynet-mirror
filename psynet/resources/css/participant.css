@@ -588,6 +588,23 @@ code {
     margin-top: 2rem;
 }
 
+/* Back sits at the left edge, so the other actions stay centred. */
+.psynet-actions-with-back {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+}
+
+.psynet-actions-with-back > :not(.psynet-back-button, script) {
+    grid-column: 2;
+}
+
+/* Narrower than Next, so that both fit on a phone with Next centred. */
+.psynet-back-button {
+    justify-self: start;
+    min-height: 46px;
+}
+
 #next-button,
 #reset-button {
     min-width: 136px;

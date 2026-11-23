@@ -1514,6 +1514,15 @@ class Page(Elt):
         if the page shows something that the previous answer changes, for
         example in a custom template or ``pre_render``.
 
+    show_back_button
+        Whether the page has a Back button where the participant can go back
+        to the page before it and answer it again (default ``True``). PsyNet
+        shows it only between pages directly next to each other in the
+        timeline that it could also render in advance, so not on trial pages
+        or after a code block, a conditional or a page whose ``on_complete``
+        is overridden. Only :class:`~psynet.modular_page.ModularPage` pages,
+        such as :class:`~psynet.page.InfoPage`, show it.
+
 
     Attributes
     ----------
@@ -1589,6 +1598,7 @@ class Page(Elt):
         time_limit: Optional[float] = None,
         time_limit_answer=None,
         render_in_advance: bool = True,
+        show_back_button: bool = True,
     ):
         super().__init__()
 
@@ -1751,6 +1761,7 @@ class Page(Elt):
         self.time_limit = time_limit
         self.time_limit_answer = time_limit_answer
         self.render_in_advance = render_in_advance
+        self.show_back_button = show_back_button
         if show_abort_button is not None:
             warnings.warn(
                 "Page(show_abort_button=...) is deprecated; "
@@ -2479,6 +2490,10 @@ class Page(Elt):
             "trial_progress_display_config": self.progress_display,
             "attributes": self.attributes,
             "contents": self.contents,
+            "show_back_button": experiment.timeline._page_to_go_back_to(
+                participant, self
+            )
+            is not None,
             # A reply carries these beside its fragment.
             "upcoming_pages": (
                 None
@@ -2844,8 +2859,7 @@ class Page(Elt):
         with the page before them.
         """
         return (
-            self.render_in_advance
-            and self._swap_in_advance()
+            self._swap_in_advance()
             and type(self).consume is Page.consume
             and self.template_kind != "delegated"
             and self.session_id is None
@@ -3431,9 +3445,65 @@ class Timeline:
         branch, index = participant.elt_id
         elts = self.elts[branch]
         following = elts[index + 1] if index + 1 < len(elts) else None
-        if isinstance(following, Page) and following._shows_the_same_to_everyone():
+        if (
+            isinstance(following, Page)
+            and following.render_in_advance
+            and following._shows_the_same_to_everyone()
+        ):
             return following
         return None
+
+    def _page_to_go_back_to(self, participant, page):
+        """The timeline page before ``page``, if the participant can go back to it.
+
+        As with pages rendered in advance, both pages must be next to each
+        other directly in the timeline, so no code runs between them, and
+        must show the same to every participant. Answering the earlier page
+        again must only replace its answer, so its ``on_complete`` must not
+        be overridden and answers must not be collected into a dict.
+        """
+        from .utils import get_config
+
+        position = page.id
+        if (
+            position is None
+            or len(position) != 2
+            or position[1] == 0
+            or not page.show_back_button
+            or page.is_timeline_hold
+            or not page._shows_the_same_to_everyone()
+            or page._recording_capture_sources()
+            or participant.answer_accumulation_depth
+            or participant.group_removal_notice is not None
+            or not get_config().get("inplace_timeline_transitions")
+        ):
+            return None
+        branch, index = position
+        previous = self.elts[branch][index - 1]
+        if (
+            isinstance(previous, Page)
+            and not previous.is_timeline_hold
+            and previous._shows_the_same_to_everyone()
+            and type(previous).on_complete is Page.on_complete
+        ):
+            return previous
+        return None
+
+    def go_back(self, experiment, participant):
+        """Show the participant the page before the current one again.
+
+        The time credit and progress from answering that page are taken
+        back, as they are given again when it is answered again.
+        """
+        page = self.get_current_elt(experiment, participant)
+        previous = self._page_to_go_back_to(participant, page)
+        if previous is None:
+            raise ValueError(f"Can't go back from page {page.id}.")
+        participant.inc_time_credit(-previous.time_estimate)
+        participant.inc_progress(-previous.time_estimate)
+        participant.elt_id = list(previous.id)
+        previous.consume(experiment, participant)
+        return previous
 
     def _issue_upcoming_page_uuid(self, participant, page):
         """Issue the page UUID of the page that the browser can show after ``page``."""

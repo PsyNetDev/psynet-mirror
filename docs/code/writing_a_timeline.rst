@@ -177,6 +177,34 @@ If a page shows something that the previous answer changes, for example from
 While an answer is still being sent, the browser asks the participant before
 the page reloads or closes.
 
+.. _going_back_to_the_previous_page:
+
+Going back to the previous page
+-------------------------------
+
+For the same reason, a participant can go back to the page before the
+current one and answer it again, for example to reread instructions. Such
+pages show a Back button at the left of their buttons, so Next stays where
+it was. Going back takes back the time credit and progress the earlier page
+gave. Answering it again replaces its answer in ``participant.answer`` and
+records another :class:`~psynet.timeline.Response`; the earlier response is
+kept.
+
+A page shows a Back button only when it and the page before it are both
+:class:`~psynet.modular_page.ModularPage` pages, such as
+:class:`~psynet.page.InfoPage`, directly next to each other in the timeline,
+and the browser could show either page without waiting for the server as
+described above. In addition, the earlier page must not override
+``on_complete``, and the pages must not be inside a module that collects its
+answers. So trial pages, and the first page after a code block, a condition
+or the start of a module, have none.
+
+To hide the Back button on a page, pass ``show_back_button=False``:
+
+.. code-block:: python
+
+    InfoPage("From here on, your answers are final.", time_estimate=5, show_back_button=False)
+
 Branching and repetition
 ------------------------
 
