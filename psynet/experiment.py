@@ -175,7 +175,7 @@ from .timeline import (
     _is_timeline_hold,
     _timeline_step_name,
     _trial_owning_page,
-    new_page_uuid,
+    make_page_uuid,
 )
 from .translation.check import check_translations
 from .translation.translate import create_pot
@@ -6642,7 +6642,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         committed = plan.mark_committed()
         participant.exit_plan = committed.to_dict()
         if Experiment._skips_error_recovery_ui(recruiter, committed):
-            participant.page_uuid = new_page_uuid()
+            participant.page_count += 1
+            participant.page_uuid = make_page_uuid(
+                participant, participant.page_count, "skipped"
+            )
         return committed
 
     @staticmethod

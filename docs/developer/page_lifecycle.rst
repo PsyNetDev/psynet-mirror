@@ -327,8 +327,12 @@ an object ``{update, cleanup}``. PsyNet calls
 ``update({contents, upcomingContents, response})`` after the page is ready; see
 :doc:`/code/trials/keeping_a_task_on_one_page`. Answers given through
 ``response`` go to ``/response`` in the background, in order, from the answer
-queue in ``psynet.js``. A reply that repeats the shown page's layout key and
-the predicted ``contents`` is adopted without an in-place swap.
+queue in ``psynet.js``. A reply with the page UUID of the trial shown, and the
+shown page's layout key, is adopted without an in-place swap. A page UUID is
+made from the participant's id, how many pages they have been shown and what
+the page is (its trial, or its position in the timeline; see
+``make_page_uuid``), so the server can tell the browser the page UUIDs of the
+next trials' pages without storing them.
 
 Most page code and modules do not require cleanup because PsyNet already
 removes page DOM, stops trial-owned resources, and resets response state.
