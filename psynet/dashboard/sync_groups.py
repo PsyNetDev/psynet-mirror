@@ -96,6 +96,7 @@ def _fail_sync_group_participant(participant_id, sync_group_id, fail_reason):
 
 
 def _get_active_sync_group_participant(participant_id, sync_group_id):
+    """Lock and return a participant who is active in the given active sync group."""
     participant = _lock_and_load_participant(Participant.query, participant_id)
     if participant is None:
         raise ValueError(f"No participant found with ID {participant_id}.")

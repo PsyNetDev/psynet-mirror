@@ -20,7 +20,6 @@ function showParticipantActionModal(button) {
     const participantId = button.dataset.participantId;
     const modal = document.getElementById("participantActionModal");
     modal.querySelector("[data-participant-id]").textContent = participantId;
-    modal.querySelector("[data-confirm-failure]").dataset.participantId = participantId;
     modal.querySelector("[data-confirm-failure]").dataset.url = button.dataset.failUrl;
     window.bootstrap.Modal.getOrCreateInstance(modal).show();
 }

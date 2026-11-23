@@ -1707,12 +1707,12 @@ stays in the experiment and continues the timeline without that group.
 Carrying on without the group is an advanced option, for designs where it
 is meaningful; usually, fail players who time out (``late_action="fail"``),
 and then only a newcomer who is turned away (``"not_admitted"``) leaves a
-player without the group. To take a player out of a game by hand, fail
-them on the dashboard's **Sync groups** tab, which removes them from all
-their groups. They
-leave only the group of that type: a player removed from a ``"pair"`` stays
-in their ``"cohort"`` unless the barrier lists that group type in
-``also_leave`` (see :ref:`rounds-slow-players`). A participant whose grouper let them continue without
+player without the group. A member removed in these ways leaves only
+the group of that type: a player removed from a ``"pair"`` stays in their
+``"cohort"`` unless the barrier lists that group type in ``also_leave``
+(see :ref:`rounds-slow-players`). To take a player out of a game by hand,
+fail them on the dashboard's **Sync groups** tab, which removes them from
+all their groups. A participant whose grouper let them continue without
 a group (``max_wait_action="continue_without_group"``) is treated the same
 way for that group type, as if they had left a group. A notice on their
 progress bar tells them why. A member removed for being late sees "Your
