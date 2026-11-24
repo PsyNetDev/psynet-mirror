@@ -2930,7 +2930,8 @@ class Page(Elt):
     def _previous_page_payload(self, experiment, participant):
         """The page before this one, rendered for the Back button with the page UUID it will have."""
         previous = experiment.timeline._page_to_go_back_to(participant, self)
-        if previous is None:
+        if previous is None or not previous.render_in_advance:
+            # Without a page rendered in advance, Back asks the server.
             return None
         # Timeline pages are shared by all participants.
         previous = copy.copy(previous)
@@ -2966,8 +2967,7 @@ class Page(Elt):
         with the page before them.
         """
         return (
-            self.render_in_advance
-            and self._not_swappable_because() is None
+            self._not_swappable_because() is None
             and type(self).consume is Page.consume
             and self.template_kind != "delegated"
         )
