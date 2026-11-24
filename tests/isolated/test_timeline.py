@@ -184,6 +184,16 @@ def test_only_pages_built_from_declared_components_are_swapped_in():
     assert because(time_limit=5) == "it has a time limit"
 
 
+def test_no_back_button_among_a_barriers_waiting_pages():
+    pages = [InfoPage(text, time_estimate=1) for text in "ABC"]
+    timeline = Timeline(*pages)
+    index = timeline.elts["main"].index(pages[1])
+    assert timeline._can_go_back("main", index)
+    pages[1].links["barrier"] = object()
+    assert not timeline._can_go_back("main", index)
+    assert not timeline._can_go_back("main", index + 1)
+
+
 def test_pages_say_why_they_cant_be_left_or_rendered_early():
     class SetsUp(InfoPage):
         can_swap_in_advance = True
