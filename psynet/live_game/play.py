@@ -15,9 +15,10 @@ LiveGameRecord objects.
 With ``join_running_game``, a participant whose group is playing a game
 from the step is added to that game instead, and skips the barrier.
 
-With ``absent_action``, the record also keeps the group types a player who
-doesn't play the game leaves, which the job that saves the game's ending
-reads, since the absent player may never make another request.
+With ``absent_action``, the record also keeps what happens to a player who
+doesn't play the game, and the group types it names, which the job that
+saves the game's ending reads, since the absent player may never make
+another request.
 
 A PlayLiveGame in a trial also records the id on the trial's
 SyncGroupRound, as ``live_game_id``, beside the outcome. That record
@@ -85,7 +86,7 @@ class PlayLiveGame(EltCollection):
                 time_estimate=30,
             ),
             late_after=30,
-            late_action="leave_group",
+            late_action="fail",
         )
 
     In a trial played in groups, return it from ``show_trial``: it is the
@@ -120,7 +121,8 @@ class PlayLiveGame(EltCollection):
         that a :class:`~psynet.sync.GroupBarrier`'s ``on_release`` can take,
         such as ``trials`` and ``group_round``, and also ``live_game``,
         the new game's :class:`LiveGameRecord`, whose ``status`` is
-        ``"not_started"`` if no game started.
+        :attr:`LiveGameStatus.NOT_STARTED <psynet.live_game.LiveGameStatus.NOT_STARTED>`
+        if no game started.
 
     join_running_game
         Whether a member who reaches the step while their group is playing
@@ -133,15 +135,26 @@ class PlayLiveGame(EltCollection):
         ``False``.
 
     absent_action
-        ``"leave_group"`` to remove a player who didn't play the game, a
-        no-show or, with the game's :attr:`~LiveGame.away_timeout`, one who
-        left it for good, from the step's group and the groups in
-        ``also_leave`` once the game's result is saved. Their
-        :meth:`~psynet.participant.Participant.sync_group_removal_reason`
-        is then ``"no_show"`` or ``"left_game"``. Those groups' groupers
-        need ``below_quorum="continue_without_group"``
-        (see :ref:`live-games-absent`). Default: ``None``, which leaves them
-        in their groups.
+        What happens to a player who didn't play the game, a no-show or,
+        with the game's :attr:`~LiveGame.away_timeout`, one who left it for
+        good, once the game's result is saved, after every game played at
+        this step, the last one included (see :ref:`live-games-absent`):
+
+        - ``"fail"`` fails them, with the failure tags
+          ``"live_game:<id_>"``, ``"fail_on_timeout"`` and their absence,
+          which takes them out of all their groups, as
+          ``late_action="fail"`` does. Their
+          :meth:`~psynet.participant.Participant.sync_group_removal_reason`
+          for the step's group is ``"no_show"`` or ``"left_game"``, and
+          ``"left_experiment"`` for their other groups. The groups follow
+          their ``below_quorum``.
+        - ``"leave_group"``, an advanced option, removes them from the
+          step's group and the groups in ``also_leave``, with the reason
+          ``"no_show"`` or ``"left_game"``, and they carry on. Those
+          groups' groupers need ``below_quorum="continue_without_group"``.
+
+        Default: ``None``, which leaves them in their groups, where the
+        group's next barrier with ``late_after`` finds them late.
 
     stop_top_ups_at_end
         Whether the group stops taking newcomers, as
@@ -168,7 +181,8 @@ class PlayLiveGame(EltCollection):
         wait before the game, such as ``late_after`` or ``waiting_message``.
         Give the wait a limit, ``late_after`` with ``late_action``, or
         ``max_wait_time`` (see :ref:`the wait before the game <live-games-wait>`). Its ``also_leave``
-        applies to ``absent_action`` as well as to ``late_action``.
+        applies to ``absent_action="leave_group"`` as well as to
+        ``late_action="leave_group"``.
     """
 
     def __init__(
@@ -187,12 +201,16 @@ class PlayLiveGame(EltCollection):
         from .control import LiveGamePage
 
         _check_game_class(game_class)
-        if absent_action not in (None, "leave_group"):
+        if absent_action not in (None, "fail", "leave_group"):
             raise ValueError(
-                f"absent_action must be 'leave_group' or None, not {absent_action!r}."
+                "absent_action must be 'fail', 'leave_group' or None, not "
+                f"{absent_action!r}."
             )
         also_leave = kwargs.get("also_leave") or []
-        if absent_action is not None and kwargs.get("late_action") != "leave_group":
+        if (
+            absent_action == "leave_group"
+            and kwargs.get("late_action") != "leave_group"
+        ):
             # Only the players who don't play leave those groups, so the
             # barrier, which would refuse them, doesn't get them.
             kwargs.pop("also_leave", None)
@@ -210,8 +228,8 @@ class PlayLiveGame(EltCollection):
         if kwargs.get("late_after") is None and kwargs.get("max_wait_time") is None:
             raise TypeError(
                 f"The PlayLiveGame {id_!r} needs a limit on its wait. Usually "
-                'give it late_after, with late_action="leave_group", which '
-                "moves on a member who keeps the others waiting, and a "
+                'give it late_after, with late_action="fail", which '
+                "fails a member who keeps the others waiting, and a "
                 "time_limit to the pages before it, which late_after allows "
                 "for. Otherwise give it max_wait_time, which moves on the "
                 "members who wait. Without either, a member still waiting "
@@ -239,9 +257,12 @@ class PlayLiveGame(EltCollection):
             join_running_game=join_running_game,
             stop_top_ups_at_end=stop_top_ups_at_end,
             names=page.control.names,
-            absent_leave=(
-                [group_type, *also_leave] if absent_action == "leave_group" else []
-            ),
+            absent_action=absent_action,
+            absent_leave={
+                None: [],
+                "fail": [group_type],
+                "leave_group": [group_type, *also_leave],
+            }[absent_action],
             **kwargs,
         )
         self.page = page
@@ -280,6 +301,7 @@ class _LiveGameBarrier(GroupBarrier):
         join_running_game=False,
         stop_top_ups_at_end=True,
         names="shown",
+        absent_action=None,
         absent_leave=(),
         **kwargs,
     ):
@@ -298,8 +320,10 @@ class _LiveGameBarrier(GroupBarrier):
         # The game page's names, kept with each member's game, so that the
         # players route sends pseudonyms only to pages that show them.
         self.names = names
-        # The group types a player who doesn't play the game leaves, kept with
-        # each member's game too, for the job that saves the game's result.
+        # What happens to a player who doesn't play the game, and with
+        # "leave_group" the group types they leave, kept with each member's
+        # game too, for the job that saves the game's result.
+        self.absent_action = absent_action
         self.absent_leave = list(absent_leave)
         try:
             barrier_spec_json(self)
@@ -355,6 +379,7 @@ class _LiveGameBarrier(GroupBarrier):
             self.id,
             None,
             names=self.names,
+            absent_action=self.absent_action,
             absent_leave=self.absent_leave,
         )
         if self.join_running_game:
@@ -581,13 +606,24 @@ def _live_game_data(participant):
     return participant.live_game_data or {}
 
 
-def _set_live_game_id(participant, play_id, game_id, names=None, absent_leave=None):
+def _set_live_game_id(
+    participant,
+    play_id,
+    game_id,
+    names=None,
+    absent_action=None,
+    absent_leave=None,
+):
+    """Save the id of the participant's latest game at the PlayLiveGame
+    ``play_id``, keeping the step's other settings unless ``absent_leave``
+    is given, which comes with the step's ``absent_action``."""
     data = _live_game_data(participant).get(play_id, {})
     history = list(data.get("history", []))
     if game_id is not None and all(game["id"] != game_id for game in history):
         history.append({"id": game_id, "answer": None})
     names = names or data.get("names", "shown")
     if absent_leave is None:
+        absent_action = data.get("absent_action")
         absent_leave = data.get("absent_leave", [])
     _set_data(
         participant,
@@ -596,6 +632,7 @@ def _set_live_game_id(participant, play_id, game_id, names=None, absent_leave=No
             "id": game_id,
             "history": history,
             "names": names,
+            "absent_action": absent_action,
             "absent_leave": absent_leave,
             "info": data.get("info"),
         },
@@ -703,30 +740,57 @@ def _remove_absent_players(game, session_row, players):
     PlayLiveGame's ``absent_action`` names, with the reasons that
     LiveGame.absences gives for the final state.
 
-    Called as the game's ending is saved, with the players' rows locked. They
-    all leave before any group is dissolved below its quorum, so a pair of
-    no-shows both leave as no-shows. Each group's row is locked, in id
-    order, and its members reloaded first, so that sibling games sharing a
-    group (``also_leave``) and ending at once each count the other's leavers.
+    Called as the game's ending is saved, with the players' rows locked, and
+    before their rewards are paid, which locks their trials: each group's
+    row is locked, in id order, and its members reloaded first, so that
+    sibling games sharing a group (``also_leave``) and ending at once each
+    count the other's leavers. With ``absent_action="fail"`` a player leaves
+    every group they're in, the PlayLiveGame's with their absence as the
+    reason and the others as ``"left_experiment"``, as a barrier removes a
+    late member it fails.
+
+    Returns
+    -------
+    tuple
+        The ``(participant, reason, play_id)`` of each player to fail, and
+        the groups they left, for :func:`_fail_absent_players`.
     """
     state = session_row.final_state
     if (state or {}).get("psynet") is None:
-        return
-    leaves_by_player = [
-        (participant, _absent_leave(participant, session_row.id))
+        return [], []
+    settings_by_player = [
+        (participant, _absent_settings(participant, session_row.id))
         for participant in players
     ]
-    if not any(leaves for _, leaves in leaves_by_player):
-        return
+    if not any(leaves for _, (_, _, leaves) in settings_by_player):
+        return [], []
     absences = game.absences(state)
     leaving = []
-    for participant, leaves in leaves_by_player:
+    failing = []
+    for participant, (play_id, action, leaves) in settings_by_player:
         player = state["psynet"]["participant_ids"].index(participant.id)
         # Players who came too late are numbered last, and have no absence.
         reason = absences[player] if player < len(absences) else None
-        if not leaves or reason is None:
+        # A player failed already, such as by returning the study, has left
+        # their groups.
+        if not leaves or reason is None or participant.failed:
             continue
         groups = participant.active_sync_groups
+        if action == "fail":
+            failing.append((participant, reason, play_id))
+            # The PlayLiveGame's group first, as a barrier removes a late
+            # member, so it is also the first to dissolve below its quorum.
+            leaving.extend(
+                (
+                    participant,
+                    reason if group_type in leaves else "left_experiment",
+                    group.id,
+                )
+                for group_type, group in sorted(
+                    groups.items(), key=lambda item: item[0] not in leaves
+                )
+            )
+            continue
         for group_type in leaves:
             if group_type in groups:
                 leaving.append((participant, reason, groups[group_type].id))
@@ -740,7 +804,32 @@ def _remove_absent_players(game, session_row, players):
         if group.active and group._active_link(participant) is not None:
             group._remove_without_quorum_check(participant, reason)
             left[group_id] = group
-    for group in left.values():
+    return failing, list(left.values())
+
+
+def _fail_absent_players(session_row, failing, left):
+    """Fail the players :func:`_remove_absent_players` removed for
+    ``absent_action="fail"``, then dissolve the groups ``left`` below their
+    quorum.
+
+    Called once every player has been paid. The failing players are in no
+    group by then, so failing them only locks their unfinished trials, and
+    nobody is dissolved before all of them have left, so a pair of no-shows
+    both leave as no-shows.
+    """
+    for participant, reason, play_id in failing:
+        logger.info(
+            "PlayLiveGame '%s': failing participant %s, who didn't play game %s (%s)",
+            play_id,
+            participant.id,
+            session_row.id,
+            reason,
+        )
+        participant.append_failure_tags(
+            f"live_game:{play_id}", "fail_on_timeout", reason
+        )
+        participant.fail()
+    for group in left:
         group.dissolve_if_below_quorum()
 
 
@@ -823,10 +912,15 @@ def _lock_sync_group_and_links(group_id):
     return group
 
 
-def _absent_leave(participant, game_id):
-    """Return the group types the participant leaves if they don't play the
-    game ``game_id``, from the PlayLiveGame that started it."""
-    for data in _live_game_data(participant).values():
+def _absent_settings(participant, game_id):
+    """Return ``(play_id, absent_action, absent_leave)`` of the PlayLiveGame
+    that started the game ``game_id``, for the participant: what happens to
+    them if they don't play it, and the group types it names."""
+    for play_id, data in _live_game_data(participant).items():
         if any(game["id"] == game_id for game in data.get("history", [])):
-            return data.get("absent_leave", [])
-    return []
+            return (
+                play_id,
+                data.get("absent_action"),
+                data.get("absent_leave", []),
+            )
+    return None, None, []

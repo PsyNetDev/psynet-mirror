@@ -65,6 +65,35 @@ answer through ``format_answer`` like a browser response, return
     def get_bot_response(self, experiment, bot, page, prompt):
         return BotResponse(raw_answer="hello")
 
+To test what happens when a participant runs out of time on a page with a
+``time_limit`` (see :ref:`time_limits`), make the bot let the time limit run
+out with ``BotResponse(time_limit_reached=True)``. The page records its
+``time_limit_answer`` without validating it, as for a participant, so the
+answer needn't be one of a :class:`~psynet.modular_page.PushButtonControl`'s
+choices, and :attr:`~psynet.timeline.Response.time_limit_reached` is
+``True``:
+
+.. code-block:: python
+
+    ModularPage(
+        "offer",
+        "How many coins do you offer?",
+        PushButtonControl(choices=list(range(11))),
+        time_limit=15,
+        time_limit_answer="timeout",
+        bot_response=lambda bot: (
+            BotResponse(time_limit_reached=True) if bot.id % 2 else 5
+        ),
+        time_estimate=15,
+    )
+
+The server accepts a bot's time-out at once, so the test doesn't wait
+for the 15 seconds. To make the time actually pass, for example because a
+partner's barrier counts from the deadline, use
+:meth:`~psynet.participant.ParticipantDriver.run_out_of_time` instead. A page
+without a ``time_limit`` raises an error if its bot returns
+``BotResponse(time_limit_reached=True)``.
+
 Pages that collect recordings need a sample file for bots to submit:
 
 .. code-block:: python
@@ -231,7 +260,8 @@ Other helpers ask about a bot's group or act in it:
   message to the :class:`~psynet.chatroom.ChatRoom` on the bot's current page.
 - :meth:`~psynet.participant.ParticipantDriver.run_out_of_time` waits until
   the time limit of the bot's current page has passed and submits no answer,
-  as a participant who leaves a timed page open does.
+  as a participant who leaves a timed page open does. A page's bot response
+  ``BotResponse(time_limit_reached=True)`` does the same without waiting.
 - :func:`~psynet.bot.bots_by_sync_group` sorts bots into their current groups
   of a type, for example ``for first, second in bots_by_sync_group(bots,
   "pair")``, since a grouper can pair them in any order.
@@ -240,17 +270,42 @@ Other helpers ask about a bot's group or act in it:
   each bot while they still wait for each other, as players a
   :class:`~psynet.sync.Regrouper` keeps pairing do: one bot run to the end
   alone would wait at the next barrier for the others.
-- :func:`~psynet.bot.regroup_now` makes a
-  :class:`~psynet.sync.Regrouper` split the bots' pools as its ``deadline``
-  or next ``every`` tick would, then advances them, so the test doesn't
-  wait for it, for example ``regroup_now(bots[:3], pairing)`` to start a
-  round without a fourth player who is still reading their results.
-- :func:`~psynet.bot.make_late_now` makes the members who haven't reached a
-  :class:`~psynet.sync.GroupBarrier` late, as its ``late_after`` would,
-  then advances the bots waiting there, so a test of a player who goes
-  quiet doesn't wait in real time, for example
-  ``make_late_now(bots, "round_finished")`` after two of three players
-  have answered.
+
+A group game has timers that a test would otherwise sleep through. Two
+helpers each pretend one timer has run out, then move the bots on, as
+:func:`~psynet.bot.advance_past_wait_pages` does:
+
+- :func:`~psynet.bot.regroup_now` for a :class:`~psynet.sync.Regrouper`'s
+  ``deadline`` (or ``every`` tick): the bots' pools split now, and the bots
+  move on into their new groups. For example, ``regroup_now(bots[:3],
+  pairing)`` starts a round without a fourth player who is still reading
+  their results.
+- :func:`~psynet.bot.make_late_now` for a
+  :class:`~psynet.sync.GroupBarrier`'s ``late_after``: members who haven't
+  reached the barrier are now late, so its ``late_action`` applies to them,
+  and the bots waiting there move on. For example,
+  ``make_late_now(bots, "round_finished")`` after two of three players have
+  answered.
+
+Without more, both move the bots past every wait. ``stop_at``, as for
+:func:`~psynet.bot.advance_past_wait_pages`, names barriers to leave them
+waiting at instead, which a turn-taking game needs: for example
+``regroup_now(bots, pairing, stop_at="offer_made")`` leaves the responders
+waiting for the proposers' offers. In ``story_chain``, every turn ends at
+one barrier, ``"turn_finished"``, so ``stop_at`` names the barrier the bots
+are waiting at, and they stop at its next visit:
+
+.. code-block:: text
+
+    turn 1   A: waiting at "turn_finished"
+             B: writing (goes quiet)
+             C: waiting at "turn_finished"
+
+    make_late_now(bots, "turn_finished", stop_at="turn_finished")
+             B is late, so their group goes on without them; A and C are released
+
+    turn 2   C: writing                        <- the test plays C's turn next
+             A: waiting at "turn_finished"     <- stopped at its next visit
 
 When several groups play in one test, finish one group's story before driving
 the next: a barrier's ``late_after`` clock keeps running for a group while the
@@ -283,6 +338,13 @@ module-level state and the experiment instance, including its timeline: store
 per-bot traits on ``bot.var`` in ``initialize_bot`` rather than in globals or
 on ``self``, and avoid calling ``random.seed()`` from experiment code. To
 measure how the server performs under load, see :doc:`scalability`.
+
+Bots answer pages instantly by default (``test_time_factor = 0``),
+including the pages of a barrier's ``waiting_logic``, such as filler trials
+in a grouper's lobby. Once the barrier is ready to release them, for
+example because the group is complete, waiting bots stop answering those
+pages until they are released (for at most 5 s). The release has to lock
+every waiter at once, which it can't do while one of them is mid-request.
 
 Testing on a remote server
 --------------------------

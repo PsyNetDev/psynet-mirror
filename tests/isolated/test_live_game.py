@@ -30,7 +30,9 @@ import psynet
 from psynet.bot import Bot
 from psynet.experiment import Experiment, get_experiment
 from psynet.live_game import (
-    NOT_STARTED,
+    FAILED,
+    FINISHED,
+    NOT_STARTED_MESSAGE,
     PLAYERS_LEFT,
     TIMEOUT,
     TOO_LATE,
@@ -38,6 +40,7 @@ from psynet.live_game import (
     LiveGameFailed,
     LiveGamePage,
     LiveGameRecord,
+    LiveGameStatus,
     LiveMessage,
     PlayerReady,
     PlayLiveGame,
@@ -975,7 +978,7 @@ def test_a_played_game_s_messages_read_back_in_order_with_their_status(played):
         for message in saved
     ] == [
         (0, 1, "accepted", None, PlayerReady()),
-        (0, 2, "rejected", NOT_STARTED, _pick(7)),
+        (0, 2, "rejected", NOT_STARTED_MESSAGE, _pick(7)),
         (1, 1, "accepted", None, PlayerReady()),
         (
             0,
@@ -1853,7 +1856,7 @@ def test_messages_are_rejected_until_every_player_is_ready(relay):
         relay.apply(state, participant, READY, now, Sent())
     relay.apply(state, "1", TAP, 5, Sent())
 
-    assert rejected.value.reason == NOT_STARTED
+    assert rejected.value.reason == NOT_STARTED_MESSAGE
     assert state == {
         # Participant 1 is player 0, and the tap came 1 second into the game.
         "taps": [[0, 1]],
@@ -1893,7 +1896,7 @@ def test_an_overridden_apply_gets_only_the_game_s_messages_after_the_start(relay
     game = Counted()
     state = game.initial_state(["1"])
 
-    with pytest.raises(Reject, match=NOT_STARTED):
+    with pytest.raises(Reject, match=NOT_STARTED_MESSAGE):
         game.apply(state, "1", TAP, 1, Sent())
     game.apply(state, "1", READY, 2, Sent())
     game.apply(state, "1", TAP, 3, Sent())
@@ -1913,6 +1916,9 @@ def test_the_game_starts_at_the_ready_timeout_without_everyone(relay):
     assert state["psynet"] == _psynet(
         participant_ids=[1, 2],
         ready=[0],
+        # Away until their page opens.
+        away=[1],
+        away_since=[None, 10],
         started_at=10,
         ends_at=610,
         last_tick=10,
@@ -1926,6 +1932,7 @@ def test_the_game_starts_at_the_ready_timeout_without_everyone(relay):
     relay.apply(state, "2", READY, 11, Sent())
     relay.apply(state, "2", TAP, 12, Sent())
     assert state["psynet"]["started_at"] == 10
+    assert state["psynet"]["away"] == []
     assert state["taps"] == [[1, 2]]
 
 
@@ -2105,6 +2112,46 @@ def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
     assert not game.is_over()
     game.tick(80)
     assert game.is_over() and game.end_reason() == PLAYERS_LEFT
+
+
+def test_a_player_who_never_opens_the_game_page_is_away_from_the_start():
+    class Pair(_Game):
+        name = "pair_with_no_show"
+        away_timeout = 30
+
+    game = LocalGame(Pair, players=2, start=False)
+    game.join(0)
+    game.send(0, READY)
+    game.tick(Pair.ready_timeout)
+
+    game.tick(29)
+    assert not game.is_over()
+    game.tick(30)
+    assert game.is_over() and game.end_reason() == PLAYERS_LEFT
+    assert game.game.absences(game.state) == [None, "no_show"]
+
+
+@pytest.mark.parametrize("limit", [None, 30])
+def test_a_no_show_counts_with_the_leavers_towards_min_players(limit):
+    class Trio(_Game):
+        name = "trio_with_no_show"
+        away_timeout = limit
+
+    game = LocalGame(Trio, players=3, start=False)
+    for player in [0, 1]:
+        game.send(player, READY)
+    game.tick(Trio.ready_timeout)
+    # Two players are enough, until a second one leaves.
+    game.leave(1, now=5)
+    game.tick(35)
+
+    assert game.state["psynet"]["away"] == [2, 1]
+    if limit is None:
+        assert not game.is_over()
+        assert game.game.absences(game.state) == [None, None, "no_show"]
+    else:
+        assert game.is_over() and game.end_reason() == PLAYERS_LEFT
+        assert game.game.absences(game.state) == [None, "left_game", "no_show"]
 
 
 def test_by_default_a_game_for_two_ends_a_minute_after_one_player_leaves():
@@ -2314,6 +2361,35 @@ def test_a_deadline_due_by_the_ready_timeout_runs_when_the_game_starts(relay):
     assert waiting.next_due == 10
     assert ended.ended["reason"] == "finished"
     assert json.loads(ended.saved)["state"]["ticks"] == [0]
+
+
+def test_a_no_show_s_away_deadline_runs_unless_their_ready_message_comes(relay):
+    class Pair(type(relay)):
+        name = "pair_waiting_for_a_no_show"
+        min_players = 2
+        away_timeout = 30
+
+        def next_deadline(self, state):
+            return None
+
+    game = Pair()
+    entries = [
+        _session_entry("join", 0, "1"),
+        _session_entry("message", 1, "1", READY),
+        # Player 2's page opens just before the start, and sends its ready
+        # message just after.
+        _session_entry("join", 9, "2"),
+    ]
+    started = run_pass(game, new_session(game, ["1", "2"]), entries, 10, CLOCK)
+    ready = [_session_entry("message", 11, "2", READY)]
+    arrived = run_pass(game, started.saved, ready, 12, CLOCK)
+    ended = run_pass(game, started.saved, [], 40, CLOCK)
+
+    assert started.next_due == 40
+    entry = json.loads(arrived.saved)["state"]["psynet"]
+    assert (entry["away"], entry["away_since"]) == ([], [None, None])
+    assert arrived.next_due == 10 + Pair.timeout
+    assert ended.ended["reason"] == PLAYERS_LEFT
 
 
 def test_a_game_s_state_can_be_passed_by_keyword(relay):
@@ -2671,7 +2747,7 @@ def test_the_game_page_answers_with_the_outcome_once_the_result_is_saved(pair):
     # Later pages read the answer and the result through the participant.
     db.session.refresh(members[0])
     assert members[0].live_games["pick_numbers"].id == game.id
-    assert members[0].live_games["pick_numbers"].finished
+    assert members[0].live_games["pick_numbers"].end_reason == FINISHED
     assert members[0].live_games["pick_numbers"].answer == outcome
     assert members[0].live_game_history["pick_numbers"][-1].answer == outcome
     # Each player's answer, in player order, including the one whose page
@@ -2699,12 +2775,19 @@ def test_a_step_without_a_game_has_a_record_that_says_so(pair, monkeypatch):
         _arrive(game_barrier, member)
 
     game = members[0].live_games[game_barrier.id]
-    assert (game.id, game.status, game.finished) == (None, "not_started", False)
+    assert game.id is None and game.status is LiveGameStatus.NOT_STARTED
     assert (game.answer, game.outcome, game.end_reason, game.player) == (None,) * 4
     assert (game.left_early, game.done_reason) == (False, None)
     assert (game.messages, game.moments, game.participant_ids) == ([], [], [])
     assert not game.record_complete
     assert members[0].live_game_history[game_barrier.id] == []
+
+
+@pytest.mark.parametrize("status", ["running", "ended", "failed"])
+def test_a_record_gives_its_session_status_as_a_live_game_status(pair, status):
+    row = db.session.get(RealtimeSession, _pair_session(pair))
+    row.status = status
+    assert LiveGameRecord(row.id).status is LiveGameStatus(status)
 
 
 def test_the_game_page_fails_once_its_game_can_no_longer_end(pair, monkeypatch):
@@ -2738,9 +2821,9 @@ def test_the_game_page_fails_once_its_game_can_no_longer_end(pair, monkeypatch):
 @pytest.mark.parametrize(
     "end_reason, outcome, record_complete",
     [
-        ("failed", [None, None], True),
+        (FAILED, [None, None], True),
         # The game's outcome raised an error too.
-        ("failed", None, True),
+        (FAILED, None, True),
         (None, None, False),
     ],
 )
@@ -2763,6 +2846,7 @@ def test_a_failed_game_fails_its_players_as_any_error_does(
     )
     result = LiveGameRecord(session_id)
     assert result.record_complete is record_complete
+    assert result.status is LiveGameStatus.FAILED
 
     notified = []
     monkeypatch.setattr(
@@ -3066,11 +3150,18 @@ def test_the_ending_leaves_the_page_deadline_of_a_player_who_finished_early(pair
     records = {member: LiveGameRecord(session_id, member) for member in members}
     assert (records[early].left_early, records[early].done_reason) == (True, "retired")
     assert (records[other].left_early, records[other].done_reason) == (False, None)
-    assert records[other].finished
+    assert records[other].end_reason == FINISHED
 
 
 def _save_ending(
-    session_id, ready=(), away=(), ended_at=0, entry=None, status="ended", game=None
+    session_id,
+    ready=(),
+    away=(),
+    ended_at=0,
+    entry=None,
+    status="ended",
+    game=None,
+    outcome=(None, None),
 ):
     """Save the game's ending at ``ended_at``, as Dallinger does once it has
     started at 0, with the players of ``ready`` ready and those of ``away``,
@@ -3082,7 +3173,7 @@ def _save_ending(
     away_since = [None] * len(ids)
     for player, since in away:
         away_since[player] = since
-    row.status, row.end_reason, row.outcome = status, "finished", [None, None]
+    row.status, row.end_reason, row.outcome = status, "finished", list(outcome)
     row.end_time = timenow()
     if entry is None:
         entry = _psynet(
@@ -3139,6 +3230,80 @@ def test_a_no_show_leaves_the_game_s_groups_so_the_next_barrier_doesn_t_wait(pai
         _run_pending_barrier_checks(_take_pending_barrier_checks())
         db.session.commit()
     assert _barrier_link_released(played.id, "after_the_game")
+
+
+@pytest.mark.parametrize(
+    "reason, ending",
+    [
+        ("no_show", {"ready": [0]}),
+        # Away since 10 s, for the away_timeout of 60.
+        ("left_game", {"ready": [0, 1], "away": [(1, 10)], "ended_at": 70}),
+    ],
+)
+def test_absent_action_fail_fails_an_absent_player_once_everyone_is_paid(
+    pair, reason, ending
+):
+    members, _ = pair
+    cohort = SimpleSyncGroup(
+        group_type="cohort",
+        initial_group_size=2,
+        max_group_size=2,
+        quorum=1,
+        n_active_participants=2,
+        accepts_top_ups=False,
+        below_quorum="fail",
+    )
+    db.session.add(cohort)
+    for member in members:
+        cohort.add_participant(member)
+    db.session.commit()
+    play = _play("absent", absent_action="fail")
+    for member in members:
+        _arrive(play.barrier, member)
+
+    ids = _save_ending(_game_id(members[0], "absent"), outcome=[7, 3], **ending)
+
+    played, absent = (db.session.get(Participant, id_) for id_ in ids)
+    assert absent.failed
+    assert {"live_game:absent", "fail_on_timeout", reason} <= set(absent.failure_tags)
+    # Failing takes them out of every group, the cohort included.
+    assert absent.sync_group_removal_reason("pair") == reason
+    assert absent.sync_group_removal_reason("cohort") == "left_experiment"
+    assert absent.performance_reward == pytest.approx(0.03)
+    assert not played.failed
+    assert played.performance_reward == pytest.approx(0.07)
+    assert played.in_sync_group("cohort")
+
+
+def test_absent_action_fail_leaves_a_player_failed_already_as_they_were(pair):
+    members, _ = pair
+    play = _play("absent", absent_action="fail")
+    for member in members:
+        _arrive(play.barrier, member)
+    # They returned the study before the game ended.
+    members[1].fail()
+    db.session.commit()
+
+    ids = _save_ending(_game_id(members[0], "absent"), ready=[0])
+
+    returned = db.session.get(Participant, ids[1])
+    assert "fail_on_timeout" not in (returned.failure_tags or [])
+    assert returned.sync_group_removal_reason("pair") == "left_experiment"
+
+
+def test_absent_action_fail_dissolves_a_pair_below_quorum_after_paying(pair):
+    members, _ = pair
+    members[0].active_sync_groups["pair"].below_quorum = "fail"
+    play = _play("absent", absent_action="fail")
+    for member in members:
+        _arrive(play.barrier, member)
+
+    ids = _save_ending(_game_id(members[0], "absent"), ready=[0], outcome=[7, None])
+
+    played = db.session.get(Participant, ids[0])
+    assert played.failed
+    assert played.sync_group_removal_reason("pair") == "group_dissolved"
+    assert played.performance_reward == pytest.approx(0.07)
 
 
 @pytest.mark.parametrize("busy_sibling", [False, True])
@@ -3303,9 +3468,9 @@ def test_the_players_of_a_failed_game_stay_in_their_groups(pair):
         assert member.sync_group_removal_reason("pair") is None
 
 
-def test_absent_action_needs_groups_that_carry_on_without_a_player():
-    with pytest.raises(ValueError, match="absent_action must be 'leave_group'"):
-        _play(absent_action="fail")
+def test_absent_action_leave_group_needs_groups_that_carry_on_without_a_player():
+    with pytest.raises(ValueError, match="absent_action must be 'fail', 'leave_group'"):
+        _play(absent_action="stay")
     play = _play(absent_action="leave_group", also_leave=["cohort"])
     assert play.barrier.absent_leave == ["pair", "cohort"]
     assert play.barrier.also_leave == []
@@ -3314,6 +3479,9 @@ def test_absent_action_needs_groups_that_carry_on_without_a_player():
     )
     with pytest.raises(ValueError, match="has absent_action='leave_group'"):
         check_group_dropout_policies([cohort, play.barrier])
+    # Failing absent players, like failing late ones, suits any below_quorum.
+    pair = SimpleGrouper(group_type="pair", initial_group_size=2, below_quorum="fail")
+    check_group_dropout_policies([pair, _play(absent_action="fail").barrier])
 
 
 def test_a_game_page_without_a_game_moves_on_with_no_answer(pair):
