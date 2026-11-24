@@ -4363,9 +4363,13 @@
     // page, it is shown at once and the server is told in the background, as
     // for an answer; otherwise the server is asked once the answers given in
     // advance are sent, so it goes back from the page shown.
+    psynet.canGoBack = function () {
+      return psynet.pageReady && !psynet.timelineHold && !psynet.pageState.submitting;
+    };
+
     psynet.goBack = async function () {
       let page = psynet.previousPage;
-      if (!psynet.pageReady || psynet.timelineHold || psynet.pageState.submitting) {
+      if (!psynet.canGoBack()) {
         return false;
       }
       if (!page || psynet.answers.queue.length) {
