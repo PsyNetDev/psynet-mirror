@@ -97,8 +97,12 @@ def _fail_sync_group_participant(participant_id, sync_group_id, fail_reason):
 
     participant = _get_active_sync_group_participant(participant_id, sync_group_id)
 
-    if participant.failed or participant.status != "working":
-        raise ValueError("Only active working participants can be failed manually.")
+    if not _is_taking_part(participant):
+        raise ValueError(
+            "Only participants still taking part can be failed manually; this "
+            "participant has already failed, finished, or reached the end of "
+            "the experiment."
+        )
 
     participant.fail(MANUAL_FAILURE_REASON)
     return participant
@@ -262,10 +266,7 @@ def _participant_row(link, group):
         "active_in_group": active_in_group,
         "removal_reason": None if active_in_group else link.removal_reason,
         "can_fail_manually": (
-            active_in_group
-            and not participant.failed
-            and participant.status == "working"
-            and group.active
+            active_in_group and _is_taking_part(participant) and group.active
         ),
     }
 

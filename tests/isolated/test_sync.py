@@ -1401,13 +1401,17 @@ def test_manual_sync_group_participant_failure_dissolves_group_below_min_size(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-@pytest.mark.parametrize("participant_status", ["approved", "returned"])
+@pytest.mark.parametrize(
+    "participant_status, branch",
+    [("approved", "main"), ("returned", "main"), ("working", "successful_end")],
+)
 def test_manual_sync_group_participant_failure_rejects_non_working_participants(
-    in_experiment_directory, db_session, participant_status
+    in_experiment_directory, db_session, participant_status, branch
 ):
     exp = get_experiment()
     participant = new_participant(exp)
     participant.status = participant_status
+    participant.elt_id = [branch, 0]
 
     group = SimpleSyncGroup(
         group_type="main",
@@ -1423,7 +1427,7 @@ def test_manual_sync_group_participant_failure_rejects_non_working_participants(
     db_session.commit()
 
     with pytest.raises(
-        ValueError, match="Only active working participants can be failed manually."
+        ValueError, match="Only participants still taking part can be failed"
     ):
         _fail_sync_group_participant(participant.id, group.id, "manual_failure")
 

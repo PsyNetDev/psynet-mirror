@@ -117,7 +117,7 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     finished_row = _row(page, "finished-group")
     assert "Finished" in finished_row
     assert "<strong>0</strong>" in finished_row
-    assert f">{finishers['finished'].id}<" in finished_row
+    assert f">{finishers['finished'].id}</span>" in finished_row
     open_row = _row(page, "open-group")
     assert "Active" in open_row
     assert "Accepts top-ups" in open_row
