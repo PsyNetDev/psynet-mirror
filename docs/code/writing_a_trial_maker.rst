@@ -397,8 +397,7 @@ The browser also waits for the server as before when:
 * a trial's ``show_trial`` returns more than one page, or a page with a
   ``time_limit``, recording, a full page reload, a ``session_id`` or
   ``render_in_advance=False``;
-* the page has a ``validate`` function or ``check_ready_for_response``, or
-  offers the participant a Leave button;
+* the page has a ``validate`` function or ``check_ready_for_response``;
 * an answer includes a recording or another file to upload;
 * a trial gives feedback, or ``show_after_trial`` returns a page; the trial
   after it waits for the server.

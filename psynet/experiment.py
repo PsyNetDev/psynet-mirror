@@ -6748,9 +6748,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 simple=True,
             )
         payload = request.get_json(silent=True) or {}
+        page_uuid = payload.get("page_uuid") if isinstance(payload, dict) else None
+        stored = exit_domain._stored_exit_plan(participant)
         if (
-            not isinstance(payload, dict)
-            or payload.get("page_uuid") != participant.page_uuid
+            not isinstance(page_uuid, str)
+            or not participant.page_uuid
+            or not hmac.compare_digest(page_uuid, participant.page_uuid)
+            or participant.failed
+            # An error-recovery offer or a committed exit must not be replaced.
+            or (
+                stored is not None
+                and (
+                    stored.context is exit_domain.ExitContext.ERROR_RECOVERY
+                    or stored.status is exit_domain.ExitPlanStatus.COMMITTED
+                )
+            )
         ):
             return cls._stale_early_exit_response()
         experiment = get_experiment()
