@@ -196,8 +196,8 @@ Going back to the previous page
 For the same reason, a participant can go back to the page before the
 current one, for example to reread instructions. Such pages show a Back
 button just left of Next, which stays where it was. The browser already has
-the earlier page, so it appears at once. Going back takes back the time
-credit and progress the earlier page gave. Like any page, the earlier page
+the earlier page, so it appears at once. Going back returns the time
+credit and progress to what they were before the earlier page was answered. Like any page, the earlier page
 stores a new response, without an answer, each time the participant reaches
 it, so its responses appear once for each visit. The `back_button demo
 <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/back_button>`__

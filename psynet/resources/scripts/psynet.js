@@ -3622,9 +3622,10 @@
               onEnd: null,
             };
 
-            // A page change stops the trial; a JSPage kept for the next
-            // trial keeps it, though the page UUID changes.
+            // A page change stops the trial. A JSPage kept for the next
+            // trial keeps it, but shows that trial through a new update().
             const soundTrial = psynet.trial;
+            const soundUpdate = psynet.updateController;
             let stopTimer = null;
             let completionTimer = null;
             let stopCompletionTimer = null;
@@ -3663,6 +3664,7 @@
             let isSoundTrialActive = function () {
               return (
                 psynet.trial === soundTrial &&
+                psynet.updateController === soundUpdate &&
                 !soundTrial.stopping &&
                 !soundTrial.stopped
               );
