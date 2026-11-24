@@ -98,7 +98,7 @@ studies need their own; see :doc:`/code/participants/consent`.
 When the built-in prompts and controls don't fit, write your own
 (see :doc:`custom front ends </code/pages/custom_front_ends>`), or write the
 whole page as a :class:`~psynet.page.JSPage` (see
-:doc:`/code/trials/keeping_a_task_on_one_page`).
+:ref:`custom_front_ends_js_page`).
 
 What happens to a response
 --------------------------
