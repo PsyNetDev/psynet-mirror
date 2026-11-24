@@ -112,11 +112,13 @@ The game is the class ``RockPaperScissors``:
 other game in the experiment. ``messages`` lists the kinds of message that a
 page can send, which the next section describes. ``min_players`` and
 ``max_players`` say that the game is for exactly two players. A game page
-opens within seconds, so ``ready_timeout`` starts the game 20 seconds after
-the pair reaches it, even if a player hasn't opened the page. If a player
-closes the game page, or never opens it, and doesn't come back within 30
-seconds, which allows for a reload, ``away_timeout`` ends the game, so their
-partner isn't left waiting. ``timeout`` ends it after five minutes even if
+opens within seconds, so if a player hasn't opened it 20 seconds after the
+pair reaches it, the ``ready_timeout``, they aren't coming: the game can't
+start with fewer than ``min_players``, so PsyNet ends it at once, unplayed,
+with the reason ``"too_few_ready"``. If a player closes the game page during
+the game and doesn't come back within 30 seconds, which allows for a
+reload, ``away_timeout`` ends the game, so their partner isn't left
+waiting. ``timeout`` ends it after five minutes even if
 both players stop choosing. :ref:`live-games-time-limits` lists all of a game's time limits.
 
 ``initial_state`` returns the state at the start of the game. It receives the
@@ -257,7 +259,8 @@ JavaScript can find it. PsyNet hides it on a page without a game. The other
 options change the page's texts: ``waiting_status`` is what the page says
 until both pages have opened,
 ``player_left_message`` the notice while the partner is away, and
-``no_game_message`` the notice on a page without a game.
+``no_game_message`` the notice on a page without a game, which a player
+also sees when their partner never opens the game page.
 ``js_page_modules`` lists the page's JavaScript.
 
 The JavaScript is in ``static/rock-paper-scissors.js``. It exports an
@@ -523,12 +526,14 @@ the game paid, as recorded on the trial, to ``show_result``:
    :pyobject: show_result
    :dedent:
 
-A game can start and end without a throw being played, when a player is
+A game can end without a throw being played, so ``show_result`` checks for
+that first. That happens when a player never opens the game page, which ends
+the game with ``"too_few_ready"`` at its ``ready_timeout``, when a player is
 away from the game page for its ``away_timeout`` before the first throw, or
-the game reaches its ``timeout`` first, so ``show_result`` checks for that
-first. A trial
-whose game never started has no answer, and ``gives_feedback`` skips its
-feedback.
+when the game reaches its ``timeout`` first. Each of these games still has an
+answer, with no throws in it. Only a trial whose pair didn't start a game at
+all, for example because the partner was late for it, has no answer, and
+``gives_feedback`` skips its feedback.
 
 Reference: :ref:`live-games-answer` and :ref:`live-games-rewards`.
 
