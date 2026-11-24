@@ -1571,6 +1571,9 @@ async function clickConsentButton(page, timeout = 120000) {
   await expect(consentButton).toBeVisible({ timeout });
   await expect(consentButton).toBeEnabled({ timeout });
   await waitForPageLoaded(page, timeout);
+  // PsyNet enables the button before the page is ready, and answers a click
+  // before then with a "Please wait" alert.
+  await waitForTimelinePageReady(page, timeout);
   await consentButton.click();
 }
 
