@@ -3,11 +3,11 @@
 // The server sends the seconds left when the page is drawn, so a reload
 // continues the same countdown. Elements with data-psynet-seconds-left show
 // it; without one, the module adds a "N s left" chip where timeline holds
-// show their status, hidden while the page is being submitted or held and
-// once it reaches zero. At
-// zero the module dispatches psynet:timeLimitReached on document, so custom
-// scripts can stage their state, then submits with time_limit_reached in its
-// metadata. The server records the page's time_limit_answer, or with
+// show their status, hidden while the page is being submitted or held, while
+// a barrier's release counts down (see psynet.waiting), and once it reaches
+// zero. At zero the module dispatches psynet:timeLimitReached on document, so
+// custom scripts can stage their state, then submits with time_limit_reached
+// in its metadata. The server records the page's time_limit_answer, or with
 // CURRENT_ANSWER (config.currentAnswer) the answer the page's controls hold.
 // If the server's deadline is still some way off, it returns the seconds
 // left and the countdown resumes.
@@ -115,7 +115,11 @@ export function activate({root, vars, psynet}) {
             // The page moves on at zero, so the label never reads "0 s".
             label.textContent = Math.max(left, 1);
         });
-        if (line) line.hidden = left === 0 || Boolean(psynet.nextPagePending || psynet.timelineHold);
+        if (line) {
+            line.hidden = left === 0 || Boolean(
+                psynet.nextPagePending || psynet.timelineHold || (psynet.waiting && psynet.waiting.released)
+            );
+        }
         if (left > 0) timer = window.setTimeout(tick, 250);
         else submit();
     }

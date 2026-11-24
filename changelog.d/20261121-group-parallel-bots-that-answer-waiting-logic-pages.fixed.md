@@ -1,0 +1,1 @@
+Fixed parallel bot tests that hung or timed out because bots answering a barrier's `waiting_logic` pages instantly (for example filler trials in a `SimpleGrouper` lobby) kept the barrier from ever grouping them; once the barrier is ready to release them, bots now stop answering those pages until they are released, so you no longer need `test_time_factor` as a workaround.

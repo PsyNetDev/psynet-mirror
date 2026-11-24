@@ -32,7 +32,9 @@ Forming groups
 
 A **grouper** in the timeline collects participants as they arrive and forms
 a group once enough are waiting, for example two for a two-player game.
-Participants wait on the page they are on until their group is complete. A
+Participants wait on the page they are on until their group is complete,
+or answer filler trials meanwhile, such as quiz questions that earn points
+(see :ref:`sync-waiting-quiz`). A
 grouper can also wait for a larger batch and then split it into groups; the
 built-in grouper splits it at random, and a custom grouper can choose the
 split, for example to balance groups. Waiting for a larger batch gives the
@@ -141,13 +143,14 @@ different way:
        haven't reached the next barrier within a set number of seconds. Or
        the members waiting for them at a barrier reach its **maximum waiting
        time**.
-     - Whether the late member, or the members who waited, are failed or
-       continue the experiment without the group.
-   * - comes back after being removed from the group
-     - A notice tells them what happened, and they continue the experiment
-       without the group.
-     - What they do for the rest of the experiment: a task on their own, an
-       early end, or a new group.
+     - Usually, the late member is failed and the others carry on without
+       them. Letting them, or the members who waited, continue the
+       experiment without the group is an advanced option.
+   * - comes back after being failed for being late
+     - Their final page tells them that they took too long.
+     - Nothing, unless you let late members continue without the group:
+       then what they do for the rest of the experiment, such as a task on
+       their own, an early end, or a new group.
    * - arrives when no group can form
      - When they have waited at the grouper for its maximum waiting time:
        they are failed, or continue without a group.
@@ -166,9 +169,12 @@ for those left: with ``below_quorum="fail"`` they are failed too, and with
 ``below_quorum="continue_without_group"`` they continue the experiment
 without the group (see :ref:`groups_below_quorum`). Decide this for every
 grouper; PsyNet requires it for groups designed to shrink, such as those
-with a quorum below their size or whose barriers remove late members. Failed
-participants are paid for what they completed (see
-:doc:`/code/participants/payment`).
+with a quorum below their size or whose barriers remove late members.
+Usually, choose ``"fail"``: failing isn't a penalty, but says that a
+participant's contribution is no longer useful, so their session ends
+promptly. Failed participants are paid for what they completed (see
+:doc:`/code/participants/payment`). Continuing without the group is for
+designs where playing on alone is meaningful.
 
 A group that needs a quorum for only part of the experiment can let its
 members do something else while it waits. In

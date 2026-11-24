@@ -314,15 +314,15 @@ class BargainTrial(Trial):
             page=bargaining_page(self.definition["stake"]),
             settings=self.definition,
             # A partner who hasn't arrived LATE_AFTER seconds after the pair
-            # formed has probably closed their page, so they leave the cohort
-            # too, and the next pairing doesn't wait for them. The player
-            # waiting goes on to the game page without a game.
+            # formed has probably closed their page, so they are failed,
+            # which takes them out of the cohort too, and the next pairing
+            # doesn't wait for them. The player waiting goes on to the game
+            # page without a game.
             late_after=LATE_AFTER,
-            late_action="leave_group",
-            # So does a partner who reached the game but never opened it, or
+            late_action="fail",
+            # So is a partner who reached the game but never opened it, or
             # left it for good, once the game's result is saved.
-            absent_action="leave_group",
-            also_leave=["cohort"],
+            absent_action="fail",
         )
 
     def coins(self):
@@ -330,10 +330,10 @@ class BargainTrial(Trial):
         return (self.answer or {}).get("coins", 0)
 
     def show_feedback(self, experiment, participant):
+        # A player who didn't arrive, or left the game, has been failed, so
+        # only their partner sees this page.
         reason = self.live_game.end_reason
-        if self.answer is not None and not self.answer["arrived"]:
-            text = "You didn't arrive in time, so there was no game this round."
-        elif self.answer is None or not self.answer["partner_arrived"]:
+        if self.answer is None or not self.answer["partner_arrived"]:
             text = "Your partner didn't arrive, so there was no game this round."
         elif reason == DEAL:
             mine = self.coins()
@@ -342,11 +342,7 @@ class BargainTrial(Trial):
                 f"gets {self.definition['stake'] - mine}."
             )
         elif reason == PLAYERS_LEFT:
-            # absent_action took the player who left out of the cohort.
-            if participant.sync_group_removal_reason("cohort") == "left_game":
-                text = "You left the game, so there was no deal."
-            else:
-                text = "Your partner left the game, so there was no deal."
+            text = "Your partner left the game, so there was no deal."
         else:
             text = "You didn't reach a deal in time, so nobody was paid."
         return InfoPage(text, time_estimate=5)
@@ -382,20 +378,11 @@ def round_status(participant):
     return "no_cohort"
 
 
-END_OF_GAME_TEXTS = {
-    "late": "You didn't arrive in time, so the game is over for you.",
-    "no_show": "You didn't arrive in time, so the game is over for you.",
-    "left_game": "You left the game, so it's over for you.",
-}
-
-
 def end_of_game(participant):
-    """Return the last page, with the player's bonus, which also tells a
-    player who left the cohort without playing why the game ended for them."""
-    reason = participant.sync_group_removal_reason("cohort")
-    text = END_OF_GAME_TEXTS.get(reason, "That's the end of the game.")
+    """Return the last page, with the player's bonus."""
     return InfoPage(
-        f"{text} Your bonus is ${participant.performance_reward:.2f}.",
+        "That's the end of the game. Your bonus is "
+        f"${participant.performance_reward:.2f}.",
         time_estimate=5,
     )
 
@@ -411,6 +398,9 @@ def get_timeline():
             initial_group_size=COHORT_SIZE,
             quorum=2,
             max_wait_time=300,
+            # Players leave the cohort as they finish, so failing those left
+            # below the quorum could fail the last players still playing.
+            # Instead, keep_playing ends the rounds for them.
             below_quorum="continue_without_group",
         ),
         Module(

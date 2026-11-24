@@ -206,7 +206,9 @@ that check commits; partners leave on overlay wake (websocket on-open, a 2 s
 safety poll, or a later GET). The last arriver self-skips the hold they just
 released. A hold consumed immediately after skipping a released wait
 (last-arrival self-skip, overlay resume, GET recovery, or a poller skip)
-is marked silent so the overlay stays a spinner until partners catch up.
+is marked silent so the overlay stays a spinner while partners catch up.
+After ``CATCH_UP_SPINNER_SECONDS`` (3 s) a silent hold that is still waiting,
+for example for a partner who never arrives, shows its waiting message.
 The overlay chip and websocket are reused when the next page is also a hold.
 The visit claim is held on a second connection until that check finishes.
 The ORM session does not take that key while the extra transaction is open.
