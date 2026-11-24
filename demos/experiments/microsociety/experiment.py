@@ -127,8 +127,7 @@ def get_timeline():
                         newcomer_max_wait=NEWCOMER_MAX_WAIT,
                         newcomer_page=PageMaker(history_page, time_estimate=20),
                     ),
-                    # The barrier may have turned a newcomer away, or the
-                    # experimenter may have removed the member.
+                    # The barrier may have turned a newcomer away.
                     conditional("in_society", in_society, FishingTrial.cue()),
                 ),
                 expected_repetitions=MAX_ROUNDS,
@@ -143,9 +142,6 @@ def get_timeline():
                 ),
                 "played_max_rounds": leave_a_tip(
                     f"You have played your {MAX_ROUNDS} rounds."
-                ),
-                "removed_by_experimenter": InfoPage(
-                    "You were removed from the society.", time_estimate=5
                 ),
                 "not_admitted": InfoPage(
                     "The society you joined couldn't start a round with you, "
@@ -177,8 +173,8 @@ def life_stage(participant: Participant) -> Optional[str]:
     if last is not None and last.var.get("leaves_as"):
         return last.var.leaves_as
     if GROUP not in participant.active_sync_groups:
-        # "removed_by_experimenter" or "not_admitted" for a member who plays
-        # on; for a failed one, why they left, such as "late",
+        # "not_admitted" for a newcomer who plays on; for a failed member,
+        # why they left, such as "late",
         # "group_dissolved", "left_experiment" or "no_group_formed".
         return participant.sync_group_removal_reason(GROUP)
     return "playing"
@@ -297,21 +293,14 @@ class FishingTrial(Trial):
 
     def score_answer(self, answer, definition):
         """Return the fish the member caught this round."""
+        # A failed member, for example one who was late or the last of a
+        # society that ended, is never scored: their trial doesn't finish.
         if answer is None:
             return 0
-        if self.sync_group_outcome == "stayed":
-            return self.var.catch
-        # The experimenter removed them during the round. A failed member,
-        # for example one who was late or the last of a society that ended,
-        # is never scored: their trial doesn't finish.
-        return 0
+        return self.var.catch
 
     def compute_performance_reward(self, score):
         return FISH_VALUE * score
-
-    def gives_feedback(self, experiment, participant):
-        # A member who left the round sees why at the end of the timeline.
-        return self.sync_group_outcome == "stayed"
 
     def show_feedback(self, experiment, participant):
         if self.answer is None:

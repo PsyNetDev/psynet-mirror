@@ -54,10 +54,6 @@ rounds.
 - When fewer than three estimates arrive because players ran out of time,
   the group's estimates are saved without a median and there is nothing to
   revise.
-- A player the experimenter removes from their group on the dashboard
-  during a question can't revise their estimate, is told they were removed,
-  and answers no more questions. One removed before the first question goes
-  straight to the end of the experiment.
 
 The timeouts are short so that the bot test runs quickly. A real deployment
 would start short after about a minute, wait about three minutes in the

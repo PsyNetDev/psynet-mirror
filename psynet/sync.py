@@ -5791,8 +5791,8 @@ class SyncGroup(SQLBase, SQLMixin):
             for their answer labels them "(left)" unless the reason is
             ``"moved_on"`` or ``"finished"`` (see :ref:`sync-showing-the-group`).
 
-            - ``"removed_by_experimenter"``: removed without a more specific
-              reason, for example from the dashboard.
+            - ``"removed_by_experimenter"``: removed by your own code without
+              a more specific reason. PsyNet itself never uses it.
             - ``"left_experiment"``, ``"waited_too_long"`` or
               ``"group_dissolved"``: they dropped out.
             - ``"late"``: a barrier removed them for being late (with any

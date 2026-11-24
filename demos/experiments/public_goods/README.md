@@ -9,9 +9,7 @@ bonus.
 Good reference for a `SimpleGrouper` with a `quorum` below its size, so
 that the group carries on with fewer players, a scoring `GroupBarrier` that
 fails late players (`late_after` with `late_action="fail"`), `on_release`
-and a `waiting_screen`, and `for_loop(..., stop_if=...)` with a
-`conditional` afterwards for a player the experimenter removes from the
-group. Each round is one cued
+and a `waiting_screen`. Each round is one cued
 trial per player (`Trial.cue(round=i)` on a trial class with
 `sync_group_type`): the group's pot is saved once on the round its members'
 trials share (`trial.group_round.var`), and each player's contribution and payoff on their trial,
@@ -34,10 +32,8 @@ which pays the bonus (`score_answer` and
 - A participant for whom no group forms within `GROUPING_WAIT` is failed
   (the grouper's default `max_wait_action="fail"`).
 - Failing isn't a penalty here: it ends the session promptly, and failed
-  participants are paid for the rounds they completed. `score_answer` pays
-  each player by their trial's `sync_group_outcome`.
-- A player the experimenter removes on the dashboard earns nothing for
-  that round and is told they were removed from the game.
+  participants are paid for the rounds they completed. Only finished trials
+  are scored, so a failed player earns nothing for the round they left in.
 
 ## Usage
 

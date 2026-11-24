@@ -16,21 +16,19 @@ pytestmark = pytest.mark.parametrize(
 
 
 @pytest.mark.parametrize(
-    "outcome, result, answer, expected",
+    "result, answer, expected",
     [
-        ("removed_by_experimenter", None, None, "removed_by_experimenter"),
-        ("stayed", "timed_out", None, "own_time_out"),
-        ("stayed", "timed_out", 3, "timed_out"),
-        ("stayed", "partner_left", 3, "partner_left"),
-        ("stayed", "accepted", 3, "accepted"),
+        ("timed_out", None, "own_time_out"),
+        ("timed_out", 3, "timed_out"),
+        ("partner_left", 3, "partner_left"),
+        ("accepted", 3, "accepted"),
     ],
 )
 def test_every_round_outcome_has_a_results_text(
-    in_experiment_directory, outcome, result, answer, expected
+    in_experiment_directory, result, answer, expected
 ):
     demo = sys.modules[type(get_experiment()).__module__]
     trial = SimpleNamespace(
-        sync_group_outcome=outcome,
         group_round=SimpleNamespace(var=SimpleNamespace(result=result)),
         answer=answer,
     )

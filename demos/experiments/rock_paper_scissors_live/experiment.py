@@ -35,7 +35,7 @@ from psynet.live_game import (
 )
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
-from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop
+from psynet.timeline import Module, Timeline, for_loop
 from psynet.trial.main import Trial
 
 Action = Literal["rock", "paper", "scissors"]
@@ -292,23 +292,6 @@ class RockPaperScissorsTrial(Trial):
         return show_result(self.answer, self.performance_reward)
 
 
-def removed_from_pair(participant):
-    """Return whether the experimenter has removed the player from their pair on the dashboard.
-
-    Nothing else leaves a player without a pair and still playing: a late
-    player is failed, and so is their partner.
-    """
-    return not participant.in_sync_group("pair")
-
-
-def removed_page(participant):
-    return InfoPage(
-        "You were removed from the game. Your bonus is "
-        f"${participant.performance_reward:.2f}.",
-        time_estimate=5,
-    )
-
-
 class Exp(psynet.experiment.Experiment):
     label = "Rock, paper, scissors live game demo"
     test_n_bots = 2
@@ -343,14 +326,7 @@ class Exp(psynet.experiment.Experiment):
                     {"number": game + 1, **GAMES[game]}, round=game
                 ),
                 time_estimate_per_iteration=RockPaperScissorsTrial.time_estimate,
-                # Checked before each game.
-                stop_if=removed_from_pair,
             ),
-        ),
-        conditional(
-            "removed",
-            removed_from_pair,
-            PageMaker(removed_page, time_estimate=5),
         ),
     )
 

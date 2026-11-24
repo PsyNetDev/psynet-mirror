@@ -43,7 +43,6 @@ read their results.
 | `late` | The member was inactive, for example by closing the page, and missed the start of a round (`LATE_AFTER`) or its end (`FINISH_LATE_AFTER`, counted from 10 seconds after the fishing page's time limit). | Failed (`late_action="fail"`), earning nothing for that round; the others carry on. |
 | `left_experiment` | The member returned the study or was failed for another reason. | Sees no page; the others carry on. |
 | `group_dissolved` | One member was left: during a round, when the round's `round_finished` barrier is next checked, or at the start of a round, if no newcomer joined within `TOP_UP_WAIT`. | Failed (`below_quorum="fail"`), because nobody fishes in a society of one. |
-| `removed_by_experimenter` | The experimenter removed the member on the dashboard. | Told they were removed. |
 | `no_group_formed` | No society formed or had room within `GROUPING_WAIT`. | Failed (the grouper's default `max_wait_action="fail"`). |
 | `not_admitted` | A newcomer was still waiting for a round to start after `NEWCOMER_MAX_WAIT`, or the society ended first. | Told on their next page, and that they didn't play. |
 

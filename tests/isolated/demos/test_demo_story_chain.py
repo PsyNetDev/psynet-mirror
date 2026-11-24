@@ -66,41 +66,6 @@ def _play_turn(demo, turn, players, sentence):
 
 
 @in_story_chain
-@pytest.mark.parametrize("removed, saved", [(False, True), (True, False)])
-def test_the_writer_s_sentence_is_kept_unless_they_were_removed(
-    in_experiment_directory, db_session, removed, saved
-):
-    demo, group, members = _story_group(get_experiment())
-    writer = _cue_turn(demo, 0, members)
-    if removed:
-        group.remove_participant(writer, reason="removed_by_experimenter")
-    trial = writer.current_trial
-    writer.answer = "Once upon a time."
-    trial.save_sentence(writer)
-    trial.on_finalized()
-
-    assert trial.group_round.var.sentence == ("Once upon a time." if saved else None)
-
-
-@in_story_chain
-def test_the_last_page_tells_a_removed_member_why_the_story_ended_early(
-    in_experiment_directory, db_session
-):
-    demo, group, (first, second, third) = _story_group(get_experiment())
-    _play_turn(demo, 0, [first, second, third], "Once upon a time.")
-    group.remove_participant(second, reason="removed_by_experimenter")
-    db.session.commit()
-
-    assert demo.final_page(second).prompt.text == (
-        "You were removed from your group. "
-        "Here is the story so far: Once upon a time. How much do you like the story?"
-    )
-    assert demo.final_page(third).prompt.text.startswith(
-        "Here is the story your group wrote:"
-    )
-
-
-@in_story_chain
 def test_the_next_seat_writes_for_a_member_who_left(
     in_experiment_directory, db_session
 ):

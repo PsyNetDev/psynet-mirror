@@ -247,10 +247,10 @@ during the round rather than work it out from the player's groups:
 
 - ``self.sync_group_outcome`` says how the round ended for this player:
   ``"stayed"`` once the barrier released the pair with them in it, or why
-  they left the pair before then, here ``"removed_by_experimenter"`` for a
-  player the experimenter removed on the dashboard; a player failed for
-  being away records ``"late"`` but sees no feedback (see
-  :ref:`round outcomes <sync-round-outcome>` for every value);
+  they left the pair before then. Here only players who stayed see
+  feedback: a player failed for being away records ``"late"`` and leaves
+  the timeline (see :ref:`round outcomes <sync-round-outcome>` for every
+  value);
 - ``self.answer`` is their own decision, ``None`` if they ran out of time;
 - ``self.group_round.var`` holds what ``on_release`` saved for the pair.
 
@@ -315,10 +315,7 @@ With three players in a cohort, one of them has no partner. The player who has
 played the most rounds sits the round out; with ``left_over="sit_out"``
 they move on without a pair instead of waiting (see
 :class:`~psynet.sync.Regrouper`), so the ``switch`` gives them a page
-instead of a trial that round. A player who was paired but removed from the
-pair by the experimenter before submitting their decision has a trial, and
-the first check in ``outcome`` above tells them that they were removed from
-the pair.
+instead of a trial that round.
 
 .. figure:: ../../_static/images/rounds/sit_out.png
    :width: 600
@@ -329,10 +326,9 @@ Ending the game
 
 The rounds loop runs while ``game_over_reason`` returns ``None``. The
 function names each way a player's game can end: they played their rounds,
-sat out too often, were removed by the experimenter on the dashboard, were
-turned away as a latecomer, or their cohort is down to one player. (A player
-removed from just their pair is told so on that round's results page, and a
-player failed for being late is no longer in the timeline.)
+sat out too often, were turned away as a latecomer, or their cohort is down
+to one player. (A player failed for being late is no longer in the
+timeline.)
 
 .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
    :pyobject: game_over_reason
@@ -419,8 +415,8 @@ forms teams of three once, with a :class:`~psynet.sync.SimpleGrouper` and
 ``quorum=2``, and plays its rounds as a loop of cued trials with the loop
 value as ``round=`` (see :ref:`a fixed group's loop <rounds-fixed-group-loop>`). Its barrier
 fails a late player with ``late_action="fail"``, the others share
-the pot between fewer players, and ``score_answer`` pays each player by
-their trial's ``sync_group_outcome`` (see
+the pot between fewer players, and ``score_answer`` pays each player
+who finished the round the payoff its barrier saved (see
 :ref:`round outcomes <sync-round-outcome>`). A team that falls to one
 player dissolves and fails that player (``below_quorum="fail"``). The
 ``crowd_estimate`` demo does the same in a fixed group's loop of questions,
@@ -464,10 +460,10 @@ barrier closes the round:
    :pyobject: StoryTurn.show_trial
 
 The sentence is stored in the writer's own request, so it is there before
-the barrier lets the others go on. A writer who has already left the group
-stores nothing; a writer the barrier fails for being late is no longer in
-the timeline at all. The barrier never removes a member while their own
-request is in progress, so the check needs no lock:
+the barrier lets the others go on. A writer the barrier fails for being
+late is no longer in the timeline at all, and the barrier never removes a
+member while their own request is in progress, so the code block needs
+no check or lock:
 
 .. literalinclude:: ../../../demos/experiments/story_chain/experiment.py
    :pyobject: StoryTurn.save_sentence

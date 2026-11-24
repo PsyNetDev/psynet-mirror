@@ -56,18 +56,6 @@ class TestPublicGoods:
         assert [t.var.payoff for t in trials] == payoffs
 
     @pytest.mark.parametrize(
-        "outcome, tokens",
-        [
-            ("stayed", 13.5),
-            ("removed_by_experimenter", 0),
-        ],
-    )
-    def test_score_depends_on_how_the_round_ended(self, demo, outcome, tokens):
-        trial = _trial(1, 2, sync_group_outcome=outcome)
-        trial.var.payoff = 13.5
-        assert demo.ContributionTrial.score_answer(trial, 2, None) == tokens
-
-    @pytest.mark.parametrize(
         "answers, n_left, expected",
         [
             (

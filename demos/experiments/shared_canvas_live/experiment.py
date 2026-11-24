@@ -428,11 +428,7 @@ def coins_text(n):
 
 
 def show_result(participant):
-    # None if the group started no game, which only happens to a player the
-    # experimenter removed from the group before it.
     answer = participant.live_games["shared_canvas"].answer
-    if answer is None:
-        return InfoPage("Your group couldn't play the game.", time_estimate=5)
     coins = answer["score"]
     if not answer["finished"]:
         summary = "The game ended early."

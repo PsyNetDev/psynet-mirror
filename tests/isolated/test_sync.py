@@ -30,7 +30,6 @@ from psynet.dashboard.sync_groups import (
     _fail_sync_group_participant,
     _get_grouper_progress,
     _index_waiting_barriers,
-    _kick_sync_group_participant,
     _summarize_waiting_at_barriers,
 )
 from psynet.data import SQLBase
@@ -1289,9 +1288,18 @@ def test_manual_sync_group_participant_failure(in_experiment_directory, db_sessi
         n_active_participants=2,
         accepts_top_ups=False,
     )
-    db_session.add(group)
+    secondary_group = SimpleSyncGroup(
+        group_type="secondary",
+        initial_group_size=1,
+        max_group_size=2,
+        quorum=1,
+        n_active_participants=1,
+        accepts_top_ups=True,
+    )
+    db_session.add_all([group, secondary_group])
     for participant in participants:
         group.add_participant(participant)
+    secondary_group.add_participant(participants[0])
     group.leader = participants[0]
     db_session.commit()
 
@@ -1302,94 +1310,19 @@ def test_manual_sync_group_participant_failure(in_experiment_directory, db_sessi
     assert failed_participant.failed
     assert "manual_failure" in failed_participant.failure_tags
     assert participants[0] not in group.active_participants
+    assert participants[0] not in secondary_group.active_participants
     assert participants[1] in group.active_participants
+    for group_type in ["main", "secondary"]:
+        assert (
+            failed_participant.sync_group_removal_reason(group_type)
+            == "left_experiment"
+        )
 
 
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-def test_manual_sync_group_participant_kick(in_experiment_directory, db_session):
-    exp = get_experiment()
-    participants = [new_participant(exp) for _ in range(2)]
-    for participant in participants:
-        participant.status = "working"
-
-    group = SimpleSyncGroup(
-        group_type="main",
-        initial_group_size=2,
-        max_group_size=2,
-        quorum=1,
-        n_active_participants=2,
-        accepts_top_ups=False,
-    )
-    db_session.add(group)
-    for participant in participants:
-        group.add_participant(participant)
-    group.leader = participants[0]
-    db_session.commit()
-
-    kicked_participant = _kick_sync_group_participant(
-        participants[0].id, group.id, "manual_kick"
-    )
-
-    assert not kicked_participant.failed
-    assert "manual_failure" not in kicked_participant.failure_tags
-    assert participants[0] not in group.active_participants
-    assert participants[1] in group.active_participants
-    assert (
-        kicked_participant.sync_group_removal_reason("main")
-        == "removed_by_experimenter"
-    )
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_manual_sync_group_participant_kick_targets_selected_group(
-    in_experiment_directory, db_session
-):
-    exp = get_experiment()
-    participant = new_participant(exp)
-    participant.status = "working"
-
-    main_group = SimpleSyncGroup(
-        group_type="main",
-        initial_group_size=1,
-        max_group_size=2,
-        quorum=1,
-        n_active_participants=1,
-        accepts_top_ups=True,
-    )
-    secondary_group = SimpleSyncGroup(
-        group_type="secondary",
-        initial_group_size=1,
-        max_group_size=2,
-        quorum=1,
-        n_active_participants=1,
-        accepts_top_ups=True,
-    )
-    db_session.add(main_group)
-    db_session.add(secondary_group)
-    main_group.add_participant(participant)
-    secondary_group.add_participant(participant)
-    main_group.leader = participant
-    secondary_group.leader = participant
-    db_session.commit()
-
-    kicked_participant = _kick_sync_group_participant(
-        participant.id, secondary_group.id, "manual_kick"
-    )
-
-    assert kicked_participant == participant
-    assert participant in main_group.active_participants
-    assert participant not in secondary_group.active_participants
-    assert participant.active_sync_groups == {"main": main_group}
-
-
-@pytest.mark.parametrize(
-    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
-)
-def test_manual_sync_group_participant_kick_handles_empty_top_up_group(
+def test_manual_sync_group_participant_failure_ends_empty_top_up_group(
     in_experiment_directory, db_session
 ):
     exp = get_experiment()
@@ -1409,11 +1342,11 @@ def test_manual_sync_group_participant_kick_handles_empty_top_up_group(
     group.leader = participant
     db_session.commit()
 
-    kicked_participant = _kick_sync_group_participant(
-        participant.id, group.id, "manual_kick"
+    failed_participant = _fail_sync_group_participant(
+        participant.id, group.id, "manual_failure"
     )
 
-    assert not kicked_participant.failed
+    assert failed_participant.failed
     assert group.active_participants == []
     assert group.n_active_participants == 0
     assert group.leader is None
@@ -1428,7 +1361,7 @@ def test_manual_sync_group_participant_kick_handles_empty_top_up_group(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
 @pytest.mark.parametrize("fail_below_min_size", [True, False])
-def test_manual_sync_group_participant_kick_dissolves_group_below_min_size(
+def test_manual_sync_group_participant_failure_dissolves_group_below_min_size(
     in_experiment_directory, db_session, fail_below_min_size
 ):
     exp = get_experiment()
@@ -1451,11 +1384,11 @@ def test_manual_sync_group_participant_kick_dissolves_group_below_min_size(
     group.leader = participants[0]
     db_session.commit()
 
-    kicked_participant = _kick_sync_group_participant(
-        participants[0].id, group.id, "manual_kick"
+    failed_participant = _fail_sync_group_participant(
+        participants[0].id, group.id, "manual_failure"
     )
 
-    assert not kicked_participant.failed
+    assert failed_participant.failed
     assert participants[0] not in group.active_participants
     assert participants[1] not in group.active_participants
     assert participants[2] not in group.active_participants

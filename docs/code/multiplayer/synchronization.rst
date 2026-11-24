@@ -584,8 +584,9 @@ leave out failed trials to drop their answer:
 
 In the ``public_goods`` demo, a group of three plays on with two, so the
 group dissolves when one player is left, which fails that player
-(``below_quorum="fail"``), and the round is cancelled. ``score_answer``, at
-the end of each trial, pays each player by their trial's outcome:
+(``below_quorum="fail"``), and the round is cancelled. ``score_answer``
+runs only for a trial that finished, so it pays what the round's barrier
+saved, and a failed player's trial is never scored:
 
 .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
    :pyobject: ContributionTrial.score_answer
@@ -1135,15 +1136,15 @@ barrier settings are described in `Timeouts`_, and the grouper's
      - ``"left_experiment"``
      - returned or failed
      - :meth:`~psynet.participant.ParticipantDriver.drop_out`
-   * - Removed by the experimenter
+   * - Removed by your code
      - ``"removed_by_experimenter"``
-     - dashboard, or ``remove_participant``
+     - ``remove_participant``
      - ``remove_participant(participant, reason="removed_by_experimenter")``
 
 A player who comes back after being removed keeps their reason, so their
 next page can explain what happened (see `After leaving a group`_). Only
-players who weren't failed reach a next page: those the experimenter
-removed, newcomers turned away (``"not_admitted"``), and players removed
+players who weren't failed reach a next page: newcomers turned away
+(``"not_admitted"``), players your own code removed, and players removed
 under the advanced options: a barrier's ``late_action="leave_group"`` or
 ``max_wait_action="leave_group"``, or a grouper's
 ``below_quorum="continue_without_group"`` or
@@ -1197,12 +1198,8 @@ With the advanced
 such as "Your group went on without you. Please continue.", and a group
 that dissolves under ``below_quorum="continue_without_group"`` tells its
 remaining members that too few members remained (see
-:ref:`sync-leaving-a-group`). A dashboard removal shows no notice. Your
-pages only need to add the consequence for your game, as in the
-``public_goods`` demo, which tells a player the experimenter removed:
-
-.. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
-   :pyobject: removed_page
+:ref:`sync-leaving-a-group`). Your pages only need to add the consequence
+for your game.
 
 The others learn who left from the ``left`` argument of ``on_release``
 (see :ref:`on_release arguments <sync-barrier-round>`); the demo's results page says "One player
@@ -1210,8 +1207,11 @@ has left the group." when ``left`` isn't empty.
 
 For each case, also decide:
 
-- **Pay:** ``score_answer`` can pay by ``trial.sync_group_outcome``, as in
-  the ``public_goods`` demo's ``ContributionTrial.score_answer``.
+- **Pay:** ``score_answer`` runs only for a trial that finished, so a
+  failed player isn't paid for the round they left in, as in the
+  ``public_goods`` demo's ``ContributionTrial.score_answer``. With the
+  advanced ``"leave_group"`` actions, a removed player's trial does
+  finish, so pay it by ``trial.sync_group_outcome``.
 - **Export:** export a row for every trial, with its ``sync_group_outcome``
   and ``time_limit_reached``, so that analysis can tell the cases apart.
 
@@ -1702,16 +1702,17 @@ After leaving a group
 ~~~~~~~~~~~~~~~~~~~~~
 
 A member removed from their group without being failed, through a
-barrier's ``"leave_group"``, ``below_quorum="continue_without_group"`` or
-the experimenter's removal on the dashboard,
+barrier's ``"leave_group"`` or ``below_quorum="continue_without_group"``,
 stays in the experiment and continues the timeline without that group.
 Carrying on without the group is an advanced option, for designs where it
 is meaningful; usually, fail players who time out (``late_action="fail"``),
-and then only an experimenter's removal or a newcomer who is turned away
-(``"not_admitted"``) leaves a player without the group. They
-leave only the group of that type: a player removed from a ``"pair"`` stays
-in their ``"cohort"`` unless the barrier lists that group type in
-``also_leave`` (see :ref:`rounds-slow-players`). A participant whose grouper let them continue without
+and then only a newcomer who is turned away (``"not_admitted"``) leaves a
+player without the group. A member removed in these ways leaves only
+the group of that type: a player removed from a ``"pair"`` stays in their
+``"cohort"`` unless the barrier lists that group type in ``also_leave``
+(see :ref:`rounds-slow-players`). To take a player out of a game by hand,
+fail them on the dashboard's **Sync groups** tab, which removes them from
+all their groups. A participant whose grouper let them continue without
 a group (``max_wait_action="continue_without_group"``) is treated the same
 way for that group type, as if they had left a group. A notice on their
 progress bar tells them why. A member removed for being late sees "Your
@@ -1788,12 +1789,12 @@ For the rest of the timeline:
   passed it, but a member who has left the group passes without waiting, so
   the group may not be scored yet. The page therefore reads the member's own
   ``sync_group_outcome`` first, and only then what ``on_release`` stored on
-  the round. In the ``crowd_estimate`` demo, where only the experimenter's
-  removal lets a member reach this page after leaving, the page reads the
-  outcome, then the ``median`` and whether the estimate timed out, which
-  the trial stored right after the estimate page, rather than inferring a
-  time-out from a missing estimate. A member without a median to revise
-  towards is told why there is nothing to revise:
+  the round. The ``crowd_estimate`` demo fails late players, so only
+  members still in the group reach this page; it reads the ``median`` and
+  whether the estimate timed out, which the trial stored right after the
+  estimate page, rather than inferring a time-out from a missing estimate.
+  A member without a median to revise towards is told why there is nothing
+  to revise:
 
   .. literalinclude:: ../../../demos/experiments/crowd_estimate/experiment.py
      :pyobject: EstimateTrial.revise_page
@@ -1814,24 +1815,31 @@ For the rest of the timeline:
   .. literalinclude:: ../../../demos/experiments/ultimatum_pairing/experiment.py
      :pyobject: round_status
 
-  A player the experimenter removes from the pair partway is out of it, so
-  their trial's ``show_feedback`` tells them, and ``"sat_out"`` is the page
-  for a player the regrouper left over.
+  ``"sat_out"`` is the page for a player the regrouper left over.
 
-  In the ``public_goods`` demo, the rounds' loop stops once the experimenter
-  has removed a player, and a ``conditional`` tells them why the game ended.
-  A trial added with :meth:`Trial.cue() <psynet.trial.main.Trial.cue>` runs
-  to its end once started, so they still reach the end of the round they
-  were removed in:
+  For example, with ``late_action="leave_group"`` on a fixed team's barrier,
+  stop the rounds' loop for a player who has left the team and tell them
+  why. A trial added with :meth:`Trial.cue() <psynet.trial.main.Trial.cue>`
+  runs to its end once started, so they still reach the end of the round
+  they left in:
 
-  .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
-     :start-at: Module(
-     :end-at: PageMaker(game_over
-     :dedent: 8
-     :append: )
+  .. code-block:: python
 
-  .. literalinclude:: ../../../demos/experiments/public_goods/experiment.py
-     :pyobject: removed_from_team
+      def left_team(participant):
+          return not participant.in_sync_group("team")
+
+      for_loop(
+          label="rounds",
+          iterate_over=range(N_ROUNDS),
+          logic=lambda i: ContributionTrial.cue(round=i),
+          time_estimate_per_iteration=ContributionTrial.time_estimate,
+          stop_if=left_team,
+      ),
+      conditional(
+          "left_team",
+          left_team,
+          InfoPage("Your team went on without you.", time_estimate=5),
+      ),
 
 - Trial makers synchronized on that group type give them no more trials.
   A member who leaves before finishing any trial of such a trial maker,
@@ -1857,8 +1865,8 @@ For the rest of the timeline:
   ``"finished"``, ``"not_admitted"`` (they were turned away before an
   admission point admitted them), ``"left_experiment"`` (they failed or returned the study;
   a member failed for being late or waiting too long at this group's barrier
-  records ``"late"`` or ``"waited_too_long"`` instead) or ``"removed_by_experimenter"`` (the
-  experimenter removed them on the dashboard).
+  records ``"late"`` or ``"waited_too_long"`` instead) or ``"removed_by_experimenter"`` (your
+  code removed them with that reason).
   A cued trial whose pages they were on in that group keeps the reason in
   ``sync_group_outcome``, even after they join another group, unless a
   barrier in those pages had already released the group with them in it

@@ -5654,21 +5654,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             fail_reason=request.form.get("fail_reason"),
         )
 
-    @dashboard.route(
-        "/sync-groups/<int:sync_group_id>/participant/<int:participant_id>/kick",
-        methods=["POST"],
-    )
-    @login_required
-    @with_transaction
-    def manual_kick_sync_group_participant(sync_group_id, participant_id):  # noqa F811
-        from .dashboard.sync_groups import manual_kick_sync_group_participant
-
-        return manual_kick_sync_group_participant(
-            participant_id,
-            sync_group_id,
-            kick_reason=request.form.get("kick_reason"),
-        )
-
     def table_columns(self, table="participant", polymorphic_identity=None):
         """Return the Database tab's columns, adding each participant's pseudonym."""
         columns = super().table_columns(

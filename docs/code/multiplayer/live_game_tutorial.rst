@@ -437,9 +437,9 @@ then shows each player their score:
 - ``page`` is the game page, as in `The game page`_ above.
 - On the next page, ``participant.live_games`` has the participant's record
   of the game, keyed by the game's ``name``. Its ``answer`` is what the
-  game's ``answer`` returned for them, or ``None`` if the pair didn't start
-  a game, for example because the experimenter removed the player from
-  the pair on the dashboard.
+  game's ``answer`` returned for them, or ``None`` if they have no answer,
+  for example because their group broke up before the game started (see
+  :ref:`live-games-record`).
 
 Reference: :ref:`live-games-play`, including :ref:`the wait before the game
 <live-games-wait>`, and :ref:`live-games-record`.
@@ -547,16 +547,8 @@ The rest of the timeline deals with a partner who doesn't come back:
 - A partner who is late is failed, and the grouper's
   ``below_quorum="fail"`` fails the player left behind, who has nobody to
   play the second game with. Both keep what they earned in the first game.
-- ``stop_if`` ends the loop for a participant the experimenter has removed
-  from their pair on the dashboard, the only way to be without a pair and
-  still playing. PsyNet checks it before each game, never during one. The
-  ``conditional`` after the loop then shows that participant a page that
-  says they were removed:
-
-  .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
-     :start-at: def removed_from_pair(participant):
-     :end-before: class Exp(psynet.experiment.Experiment):
-     :dedent:
+  Every player who stays in the loop is therefore still in their pair, so
+  the loop needs no check of its own.
 
 Reference: :ref:`live-games-leaving` and :doc:`late_slow_and_leaving_players`.
 

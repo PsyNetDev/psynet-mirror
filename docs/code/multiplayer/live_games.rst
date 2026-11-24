@@ -702,9 +702,8 @@ Cases a game page should allow for
 No game
 ~~~~~~~
 
-A participant can reach the page without one, for example when the
-experimenter removed them from their group, when another member was late
-for the ``PlayLiveGame`` and their group broke up with the advanced
+A participant can reach the page without one, for example when another
+member was late for the ``PlayLiveGame`` and their group broke up with the advanced
 ``below_quorum="continue_without_group"``, or when their group ended
 before they reached it. PsyNet tells the participant with
 a notice at the top of the page, "Your group couldn't start the game.",
