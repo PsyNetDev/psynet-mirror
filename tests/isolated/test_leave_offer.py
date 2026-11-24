@@ -27,6 +27,7 @@ def test_the_leave_offer_is_prepared_when_the_participant_asks_to_leave():
     prepare = f"{base_url}/prepare_early_exit_plan/{participant.assignment_id}"
     stale = bot.http_session.post(prepare, json={"page_uuid": "an-earlier-page"})
     assert stale.status_code == 409
+    assert bot.http_session.post(prepare, json={}).status_code == 409
     offer = bot.http_session.post(prepare, json={"page_uuid": participant.page_uuid})
     assert offer.json()["confirmation"]["title"] == "Leave without finishing?"
 
@@ -37,3 +38,5 @@ def test_the_leave_offer_is_prepared_when_the_participant_asks_to_leave():
     assert leave.ok
     db.session.expire_all()
     assert Participant.query.get(bot.id).early_exited
+    again = bot.http_session.post(prepare, json={"page_uuid": participant.page_uuid})
+    assert again.status_code == 409
