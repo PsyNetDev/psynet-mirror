@@ -173,7 +173,7 @@ def test_only_pages_built_from_declared_components_are_swapped_in():
     def because(control=None, **kwargs):
         control = control or PushButtonControl(["a"])
         page = ModularPage("q", Prompt("?"), control, time_estimate=1, **kwargs)
-        return page._not_swappable_because()
+        return page._cannot_be_rendered_early_because()
 
     assert because() is None
     assert because(CustomControl(["a"])) == (
@@ -182,6 +182,25 @@ def test_only_pages_built_from_declared_components_are_swapped_in():
     assert because(RadioButtonControl(["a"])) is None
     assert because(session_id="game") == "it has a session_id"
     assert because(time_limit=5) == "it has a time limit"
+
+
+def test_pages_say_why_they_cant_be_left_or_rendered_early():
+    class SetsUp(InfoPage):
+        can_swap_in_advance = True
+
+        def consume(self, experiment, participant):
+            super().consume(experiment, participant)
+
+    info = InfoPage("A", time_estimate=1)
+    assert info._cannot_be_left_early_because() is None
+    assert info._cannot_be_rendered_early_because() is None
+    assert SetsUp("B", time_estimate=1)._cannot_be_rendered_early_because() == (
+        "it overrides consume"
+    )
+    radio = ModularPage("q", Prompt("?"), RadioButtonControl(["a"]), time_estimate=1)
+    assert radio._cannot_be_left_early_because() == (
+        "the server may turn its answers down (validate or check_ready_for_response)"
+    )
 
 
 def test_layout_key_covers_main_body_and_js_vars():
@@ -458,7 +477,7 @@ def test_prepared_partial_fragment_rendering_does_not_repeat_pre_render():
     page._upcoming_pages_payload.return_value = None
     page._previous_page_payload.return_value = None
     page.layout_key.return_value = "key"
-    page._not_swappable_because.return_value = None
+    page._cannot_be_rendered_early_because.return_value = None
     page.pre_render.side_effect = lambda: calls.append("pre_render")
     page.render.side_effect = lambda *args, **kwargs: calls.append("render") or "<html>"
     participant = SimpleNamespace(page_uuid="uuid-123")

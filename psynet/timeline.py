@@ -1226,6 +1226,27 @@ def _is_timeline_hold(page):
     return bool(getattr(page, "is_timeline_hold", False))
 
 
+_logged_waiting_reasons = set()
+
+
+def _log_waiting_for_the_server(where, page, reason):
+    """Say why the browser waits for the server ``where`` (``"after"`` or ``"before showing"``) ``page``.
+
+    Each reason is logged once per page class and label, so that authors can
+    find out why a page isn't shown without waiting.
+    """
+    key = (where, type(page).__name__, page.label, reason)
+    if key not in _logged_waiting_reasons:
+        _logged_waiting_reasons.add(key)
+        logger.info(
+            "The browser waits for the server %s %s %r, because %s.",
+            where,
+            type(page).__name__,
+            page.label,
+            reason,
+        )
+
+
 def make_page_uuid(participant, visit, page_key):
     """Identify the participant's ``visit``-th page, which is ``page_key``.
 
@@ -2914,34 +2935,45 @@ class Page(Elt):
             or type(self).check_ready_for_response is not Page.check_ready_for_response
         )
 
-    def _shows_the_same_to_everyone(self):
-        """Whether the page in the timeline renders the same before the participant reaches it.
-
-        This excludes pages that set something up as the participant reaches
-        them, pages that render themselves, and pages that share a session
-        with the page before them.
-        """
-        return (
-            self._not_swappable_because() is None
-            and type(self).consume is Page.consume
-            and self.template_kind != "delegated"
-        )
-
     def _swap_components(self):
         """The page and what it is built from, each of which must allow being swapped in."""
         return [self]
 
-    def _not_swappable_because(self):
-        """Say why a rendered copy of the page can't be swapped in before the server serves it, or return ``None``.
+    def _needs_the_server_because(self):
+        """What the server sets up as it serves the page and sees through as it is answered."""
+        return {
+            "it has a time limit": self.time_limit is not None,
+            "it records in the background": self.background_recording is not None,
+            "it needs a full page reload": self.requires_full_page_reload,
+            "it has a session_id": self.session_id is not None,
+        }
 
-        The copy is rendered while an earlier page is on screen. So the page's
-        class and those of its prompt and control must each set
-        ``can_swap_in_advance = True`` in their own class body, saying that
-        they render the same then as when served and run as usual when swapped
-        in; a subclass doesn't inherit this, as it may add behaviour that
-        isn't safe. The page also mustn't need what the server sets up as it
-        serves each page. Whether the server may turn down the page's answers
-        is a separate question, see :meth:`_may_reject_answers`.
+    def _cannot_be_left_early_because(self):
+        """Say why the browser can't show the next page before the server has this page's answer, or return ``None``.
+
+        The answer reaches the server after the next page is on screen, so
+        the server must accept any answer.
+        """
+        reasons = {
+            "it holds the timeline": self.is_timeline_hold,
+            **self._needs_the_server_because(),
+            "the server may turn its answers down (validate or "
+            "check_ready_for_response)": self._may_reject_answers(),
+        }
+        return next((reason for reason, found in reasons.items() if found), None)
+
+    def _cannot_be_rendered_early_because(self):
+        """Say why the page can't be rendered before the server serves it, or return ``None``.
+
+        A page rendered early, while an earlier page is on screen, is shown
+        to the participant (swapped in, or for Back) as if the server had
+        served it. So the page's class and those of its prompt and control
+        must each set ``can_swap_in_advance = True`` in their own class body,
+        saying that they render the same then as when served and run as usual
+        when swapped in; a subclass doesn't inherit this, as it may add
+        behaviour that isn't safe. The page also mustn't set something up as
+        the participant reaches it, render itself, or need what the server
+        sets up as it serves each page.
         """
         undeclared = [
             type(component).__name__
@@ -2954,10 +2986,9 @@ class Page(Elt):
             "it has page modules, which show trials in advance instead": bool(
                 self.js_page_modules
             ),
-            "it has a time limit": self.time_limit is not None,
-            "it records in the background": self.background_recording is not None,
-            "it needs a full page reload": self.requires_full_page_reload,
-            "it has a session_id": self.session_id is not None,
+            **self._needs_the_server_because(),
+            "it overrides consume": type(self).consume is not Page.consume,
+            "it renders itself (delegated_render)": self.template_kind == "delegated",
         }
         return next((reason for reason, found in reasons.items() if found), None)
 
@@ -3517,9 +3548,8 @@ class Timeline:
 
         Only a page directly after a top-level page qualifies, so no code runs
         between the two, and pages outside page makers show the same content
-        to every participant. The server must also accept any answer to
-        ``page``, as the participant has left it by the time an answer is
-        turned down.
+        to every participant. ``page`` must also allow being left before the
+        server has its answer, and the following page being rendered early.
         """
         from .utils import get_config
 
@@ -3527,12 +3557,6 @@ class Timeline:
             len(participant.elt_id) != 2
             or page.id != participant.elt_id
             or page.upcoming_pages is not None
-            or page.is_timeline_hold
-            or page.time_limit is not None
-            or page.background_recording is not None
-            or page.requires_full_page_reload
-            or page.session_id is not None
-            or page._may_reject_answers()
             or participant.group_removal_notice is not None
             or not get_config().get("inplace_timeline_transitions")
         ):
@@ -3540,13 +3564,17 @@ class Timeline:
         branch, index = participant.elt_id
         elts = self.elts[branch]
         following = elts[index + 1] if index + 1 < len(elts) else None
-        if (
-            isinstance(following, Page)
-            and following.render_in_advance
-            and following._shows_the_same_to_everyone()
-        ):
-            return following
-        return None
+        if not isinstance(following, Page) or not following.render_in_advance:
+            return None
+        reason = page._cannot_be_left_early_because()
+        if reason is not None:
+            _log_waiting_for_the_server("after", page, reason)
+            return None
+        reason = following._cannot_be_rendered_early_because()
+        if reason is not None:
+            _log_waiting_for_the_server("before showing", following, reason)
+            return None
+        return following
 
     def _page_to_go_back_to(self, participant, page):
         """The timeline page before ``page``, if the participant can go back to it."""
@@ -3607,12 +3635,12 @@ class Timeline:
             and page.show_back_button
             and any(isinstance(b, NextButton) for b in getattr(page, "buttons", ()))
             and not page.is_timeline_hold
-            and page._shows_the_same_to_everyone()
+            and page._cannot_be_rendered_early_because() is None
             and not page._recording_capture_sources()
             and isinstance(previous, ModularPage)
             and isinstance(previous.control, NullControl)
             and not previous.is_timeline_hold
-            and previous._shows_the_same_to_everyone()
+            and previous._cannot_be_rendered_early_because() is None
             and type(previous).on_complete is Page.on_complete
         )
 

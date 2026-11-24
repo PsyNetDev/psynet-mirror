@@ -7889,13 +7889,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Render a prepared page as the internal inplace fragment payload.
 
         ``pre_render()`` must already have run in the committed write phase.
-        Leave-button plans are also stored in that write phase so this helper
-        can stay read-only.
         """
         html = page.render(experiment, participant, partial_mode=True)
         payload = {"html": html, "page_uuid": participant.page_uuid}
         upcoming = page._upcoming_pages_payload(experiment, participant)
-        if upcoming is not None or page._not_swappable_because() is None:
+        if upcoming is not None or page._cannot_be_rendered_early_because() is None:
             # Tells the browser whether its page modules can show this page, or
             # whether a page it swapped in, rendered earlier, still shows what
             # the server shows now.
