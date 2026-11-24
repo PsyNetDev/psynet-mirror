@@ -786,9 +786,11 @@ class JSPage(Page):
 
     **kwargs :
         Further arguments to pass to :class:`psynet.timeline.Page`, such as
-        ``page_config``, ``css`` and ``bot_response``. A ``time_limit``,
-        background recording or ``media`` work as on any page, but make the
-        page wait for the server between trials.
+        ``page_config``, ``css`` and ``bot_response``. A ``time_limit`` or
+        background recording works as on any page, but then each trial
+        replaces the page and its module starts afresh. Rather than
+        ``media``, put the files' URLs in ``contents`` and load them from the
+        module.
     """
 
     can_swap_in_advance = True
