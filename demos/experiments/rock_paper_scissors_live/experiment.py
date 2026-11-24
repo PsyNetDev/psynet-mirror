@@ -14,9 +14,8 @@ reward for the throws each player won, so a player who closes the page and
 never comes back is paid too. The whole pair's outcome is on the trial's
 ``group_round``.
 
-A player who doesn't come back for the next game, or never opens or leaves
-a game's page, is failed, and so is their partner, since a game for two
-can't go on with one; see ``README.md``.
+A player who doesn't come back for the next game is failed, and so is their
+partner, since a game for two can't go on with one; see ``README.md``.
 """
 
 import random
@@ -278,12 +277,12 @@ class RockPaperScissorsTrial(Trial):
             # A partner who hasn't arrived LATE_AFTER seconds after their
             # result page ran out is failed, and so is the player waiting,
             # since the pair can't play without them.
+            # A partner who never opened the game page, or left it for good,
+            # is late here at the next game, so the other player still sees
+            # the game's result first.
             late_after=LATE_AFTER,
             late_action="fail",
-            # A partner who never opens the game page, or leaves it for good,
-            # is failed once the game's result is saved, and so is the
-            # player left, for the same reason.
-            absent_action="fail",
+            waiting_message="Waiting for your partner to reach the game",
             page=rock_paper_scissors_page(game),
         )
 

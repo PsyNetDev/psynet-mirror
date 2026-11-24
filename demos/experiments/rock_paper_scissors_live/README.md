@@ -32,10 +32,12 @@ what its game paid.
   says so. If the partner doesn't come back within 30 seconds, the game
   ends. Both players are paid for the throws they won, including the
   partner who never comes back.
-- In both cases, the partner is failed once the game's result is saved
-  (`absent_action="fail"`). The pair can't play a game for two without
-  them, so the other player is failed too (`below_quorum="fail"`), and goes
-  to the end of the experiment rather than to the game's result page.
+- In both cases, the other player sees their result and then, after the
+  first game, waits for the partner at the start of the second game, as in
+  the next case, but only until 30 seconds after the game ended: 10 seconds
+  for a late answer to arrive and then `LATE_AFTER`, 20 seconds. The
+  partner never opened their result page, so its time doesn't count. After
+  the second game nobody waits for them, so they aren't failed.
 - A partner who saw their result but doesn't come back for the second
   game: the other player waits for them at the start of the game, for as
   long as the partner's 30-second result page, 10 seconds for a late answer

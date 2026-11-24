@@ -468,7 +468,8 @@ then scores the game:
 - ``show_trial`` returns the ``PlayLiveGame``, with the number of throws and
   what a throw won pays from the trial's definition as its settings. Its barrier is the
   :class:`~psynet.sync.GroupBarrier` that a trial a group plays needs, so
-  this trial needs no other.
+  this trial needs no other. Its ``waiting_message`` is what a player sees
+  while they wait there for their partner.
 - ``rock_paper_scissors_page``, from `The game page`_ above, builds the
   page from the trial's definition, so its first element says which game
   this is, how many throws it has and what a throw won pays.
@@ -549,10 +550,12 @@ The rest of the timeline deals with a partner who doesn't come back:
 - A partner who is late is failed, and the grouper's
   ``below_quorum="fail"`` fails the player left behind, who has nobody to
   play the second game with. Both keep what they earned in the first game.
-- A partner who never opened a game's page, or left it for good, isn't
-  coming back either. The ``PlayLiveGame``'s ``absent_action="fail"`` fails
-  them once the game's result is saved, and ``below_quorum="fail"`` again
-  fails the player left behind (see :ref:`live-games-absent`).
+- A partner who never opened the first game's page, or left it for good,
+  is late in the same way, 30 seconds after the game ended, since they
+  never opened their result page. The player left behind sees their result
+  first. ``PlayLiveGame``'s ``absent_action="fail"`` would fail the absent
+  partner, and so the player left behind, as soon as the game's result is
+  saved, before they see it (see :ref:`live-games-absent`).
 - Every player who stays in the loop is therefore still in their pair, so
   the loop needs no check of its own.
 
