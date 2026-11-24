@@ -331,9 +331,12 @@ class StaticTrialMaker(ChainTrialMaker):
 
     n_upcoming_trials : int
         With ``prepare_trials_in_advance``, how many of the next trials'
-        contents or rendered pages each trial page carries (default = 5). The participant can
+        contents or rendered pages each trial page carries (default = 2). The
+        participant can
         be up to one more than this many answers ahead of the server, and
-        this many trials' files are downloaded early.
+        this many trials' files are downloaded early. Each extra trial makes
+        every trial request build one more page, so raise it only if large
+        files need longer to download.
 
     check_timeout_interval_sec : float
         How often to check for trials that have timed out, in seconds (default = 30).
@@ -536,7 +539,7 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
 
-    n_upcoming_trials = 5
+    n_upcoming_trials = 2
 
     def prepare_trial(self, experiment, participant):
         if not self.prepare_trials_in_advance:
