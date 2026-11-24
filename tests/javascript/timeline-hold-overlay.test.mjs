@@ -196,6 +196,7 @@ describe("approved response into a waiting screen", () => {
       requiresFullPageReloadTransition: () => false,
       adoptRenderedReply: () => false,
       keptPageFragment: () => null,
+      warnIfContentsChanged: () => {},
       resetAnswers() {},
       changePage: (change) => change(),
       pageState: {},
