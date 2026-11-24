@@ -194,6 +194,21 @@ def test_only_pages_built_from_declared_components_are_swapped_in():
     assert not JSPage(
         "task", "<div></div>", "/static/task.js", time_estimate=1, time_limit=5
     )._show_in_advance()
+
+    class TaskPage(JSPage):
+        pass
+
+    class SetsUpTask(JSPage):
+        def consume(self, experiment, participant):
+            super().consume(experiment, participant)
+
+    # A subclass keeps its page for the next trials, but isn't swapped in.
+    subclass = TaskPage("task", "<div></div>", "/static/task.js", time_estimate=1)
+    assert subclass._module_shows_the_next_trials()
+    assert subclass._cannot_be_rendered_early_because() is not None
+    assert not SetsUpTask(
+        "task", "<div></div>", "/static/task.js", time_estimate=1
+    )._show_in_advance()
     with pytest.raises(TypeError, match="one module"):
         JSPage("task", "", "/static/task.js", js_page_modules=["/static/b.js"])
     assert because(chatroom=ChatRoom("room")) == (

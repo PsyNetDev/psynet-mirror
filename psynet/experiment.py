@@ -7905,7 +7905,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         html = page.render(experiment, participant, partial_mode=True)
         payload = {"html": html, "page_uuid": participant.page_uuid}
         upcoming = page._upcoming_pages_payload(experiment, participant)
-        if upcoming is not None or page._cannot_be_rendered_early_because() is None:
+        if (
+            upcoming is not None
+            or page._cannot_be_rendered_early_because() is None
+            or page._module_shows_the_next_trials()
+        ):
             # Tells the browser whether its page modules can show this page, or
             # whether a page it swapped in, rendered earlier, still shows what
             # the server shows now.
