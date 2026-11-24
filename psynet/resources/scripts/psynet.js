@@ -1192,6 +1192,19 @@
         return;
       }
       (message.targets || []).forEach((target) => {
+        // Failed from another request, such as the dashboard: the server
+        // now shows the failure page instead of this one.
+        if (
+          target.reason === "participant_failed" &&
+          target.page_uuid &&
+          target.page_uuid === window.pageUuid &&
+          !psynet.timelineHold &&
+          !psynet.nextPagePending
+        ) {
+          psynet.log.info("Participant failed; loading the next page.");
+          psynet.loadNextTimelinePageWithReload();
+          return;
+        }
         if (
           target.hold_message &&
           psynet.timelineHold &&

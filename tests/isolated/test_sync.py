@@ -5072,6 +5072,43 @@ def test_failing_a_held_participant_wakes_their_overlay(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_dashboard_fail_moves_the_failed_participants_open_page_on(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        InfoPage("playing", time_estimate=1), InfoPage("done", time_estimate=1)
+    )
+    try:
+        first, second = _working_participants(exp, 2)
+        group = SyncGroup(group_type="main")
+        db_session.add(group)
+        group.add_participant(first)
+        group.add_participant(second)
+        db_session.commit()
+        page = _json_timeline(exp, first).get_json()
+        assert page["attributes"]["arrival_updates"]["channel"]
+        page_uuid = Participant.query.get(first.id).page_uuid
+        publications = _hold_wake_publications(monkeypatch)
+
+        _fail_sync_group_participant(first.id, group.id, "manual_failure")
+        db_session.commit()
+    finally:
+        exp.timeline = original_timeline
+
+    assert (
+        first.id,
+        {
+            "type": "timeline_hold_wake",
+            "targets": [{"reason": "participant_failed", "page_uuid": page_uuid}],
+        },
+    ) in publications
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_waiter_get_timeline_survives_stale_hold_after_own_advance(
     in_experiment_directory, db_session, monkeypatch
 ):

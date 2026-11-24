@@ -33,22 +33,10 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     response = session.get(f"{launched_experiment.base_url}/dashboard/sync_groups")
     response.raise_for_status()
 
-    row_start = response.text.index("<td>empty-leader</td>")
-    empty_leader_row = response.text[
-        row_start : response.text.index("</tr>", row_start)
-    ]
     assert "PNone" not in response.text
-    assert "—" in empty_leader_row
+    assert "—" in _row(response.text, "empty-leader")
 
-    participant = Participant(
-        experiment=get_experiment(),
-        recruiter_id="hotair",
-        worker_id=str(uuid.uuid4()),
-        hit_id="XYZ",
-        assignment_id=str(uuid.uuid4()),
-        mode="debug",
-    )
-    participant.status = "working"
+    participant = _participant()
     group = SimpleSyncGroup(
         group_type="dashboard-actions",
         initial_group_size=1,
@@ -93,3 +81,56 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     db_session.expire_all()
     assert participant.failed
     assert participant not in SimpleSyncGroup.query.get(group.id).active_participants
+
+    finisher = _participant()
+    finisher.elt_id = ["successful_end", 0]
+    finished = SimpleSyncGroup(
+        group_type="finished-group",
+        initial_group_size=1,
+        max_group_size=2,
+        quorum=1,
+        n_active_participants=1,
+        accepts_top_ups=False,
+    )
+    dissolved = SimpleSyncGroup(
+        group_type="dissolved-group",
+        initial_group_size=2,
+        max_group_size=2,
+        quorum=2,
+        active=False,
+        accepts_top_ups=True,
+    )
+    db_session.add_all([finisher, finished, dissolved])
+    db_session.flush()
+    finished.add_participant(finisher)
+    db_session.commit()
+
+    page = session.get(f"{launched_experiment.base_url}/dashboard/sync_groups").text
+    assert (
+        "Left group: left_experiment. Status: working. Failed: manual_failure"
+        in _row(page, "dashboard-actions")
+    )
+    finished_row = _row(page, "finished-group")
+    assert "Finished" in finished_row
+    dissolved_row = _row(page, "dissolved-group")
+    assert "Closed" in dissolved_row
+    assert "Accepts top-ups" not in dissolved_row
+
+
+def _participant():
+    participant = Participant(
+        experiment=get_experiment(),
+        recruiter_id="hotair",
+        worker_id=str(uuid.uuid4()),
+        hit_id="XYZ",
+        assignment_id=str(uuid.uuid4()),
+        mode="debug",
+    )
+    participant.status = "working"
+    return participant
+
+
+def _row(page, group_type):
+    """Return the dashboard table row of the group of ``group_type``."""
+    start = page.index(f"<td>{group_type}</td>")
+    return page[start : page.index("</tr>", start)]

@@ -1,0 +1,1 @@
+The dashboard's Sync groups tab now shows a group as Finished once every member has reached the end of the experiment or was failed, instead of Active; counts only members still taking part; no longer shows "Accepts top-ups" for a closed group; and shows failed members in red, with why each member left the group and why they were failed in their tooltip.

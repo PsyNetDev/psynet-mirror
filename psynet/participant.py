@@ -1397,6 +1397,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
                 self.id,
             )
             self.pending_redirect = "unsuccessful_end"
+            from psynet.timeline_hold import _queue_failure_redirect
+
+            _queue_failure_redirect(self.id, self.page_uuid)
 
 
 def get_participant(participant_id: int, for_update: bool = False) -> Participant:

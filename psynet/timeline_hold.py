@@ -202,6 +202,37 @@ def _queue_arrival_update(
         )
 
 
+def _queue_failure_redirect(participant_id, page_uuid):
+    """Queue a message that moves a failed participant's open page on after the next commit.
+
+    For a participant failed from another request, such as the dashboard,
+    who would otherwise stay on their page until they submit or reload. Only
+    pages with a group websocket receive it (see
+    :func:`psynet.timeline._arrival_updates_for`), and the browser ignores it
+    unless it still shows ``page_uuid``. A held page is moved on by its hold
+    wake instead, so nothing is queued then.
+    """
+    try:
+        pending = _pending_wakes.get()
+        if page_uuid is None or any(
+            wake.get("participant_id") == participant_id
+            and wake.get("reason") == "participant_failed"
+            for wake in pending.values()
+        ):
+            return
+        pending[f"failed:{participant_id}"] = {
+            "participant_id": participant_id,
+            "reason": "participant_failed",
+            "page_uuid": page_uuid,
+        }
+    except Exception:
+        logger.warning(
+            "Failed to queue a failure redirect for participant %s.",
+            participant_id,
+            exc_info=True,
+        )
+
+
 def _queue_countdown_update(participant_id, release_time, *, hold_message=None):
     """Queue a new ``{SECONDS}`` countdown target (epoch seconds, or ``None``) after the next commit.
 

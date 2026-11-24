@@ -1,0 +1,1 @@
+A group member failed from another request, for example with the dashboard's Fail dialog or for being late, now moves on to the failure page straight away, instead of staying on their page until they submit or reload.
