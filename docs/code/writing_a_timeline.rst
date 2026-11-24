@@ -171,7 +171,10 @@ The browser waits for the server as usual when:
   ones);
 * the next page is a chat page, or one of its prompts or controls adds
   JavaScript variables for the participant;
+* the next page overrides ``consume`` or uses ``delegated_render``;
 * the answer includes a recording or another file to upload.
+
+The server log says, once for each page, why the browser waits for it.
 
 If a page shows something that the previous answer changes, for example from
 ``participant.var`` in a custom template, pass ``render_in_advance=False``:

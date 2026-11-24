@@ -222,7 +222,52 @@
       trigger.focus();
     }
 
-    function openModal() {
+    // A timeline page may have been rendered before the server served it, so
+    // it carries no offer: the browser asks for one for the page on screen,
+    // once the answers given ahead are saved.
+    const serverRendersOffer = Boolean(modal.dataset.offerId);
+    async function prepareOffer() {
+      if (serverRendersOffer) return true;
+      await global.psynet?.answers?.sending;
+      const response = await fetch(
+        "/prepare_early_exit_plan/" + encodeURIComponent(modal.dataset.assignmentId),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ page_uuid: global.pageUuid }),
+        },
+      );
+      const result = await response.json().catch(() => ({}));
+      if (result.error_code === "stale_early_exit_offer") {
+        global.psynet?.allowUnload?.();
+        global.location.reload();
+        return false;
+      }
+      if (!response.ok || !result.offer_id) {
+        throw new Error("The server did not prepare an early-exit offer.");
+      }
+      modal.dataset.offerId = result.offer_id;
+      const copy = result.confirmation;
+      document.getElementById("early-exit-title").textContent = copy.title;
+      document.getElementById("early-exit-message").textContent = copy.message;
+      if (confirm) confirm.textContent = copy.confirm_label;
+      cancel.textContent = copy.cancel_label;
+      return true;
+    }
+
+    let opening = false;
+    async function openModal() {
+      if (opening) return;
+      opening = true;
+      try {
+        if (!(await prepareOffer())) return;
+      } catch (error) {
+        global.psynet?.log?.error(error.stack || String(error));
+        await global.psynet?.alert?.("We could not end the experiment. Please try again.");
+        return;
+      } finally {
+        opening = false;
+      }
       modal.hidden = false;
       modal.style.display = "block";
       cancel.focus();
