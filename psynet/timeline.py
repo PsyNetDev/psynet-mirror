@@ -1550,8 +1550,8 @@ class Page(Elt):
         to the page before it (default ``True``). PsyNet shows it only on
         :class:`~psynet.modular_page.ModularPage` pages with a Next button,
         directly after a page that collects no answer, such as
-        :class:`~psynet.page.InfoPage`, and that it could also render in
-        advance. So it never returns to a question, a trial page, or past a
+        :class:`~psynet.page.InfoPage`, and that the browser could show
+        without waiting for the server. So it never returns to a question, a trial page, or past a
         code block, a conditional or a page whose ``on_complete`` is
         overridden.
 
@@ -2922,7 +2922,7 @@ class Page(Elt):
         )
         previous._progress = participant._progress_after(-previous.time_estimate)
         previous._rendered_in_advance = True
-        previous.pre_render()
+        previous._pre_render_once()
         html = previous.render(experiment, participant, partial_mode=True)
         return {
             "page_uuid": previous._page_uuid,
@@ -3626,7 +3626,9 @@ class Timeline:
         must show the same to every participant. Back sits beside Next, so
         the page must have a Next button. The earlier page must collect no
         answer, so going back never revises one, and must not override
-        ``on_complete``, which would run again.
+        ``on_complete``, which would run again. Neither page may be one a
+        barrier shows while the participant waits, as a release moves the
+        participant on from there.
         """
         from .modular_page import ModularPage, NextButton, NullControl
 
@@ -3639,11 +3641,13 @@ class Timeline:
             and page.show_back_button
             and any(isinstance(b, NextButton) for b in getattr(page, "buttons", ()))
             and not page.is_timeline_hold
+            and "barrier" not in page.links
             and page._cannot_be_rendered_early_because() is None
             and not page._recording_capture_sources()
             and isinstance(previous, ModularPage)
             and isinstance(previous.control, NullControl)
             and not previous.is_timeline_hold
+            and "barrier" not in previous.links
             and previous._cannot_be_rendered_early_because() is None
             and type(previous).on_complete is Page.on_complete
         )
@@ -3674,7 +3678,7 @@ class Timeline:
         following = copy.copy(following)
         following._page_key = ".".join(str(i) for i in following.id)
         following._rendered_in_advance = True
-        following.pre_render()
+        following._pre_render_once()
         return [following]
 
     @log_time_taken
