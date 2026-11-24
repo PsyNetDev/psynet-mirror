@@ -173,7 +173,7 @@ test("two participants play rock_paper_scissors_live to the end, with rejected c
     await second.close();
     const away = first.locator("#psynet-player-away-notice");
     await expect(away).toHaveText(
-      "Your partner isn't on the game page. If they don't open it within 30 seconds, the game will end.",
+      "Your partner has left the game. If they don't come back within 30 seconds, it will end.",
       { timeout: STEP_TIMEOUT_MS }
     );
     second = await contexts[1].newPage();
