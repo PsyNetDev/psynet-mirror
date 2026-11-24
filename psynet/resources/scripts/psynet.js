@@ -979,10 +979,29 @@
       );
     };
 
+    // Warn if the reply is the page shown after the oldest queued answer, but
+    // with other contents than were shown for it.
+    psynet.warnIfContentsChanged = function (response) {
+      let entry = psynet.answers.queue[0];
+      if (
+        entry?.nextPageUuid !== undefined &&
+        response.page?.attributes?.page_uuid === entry.nextPageUuid &&
+        !response.page?.attributes?.timeline_hold &&
+        JSON.stringify(response.page?.contents) !== entry.nextContents
+      ) {
+        psynet.log.warn(
+          "The page shown in advance no longer matches the server's, so PsyNet " +
+            "loaded the server's. Its contents may depend on an earlier answer; " +
+            "build them from the trial's definition instead.",
+        );
+      }
+    };
+
     // Return the reply's fragment if page modules can show it in place.
     psynet.predictedFragment = function (response) {
       let layoutKey = response.timeline_fragment?.layout_key;
       if (!psynet.isPredictedReply(response)) {
+        psynet.warnIfContentsChanged(response);
         return null;
       }
       if (!layoutKey || layoutKey !== psynet.layoutKey) {
