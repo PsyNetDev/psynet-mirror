@@ -295,8 +295,8 @@ class StaticTrialMaker(ChainTrialMaker):
     prepare_trials_in_advance
         If ``True``, create all of a participant's trials, in order, when they
         reach the trial maker, and send each trial page with the contents of
-        the next :attr:`n_upcoming_trials` trials. A page whose modules
-        return an ``update`` function then shows the next trial as soon as
+        the next :attr:`n_upcoming_trials` trials. A
+        :class:`~psynet.page.JSPage` then shows the next trial as soon as
         the participant answers, without waiting for the server; see
         :doc:`/code/trials/keeping_a_task_on_one_page`. Other trial pages,
         such as built-in prompts and controls, carry the next trials' pages
