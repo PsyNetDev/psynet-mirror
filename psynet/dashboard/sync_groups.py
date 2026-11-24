@@ -96,7 +96,7 @@ def manual_fail_sync_group_participant(
 
 
 def _fail_sync_group_participant(participant_id, sync_group_id, fail_reason):
-    """Fail a working participant who is active in the given sync group."""
+    """Fail a participant who is still taking part and still in the given sync group."""
     if fail_reason != MANUAL_FAILURE_REASON:
         raise ValueError(f"Invalid fail reason: {fail_reason}")
 

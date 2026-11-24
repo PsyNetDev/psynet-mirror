@@ -33,6 +33,21 @@ function run(pageUuid, state = {}) {
   return { moved, calls, psynet };
 }
 
+describe("psynet.handleArrivalUpdateMessage", () => {
+  it("passes a failure message to moveOnAfterFailure", () => {
+    const body = SOURCE.match(
+      /psynet\.handleArrivalUpdateMessage = function \(message\) \{([\s\S]*?)\n    \};/
+    )[1];
+    const failedOn = [];
+    const psynet = { moveOnAfterFailure: (pageUuid) => failedOn.push(pageUuid) };
+    new Function("psynet", "message", body)(psynet, {
+      type: "timeline_hold_wake",
+      targets: [{ reason: "participant_failed", page_uuid: "page-1" }],
+    });
+    assert.deepEqual(failedOn, ["page-1"]);
+  });
+});
+
 describe("psynet.moveOnAfterFailure", () => {
   it("blocks submissions, stops updates and reloads on the failed page", () => {
     const { moved, calls, psynet } = run("page-1");
