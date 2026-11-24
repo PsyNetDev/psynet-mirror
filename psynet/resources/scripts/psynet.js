@@ -847,6 +847,15 @@
       }
     };
 
+    // Show a trial without waiting for update() to finish: it may await
+    // something until its signal is aborted, which happens only once the page
+    // changes, so waiting would hold up the page changes queued behind it.
+    psynet.showPageModuleTrial = function (offset) {
+      psynet.updatePageModules(offset).catch((error) => {
+        psynet.log.error(error.stack || String(error));
+      });
+    };
+
     // What a page module's update() receives as ``response``.
     // Times are performance.now() timestamps, such as an event's timeStamp
     // or a requestAnimationFrame time, so reaction times can be measured from
@@ -917,9 +926,7 @@
           entry.nextPageUuid = next?.page_uuid;
           entry.nextContents = JSON.stringify(next?.contents);
         }
-        psynet.updatePageModules(offset).catch((error) => {
-          psynet.log.error(error.stack || String(error));
-        });
+        psynet.showPageModuleTrial(offset);
       }
     };
 
@@ -938,7 +945,7 @@
           psynet.comments.unshift(...(retry.metadata.comments ?? []));
           psynet.resetAnswers();
           if (retry.pageUuid === undefined) {
-            await psynet.updatePageModules(0);
+            psynet.showPageModuleTrial(0);
           } else {
             await psynet.loadNextTimelinePageWithReload();
           }
@@ -2069,7 +2076,7 @@
       // finalizePageReady shows its trial.
       if (psynet.pageModuleGeneration !== generation) return;
       if (psynet.pageModuleUpdates?.length) {
-        await psynet.updatePageModules(0);
+        psynet.showPageModuleTrial(0);
       }
     };
 
