@@ -113,6 +113,10 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     db_session.add(newcomer)
     db_session.flush()
     groups["pending"]._add_link(newcomer, admitted=False)
+    player = _participant()
+    db_session.add(player)
+    db_session.flush()
+    groups["open"].add_participant(player)
     dissolved = SimpleSyncGroup(
         group_type="dissolved-group",
         initial_group_size=2,
@@ -140,6 +144,8 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     open_row = _row(page, "open-group")
     assert "Active" in open_row
     assert "Accepts top-ups" in open_row
+    assert "<strong>1</strong>" in open_row
+    assert f"/participant/{player.id}/fail" in open_row
     dissolved_row = _row(page, "dissolved-group")
     assert "Closed" in dissolved_row
     assert "Accepts top-ups" not in dissolved_row
