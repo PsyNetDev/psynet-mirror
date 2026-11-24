@@ -1713,8 +1713,8 @@ the group of that type: a player removed from a ``"pair"`` stays in their
 (see :ref:`rounds-slow-players`). To take a player out of a game by hand,
 fail them on the dashboard's **Sync groups** tab, which removes them from
 all their groups and moves their open page on to the failure page. The
-tab shows a group that takes no newcomers and whose members have all
-reached the end of the experiment, or were failed, as *Finished*. A participant whose grouper let them continue without
+tab shows a group that takes no newcomers and whose remaining members
+have all reached the end of the experiment as *Finished*. A participant whose grouper let them continue without
 a group (``max_wait_action="continue_without_group"``) is treated the same
 way for that group type, as if they had left a group. A notice on their
 progress bar tells them why. A member removed for being late sees "Your
