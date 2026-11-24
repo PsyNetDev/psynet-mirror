@@ -8,7 +8,7 @@ response. If you're still deciding whether to do this, see
 
 This guide walks through
 :download:`the adaptive brightness demo <../../../demos/features/staircase_on_one_page/experiment.py>`,
-and its code examples are simplified from the demo. The participant sees two
+and shows its code. The participant sees two
 grey patches and presses the left or right arrow key to say which is
 brighter. A staircase, PsyNet's
 :class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`, makes the next
@@ -38,17 +38,11 @@ The trial's page
 
 Write ``show_trial`` as usual, returning a :class:`~psynet.page.JSPage`.
 Give every trial's page the same HTML, and put the data that changes from
-trial to trial in the page's ``contents``::
+trial to trial in the page's ``contents``. In the demo, the HTML holds the
+two patches, and ``contents`` holds their shades of grey:
 
-    def show_trial(self, experiment, participant):
-        return JSPage(
-            "contrast",
-            patches_html,
-            module="/static/contrast.js",
-            contents={"left": self.definition["left"], "right": self.definition["right"]},
-            bot_response=...,
-            time_estimate=self.time_estimate,
-        )
+.. literalinclude:: ../../../demos/features/staircase_on_one_page/experiment.py
+   :pyobject: ContrastTrial.show_trial
 
 The HTML can be a string or a ``dominate`` tag. Configuration that is the
 same for every trial, such as the task's timings, goes in ``page_config``.
@@ -64,9 +58,10 @@ break page or after the last trial, PsyNet replaces the page as usual.
 The module
 ----------
 
-The module answers on a key press instead of a Next button. Its
-``activate`` function sets up what stays the same from trial to trial, such as
-listeners, and returns an object with two functions:
+The demo's module, ``static/contrast.js``, answers on an arrow key press
+instead of a Next button. Its ``activate`` function sets up what stays the
+same from trial to trial, such as listeners, and returns an object with two
+functions:
 
 - ``update`` shows one trial. It receives the trial's ``contents`` and a
   ``response`` handle for answering it.
@@ -74,26 +69,11 @@ listeners, and returns an object with two functions:
   listeners on ``document``, which would otherwise keep running on the
   pages that follow.
 
-.. code-block:: javascript
+.. literalinclude:: ../../../demos/features/staircase_on_one_page/static/contrast.js
+   :language: javascript
 
-    export function activate({root}) {
-        let response = null;
-        function keydown(event) {
-            if (response === null) return;
-            // On the left arrow key:
-            response.answer("left");
-            response = null;  // ignore further presses until the next trial
-        }
-        document.addEventListener("keydown", keydown);
-        return {
-            update({contents, response: handle}) {
-                // Draw contents.left and contents.right.
-                response = handle;
-                handle.startClock();
-            },
-            cleanup: () => document.removeEventListener("keydown", keydown),
-        };
-    }
+Answering hides the patches and clears ``response``, so that further key
+presses are ignored until ``update`` shows the next pair.
 
 The module keeps running from trial to trial. PsyNet calls ``activate`` once,
 when the first trial appears; ``update`` for each trial, including the
