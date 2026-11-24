@@ -51,10 +51,13 @@ export function activate({root, vars, psynet}) {
     }
     // Before the round starts, every player who isn't ready yet is a no-show,
     // and so is this player for a moment after, until their page is ready.
-    // A round that too few players opened ends without starting.
-    let noShows = live.started || live.ended
-      ? view.no_shows.filter((player) => player !== live.player)
-      : [];
+    // A round that too few players opened ends without starting, maybe
+    // before this player's page was ready too.
+    let noShows = live.ended
+      ? view.no_shows
+      : live.started
+        ? view.no_shows.filter((player) => player !== live.player)
+        : [];
     rows.replaceChildren(
       ...contributions.map((tokens, player) =>
         tokenRow(

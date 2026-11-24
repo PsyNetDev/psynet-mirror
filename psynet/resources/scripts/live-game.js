@@ -292,6 +292,7 @@
       let view = state.lastView;
       let message = state.session.noGameMessage;
       if (
+        !state.left &&
         state.endReason === TOO_FEW_READY &&
         message &&
         view !== null &&

@@ -118,8 +118,9 @@ class TestBargainingLive:
             "partner",
             "you",
         ]
-        assert game.answer(0, TOO_FEW_READY)["partner_arrived"] is False
-        assert self._feedback(demo, game.answer(0), TOO_FEW_READY) == (
+        answer = game.answer(0, TOO_FEW_READY)
+        assert answer["partner_arrived"] is False
+        assert self._feedback(demo, answer, TOO_FEW_READY) == (
             "Your partner didn't arrive, so there was no game this round."
         )
         assert game.game.absences(game.state) == [None, "no_show"]

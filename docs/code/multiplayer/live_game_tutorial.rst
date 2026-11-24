@@ -525,12 +525,14 @@ the game paid, as recorded on the trial, to ``show_result``:
    :pyobject: show_result
    :dedent:
 
-A game can end without a throw being played, when a player never opens the
-game page, so it never starts, when a player is away from the game page for
-its ``away_timeout`` before the first throw, or when the game reaches its
-``timeout`` first, so ``show_result`` checks for that first. A trial
-whose game never started has no answer, and ``gives_feedback`` skips its
-feedback.
+A game can end without a throw being played, so ``show_result`` checks for
+that first. That happens when a player never opens the game page, which ends
+the game with ``"too_few_ready"`` at its ``ready_timeout``, when a player is
+away from the game page for its ``away_timeout`` before the first throw, or
+when the game reaches its ``timeout`` first. Each of these games still has an
+answer, with no throws in it. Only a trial whose pair didn't start a game at
+all, for example because the partner was late for it, has no answer, and
+``gives_feedback`` skips its feedback.
 
 Reference: :ref:`live-games-answer` and :ref:`live-games-rewards`.
 

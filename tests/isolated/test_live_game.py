@@ -676,6 +676,7 @@ def _psynet(**fields):
         "time_up": False,
         "last_tick": None,
         "last_event": None,
+        "join_tick_at": None,
         "accepts_players": True,
         "too_late": [],
         "group_id": None,
@@ -2361,6 +2362,58 @@ def test_a_game_too_few_players_are_ready_for_ends_at_the_ready_timeout(
     # tick didn't run.
     assert "deadline" not in state and state["ticks"] == []
     assert game.absences(state) == [None if opened else "no_show", "no_show"]
+
+
+# None: player 2's page opens but sends no ready message in time. 10: it sends
+# one at the ready_timeout, which counts, since Dallinger handles a message
+# before a tick due at the same time.
+@pytest.mark.parametrize("ready_at", [None, 10])
+def test_only_a_ready_message_by_the_ready_timeout_counts_whatever_the_game_s_ending(
+    relay, ready_at
+):
+    class Pair(type(relay)):
+        name = "pair_with_its_own_ending"
+        min_players = 2
+
+        def is_over(self, state):
+            return False
+
+        def end_reason(self, state):
+            return "the_game_s_own"
+
+    game = Pair()
+    entries = [
+        _session_entry("join", 0, "1"),
+        _session_entry("message", 1, "1", READY),
+        _session_entry("join", 5, "2"),
+    ]
+    if ready_at is not None:
+        entries.append(_session_entry("message", ready_at, "2", READY))
+    result = run_pass(game, new_session(game, ["1", "2"]), entries, 10, CLOCK)
+
+    state = json.loads(result.saved)["state"]
+    if ready_at is None:
+        assert result.ended["reason"] == TOO_FEW_READY
+        assert game.absences(state) == [None, "no_show"]
+    else:
+        assert result.ended is None
+        assert state["psynet"]["started_at"] == 10
+
+
+def test_bots_are_ready_before_a_first_tick_that_comes_at_the_ready_timeout(relay):
+    class Slow(type(relay)):
+        name = "slow_ticking_pair"
+        min_players = 2
+        # Dallinger lets bots play only after a tick, and the first one
+        # comes at the ready_timeout of 10.
+        tick_rate = 0.1
+
+    game = Slow()
+    session = new_session(game, ["1", "2"], bots=["1", "2"])
+    result = run_pass(game, session, [], Slow.ready_timeout, CLOCK)
+
+    assert result.ended is None
+    assert json.loads(result.saved)["state"]["psynet"]["started_at"] == 0
 
 
 def test_a_no_show_s_away_deadline_runs_unless_their_ready_message_comes(relay):

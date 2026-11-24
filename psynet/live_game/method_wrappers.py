@@ -32,6 +32,7 @@ _NOT_IN_VIEWS = (
     "participant_ids",
     "last_tick",
     "last_event",
+    "join_tick_at",
     "group_id",
     "stop_top_ups_at_end",
 )
@@ -147,14 +148,19 @@ def _returns_json(method, name):
 @_outermost
 def _waits_for_start(self, game_code, state):
     entry = _psynet_entry(state)
+    last_tick = entry["last_tick"]
     if entry["started_at"] is None:
-        return self.ready_timeout
+        join_tick_at = entry["join_tick_at"]
+        if join_tick_at is None:
+            return self.ready_timeout
+        if last_tick is not None:
+            join_tick_at = max(join_tick_at, math.nextafter(last_tick, math.inf))
+        return min(join_tick_at, self.ready_timeout)
     deadline = game_code(state)
     if deadline is not None:
         # On the game's clock, as the game's other methods see it.
         deadline += entry["started_at"]
     too_few_at = _too_few_players_at(self, state)
-    last_tick = entry["last_tick"]
     # Dallinger ignores a deadline at or before its last tick, which
     # would hide the later ones.
     if last_tick is not None:

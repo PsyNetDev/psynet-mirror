@@ -26,7 +26,8 @@ what its game paid.
   their page just as the pair formed: a game for two can't start without
   them, so it ends unplayed after `READY_SECONDS`, 20 seconds (the game's
   `ready_timeout`), with PsyNet's end reason `"too_few_ready"`. The other
-  player's page says that the game can't be played without their partner.
+  player's page briefly says that the game can't be played without their
+  partner, then moves on to the result.
 - A partner who closes the game page during a game: the other player's page
   says so. If the partner doesn't come back within 30 seconds, the game's
   `away_timeout`, the game ends. Both players are paid for the throws they won, including the

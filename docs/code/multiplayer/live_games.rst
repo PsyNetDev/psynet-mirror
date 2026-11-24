@@ -367,7 +367,8 @@ opens the game page, rather than starting and waiting for them. A game
 that should carry on short-handed sets a lower ``min_players``. A page
 counts as ready once it has sent its ready message, a moment after it
 opens, so a page that opens in the last moment before the
-``ready_timeout`` may not count.
+``ready_timeout`` may not count. A ready message that arrives at the
+``ready_timeout`` itself still counts.
 
 Until the game starts, it rejects messages with the reason ``"The game
 hasn't started yet."``, and its ``tick`` and ``bot`` don't run, so disable

@@ -112,6 +112,9 @@ class TestPublicGoodsLive:
             "share": None,
             "earned": demo.ENDOWMENT,
         }
+        nobody = self._started_without(demo, [0, 1, 2])
+        assert nobody.end_reason() == TOO_FEW_READY
+        assert self._export_row(demo, nobody, 0)["pot"] is None
 
     def test_a_contribution_is_between_none_and_the_endowment(self, demo):
         game = LocalGame(demo.PublicGoods, players=3)

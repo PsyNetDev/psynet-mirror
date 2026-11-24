@@ -33,7 +33,7 @@ from .method_wrappers import (
     _stores_json,
     _waits_for_start,
 )
-from .psynet_entry import PlayerReady, _absences, _psynet_entry
+from .psynet_entry import PlayerReady, _absences, _n_playing, _psynet_entry
 from .record import (
     _CLOSED_EFFECT,
     _MOMENT_EFFECT,
@@ -229,8 +229,9 @@ class LiveGame(RealtimeGame):
     def is_over(self, state):
         """Return whether the game is over, as a bool, as in Dallinger's
         ``is_over``. Once it is, :meth:`end_reason` says why. The game is
-        also over once its :attr:`duration` or :attr:`timeout` is up, or
-        too few players are left.
+        also over once its :attr:`duration` or :attr:`timeout` is up, once
+        too few players are left, or, without starting, once too few were
+        ready at its :attr:`ready_timeout`.
         """
         return super().is_over(state)
 
@@ -394,8 +395,7 @@ class LiveGame(RealtimeGame):
         if entry["started_at"] is None and not entry["too_few_ready"]:
             # A group starts a game only with min_players, so a game that
             # everyone is ready for starts, as does one a test plays with fewer.
-            playing = len(entry["participant_ids"]) - len(entry["too_late"])
-            if len(entry["ready"]) < min(self.min_players, playing):
+            if len(entry["ready"]) < min(self.min_players, _n_playing(entry)):
                 entry["too_few_ready"] = True
                 return
             entry["started_at"] = now

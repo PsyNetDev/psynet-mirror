@@ -569,6 +569,21 @@ describe("psynet.liveGame", () => {
     const before = notices.length;
     leavePage();
     assert.ok(plain(notices.slice(before)).some(([id, text]) => id === "psynet-no-game-notice" && text === null));
+
+    // A page that loads once the game has ended shows it too, unless the
+    // page has no such message.
+    for (const noGameMessage of ["No partner.", null]) {
+      session = { ...session, noGameMessage };
+      changePage();
+      liveGame.onChange(() => {});
+      const shown = notices.length;
+      sockets.at(-1).fire("onEnded", "too_few_ready", final(0));
+      assert.equal(
+        notices.slice(shown).some(([id, text]) => id === "psynet-no-game-notice" && text !== null),
+        noGameMessage !== null
+      );
+      leavePage();
+    }
   });
 
   it("turns away a newcomer to a game that had stopped taking players, with the Next button", () => {

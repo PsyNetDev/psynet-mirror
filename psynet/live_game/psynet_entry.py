@@ -4,7 +4,10 @@ _psynet_entry returns, and the wrappers that keep it up to date.
 The ready step: the game starts once every player is ready, or at the
 game's ready_timeout. If fewer than its min_players are ready then, it
 doesn't start: ``too_few_ready`` ends it at once, without on_start, and its
-no-shows stay no-shows. Once it starts, the game ends at its duration or its
+no-shows stay no-shows. Dallinger lets bots play only after a tick in a game
+with a tick_rate, so ``join_tick_at`` asks for a tick as a player joins
+during the ready step, which lets a bot send its ready message in time even
+if the first tick would come after the ready_timeout. Once it starts, the game ends at its duration or its
 time limit, and rejects messages from then on. The entry also keeps track of
 which players are away, and since when, so that a game with an
 away_timeout can end once too few players are left. A player who isn't
@@ -82,8 +85,7 @@ class PlayerReady(LiveMessage):
             # an open page sends it.
             entry["away"].remove(player)
             entry["away_since"][player] = None
-        playing = len(entry["participant_ids"]) - len(entry["too_late"])
-        if len(entry["ready"]) == playing:
+        if len(entry["ready"]) == _n_playing(entry):
             game._end_ready_step(state, now)
 
 
@@ -122,6 +124,12 @@ def _psynet_entry(state, what="state"):
         ) from None
 
 
+def _n_playing(entry):
+    """Return how many players the game sees: all but those who came too
+    late."""
+    return len(entry["participant_ids"]) - len(entry["too_late"])
+
+
 def _player(entry, player_id):
     """Return the number of the player whose participant id Dallinger gave,
     as the game's methods see it."""
@@ -158,6 +166,11 @@ def _apply_once_started(self, method, outermost, state, player_id, message, now,
 
 def _tick_once_started(self, method, outermost, state, now):
     entry = _psynet_entry(state)
+    if outermost and entry["started_at"] is None:
+        # Dallinger lets the bots play after this tick, and runs no other
+        # for a deadline at or before it.
+        entry["join_tick_at"] = None
+        entry["last_tick"] = now
     if entry["started_at"] is None and (not outermost or now < self.ready_timeout):
         return _UNCHANGED
     if outermost:
@@ -217,6 +230,10 @@ def _record_join(self, method, outermost, state, player_id, now):
     if player in entry["too_late"]:
         # A bot joins as it's added, before its game ends.
         return _UNCHANGED
+    if entry["started_at"] is None and self.tick_rate:
+        # Dallinger lets bots play only after a tick, so a bot that joins
+        # gets one before the ready step ends without its ready message.
+        entry["join_tick_at"] = now
     _record_event(entry, now)
     if player in entry["away"]:
         entry["away"].remove(player)
@@ -352,6 +369,7 @@ def _add_psynet_entry(self, method, outermost, players, *settings):
         "time_up": False,
         "last_tick": None,
         "last_event": None,
+        "join_tick_at": None,
         "accepts_players": True,
         "too_late": [],
         "group_id": new_session.get("group_id"),
