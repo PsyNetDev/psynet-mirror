@@ -11,6 +11,7 @@ writes it. Checkpoints are Dallinger's own, which it saves at the game's
 
 import functools
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, List, Optional
 
 from dallinger import db
@@ -29,6 +30,26 @@ _CLOSED_EFFECT = "psynet_closed"
 _PSYNET_EFFECTS = (_STARTED_EFFECT, _REWARD_EFFECT, _MOMENT_EFFECT, _CLOSED_EFFECT)
 
 
+class LiveGameStatus(StrEnum):
+    """Where a live game is, as a game record's
+    :attr:`~LiveGameRecord.status` gives it. Each status is a string, such
+    as ``"ended"``, so it also compares equal to one."""
+
+    #: The participant's group didn't start a game, for example because it
+    #: broke up while it waited.
+    NOT_STARTED = "not_started"
+
+    #: The game is being played, or its result isn't saved yet.
+    RUNNING = "running"
+
+    #: The game is over and its result saved, whatever the reason it ended,
+    #: which :attr:`~LiveGameRecord.end_reason` gives.
+    ENDED = "ended"
+
+    #: The game's code raised an error, or its record couldn't be saved.
+    FAILED = "failed"
+
+
 class LiveGameRecord:
     """One play of a live game, as the participant's
     :attr:`~psynet.participant.Participant.live_games` and
@@ -39,7 +60,8 @@ class LiveGameRecord:
     ::
 
         game = participant.live_games["rock_paper_scissors"]
-        if game.finished:
+        if game.status == LiveGameStatus.ENDED:
+            game.end_reason   # why it ended, such as FINISHED or PLAYERS_LEFT
             game.answer       # this participant's answer
             game.outcome      # what the game's outcome returned
             game.messages     # every message, in order
@@ -95,34 +117,28 @@ class LiveGameRecord:
         return _session_game_class(self._id)
 
     @property
-    def status(self) -> str:
-        """``"not_started"`` if the participant's group didn't start a game,
-        for example because it broke up while it waited; ``"running"`` until
-        the game's result is saved; then ``"ended"``, or ``"failed"`` if the
-        game's code raised an error, or its record couldn't be saved."""
-        return "not_started" if self._id is None else self._row().status
-
-    @property
-    def finished(self) -> bool:
-        """Whether the game ended with the reason ``"finished"``: through an
-        ``is_over`` that returned ``True``, or at the end of its
-        ``duration``. It's ``False`` for a game that ended early, such as
-        because players left or it reached its ``timeout``, for one
-        whose ``end_reason`` gave a reason of its own, such as ``"deal"``,
-        and for one still running. It's about the whole game, so check
-        :attr:`left_early` first for a participant whose own game may have
-        ended before it."""
-        row = self._row()
-        return (
-            row is not None and row.status == "ended" and row.end_reason == "finished"
-        )
+    def status(self) -> LiveGameStatus:
+        """Where the game is, as a :class:`LiveGameStatus`, which says
+        whether it started, is running, has ended or failed. A game that ended for any
+        reason is :attr:`~LiveGameStatus.ENDED`, and :attr:`end_reason`
+        says why. It's about the whole game, so it stays
+        :attr:`~LiveGameStatus.RUNNING` for a participant who
+        :attr:`left_early`."""
+        if self._id is None:
+            return LiveGameStatus.NOT_STARTED
+        return LiveGameStatus(self._row().status)
 
     @property
     def end_reason(self) -> Optional[str]:
-        """Why the game ended: the ``reason`` that the game's ``outcome``
-        received, such as ``"finished"``, ``"timeout"`` or ``"failed"``.
-        It's ``None`` until the game has ended, or if its record couldn't be
-        saved."""
+        """Why the game ended, as the ``reason`` that the game's ``outcome``
+        received. That's :data:`~psynet.live_game.FINISHED` for a game whose
+        ``is_over`` returned ``True`` or that reached its ``duration``,
+        :data:`~psynet.live_game.TIMEOUT`,
+        :data:`~psynet.live_game.PLAYERS_LEFT` or
+        :data:`~psynet.live_game.FAILED`, ``"not_joined"`` if no player
+        opened the game page in time, or a reason that the game's own
+        ``end_reason`` gives, such as ``"deal"``. It's ``None`` until the
+        game has ended, or if its record couldn't be saved."""
         row = self._row()
         return None if row is None else row.end_reason
 
@@ -174,9 +190,9 @@ class LiveGameRecord:
         """Whether the participant's own game ended before the game did,
         because the game's ``is_done`` ended it, such as when they retired,
         or because they joined after the game's ``accepts_players`` returned
-        ``False`` or as the game ended. :attr:`done_reason` says why. The game may still be running, so
-        :attr:`finished` and :attr:`end_reason`, which are the whole game's,
-        don't say anything about such a player."""
+        ``False`` or as the game ended. :attr:`done_reason` says why. The game
+        may still be running, so :attr:`status` and :attr:`end_reason`, which are
+        the whole game's, don't say anything about such a player."""
         return self._own_done_reason("left_early") is not None
 
     @property

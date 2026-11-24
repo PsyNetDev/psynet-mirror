@@ -103,8 +103,9 @@ class LiveGame(RealtimeGame):
 
     #: Seconds after the wait at the :class:`PlayLiveGame` ends at which the
     #: game starts, even if some players aren't ready. They can still join
-    #: and play. If none of the players has opened the game page by then,
-    #: the game ends instead, with the reason ``"not_joined"``.
+    #: and play, and until they do they count as away, from the start, for
+    #: the :attr:`away_timeout`. If none of the players has opened the game
+    #: page by then, the game ends instead, with the reason ``"not_joined"``.
     ready_timeout = 60
 
     #: Seconds the game lasts once it starts, after which it ends with the
@@ -135,8 +136,9 @@ class LiveGame(RealtimeGame):
     #: and PsyNet logs an error that says so.
     max_players = None
 
-    #: Seconds a player can be away, with none of their game pages open,
-    #: before they count as gone. Once fewer than :attr:`min_players` players
+    #: Seconds a player can be away, with none of their game pages open or
+    #: without having opened the game page when the game started, before
+    #: they count as gone. Once fewer than :attr:`min_players` players
     #: aren't gone, the game ends with the reason ``"players_left"``. Allow
     #: 30 seconds or more, for a reload. Set it to ``None`` for a game that
     #: carries on however many players are away (see :ref:`live-games-leaving`).
@@ -312,7 +314,8 @@ class LiveGame(RealtimeGame):
     def on_start(self, state):
         """Respond to the game starting, the moment the game's clock, ``now``
         in its other methods, starts at 0. ``state["psynet"]["ready"]``
-        says which players were ready. A game can end here, through its
+        says which players were ready, and the others are in
+        ``state["psynet"]["away"]``. A game can end here, through its
         ``is_over``.
         """
 
@@ -336,8 +339,8 @@ class LiveGame(RealtimeGame):
         It leaves out the players who came too late, after
         :meth:`accepts_players` returned ``False``, whom the game never sees.
 
-        A :class:`PlayLiveGame` with ``absent_action`` removes the same
-        players from their groups, with these reasons
+        A :class:`PlayLiveGame` with ``absent_action`` fails the same
+        players, or removes them from their groups, with these reasons
         (see :ref:`live-games-absent`).
         """
         return _absences(self, state)
@@ -384,6 +387,17 @@ class LiveGame(RealtimeGame):
             limit = self.duration if self.duration is not None else self.timeout
             if limit is not None:
                 entry["ends_at"] = now + limit
+            # Away from the start, so an away_timeout covers a player who
+            # never opens the game page. A page that is open sends its ready
+            # message soon after, which ends this.
+            for player in range(len(entry["participant_ids"])):
+                if not (
+                    player in entry["ready"]
+                    or player in entry["away"]
+                    or player in entry["too_late"]
+                ):
+                    entry["away"].append(player)
+                    entry["away_since"][player] = now
             if queued_effects.get(None) is not None:
                 # Past this class's queue_effect, which refuses PsyNet's names.
                 RealtimeGame.queue_effect(self, _STARTED_EFFECT, {})
@@ -554,9 +568,9 @@ class LiveGame(RealtimeGame):
         :meth:`performance_reward`, and copies the outcome to the round the
         game was played in, if any, as
         :attr:`~psynet.sync.SyncGroupRound.live_game_outcome`, and, for a
-        :class:`PlayLiveGame` with ``absent_action``, removes the players who
-        didn't play from their groups (unless the game failed), before this
-        method runs.
+        :class:`PlayLiveGame` with ``absent_action``, fails the players who
+        didn't play or removes them from their groups (unless the game
+        failed), before this method runs.
 
         Parameters
         ----------

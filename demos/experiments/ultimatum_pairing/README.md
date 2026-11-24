@@ -2,10 +2,13 @@
 
 An ultimatum game played in cohorts. Players wait in a lobby until a cohort
 forms, or start in a smaller cohort if nobody else arrives in time. Every
-round, the cohort is randomly re-paired into proposers and responders, an odd
-player out sits out, and nobody is failed for being slow: a player who isn't
-back in time for a split joins the next round, and one who closes their tab
-mid-round is taken out of their pair and cohort, so nobody waits for them.
+round, the cohort is randomly re-paired into proposers and responders, and an
+odd player out sits out. A player who isn't back in time for a split joins
+the next round. One who closes their tab mid-round is failed once they are
+late (`late_action="fail"`), which takes them out of their pair and cohort,
+so nobody waits for them; their partner is told that the partner was away
+and is paired again at the next split, without any special handling in the
+trial.
 An anonymous `GroupPrompt` shows the pair,
 with a tick once the partner has decided, and then both decisions in speech
 bubbles; partners appear as the same grey figure, so nobody recognises a
@@ -13,8 +16,8 @@ partner from an earlier round.
 
 Good reference for nesting a `Regrouper` inside persistent cohorts made by a
 `SimpleGrouper` with `start_short_after` and top-ups, with re-pairing that
-avoids last round's partner and alternates roles (short `form_groups` and
-`assign_roles` overrides in `pairing.py`) and `stop_top_ups_after_rounds`,
+avoids last round's partner (`avoid_repeats=True`) and alternates roles (a
+short `assign_roles` override in `pairing.py`) and `stop_top_ups_after_rounds`,
 which turns latecomers away once the cohort's second round starts. With
 `use_admission_points=True`, a latecomer is a pending member of
 the cohort until a split admits and pairs them, so nobody waits for them
@@ -27,10 +30,6 @@ Each round is one cued trial per player (`Trial.cue(...)` with
 the pair's offer and result live on the round shared by its two trials
 (`trial.group_round.var`), sit-outs get a page instead of a trial, and the
 basic data is read from trials and rounds.
-
-A player the experimenter removes from their pair on the dashboard gets no
-coins that round; one removed from the cohort before their last round is
-told they were removed from the game.
 
 ## Usage
 
