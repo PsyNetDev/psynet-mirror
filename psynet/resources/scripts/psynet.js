@@ -899,6 +899,15 @@
             // The events of this trial only, as later trials share the page.
             event_log: psynet.trial.eventLog.splice(0),
           };
+          // As psynet.nextPage would, for example after a JSPage with media,
+          // whose next pages the server sends rendered.
+          if (
+            psynet.nextRenderedPage() &&
+            !psynet.pageState.asynchronousUploadSources?.length
+          ) {
+            psynet.answerWithRenderedPage(value, metadata);
+            return true;
+          }
           // showNextPredictedTrial sets nextPageUuid if it shows a trial next.
           // Recordings are only this page's while it shows nothing in advance.
           answers.queue.push({
@@ -3558,7 +3567,12 @@
       Object.keys(requests).forEach(log);
     };
 
-    let createAudioStimulus = function (data, stimulusId, loadGeneration) {
+    let createAudioStimulus = function (
+      data,
+      stimulusId,
+      loadGeneration,
+      isCurrent = () => true,
+    ) {
       psynet.log.debug("Decoding sound " + stimulusId + "...");
 
       return new Promise((resolve, reject) => {
@@ -3566,7 +3580,7 @@
           reject(Error("Couldn't decode sound " + stimulusId + ": " + error));
         };
         psynet.media.audioContext.decodeAudioData(data, function (buffer) {
-          if (!psynet.media.isCurrentLoadGeneration(loadGeneration)) {
+          if (!psynet.media.isCurrentLoadGeneration(loadGeneration) || !isCurrent()) {
             resolve(false);
             return;
           }
@@ -3608,8 +3622,9 @@
               onEnd: null,
             };
 
+            // A page change stops the trial; a JSPage kept for the next
+            // trial keeps it, though the page UUID changes.
             const soundTrial = psynet.trial;
-            const soundPageUuid = window.pageUuid;
             let stopTimer = null;
             let completionTimer = null;
             let stopCompletionTimer = null;
@@ -3648,7 +3663,6 @@
             let isSoundTrialActive = function () {
               return (
                 psynet.trial === soundTrial &&
-                window.pageUuid === soundPageUuid &&
                 !soundTrial.stopping &&
                 !soundTrial.stopped
               );
@@ -3819,6 +3833,11 @@
       if (pending && pending.url === url && pending.generation === generation) {
         return pending.load;
       }
+      let entry = { generation, url };
+      // A later load with the same id replaces this one.
+      let isCurrent = () => audioLoads.get(id) === entry;
+      let superseded = () =>
+        new Error("Loading " + url + " as " + id + " was replaced by a later load.");
       let load = (async function () {
         let data = await prefetchedData(url, "arraybuffer");
         if (!data) {
@@ -3831,17 +3850,19 @@
         if (!psynet.media.isCurrentLoadGeneration(generation)) {
           throw new Error("The page changed while " + url + " was loading.");
         }
+        if (!isCurrent()) throw superseded();
         if (!psynet.media.data.audio) {
           initMediaType("audio");
         }
         initStimulus(id, "audio");
         psynet.media.initAudioContext();
-        if (!(await createAudioStimulus(data, id, generation))) {
+        if (!(await createAudioStimulus(data, id, generation, isCurrent))) {
+          if (!isCurrent()) throw superseded();
           throw new Error("The page changed while " + url + " was loading.");
         }
         return psynet.audio[id];
       })();
-      let entry = { load, generation, url };
+      entry.load = load;
       audioLoads.set(id, entry);
       load.catch(() => {
         if (audioLoads.get(id) === entry) audioLoads.delete(id);
