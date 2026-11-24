@@ -1,0 +1,1 @@
+An answer for a page the server has already moved past, for example from a second browser tab, no longer calls `Experiment.response_rejected`, so experiments that count rejections there no longer count these. The browser still asks the participant to close other tabs, or reloads the page if the answer was sent in the background.
