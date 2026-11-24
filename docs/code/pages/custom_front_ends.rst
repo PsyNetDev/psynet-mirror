@@ -407,26 +407,14 @@ the next; see :doc:`/code/trials/keeping_a_task_on_one_page`.
 Custom page templates
 ---------------------
 
-A custom :class:`~psynet.timeline.Page` provides only the contents of the
-page body, with ``template_fragment_path`` or ``template_fragment_str``:
-
-.. code-block:: python
-
-    from psynet.timeline import Page
-
-
-    class MyPage(Page):
-        def __init__(self):
-            super().__init__(
-                label="my_page",
-                template_fragment_path="templates/my-page.html",
-                css_links=["/static/my-page.css"],
-                js_page_modules=["/static/my-page.js"],
-                time_estimate=5,
-            )
-
-        def get_bot_response(self, experiment, bot):
-            return None
+For a page you write yourself, a ``JSPage`` (see `Writing the whole page`_)
+is usually simplest. Subclass :class:`~psynet.timeline.Page` instead only
+when the page needs a Jinja template, for example when migrating a template
+from an older version of PsyNet. Pass the template as
+``template_fragment_path`` (a file in ``templates/``) or
+``template_fragment_str``, along with ``label`` and ``time_estimate``, and
+override ``get_bot_response``. The template provides only the contents of
+the page body.
 
 PsyNet wraps this fragment in the standard timeline page shell, including the
 timeline header, main body container, footer, page asset bundle, and
@@ -434,7 +422,9 @@ timeline header, main body container, footer, page asset bundle, and
 "timeline-page.html" %}``, ``{% block main_body %}``, ``<html>``, ``<head>``,
 ``<body>``, ``<script>``, ``<style>`` or ``<link rel="stylesheet">``.
 
-Supply page-local CSS and JavaScript through explicit page arguments:
+A ``JSPage``'s HTML follows the same rules. Every page supplies its own CSS
+and JavaScript through explicit page arguments; a ``JSPage`` takes its one
+module as ``module`` instead of ``js_page_modules``:
 
 * Prefer ``template_fragment_path`` for experiment templates stored in
   ``templates/``. ``template_fragment_str`` is useful for small generated
