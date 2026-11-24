@@ -2966,7 +2966,9 @@ class Page(Elt):
             participant.page_count + 1,
             ".".join(str(i) for i in previous.id),
         )
-        previous._progress = participant._progress_after(-previous.time_estimate)
+        _, previous._progress = experiment.timeline._back_restore_point(
+            participant, previous
+        )
         previous._rendered_in_advance = True
         previous._pre_render_once()
         html = previous.render(experiment, participant, partial_mode=True)
@@ -3630,7 +3632,36 @@ class Timeline:
         """The timeline page before ``page``, if the participant can go back to it."""
         if self._back_button(participant, page) == "enabled":
             branch, index = page.id
-            return self.elts[branch][index - 1]
+            previous = self.elts[branch][index - 1]
+            if self._back_restore_point(participant, previous) is not None:
+                return previous
+        return None
+
+    def _record_back_restore_point(self, participant, page):
+        """Remember the time credit and progress before ``page`` is answered, for Back.
+
+        Only a page that the next page can go back to gets a restore point;
+        any other page ends the run of pages Back can return through, so the
+        list is cleared.
+        """
+        position = page.id
+        if (
+            position is not None
+            and len(position) == 2
+            and self._can_go_back(position[0], position[1] + 1)
+        ):
+            participant.back_restore_points = [
+                *(participant.back_restore_points or []),
+                [list(position), participant.time_credit, participant.progress],
+            ]
+        elif participant.back_restore_points:
+            participant.back_restore_points = []
+
+    def _back_restore_point(self, participant, previous):
+        """The ``(time_credit, progress)`` from before ``previous`` was answered, or ``None``."""
+        points = participant.back_restore_points or []
+        if points and points[-1][0] == list(previous.id):
+            return points[-1][1], points[-1][2]
         return None
 
     def _back_button(self, participant, page):
@@ -3701,15 +3732,18 @@ class Timeline:
     def go_back(self, experiment, participant):
         """Show the participant the page before the current one again.
 
-        The time credit and progress from answering that page are taken
-        back, as they are given again when the participant moves on again.
+        The time credit and progress return to what they were before that
+        page was answered, as they are given again when the participant
+        moves on again.
         """
         page = self.get_current_elt(experiment, participant)
         previous = self._page_to_go_back_to(participant, page)
         if previous is None:
             raise ValueError(f"Can't go back from page {page.id}.")
-        participant.inc_time_credit(-previous.time_estimate)
-        participant.inc_progress(-previous.time_estimate)
+        participant.time_credit, participant.progress = self._back_restore_point(
+            participant, previous
+        )
+        participant.back_restore_points = participant.back_restore_points[:-1]
         participant.elt_id = list(previous.id)
         previous.consume(experiment, participant)
         return previous

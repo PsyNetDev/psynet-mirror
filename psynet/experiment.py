@@ -4577,6 +4577,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         event, response, participant, self, page_uuid
                     )
                 event._accept_response(response, self, participant)
+            self.timeline._record_back_restore_point(participant, event)
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)
 
