@@ -1216,15 +1216,19 @@
 
     // The participant was failed from another request, such as the dashboard,
     // while on the page ``pageUuid``: the server now shows the failure page.
-    // Held pages are moved on by their hold wake, and a pending submission
-    // gets the failure page in its response.
+    // Held pages are moved on by their hold wake. A pending submission
+    // usually gets the failure page in its response; if it is rejected
+    // instead, nextPage calls this again with failedDuringSubmit.
     psynet.moveOnAfterFailure = function (pageUuid) {
       if (
         !pageUuid ||
         pageUuid !== window.pageUuid ||
-        psynet.timelineHold ||
-        psynet.nextPagePending
+        psynet.timelineHold
       ) {
+        return false;
+      }
+      if (psynet.nextPagePending) {
+        psynet.failedDuringSubmit = pageUuid;
         return false;
       }
       psynet.log.info("Participant failed; loading the next page.");
@@ -3719,6 +3723,7 @@
         ) {
           psynet.addBeforeUnloadEventListener();
         }
+        psynet.moveOnAfterFailure(psynet.failedDuringSubmit);
       }
       return passedValidation;
     };

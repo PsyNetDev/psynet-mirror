@@ -65,6 +65,16 @@ describe("psynet.moveOnAfterFailure", () => {
     assert.equal(calls.at(-1), "warn");
   });
 
+  it("remembers a failure during a submit, for nextPage if it is rejected", () => {
+    const { moved, psynet } = run("page-1", { nextPagePending: true });
+    assert.equal(moved, false);
+    assert.equal(psynet.failedDuringSubmit, "page-1");
+    assert.match(
+      SOURCE,
+      /nextPagePending = false;[\s\S]{0,300}psynet\.moveOnAfterFailure\(psynet\.failedDuringSubmit\)/
+    );
+  });
+
   for (const [label, pageUuid, state] of [
     ["another page", "page-0", {}],
     ["no failure", undefined, {}],

@@ -238,7 +238,7 @@ def _group_status(group):
 
     Groups only close when their last member leaves, so a group whose members
     all reached the end of the experiment stays active in the database; the
-    dashboard shows it as finished instead, unless newcomers can still join it.
+    dashboard shows it as finished instead, unless it still accepts top-ups.
     """
     if not group.active:
         return "closed"

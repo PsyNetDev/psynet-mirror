@@ -180,7 +180,7 @@ def test_taking_part_agrees_with_timeline_end_logic():
         None,
         [],
         ["main", 0],
-        *([b, 0] for b in timeline.terminal_branch_names),
+        *([b, 0] for b in timeline.elts),
     ]:
         participant = SimpleNamespace(failed=False, status="working", elt_id=elt_id)
         in_end_logic = bool(elt_id) and timeline.participant_is_in_end_logic(
