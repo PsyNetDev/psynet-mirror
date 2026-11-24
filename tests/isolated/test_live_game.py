@@ -1897,6 +1897,9 @@ def test_the_game_starts_at_the_ready_timeout_without_everyone(relay):
     assert state["psynet"] == _psynet(
         participant_ids=[1, 2],
         ready=[0],
+        # Away until their page opens.
+        away=[1],
+        away_since=[None, 10],
         started_at=10,
         ends_at=610,
         last_tick=10,
@@ -1910,6 +1913,7 @@ def test_the_game_starts_at_the_ready_timeout_without_everyone(relay):
     relay.apply(state, "2", READY, 11, Sent())
     relay.apply(state, "2", TAP, 12, Sent())
     assert state["psynet"]["started_at"] == 10
+    assert state["psynet"]["away"] == []
     assert state["taps"] == [[1, 2]]
 
 
@@ -2089,6 +2093,46 @@ def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
     assert not game.is_over()
     game.tick(80)
     assert game.is_over() and game.end_reason() == PLAYERS_LEFT
+
+
+def test_a_player_who_never_opens_the_game_page_is_away_from_the_start():
+    class Pair(_Game):
+        name = "pair_with_no_show"
+        away_timeout = 30
+
+    game = LocalGame(Pair, players=2, start=False)
+    game.join(0)
+    game.send(0, READY)
+    game.tick(Pair.ready_timeout)
+
+    game.tick(29)
+    assert not game.is_over()
+    game.tick(30)
+    assert game.is_over() and game.end_reason() == PLAYERS_LEFT
+    assert game.game.absences(game.state) == [None, "no_show"]
+
+
+@pytest.mark.parametrize("limit", [None, 30])
+def test_a_no_show_counts_with_the_leavers_towards_min_players(limit):
+    class Trio(_Game):
+        name = "trio_with_no_show"
+        away_timeout = limit
+
+    game = LocalGame(Trio, players=3, start=False)
+    for player in [0, 1]:
+        game.send(player, READY)
+    game.tick(Trio.ready_timeout)
+    # Two players are enough, until a second one leaves.
+    game.leave(1, now=5)
+    game.tick(35)
+
+    assert game.state["psynet"]["away"] == [2, 1]
+    if limit is None:
+        assert not game.is_over()
+        assert game.game.absences(game.state) == [None, None, "no_show"]
+    else:
+        assert game.is_over() and game.end_reason() == PLAYERS_LEFT
+        assert game.game.absences(game.state) == [None, "left_game", "no_show"]
 
 
 def test_by_default_a_game_for_two_ends_a_minute_after_one_player_leaves():
@@ -2298,6 +2342,35 @@ def test_a_deadline_due_by_the_ready_timeout_runs_when_the_game_starts(relay):
     assert waiting.next_due == 10
     assert ended.ended["reason"] == "finished"
     assert json.loads(ended.saved)["state"]["ticks"] == [0]
+
+
+def test_a_no_show_s_away_deadline_runs_unless_their_ready_message_comes(relay):
+    class Pair(type(relay)):
+        name = "pair_waiting_for_a_no_show"
+        min_players = 2
+        away_timeout = 30
+
+        def next_deadline(self, state):
+            return None
+
+    game = Pair()
+    entries = [
+        _session_entry("join", 0, "1"),
+        _session_entry("message", 1, "1", READY),
+        # Player 2's page opens just before the start, and sends its ready
+        # message just after.
+        _session_entry("join", 9, "2"),
+    ]
+    started = run_pass(game, new_session(game, ["1", "2"]), entries, 10, CLOCK)
+    ready = [_session_entry("message", 11, "2", READY)]
+    arrived = run_pass(game, started.saved, ready, 12, CLOCK)
+    ended = run_pass(game, started.saved, [], 40, CLOCK)
+
+    assert started.next_due == 40
+    entry = json.loads(arrived.saved)["state"]["psynet"]
+    assert (entry["away"], entry["away_since"]) == ([], [None, None])
+    assert arrived.next_due == 10 + Pair.timeout
+    assert ended.ended["reason"] == PLAYERS_LEFT
 
 
 def test_a_game_s_state_can_be_passed_by_keyword(relay):
