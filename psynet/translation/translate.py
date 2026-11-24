@@ -61,10 +61,12 @@ def translate_package(
     skip_pot: bool = False,
     continue_on_error: bool = True,
     translator: Optional[Translator] = None,
+    locales_directory: Optional[str] = None,
 ):
     namespace = get_package_name()
     source_directory = get_package_source_directory()
-    locales_directory = os.path.join(source_directory, "locales")
+    if locales_directory is None:
+        locales_directory = os.path.join(source_directory, "locales")
 
     if len(locales) == 0:
         locales = psynet_supported_locales

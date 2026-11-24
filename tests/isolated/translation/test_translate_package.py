@@ -1,10 +1,7 @@
 import json
 import math
-import shutil
-from pathlib import Path
 
 import polib
-import pytest
 
 from psynet.translation.translate import MAX_BATCH_SIZE, translate_package
 from psynet.utils import get_psynet_root, working_directory
@@ -33,31 +30,7 @@ def reset_mock_translate_counter():
     mock_translate_counter = -1
 
 
-@pytest.fixture
-def backup_locales():
-    """Backup and restore psynet/locales directory during test."""
-    locales_dir = Path(get_psynet_root()) / "psynet" / "locales"
-    backup_dir = locales_dir.parent / "locales_backup"
-
-    # Backup existing locales if they exist
-    if locales_dir.exists():
-        if backup_dir.exists():
-            shutil.rmtree(backup_dir)
-        shutil.move(locales_dir, backup_dir)
-
-    # Create fresh locales dir
-    locales_dir.mkdir(exist_ok=True)
-
-    yield
-
-    # Restore from backup
-    if locales_dir.exists():
-        shutil.rmtree(locales_dir)
-    if backup_dir.exists():
-        shutil.move(backup_dir, locales_dir)
-
-
-def test_translate_psynet(mocker, backup_locales):
+def test_translate_psynet(mocker, tmp_path):
     """
     Tests the logic for translating the PsyNet package.
 
@@ -65,8 +38,9 @@ def test_translate_psynet(mocker, backup_locales):
     "source_language: en, target_language: fr, source_text: Hello, target_text: Bonjour, call_id: 1"
     where call_id is a unique identifier for the call to the autotranslator.
 
-    We run this test on the local PsyNet package. To avoid overwriting the pre-existing translations,
-    we use a fixture to backup the original contents of "psynet/locales" while running this test.
+    We write the generated catalogs into ``tmp_path`` so the test never mutates
+    the shared ``psynet/locales`` directory (which would race with parallel
+    tests that compile PsyNet's translations).
     """
     mock_translate = mocker.patch(
         "psynet.translation.translators.DefaultTranslator.translate"
@@ -75,10 +49,12 @@ def test_translate_psynet(mocker, backup_locales):
 
     reset_mock_translate_counter()
 
+    locales_dir = tmp_path / "locales"
+    locales_dir.mkdir()
     with working_directory(get_psynet_root()):
-        translate_package(["fr", "de"])
+        translate_package(["fr", "de"], locales_directory=str(locales_dir))
 
-    po_fr = polib.pofile("psynet/locales/fr/LC_MESSAGES/psynet.po")
+    po_fr = polib.pofile(str(locales_dir / "fr" / "LC_MESSAGES" / "psynet.po"))
     entry_gender = [
         entry for entry in po_fr if entry.msgid == "How do you identify yourself?"
     ][0]
