@@ -6740,7 +6740,9 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if (
             not isinstance(page_uuid, str)
             or not participant.page_uuid
-            or not hmac.compare_digest(page_uuid, participant.page_uuid)
+            or not hmac.compare_digest(
+                page_uuid.encode(), participant.page_uuid.encode()
+            )
             or participant.failed
             # An error-recovery offer or a committed exit must not be replaced.
             or (
