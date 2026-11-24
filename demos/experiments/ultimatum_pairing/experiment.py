@@ -48,6 +48,7 @@ from psynet.sync import (
     leave_group,
 )
 from psynet.timeline import (
+    CodeBlock,
     Module,
     Timeline,
     join,
@@ -123,10 +124,12 @@ def get_timeline():
                 expected_repetitions=N_ROUNDS,
             ),
         ),
+        # Read before leaving, which would make every player look alone.
+        CodeBlock(save_game_over_reason),
         leave_group(COHORT),
         switch(
             "game_over",
-            game_over_reason,
+            lambda participant: participant.var.game_over_reason,
             {
                 "played_all_rounds": [],
                 "sat_out_too_often": InfoPage(
@@ -200,6 +203,11 @@ def too_few_players(participant):
     """Return whether the player's cohort has ended or has nobody left to pair them with."""
     cohort = cohort_of(participant)
     return cohort is None or cohort.n_active_participants < 2
+
+
+def save_game_over_reason(participant):
+    """Save why the player's game is over, for the ended-early page."""
+    participant.var.game_over_reason = game_over_reason(participant)
 
 
 def keep_playing(participant):

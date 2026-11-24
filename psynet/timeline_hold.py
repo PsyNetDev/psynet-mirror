@@ -793,15 +793,21 @@ class _TimelineHoldPage(Page):
             remaining_timeout_ms = max(
                 0, round((record.deadline - timenow()).total_seconds() * 1000)
             )
+        # Read once so the message and flag agree at CATCH_UP_SPINNER_SECONDS.
+        silent = record.is_silent()
         return {
             "channel": _timeline_hold_channel(participant.id),
             "hold_id": self.hold_id,
-            "message": self.overlay_html(participant),
+            "message": (
+                compose_hold_overlay_html("", None)
+                if silent
+                else self.overlay_html(participant)
+            ),
             "page_uuid": participant.page_uuid,
             "wake_token": record.wake_token,
             "safety_poll_ms": round(self.check_interval * 1000),
             "timeout_ms": remaining_timeout_ms,
-            "silent": record.is_silent(),
+            "silent": silent,
             "replaces_page": self.waiting_screen_page(participant) is not None,
         }
 

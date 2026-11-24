@@ -33,9 +33,14 @@ def test_a_player_left_alone_ends_rather_than_sitting_out(
         in_sync_group=lambda group_type: False,
         sync_group_removal_reason=lambda group_type: None,
         active_sync_groups={demo.COHORT: cohort},
+        var=SimpleNamespace(),
     )
     assert demo.round_status(player) == round_status
     assert demo.game_over_reason(player) == game_over_reason
+    # The game-over page is chosen after the player leaves the cohort.
+    demo.save_game_over_reason(player)
+    player.active_sync_groups.clear()
+    assert player.var.game_over_reason == game_over_reason
 
 
 @pytest.mark.parametrize(

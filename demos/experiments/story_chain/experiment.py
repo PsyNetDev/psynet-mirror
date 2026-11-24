@@ -316,6 +316,8 @@ class Exp(psynet.experiment.Experiment):
         for turn in range(N_TURNS - 1):
             writer = members[turn % GROUP_SIZE]
             assert writer.current_page_label == "write", writer.current_page_text
+            # The others are waiting for the writer, who isn't told so.
+            assert writer.current_notice is None, writer.current_notice
             if turn == 4:
                 writer.run_out_of_time()
                 advance_past_wait_pages(members, stop_at=TURN_BARRIER)

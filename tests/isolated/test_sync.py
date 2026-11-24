@@ -4549,8 +4549,8 @@ def test_reloaded_hold_hides_the_empty_page_but_not_the_indicator(
 def test_last_arrival_catchup_hold_stays_silent(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """A hold consumed after skipping a released wait stays a silent spinner."""
-    from psynet.timeline_hold import compose_hold_overlay_html
+    """A catch-up hold is a bare spinner until it lasts CATCH_UP_SPINNER_SECONDS."""
+    from psynet.timeline_hold import CATCH_UP_SPINNER_SECONDS, compose_hold_overlay_html
 
     exp = get_experiment()
     original_timeline = exp.timeline
@@ -4610,6 +4610,14 @@ def test_last_arrival_catchup_hold_stays_silent(
         last_page = exp.timeline.get_current_elt(exp, last)
         assert last_page.overlay_html(last) == compose_hold_overlay_html("", None)
         assert _arrival_hold_messages(publications, last_id) == []
+        last_hold.started_at -= timedelta(seconds=CATCH_UP_SPINNER_SECONDS + 1)
+        db.session.commit()
+        resumed = _process_response(
+            exp, last, last_hold_uuid, timeline_hold_resume=True
+        )
+        hold = resumed.payload["page"]["attributes"]["timeline_hold"]
+        assert hold["silent"] is False
+        assert "Waiting for your partner" in hold["message"]
         _catch_up_until_action(exp, [first_id, second_id, last_id])
     finally:
         exp.timeline = original_timeline

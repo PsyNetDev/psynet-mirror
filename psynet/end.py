@@ -426,12 +426,13 @@ def _builtin_failure_reason(failure_tags):
             "Too few members of your group remained to continue, "
             "so we ended your session.",
         )
-    if "no_show" in failure_tags:
+    in_live_game = any(tag.startswith("live_game:") for tag in failure_tags)
+    if in_live_game and "no_show" in failure_tags:
         return _p(
             "final_page_unsuccessful",
             "You didn't open the game in time, so we ended your session.",
         )
-    if "left_game" in failure_tags:
+    if in_live_game and "left_game" in failure_tags:
         return _p(
             "final_page_unsuccessful",
             "You were away from the game for too long, so we ended your session.",
