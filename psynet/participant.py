@@ -486,6 +486,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     time_credit_fixes = Column(PythonList)
     # progress_fixes is analogous to time_credit_fixes, but for progress.
     progress_fixes = Column(PythonList)
+    # What Back restores: ``[page id, time credit, progress]`` from just before
+    # each page answered in the current run of pages that Back can return to.
+    back_restore_points = Column(PythonList)
 
     page_uuid = Column(String)
     # Framework bookkeeping, not author API: page_deadline, waiting_barrier_id,
@@ -1048,6 +1051,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.progress = 0.0
         self.time_credit_fixes = []
         self.progress_fixes = []
+        self.back_restore_points = []
         self.elt_id = ["main", -1]
         self.elt_id_max = []
         self.answer_accumulation_depth = 0

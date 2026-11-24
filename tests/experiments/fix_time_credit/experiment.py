@@ -1,6 +1,6 @@
 import psynet.experiment
 from psynet.page import InfoPage
-from psynet.timeline import CodeBlock, Timeline, while_loop
+from psynet.timeline import CodeBlock, Timeline, while_loop, with_fixed_time_credit
 
 # This experiment is written to test that the 'time credit bound' functionality
 # works appropriately.
@@ -53,4 +53,13 @@ class Exp(psynet.experiment.Experiment):
         ),
         CodeBlock(assert_no_time_credit_fixes),
         CodeBlock(lambda participant: assert_time_credit(participant, 1.0 + 5.0)),
+        # Back from the second page must restore the credit from before the
+        # first page, not take away more credit than the capped first page gave.
+        with_fixed_time_credit(
+            [
+                InfoPage("Back test: first page", time_estimate=10.0),
+                InfoPage("Back test: second page", time_estimate=10.0),
+            ],
+            time_credit=5.0,
+        ),
     )
