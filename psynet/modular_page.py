@@ -713,6 +713,14 @@ class ColorPrompt(Prompt):
         return {"text": str(self.text), "hsl": self.hsl}
 
 
+def _overrides_validation(control, cls):
+    """Whether ``control``'s class validates answers differently from ``cls``."""
+    return (
+        type(control).validate is not cls.validate
+        or type(control).check_ready_for_response is not cls.check_ready_for_response
+    )
+
+
 class Control(JavaScriptContributor):
     """
     The ``Control`` class provides some kind of controls for the participant,
@@ -928,6 +936,10 @@ class Control(JavaScriptContributor):
         # Called once the page is built. Raises if the control can't be used
         # on ``page``.
         pass
+
+    def _may_reject_answers(self):
+        """Whether the server may turn down an answer given with the control."""
+        return _overrides_validation(self, Control)
 
     def check_ready_for_response(self, experiment, participant):
         """
@@ -1256,6 +1268,9 @@ class CheckboxControl(OptionControl):
                 tags.br()
         return html.render()
 
+    def _may_reject_answers(self):
+        return self.force_selection or _overrides_validation(self, CheckboxControl)
+
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
         if self.force_selection and not response.answer:
@@ -1365,6 +1380,9 @@ class DropdownControl(OptionControl):
                     else:
                         tags.option(value=choice).add(_dominate_label(label))
         return html.render()
+
+    def _may_reject_answers(self):
+        return self.force_selection or _overrides_validation(self, DropdownControl)
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
@@ -1771,6 +1789,9 @@ class RadioButtonControl(OptionControl):
                 tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
+
+    def _may_reject_answers(self):
+        return self.force_selection or _overrides_validation(self, RadioButtonControl)
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
@@ -2453,9 +2474,9 @@ class ModularPage(Page):
         return (
             self._validate_function is not None
             or type(self).validate is not ModularPage.validate
-            or type(self.control).validate is not Control.validate
-            or type(self.control).check_ready_for_response
-            is not Control.check_ready_for_response
+            or type(self).check_ready_for_response
+            is not ModularPage.check_ready_for_response
+            or self.control._may_reject_answers()
         )
 
     def _shows_the_same_to_everyone(self):
@@ -2965,6 +2986,10 @@ class SliderControl(Control):
                 assert x >= min_value
                 assert x <= max_value
             return sorted(snap_values)
+
+    def _may_reject_answers(self):
+        # validate() only checks the slider's settings.
+        return _overrides_validation(self, SliderControl)
 
     def validate(self, response, **kwargs):
         if self.max_value <= self.min_value:

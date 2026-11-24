@@ -1053,7 +1053,17 @@
       if (psynetTemplateData.flags.lucidRecruitment) {
         psynet.addBeforeUnloadEventListener();
       }
-      psynet.media.prefetch(response.page.attributes?.upcoming_media);
+      // The page being swapped in may still need files that the next pages
+      // don't, so they are only dropped once it has loaded them.
+      let upcomingMedia = response.page.attributes?.upcoming_media;
+      let prefetchToken = (psynet.media.prefetchToken += 1);
+      let prefetch = () => {
+        if (psynet.media.prefetchToken === prefetchToken) {
+          psynet.media.prefetch(upcomingMedia);
+        }
+      };
+      if (psynet.pageSwap) psynet.pageSwap.then(prefetch);
+      else prefetch();
       return true;
     };
 
@@ -1416,7 +1426,11 @@
             psynet.waiting.stop();
             return;
           }
-          if (status.released && !psynet.nextPagePending) {
+          if (
+            status.released &&
+            !psynet.nextPagePending &&
+            !psynet.answers.sending
+          ) {
             // The release could have ended this page, so the participant has
             // moved past it, for example in another tab.
             psynet.waiting.stop();
@@ -3259,9 +3273,14 @@
     psynet.media.prefetched = new Map();
     psynet.media.prefetchedImages = new Map();
 
+    // Counts the prefetches with files to fetch, so that a deferred one is
+    // dropped once a later one is made.
+    psynet.media.prefetchToken = 0;
+
     psynet.media.prefetch = function (urls) {
       // Pages between trials, such as a break, keep the files for later trials.
       if (!urls) return;
+      psynet.media.prefetchToken += 1;
       let files = new Set(
         ["audio", "video", "html"].flatMap((type) => urls[type] || []),
       );
@@ -4192,6 +4211,16 @@
         return false;
       }
       if (!options.background) {
+        if (psynet.answers.waiting) {
+          psynet.log.info("Blocked nextPage because an answer is waiting.");
+          return false;
+        }
+        if (psynet.nextPagePending && !psynet.answers.sending) {
+          // Something other than an answer given in advance, such as a
+          // barrier's release, is being sent.
+          psynet.log.info("Blocked nextPage because a submission is pending.");
+          return false;
+        }
         let staged = psynet.response.staged;
         let uploads = Object.keys(blobs ?? staged.blobs ?? {}).length;
         if (
@@ -4203,6 +4232,14 @@
             rawAnswer === undefined ? staged.rawAnswer : rawAnswer,
             metadata === undefined ? staged.metadata : metadata,
           );
+        }
+        if (psynet.answers.sending) {
+          // The time taken and events end when the participant answered.
+          metadata = {
+            time_taken: (new Date() - psynet.pageLoadTime) / 1000,
+            event_log: [...psynet.trial.eventLog],
+            ...(metadata === undefined ? staged.metadata : metadata),
+          };
         }
         if (!(await psynet.sendAnswersGivenAhead())) return false;
       }
@@ -4222,9 +4259,16 @@
       let answers = psynet.answers;
       if (!answers.sending) return true;
       let generation = psynet.pageModuleGeneration;
+      // Further answers and Back are refused until this one can go ahead.
+      answers.waiting = true;
       psynet.setTimelineTransitionBusy(true);
-      let result = await answers.sending;
-      psynet.setTimelineTransitionBusy(false);
+      let result;
+      try {
+        result = await answers.sending;
+      } finally {
+        answers.waiting = false;
+        psynet.setTimelineTransitionBusy(false);
+      }
       return (
         result.sent &&
         psynet.answers === answers &&
@@ -4306,7 +4350,14 @@
     // advance are sent, so it goes back from the page shown.
     psynet.goBack = async function () {
       let page = psynet.previousPage;
-      if (!psynet.pageReady || psynet.timelineHold) return false;
+      if (
+        !psynet.pageReady ||
+        psynet.timelineHold ||
+        psynet.answers.waiting ||
+        (psynet.nextPagePending && !psynet.answers.sending)
+      ) {
+        return false;
+      }
       if (!page || psynet.answers.queue.length) {
         if (!(await psynet.sendAnswersGivenAhead())) return false;
         return psynet.sendSubmission(null, {}, {}, undefined, { back: true });
