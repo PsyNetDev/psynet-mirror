@@ -1,13 +1,17 @@
 import uuid
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 import requests
 
+from psynet.dashboard.sync_groups import _is_taking_part
 from psynet.experiment import get_experiment
+from psynet.page import InfoPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_demo_feature
 from psynet.sync import SimpleSyncGroup
+from psynet.timeline import Timeline
 from psynet.utils import get_authenticated_session
 
 
@@ -168,3 +172,18 @@ def _row(page, group_type):
     """Return the dashboard table row of the group of ``group_type``."""
     start = page.index(f"<td>{group_type}</td>")
     return page[start : page.index("</tr>", start)]
+
+
+def test_taking_part_agrees_with_timeline_end_logic():
+    timeline = Timeline(InfoPage("x", time_estimate=1))
+    for elt_id in [
+        None,
+        [],
+        ["main", 0],
+        *([b, 0] for b in timeline.terminal_branch_names),
+    ]:
+        participant = SimpleNamespace(failed=False, status="working", elt_id=elt_id)
+        in_end_logic = bool(elt_id) and timeline.participant_is_in_end_logic(
+            participant
+        )
+        assert _is_taking_part(participant) == (not in_end_logic)

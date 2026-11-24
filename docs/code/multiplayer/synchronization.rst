@@ -186,8 +186,9 @@ with a :class:`~psynet.sync.GroupCloser` and place another grouper with the
 same ``group_type``. A ``GroupCloser`` is a group barrier, so members wait
 there for each other. The end of the timeline needs none: a group isn't
 closed when its members finish, but nobody waits for it either, and the
-dashboard's **Sync groups** tab shows it as *Finished*. The ``group_closer`` feature demo forms groups of three,
-then groups of two, and assigns roles at a barrier each time:
+dashboard's **Sync groups** tab shows it as *Finished*. The ``group_closer``
+feature demo forms groups of three, then groups of two, and assigns roles at
+a barrier each time:
 
 .. literalinclude:: ../../../demos/features/group_closer/experiment.py
    :start-at: timeline = Timeline(
@@ -1714,10 +1715,9 @@ the group of that type: a player removed from a ``"pair"`` stays in their
 (see :ref:`rounds-slow-players`). To take a player out of a game by hand,
 fail them on the dashboard's **Sync groups** tab, which removes them from
 all their groups and moves their open page on to the failure page if it is
-the page of a group member. The
-tab shows a group that takes no newcomers and whose remaining members
-have all reached the end of the experiment as *Finished*. A participant whose grouper let them continue without
-a group (``max_wait_action="continue_without_group"``) is treated the same
+the page of a group member. The tab shows a group that takes no newcomers
+and whose remaining members have all reached the end of the experiment as
+*Finished*. A participant whose grouper let them continue without a group (``max_wait_action="continue_without_group"``) is treated the same
 way for that group type, as if they had left a group. A notice on their
 progress bar tells them why. A member removed for being late sees "Your
 group went on without you. Please continue." on the page they are on, until
