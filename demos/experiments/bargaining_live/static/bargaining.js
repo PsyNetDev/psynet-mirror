@@ -80,7 +80,8 @@ export function activate({root, psynet}) {
     ended: (final) => {
       if (final.deal !== null) return "You made a deal.";
       if (final.no_show === "you") return "You didn't arrive in time.";
-      if (final.no_show === "partner") return "Your partner didn't arrive.";
+      // The page's no-game notice says why.
+      if (final.no_show === "partner") return "No game this round.";
       if (final.left === "you") return "You left the game: no deal.";
       if (final.left === "partner") return "Your partner left the game: no deal.";
       return "Time's up: no deal.";
