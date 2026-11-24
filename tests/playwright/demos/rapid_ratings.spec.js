@@ -1,5 +1,5 @@
 const path = require("path");
-const { test, expect } = require("../fixtures");
+const { test, expect, STALE_PAGE_WARNING } = require("../fixtures");
 
 const {
   assertNoBackendError,
@@ -113,6 +113,41 @@ test("ratings advance while the server's replies are held back", { tag: "@inplac
       STEP_TIMEOUT_MS
     );
     await assertNoBackendError(participant);
+  });
+});
+
+test.describe("a page shown in advance that the server changed", () => {
+  test.use({ allowStalePages: true });
+
+  test("is replaced by the server's, with a warning", { tag: "@inplace-only" }, async ({
+    page,
+    context
+  }) => {
+    const dir = path.resolve("demos/features/rapid_ratings");
+
+    await withExperiment(page, context, dir, async (participant) => {
+      await completeInitialGateway(participant);
+      await participant.getByRole("button", { name: "Next", exact: true }).click();
+      const picture = participant.locator("#picture");
+      await expect(picture).toHaveAttribute("alt", "red circle", { timeout: STEP_TIMEOUT_MS });
+
+      // As if show_trial for the next trial depended on this answer.
+      await participant.route("**/response", async (route) => {
+        const response = await route.fetch();
+        const json = await response.json();
+        json.page.contents = { ...json.page.contents, name: "changed" };
+        await route.fulfill({ response, json });
+      });
+      const warning = participant.waitForEvent("console", {
+        predicate: (message) => message.text().includes(STALE_PAGE_WARNING),
+        timeout: STEP_TIMEOUT_MS
+      });
+      await participant.getByRole("button", { name: "5", exact: true }).click();
+      await warning;
+      await participant.unroute("**/response");
+      await expect(picture).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+      await assertNoBackendError(participant);
+    });
   });
 });
 
