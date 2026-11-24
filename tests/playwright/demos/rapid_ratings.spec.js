@@ -59,16 +59,15 @@ test("ratings advance while the server's replies are held back", { tag: "@inplac
     await expectPicture("red circle", STEP_TIMEOUT_MS);
     const gate = await responseGate(participant);
 
-    // Answers go one at a time; the break after the fourth trial stops the
-    // prediction after "green square".
+    // Answers go one at a time. The first page carries the next two trials,
+    // so the third answer waits for the server.
     gate.hold();
     await rate(5);
     await expectPicture("orange triangle");
     await rate(4);
     await expectPicture("yellow star");
     await participant.keyboard.press("3");
-    await expectPicture("green square");
-    await rate(2);
+    await expect(picture).toBeHidden();
     expect(gate.posted).toBe(1);
     const leavingIsQuestioned = () =>
       participant.evaluate(() => {
@@ -79,6 +78,9 @@ test("ratings advance while the server's replies are held back", { tag: "@inplac
     // Answers not yet saved make the browser ask before the page closes.
     expect(await leavingIsQuestioned()).toBe(true);
     gate.release();
+    // The break after the fourth trial stops the prediction.
+    await expectPicture("green square", STEP_TIMEOUT_MS);
+    await rate(2);
     await waitForMainBodyContains(participant, "Take a short break.", STEP_TIMEOUT_MS);
     expect(await leavingIsQuestioned()).toBe(false);
     // Each answer carries only its own trial's events.
