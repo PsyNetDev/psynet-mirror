@@ -134,9 +134,10 @@ class LiveGameRecord:
         received. That's :data:`~psynet.live_game.FINISHED` for a game whose
         ``is_over`` returned ``True`` or that reached its ``duration``,
         :data:`~psynet.live_game.TIMEOUT`,
-        :data:`~psynet.live_game.PLAYERS_LEFT` or
-        :data:`~psynet.live_game.FAILED`, ``"not_joined"`` if no player
-        opened the game page in time, or a reason that the game's own
+        :data:`~psynet.live_game.PLAYERS_LEFT`,
+        :data:`~psynet.live_game.TOO_FEW_READY` if too few players opened
+        the game page in time for it to start,
+        :data:`~psynet.live_game.FAILED`, or a reason that the game's own
         ``end_reason`` gives, such as ``"deal"``. It's ``None`` until the
         game has ended, or if its record couldn't be saved."""
         row = self._row()

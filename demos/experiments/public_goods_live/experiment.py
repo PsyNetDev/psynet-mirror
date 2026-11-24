@@ -58,8 +58,6 @@ LATE_AFTER = 15
 # opened it this long after the team reached it.
 READY_SECONDS = 15
 GROUPING_WAIT = 20
-# The game's end reason for a round that fewer than two players opened.
-TOO_FEW = "too_few"
 
 
 class Contribute(LiveMessage):
@@ -79,6 +77,9 @@ class PublicGoods(LiveGame):
     name = "public_goods"
     messages = [Contribute]
     duration = ROUND_SECONDS
+    # Played alone, a round would only multiply the player's own tokens, so
+    # a round that fewer than min_players, two, have opened by then doesn't
+    # start: PsyNet ends it at once, with the reason "too_few_ready".
     ready_timeout = READY_SECONDS
     # A round always lasts its duration: a player who leaves during it keeps
     # their part in it, and is failed as late at the next round's barrier.
@@ -90,19 +91,7 @@ class PublicGoods(LiveGame):
             "multiplier": settings["multiplier"],
             # Each player's contribution, in player order.
             "contributions": [0 for player in players],
-            "too_few": False,
         }
-
-    def on_start(self, state):
-        # Played alone, a round would only multiply the player's own tokens,
-        # so it ends at once if fewer than min_players opened the game.
-        state["too_few"] = len(state["psynet"]["ready"]) < self.min_players
-
-    def is_over(self, state):
-        return state["too_few"]
-
-    def end_reason(self, state):
-        return TOO_FEW
 
     def view(self, state, player):
         # Contributions are public, so every player sees them all, with the
@@ -113,7 +102,6 @@ class PublicGoods(LiveGame):
             "endowment": state["endowment"],
             "multiplier": state["multiplier"],
             "no_shows": self._no_shows(state),
-            "too_few": state["too_few"],
             **self._result(state),
             "contributions": state["contributions"],
         }
@@ -129,8 +117,9 @@ class PublicGoods(LiveGame):
 
     def _result(self, state):
         """Return the pot and each player's payoff, leaving out the
-        no-shows. A round that too few players opened has no pot, and the
-        players who opened it keep their endowment."""
+        no-shows. A round that too few players opened, which PsyNet ended
+        without starting it, has no pot, and the players who opened it keep
+        their endowment."""
         no_shows = self._no_shows(state)
         # What each player put in: None for a no-show.
         contributions = [
@@ -138,7 +127,7 @@ class PublicGoods(LiveGame):
             for player, tokens in enumerate(state["contributions"])
         ]
         played = [tokens for tokens in contributions if tokens is not None]
-        if state["too_few"]:
+        if state["psynet"]["too_few_ready"]:
             pot = share = None
         else:
             pot = sum(played)
@@ -155,11 +144,7 @@ class PublicGoods(LiveGame):
         }
 
     def outcome(self, state, reason):
-        result = self._result(state)
-        if not result["n_players"]:
-            # Nobody opened the round ("not_joined"), so it had no pot either.
-            result.update(pot=None, share=None)
-        return result
+        return self._result(state)
 
     def answer(self, outcome, reason, player):
         contributed = outcome["contributions"][player]
@@ -217,6 +202,8 @@ def contribution_page(round_number, settings):
             id="pg-game",
         ),
         player_left_message="A player isn't on the game page.",
+        # Also shown when too few players opened the round.
+        no_game_message="This round can't be played without at least two players.",
         js_page_modules=["/static/public-goods.js"],
         css_links=["/static/public-goods.css"],
         time_estimate=ROUND_SECONDS,
@@ -272,9 +259,9 @@ def _player_round_row(trial):
         "trial_id": trial.id,
         # Counted from 0, as in the other demos' exports.
         "round": trial.sync_group_round,
-        # How the round ended: "finished" when its time was up, TOO_FEW when
-        # fewer than two players opened it, or "not_joined" when none did, so
-        # it had no pot.
+        # How the round ended: "finished" when its time was up, or PsyNet's
+        # "too_few_ready" when fewer than two players opened it, so it had no
+        # pot.
         "end_reason": trial.live_game and trial.live_game.end_reason,
         # False for a player who never opened the round's game page, whose
         # contributed and share are None.

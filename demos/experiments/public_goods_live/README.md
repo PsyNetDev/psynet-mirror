@@ -18,10 +18,11 @@ It is the live counterpart of `public_goods`, with the same team set-up:
   they open the page during the round, they join it and share the pot.
   Otherwise they don't share the pot, aren't paid for the round, and are
   failed once the round ends (`absent_action="fail"`).
-- If fewer than two members open a round's game page, the round can't be
-  played: it ends as it starts, with the end reason `"too_few"` and no
-  pot, rather than being played alone. The member who opened it keeps
-  their 10 tokens for the round, and their page says so. The members who
+- If fewer than two members (the game's `min_players`) open a round's game
+  page within `READY_SECONDS`, the round can't be played: PsyNet ends it
+  without starting it, with the end reason `"too_few_ready"`, rather than
+  letting it be played alone, and it has no pot. The member who opened it
+  keeps their 10 tokens for the round, and their page says so. The members who
   didn't are failed, which leaves the team below its quorum, so the member
   who opened it is failed too, as below, and goes to the end of the
   experiment without a feedback page.
@@ -33,7 +34,7 @@ It is the live counterpart of `public_goods`, with the same team set-up:
   participant for whom no team forms within `GROUPING_WAIT` (the grouper's
   default `max_wait_action="fail"`).
 - The export's `player_round` rows say how each round ended
-  (`end_reason`: `"finished"`, `"too_few"` or `"not_joined"`), whether the
+  (`end_reason`: `"finished"` or `"too_few_ready"`), whether the
   player opened it (`arrived`), and how many players did (`n_players`).
 - Failing isn't a penalty: it ends a session that can no longer
   contribute, and failed participants are paid for the rounds they

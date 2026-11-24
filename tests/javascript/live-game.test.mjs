@@ -552,6 +552,40 @@ describe("psynet.liveGame", () => {
     assert.equal(sockets.length, 0);
   });
 
+  it("shows the no-game notice to a ready player whose game too few players were ready for", () => {
+    session = { ...session, noGameMessage: "No partner." };
+    const final = (you) => ({ ...view(null), psynet: { ...view(null).psynet, ready: [0], you } });
+    for (const you of [1, 0]) {
+      changePage();
+      liveGame.onChange(() => {});
+      sockets.at(-1).view(final(you), "too_few_ready");
+    }
+    // Only the ready player, 0, sees it, and it goes with the page.
+    assert.deepEqual(
+      notices.filter(([, text]) => text !== null),
+      [["psynet-no-game-notice", "No partner."]]
+    );
+    assert.equal(hiddenGames, 0);
+    const before = notices.length;
+    leavePage();
+    assert.ok(plain(notices.slice(before)).some(([id, text]) => id === "psynet-no-game-notice" && text === null));
+
+    // A page that loads once the game has ended shows it too, unless the
+    // page has no such message.
+    for (const noGameMessage of ["No partner.", null]) {
+      session = { ...session, noGameMessage };
+      changePage();
+      liveGame.onChange(() => {});
+      const shown = notices.length;
+      sockets.at(-1).fire("onEnded", "too_few_ready", final(0));
+      assert.equal(
+        notices.slice(shown).some(([id, text]) => id === "psynet-no-game-notice" && text !== null),
+        noGameMessage !== null
+      );
+      leavePage();
+    }
+  });
+
   it("turns away a newcomer to a game that had stopped taking players, with the Next button", () => {
     session = {
       ...session,
