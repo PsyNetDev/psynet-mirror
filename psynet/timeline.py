@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import inspect
 import json
+import logging
 import random
 import re
 import time
@@ -1229,16 +1230,19 @@ def _is_timeline_hold(page):
 _logged_waiting_reasons = set()
 
 
-def _log_waiting_for_the_server(where, page, reason):
+def _log_waiting_for_the_server(where, page, reason, level=logging.DEBUG):
     """Say why the browser waits for the server ``where`` (``"after"`` or ``"before showing"``) ``page``.
 
     Each reason is logged once per page class and label, so that authors can
-    find out why a page isn't shown without waiting.
+    find out why a page isn't shown without waiting. Trial makers that
+    prepare trials in advance log at INFO, as their author asked for this;
+    timeline pages log at DEBUG, as most of their waits are expected.
     """
     key = (where, type(page).__name__, page.label, reason)
     if key not in _logged_waiting_reasons:
         _logged_waiting_reasons.add(key)
-        logger.info(
+        logger.log(
+            level,
             "The browser waits for the server %s %s %r, because %s.",
             where,
             type(page).__name__,

@@ -174,7 +174,9 @@ The browser waits for the server as usual when:
 * the next page overrides ``consume`` or uses ``delegated_render``;
 * the answer includes a recording or another file to upload.
 
-The server log says, once for each page, why the browser waits for it.
+PsyNet logs, once for each page, why the browser waits for it. These
+messages are at DEBUG level, so see :ref:`detailed_log_messages` to show
+them.
 
 If a page shows something that the previous answer changes, for example from
 ``participant.var`` in a custom template, pass ``render_in_advance=False``:
