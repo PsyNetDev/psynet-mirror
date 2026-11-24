@@ -18,7 +18,7 @@ function run(pageUuid, state = {}) {
   const psynet = {
     timelineHold: null,
     nextPagePending: false,
-    log: { info() {} },
+    log: { info() {}, warn: () => calls.push("warn") },
     waiting: { stop: () => calls.push("stopWaiting") },
     stopArrivalUpdates: () => calls.push("stopArrivalUpdates"),
     loadNextTimelinePageWithReload: () => calls.push("reload"),
@@ -54,6 +54,15 @@ describe("psynet.moveOnAfterFailure", () => {
     assert.equal(moved, true);
     assert.equal(psynet.nextPagePending, true);
     assert.deepEqual(calls, ["stopWaiting", "stopArrivalUpdates", "reload"]);
+  });
+
+  it("lets the participant submit again if the reload fails", async () => {
+    const { calls, psynet } = run("page-1", {
+      loadNextTimelinePageWithReload: () => Promise.reject(new Error("upload")),
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(psynet.nextPagePending, false);
+    assert.equal(calls.at(-1), "warn");
   });
 
   for (const [label, pageUuid, state] of [

@@ -84,7 +84,11 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     assert participant not in SimpleSyncGroup.query.get(group.id).active_participants
 
     finishers, groups = {}, {}
-    for group_type, accepts_top_ups in [("finished", False), ("open", True)]:
+    for group_type, accepts_top_ups in [
+        ("finished", False),
+        ("open", True),
+        ("pending", False),
+    ]:
         finisher = _participant()
         finisher.elt_id = ["successful_end", 0]
         group = SimpleSyncGroup(
@@ -105,6 +109,10 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     db_session.flush()
     groups["finished"].add_participant(leaver)
     groups["finished"].remove_participant(leaver, reason="late")
+    newcomer = _participant()
+    db_session.add(newcomer)
+    db_session.flush()
+    groups["pending"]._add_link(newcomer, admitted=False)
     dissolved = SimpleSyncGroup(
         group_type="dissolved-group",
         initial_group_size=2,
@@ -126,6 +134,9 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     assert "<strong>0</strong>" in finished_row
     assert f">{finishers['finished'].id}</span>" in finished_row
     assert "2026-01-02 03:04:05" in finished_row
+    pending_row = _row(page, "pending-group")
+    assert "Active" in pending_row
+    assert "<strong>0</strong>" in pending_row
     open_row = _row(page, "open-group")
     assert "Active" in open_row
     assert "Accepts top-ups" in open_row

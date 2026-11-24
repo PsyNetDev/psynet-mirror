@@ -1231,7 +1231,11 @@
       psynet.nextPagePending = true;
       psynet.waiting.stop();
       psynet.stopArrivalUpdates();
-      psynet.loadNextTimelinePageWithReload();
+      Promise.resolve(psynet.loadNextTimelinePageWithReload()).catch((error) => {
+        // The next submit or reload shows the failure page instead.
+        psynet.log.warn("Could not load the failure page: " + error);
+        psynet.nextPagePending = false;
+      });
       return true;
     };
 

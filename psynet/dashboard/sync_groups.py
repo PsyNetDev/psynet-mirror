@@ -204,10 +204,13 @@ def _summarize_waiting_at_barriers(participant_ids, waiting_by_participant):
 
 
 def _is_taking_part(participant):
-    """Return whether ``participant`` is still working through the main timeline.
+    """Return whether ``participant`` is still working and not yet in the timeline's end logic.
 
-    Every timeline branch other than ``"main"`` is end logic, such as the
-    "That's the end!" page shown before the participant clicks Finish.
+    End logic includes the "That's the end!" page shown before the
+    participant clicks Finish. Every timeline branch other than ``"main"``
+    is end logic, so this agrees with
+    :meth:`~psynet.timeline.Timeline.participant_is_in_end_logic` without
+    instantiating the experiment for each of the dashboard's members.
     """
     return (
         not participant.failed
