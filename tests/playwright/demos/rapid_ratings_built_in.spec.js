@@ -66,18 +66,18 @@ test("built-in rating pages advance while the server's replies are held back", {
 
     await expectPicture("red circle", STEP_TIMEOUT_MS);
 
-    // Answers go one at a time; the break after the fourth trial needs the
-    // server, so the fourth answer waits for the others to be sent.
+    // Answers go one at a time. Two trials are prepared ahead, so the third
+    // answer waits for the server before the fourth trial shows.
     gate.hold();
     await rate(5);
     await expectPicture("orange triangle");
     await rate(4);
     await expectPicture("yellow star");
     await rate(3);
-    await expectPicture("green square");
-    await rate(2);
     expect(gate.posted).toBe(1);
     gate.release();
+    await expectPicture("green square", STEP_TIMEOUT_MS);
+    await rate(2);
     await waitForMainBodyContains(participant, "Take a short break.", STEP_TIMEOUT_MS);
     await next();
 
