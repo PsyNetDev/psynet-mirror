@@ -226,9 +226,22 @@
     // it carries no offer: the browser asks for one for the page on screen,
     // once the answers given ahead are saved.
     const serverRendersOffer = Boolean(modal.dataset.offerId);
+    // If a reply replaced the page meanwhile, this page's dialog is gone, so
+    // the click is passed on to the new page's Leave button.
+    function leaveFromTheNewPage() {
+      (
+        document.getElementById("early-exit-button") ||
+        document.getElementById("early-exit-open")
+      )?.click();
+      return false;
+    }
     async function prepareOffer() {
       if (serverRendersOffer) return true;
-      await global.psynet?.answers?.sending;
+      // Answers given meanwhile start another send, so wait for each.
+      while (global.psynet?.answers?.sending) {
+        await global.psynet.answers.sending;
+        if (signal.aborted) return leaveFromTheNewPage();
+      }
       const response = await fetch(
         "/prepare_early_exit_plan/" + encodeURIComponent(modal.dataset.assignmentId),
         {
@@ -238,6 +251,7 @@
         },
       );
       const result = await response.json().catch(() => ({}));
+      if (signal.aborted) return leaveFromTheNewPage();
       if (result.error_code === "stale_early_exit_offer") {
         global.psynet?.allowUnload?.();
         global.location.reload();
