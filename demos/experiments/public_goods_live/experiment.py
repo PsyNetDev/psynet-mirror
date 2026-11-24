@@ -79,6 +79,9 @@ class PublicGoods(LiveGame):
     messages = [Contribute]
     duration = ROUND_SECONDS
     ready_timeout = READY_SECONDS
+    # A round always lasts its duration: a player who leaves during it keeps
+    # their part in it, and is failed as late at the next round's barrier.
+    away_timeout = None
 
     def initial_state(self, players):
         # Each player's contribution, in player order.
@@ -142,7 +145,11 @@ class PublicGoods(LiveGame):
         }
 
     def outcome(self, state, reason):
-        return self._result(state)
+        result = self._result(state)
+        if not result["n_players"]:
+            # Nobody opened the round ("not_joined"), so it had no pot either.
+            result.update(pot=None, share=None)
+        return result
 
     def answer(self, outcome, reason, player):
         contributed = outcome["contributions"][player]
@@ -227,9 +234,9 @@ class ContributionTrial(Trial):
         )
 
     def gives_feedback(self, experiment, participant):
-        # A round with too few players has no pot to show, and its player
-        # is failed by the grouper's below_quorum as it ends.
-        return self.live_game.end_reason != TOO_FEW
+        # A round that fewer than two players opened has no pot to show, and
+        # its players are failed (by absent_action or below_quorum) as it ends.
+        return self.live_game.outcome["pot"] is not None
 
     def show_feedback(self, experiment, participant):
         answer = self.answer
@@ -255,8 +262,9 @@ def _player_round_row(trial):
         "trial_id": trial.id,
         # Counted from 0, as in the other demos' exports.
         "round": trial.sync_group_round,
-        # How the round ended: "finished" when its time was up, or TOO_FEW
-        # when fewer than two players opened it, so it had no pot.
+        # How the round ended: "finished" when its time was up, TOO_FEW when
+        # fewer than two players opened it, or "not_joined" when none did, so
+        # it had no pot.
         "end_reason": trial.live_game and trial.live_game.end_reason,
         # False for a player who never opened the round's game page, whose
         # contributed and share are None.
@@ -265,7 +273,7 @@ def _player_round_row(trial):
         # What the team put in the pot, before it was multiplied, or None
         # for a round without one.
         "pot": team.get("pot"),
-        # How many players shared the pot.
+        # How many players opened the round, who shared the pot if it had one.
         "n_players": team.get("n_players"),
         # Each player's part of the multiplied pot.
         "share": team.get("share") if arrived else None,

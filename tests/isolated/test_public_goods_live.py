@@ -67,10 +67,8 @@ class TestPublicGoodsLive:
             ),
         )
         row = demo._player_round_row(trial)
-        return {
-            key: row[key]
-            for key in ["arrived", "contributed", "pot", "share", "earned"]
-        }
+        keys = ["end_reason", "arrived", "contributed", "pot", "n_players"]
+        return {key: row[key] for key in keys + ["share", "earned"]}
 
     def test_a_player_who_never_opens_the_game_page_is_left_out_of_the_pot(self, demo):
         game = self._started_without(demo, [2])
@@ -88,9 +86,11 @@ class TestPublicGoodsLive:
         ]
         assert game.game.performance_reward(game.outcome(), "finished", 2) == 0
         assert self._export_row(demo, game, 2) == {
+            "end_reason": "finished",
             "arrived": False,
             "contributed": None,
             "pot": 4,
+            "n_players": 2,
             "share": None,
             "earned": 0,
         }
@@ -103,9 +103,11 @@ class TestPublicGoodsLive:
         assert game.is_over() and game.end_reason() == demo.TOO_FEW
         assert game.view(0)["payoffs"] == [demo.ENDOWMENT, 0, 0]
         assert self._export_row(demo, game, 0) == {
+            "end_reason": demo.TOO_FEW,
             "arrived": True,
             "contributed": 0,
             "pot": None,
+            "n_players": 1,
             "share": None,
             "earned": demo.ENDOWMENT,
         }

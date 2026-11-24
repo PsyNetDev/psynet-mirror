@@ -33,7 +33,13 @@ export function activate({root, vars, psynet}) {
   live.enableWhilePlaying(slider);
   live.predict((predicted, type, message) => {
     if (type === "contribute") {
+      let change = message.tokens - predicted.contributions[live.player];
       predicted.contributions[live.player] = message.tokens;
+      if (predicted.pot !== null && !predicted.no_shows.includes(live.player)) {
+        predicted.pot += change;
+        predicted.share = (rules.multiplier * predicted.pot) / predicted.n_players;
+        predicted.payoffs[live.player] = rules.endowment - message.tokens + predicted.share;
+      }
     }
   });
 
@@ -63,14 +69,17 @@ export function activate({root, vars, psynet}) {
     instructions.hidden = live.ended;
     if (view.too_few) {
       pot.textContent = "No pot this round.";
-      earn.textContent = `Too few players opened the game, so you keep your ${rules.endowment} tokens.`;
+      earn.textContent = view.payoffs[live.player]
+        ? `Too few players opened the game, so you keep your ${rules.endowment} tokens.`
+        : "Too few players opened the game.";
       return;
     }
     // The server's pot and payoffs, as the round's outcome counts them.
     let total = view.pot;
     pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
     let shareText = +view.share.toFixed(2);
-    let earned = live.started ? +view.payoffs[live.player].toFixed(2) : rules.endowment;
+    let earned =
+      live.started || live.ended ? +view.payoffs[live.player].toFixed(2) : rules.endowment;
     earn.textContent = live.ended
       ? `Each player gets ${shareText} tokens from the pot, and you earn ${earned} tokens.`
       : `If the round ended now, each player would get ${shareText} tokens ` +
