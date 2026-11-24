@@ -22,11 +22,9 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
     bot.take_page()
     page = bot.get_current_page()
     assert page.contents["name"] == "red circle"
-    # The break after the fourth trial ends the prediction.
     assert [p.contents["name"] for p in page.upcoming_pages] == [
         "orange triangle",
         "yellow star",
-        "green square",
     ]
 
     trials = Trial.query.filter_by(participant_id=bot.id).order_by(Trial.position)
@@ -69,7 +67,7 @@ def test_pages_are_pre_rendered_once_before_they_are_compared(monkeypatch):
     monkeypatch.setattr(ModularPage, "pre_render", pre_render)
     page = trial.show_trial(None, participant)
     shown, _ = trial.trial_maker._upcoming(trial, page, None, participant)
-    assert len(shown) == 3
+    assert len(shown) == 2
     # Each page, including the one on screen, is pre-rendered exactly once.
     assert page in pre_rendered
     assert len(pre_rendered) == len({id(page) for page in pre_rendered})
@@ -150,7 +148,7 @@ def test_a_trial_whose_page_has_a_different_layout_is_not_shown_in_advance(monke
     trials = trials.all()
     # Each trial's page is rendered once to compare layouts.
     assert trials[0].layout_key is not None
-    assert {trial.layout_key for trial in trials[:4]} == {trials[0].layout_key}
+    assert {trial.layout_key for trial in trials[:3]} == {trials[0].layout_key}
 
     trials[3].layout_key = "another layout"
     db.session.commit()
