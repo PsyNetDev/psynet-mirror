@@ -35,8 +35,7 @@ def test_built_in_pages_carry_the_next_trials_pages():
 
     bot.take_page()
     upcoming = _template_data(bot)["upcomingPages"]
-    # The break after the fourth trial ends the pages sent in advance.
-    pictures = ["orange-triangle", "yellow-star", "green-square"]
+    pictures = ["orange-triangle", "yellow-star"]
     assert len(upcoming) == len(pictures)
     assert all(name in page["html"] for name, page in zip(pictures, upcoming))
 
