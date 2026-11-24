@@ -1192,17 +1192,8 @@
         return;
       }
       (message.targets || []).forEach((target) => {
-        // Failed from another request, such as the dashboard: the server
-        // now shows the failure page instead of this one.
-        if (
-          target.reason === "participant_failed" &&
-          target.page_uuid &&
-          target.page_uuid === window.pageUuid &&
-          !psynet.timelineHold &&
-          !psynet.nextPagePending
-        ) {
-          psynet.log.info("Participant failed; loading the next page.");
-          psynet.loadNextTimelinePageWithReload();
+        if (target.reason === "participant_failed") {
+          psynet.moveOnAfterFailure(target.page_uuid);
           return;
         }
         if (
@@ -1221,6 +1212,27 @@
           psynet.applyArrivalNotice(target.notice, { removed: target.removed });
         }
       });
+    };
+
+    // The participant was failed from another request, such as the dashboard,
+    // while on the page ``pageUuid``: the server now shows the failure page.
+    // Held pages are moved on by their hold wake, and a pending submission
+    // gets the failure page in its response.
+    psynet.moveOnAfterFailure = function (pageUuid) {
+      if (
+        !pageUuid ||
+        pageUuid !== window.pageUuid ||
+        psynet.timelineHold ||
+        psynet.nextPagePending
+      ) {
+        return false;
+      }
+      psynet.log.info("Participant failed; loading the next page.");
+      psynet.nextPagePending = true;
+      psynet.waiting.stop();
+      psynet.stopArrivalUpdates();
+      psynet.loadNextTimelinePageWithReload();
+      return true;
     };
 
     // Shows the notice and ready seats of an arrival snapshot. Responses can
@@ -1283,6 +1295,9 @@
         }
         // The answer describes the page that asked for it.
         if (pageUuid !== window.pageUuid) {
+          return;
+        }
+        if (psynet.moveOnAfterFailure(data?.failed_on_page)) {
           return;
         }
         psynet.applyArrivalSnapshot(data || {}, request);

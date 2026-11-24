@@ -44,8 +44,10 @@ it("drops arrival snapshots that come back after a newer one", () => {
 
 it("ignores an arrival snapshot that comes back after the page changed", () => {
   const applied = [];
+  const failedOn = [];
   const psynet = { uniqueId: "p1", arrivalUpdates: {} };
   psynet.applyArrivalSnapshot = (data) => applied.push(data);
+  psynet.moveOnAfterFailure = (pageUuid) => failedOn.push(pageUuid) && false;
   const window = { pageUuid: "page-1" };
   const pending = [];
   const $ = { ajax: () => ({ done: (callback) => pending.push(callback) }) };
@@ -58,8 +60,12 @@ it("ignores an arrival snapshot that comes back after the page changed", () => {
   psynet.fetchArrivalNotice();
   window.pageUuid = "page-2";
   psynet.fetchArrivalNotice();
-  pending.forEach((callback, i) => callback({ request: i }));
-  assert.deepEqual(applied, [{ request: 1 }]);
+  pending.forEach((callback, i) =>
+    callback({ request: i, failed_on_page: `page-${i + 1}` })
+  );
+  assert.deepEqual(applied, [{ request: 1, failed_on_page: "page-2" }]);
+  // A participant failed before the websocket connected still moves on.
+  assert.deepEqual(failedOn, ["page-2"]);
 });
 
 it("fetches once for refresh requests that come close together", (t) => {

@@ -5108,6 +5108,8 @@ def test_dashboard_fail_moves_the_failed_participants_open_page_on(
             "targets": [{"reason": "participant_failed", "page_uuid": page_uuid}],
         },
     ) in publications
+    # For a page whose websocket connects after the message was published.
+    assert arrival_notice_payload(first.unique_id)["failed_on_page"] == page_uuid
 
 
 @pytest.mark.parametrize(

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 import pytest
 import requests
@@ -82,7 +83,7 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     assert participant.failed
     assert participant not in SimpleSyncGroup.query.get(group.id).active_participants
 
-    finishers = {}
+    finishers, groups = {}, {}
     for group_type, accepts_top_ups in [("finished", False), ("open", True)]:
         finisher = _participant()
         finisher.elt_id = ["successful_end", 0]
@@ -97,7 +98,13 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
         db_session.add_all([finisher, group])
         db_session.flush()
         group.add_participant(finisher)
-        finishers[group_type] = finisher
+        finishers[group_type], groups[group_type] = finisher, group
+    finishers["finished"].end_time = datetime(2026, 1, 2, 3, 4, 5)
+    leaver = _participant()
+    db_session.add(leaver)
+    db_session.flush()
+    groups["finished"].add_participant(leaver)
+    groups["finished"].remove_participant(leaver, reason="late")
     dissolved = SimpleSyncGroup(
         group_type="dissolved-group",
         initial_group_size=2,
@@ -118,6 +125,7 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     assert "Finished" in finished_row
     assert "<strong>0</strong>" in finished_row
     assert f">{finishers['finished'].id}</span>" in finished_row
+    assert "2026-01-02 03:04:05" in finished_row
     open_row = _row(page, "open-group")
     assert "Active" in open_row
     assert "Accepts top-ups" in open_row
