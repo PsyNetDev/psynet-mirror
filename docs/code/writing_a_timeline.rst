@@ -265,8 +265,10 @@ See :class:`~psynet.end.SuccessfulEndLogic` and
 :class:`~psynet.end.UnsuccessfulEndLogic`.
 
 When PsyNet ends a multiplayer session itself (a participant waited too long
-at a barrier, was too slow to reach the next one, or their group became too
-small), the unsuccessful end page says why, for example "We waited too long
+at a barrier, was too slow to reach the next one, their group became too
+small, or they didn't open or left a live game whose
+:class:`~psynet.live_game.PlayLiveGame` step has ``absent_action="fail"``),
+the unsuccessful end page says why, for example "We waited too long
 for other participants, so we ended your session." Other endings, such as
 failing a prescreen, get no such line. To explain your own reasons, pass a
 function of the participant that returns a line, or ``None`` to keep
