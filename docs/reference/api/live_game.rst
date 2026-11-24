@@ -42,6 +42,15 @@ Live games
     :attr:`~psynet.live_game.LiveGame.away_timeout` ends with when too few
     players are left.
 
+.. data:: TOO_FEW_READY
+    :value: "too_few_ready"
+
+    The reason a game ends with, at once and without starting, when fewer
+    than its :attr:`~psynet.live_game.LiveGame.min_players` players are
+    ready at the end of the ready step, including when none of them opened
+    the game page. Its :meth:`~psynet.live_game.LiveGame.absences` says
+    ``"no_show"`` for the players who weren't ready.
+
 .. data:: TOO_LATE
     :value: "too_late"
 
