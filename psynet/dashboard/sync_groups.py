@@ -312,7 +312,7 @@ def _simple_group_fields(group):
 
 def _group_row(group, waiting_by_participant):
     """Build the dashboard row data for one sync group."""
-    participant_ids = {participant.id for participant in group.participants}
+    participant_ids = {participant.id for participant in _current_members(group)}
     participants = sorted(
         [_participant_row(link, group) for link in group.participant_links],
         key=lambda participant: participant["id"],

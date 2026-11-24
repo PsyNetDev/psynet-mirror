@@ -13,24 +13,59 @@ const BODY = SOURCE.match(
   /psynet\.moveOnAfterFailure = function \(pageUuid\) \{([\s\S]*?)\n    \};/
 )[1];
 
-function run(pageUuid, state = {}) {
+const NEXT_PAGE_BODY = SOURCE.match(
+  /psynet\.nextPage = async function \([\s\S]*?\) \{([\s\S]*?)\n    \};/
+)[1];
+const AsyncFunction = (async () => {}).constructor;
+
+function setup(state = {}) {
   const calls = [];
+  const window = { pageUuid: "page-1" };
   const psynet = {
     timelineHold: null,
     nextPagePending: false,
-    log: { info() {}, warn: () => calls.push("warn") },
+    pageReady: true,
+    response: { staged: { rawAnswer: "answer", metadata: {}, blobs: {} } },
+    log: { info() {}, debug() {}, warn: () => calls.push("warn") },
     waiting: { stop: () => calls.push("stopWaiting") },
     stopArrivalUpdates: () => calls.push("stopArrivalUpdates"),
     loadNextTimelinePageWithReload: () => calls.push("reload"),
     ...state,
   };
-  const window = { pageUuid: "page-1" };
-  const moved = new Function("psynet", "window", "pageUuid", BODY)(
-    psynet,
-    window,
-    pageUuid
-  );
-  return { moved, calls, psynet };
+  psynet.moveOnAfterFailure = (pageUuid) =>
+    new Function("psynet", "window", "pageUuid", BODY)(psynet, window, pageUuid);
+  return { calls, psynet, window };
+}
+
+function run(pageUuid, state = {}) {
+  const { calls, psynet } = setup(state);
+  return { moved: psynet.moveOnAfterFailure(pageUuid), calls, psynet };
+}
+
+// Runs psynet.nextPage with a submit that receives the failure message
+// mid-flight, then calls ``settle(window)`` and returns its result.
+async function submitWhileFailed(settle) {
+  const { calls, psynet, window } = setup();
+  const submitGenericResponse = async () => {
+    psynet.moveOnAfterFailure("page-1");
+    assert.deepEqual(calls, []);
+    return settle(window);
+  };
+  await new AsyncFunction(
+    "psynet",
+    "window",
+    "psynetTemplateData",
+    "submitGenericResponse",
+    "options",
+    "rawAnswer",
+    "metadata",
+    "blobs",
+    "onSuccessResponse",
+    "onErrorResponse",
+    "onRejection",
+    NEXT_PAGE_BODY
+  )(psynet, window, { flags: { lucidRecruitment: false } }, submitGenericResponse, {});
+  return { calls, psynet };
 }
 
 describe("psynet.handleArrivalUpdateMessage", () => {
@@ -65,21 +100,24 @@ describe("psynet.moveOnAfterFailure", () => {
     assert.equal(calls.at(-1), "warn");
   });
 
-  it("remembers a failure during a submit, for nextPage if it is rejected", () => {
-    const { moved, psynet } = run("page-1", { nextPagePending: true });
-    assert.equal(moved, false);
-    assert.equal(psynet.failedDuringSubmit, "page-1");
-    assert.match(
-      SOURCE,
-      /nextPagePending = false;[\s\S]{0,300}psynet\.moveOnAfterFailure\(psynet\.failedDuringSubmit\)/
-    );
+  it("moves on once a submit made during the failure is rejected", async () => {
+    const { calls, psynet } = await submitWhileFailed(() => false);
+    assert.equal(psynet.nextPagePending, true);
+    assert.deepEqual(calls, ["stopWaiting", "stopArrivalUpdates", "reload"]);
+  });
+
+  it("does not move on again once the submit has reached another page", async () => {
+    const { calls } = await submitWhileFailed((window) => {
+      window.pageUuid = "page-2";
+      return false;
+    });
+    assert.deepEqual(calls, []);
   });
 
   for (const [label, pageUuid, state] of [
     ["another page", "page-0", {}],
     ["no failure", undefined, {}],
     ["a held page", "page-1", { timelineHold: {} }],
-    ["a pending submission", "page-1", { nextPagePending: true }],
   ]) {
     it(`does nothing for ${label}`, () => {
       const { moved, calls } = run(pageUuid, state);

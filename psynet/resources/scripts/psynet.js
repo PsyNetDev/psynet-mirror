@@ -542,6 +542,7 @@
       psynet.setPageReady(false);
       psynet.pageLoaded = false;
       psynet.nextPagePending = false;
+      psynet.failedDuringSubmit = null;
       psynet.media.audioRequired = false;
       psynet.media.otherAudioContexts = [];
       // A sound dialog left open by the previous page belongs to it.
