@@ -1,6 +1,6 @@
-function tokenRow(name, tokens, endowment, you) {
+function tokenRow(name, tokens, endowment, you, absent) {
   let row = document.createElement("div");
-  row.className = `pg-row${you ? " pg-row-you" : ""}`;
+  row.className = `pg-row${you ? " pg-row-you" : ""}${absent ? " pg-row-absent" : ""}`;
   let label = document.createElement("span");
   label.className = "pg-name";
   label.textContent = name;
@@ -13,7 +13,7 @@ function tokenRow(name, tokens, endowment, you) {
   }
   let count = document.createElement("span");
   count.className = "pg-count";
-  count.textContent = `${tokens} in the pot`;
+  count.textContent = absent ? "Not here" : `${tokens} in the pot`;
   row.append(label, slots, count);
   return row;
 }
@@ -43,6 +43,8 @@ export function activate({root, vars, psynet}) {
     if (document.activeElement !== slider) {
       slider.value = mine;
     }
+    // Before the round starts, every player who isn't ready yet is a no-show.
+    let noShows = live.started ? view.no_shows : [];
     rows.replaceChildren(
       ...contributions.map((tokens, player) =>
         tokenRow(
@@ -50,12 +52,13 @@ export function activate({root, vars, psynet}) {
           live.players[player]?.label ?? `Player ${player + 1}`,
           tokens,
           rules.endowment,
-          player === live.player
+          player === live.player,
+          noShows.includes(player)
         )
       )
     );
     let total = contributions.reduce((a, b) => a + b, 0);
-    let share = (rules.multiplier * total) / contributions.length;
+    let share = (rules.multiplier * total) / (contributions.length - noShows.length);
     pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
     let shareText = +share.toFixed(2);
     let earned = +(rules.endowment - mine + share).toFixed(2);

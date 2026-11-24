@@ -14,8 +14,9 @@ reward for the throws each player won, so a player who closes the page and
 never comes back is paid too. The whole pair's outcome is on the trial's
 ``group_round``.
 
-A player who doesn't come back for the next game is failed, and so is their
-partner, since a game for two can't go on with one; see ``README.md``.
+A player who doesn't come back for the next game, or never opens or leaves
+a game's page, is failed, and so is their partner, since a game for two
+can't go on with one; see ``README.md``.
 """
 
 import random
@@ -115,8 +116,12 @@ class RockPaperScissors(LiveGame):
     name = "rock_paper_scissors"
     messages = [Choose]
     min_players = max_players = 2
-    # A player whose partner closes the page for good isn't left waiting:
-    # the game ends 30 seconds later, which allows for a reload.
+    # A page opens within seconds, so a partner who hasn't opened it by then
+    # probably isn't coming, and the game starts without them.
+    ready_timeout = LATE_AFTER
+    # A player whose partner closes the page for good, or never opens it,
+    # isn't left waiting: the game ends 30 seconds later, which allows for a
+    # reload.
     away_timeout = 30
     # A game takes a minute or two, so this ends it within five minutes even
     # if both players stop choosing.
@@ -237,8 +242,8 @@ def rock_paper_scissors_page(game):
             id="rps-game",
         ),
         player_left_message=(
-            "Your partner has left the game. If they don't come back "
-            f"within {RockPaperScissors.away_timeout} seconds, it will end."
+            "Your partner isn't on the game page. If they don't open it "
+            f"within {RockPaperScissors.away_timeout} seconds, the game will end."
         ),
         no_game_message="This game can't be played without your partner.",
         waiting_status="Waiting for your partner to open the game",
@@ -275,6 +280,10 @@ class RockPaperScissorsTrial(Trial):
             # since the pair can't play without them.
             late_after=LATE_AFTER,
             late_action="fail",
+            # A partner who never opens the game page, or leaves it for good,
+            # is failed once the game's result is saved, and so is the
+            # player left, for the same reason.
+            absent_action="fail",
             page=rock_paper_scissors_page(game),
         )
 

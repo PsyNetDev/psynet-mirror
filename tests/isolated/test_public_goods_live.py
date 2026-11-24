@@ -38,6 +38,23 @@ class TestPublicGoodsLive:
         assert game.answer(2) == {"contributed": 0, "earned": demo.ENDOWMENT + share}
         assert game.view(0)["contributions"] == [10, 2, 0]
 
+    def test_a_player_who_never_opens_the_game_page_is_left_out_of_the_pot(self, demo):
+        game = LocalGame(demo.PublicGoods, players=3, start=False)
+        for player in [0, 1]:
+            game.send(player, {"type": "psynet_ready", "message": {}})
+        game.tick(demo.PublicGoods.ready_timeout)
+        game.send(0, demo.Contribute(tokens=4))
+
+        outcome = game.outcome()
+        share = demo.MULTIPLIER * 4 / 2
+        assert (outcome["n_players"], outcome["share"]) == (2, share)
+        assert outcome["payoffs"] == [
+            demo.ENDOWMENT - 4 + share,
+            demo.ENDOWMENT + share,
+            0,
+        ]
+        assert game.view(0)["no_shows"] == [2]
+
     def test_a_contribution_is_between_none_and_the_endowment(self, demo):
         game = LocalGame(demo.PublicGoods, players=3)
         with pytest.raises(Reject, match="between 0 and"):

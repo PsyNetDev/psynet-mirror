@@ -352,7 +352,9 @@ doesn't miss the start. A game page says its player is ready by itself a
 moment after it opens, and a bot is ready at once. The game starts once every
 player is ready, or at the game's ``ready_timeout``, 60 seconds after the
 wait ended unless the game sets it, and players who aren't ready then can
-still join and play. If none of the players has opened the game page by
+still join and play. Until they do, they count as away from the start, so
+the game's ``away_timeout`` ends a game that too few players opened (see
+`Joining and leaving`_). If none of the players has opened the game page by
 then, the game ends instead, with the reason ``"not_joined"``. A player
 whose page closes before the game starts isn't ready any more, until the
 page reconnects.
@@ -824,8 +826,9 @@ show it your own way, set ``player_left_message=None`` and use
 ``onPlayersAway``, which gets the numbers of the players who are away,
 and an empty list once they're all back. Like the notice, it counts a
 player once they've been away for a few seconds, so a reload doesn't. One
-of the game's first players who hasn't opened the page yet hasn't left, but
-a player added while the game runs is away until their page opens. The
+of the game's first players who hasn't opened the page yet isn't away
+before the game starts, but is from the start until their page opens, as a
+player added while the game runs is until theirs opens. The
 notice only says what happened: a game that should end when a player
 leaves ends through its ``away_timeout``, ``on_leave`` or ``is_over``.
 
@@ -1517,8 +1520,9 @@ in the state or a view. The parts a game can use are:
   in views.
 - ``ready``, the numbers of the players who are ready
 - ``away``, the numbers of the players who have left the game page and not
-  come back. One of the game's first players who hasn't opened it yet isn't
-  in it, but a player added while the game runs is, until their page opens.
+  come back. One of the game's first players who hasn't opened it yet is in
+  it once the game starts without them, and a player added while the game
+  runs is from when they're added, in both cases until their page opens.
 - ``accepts_players``, ``False`` once the game's ``accepts_players`` has
   returned ``False``, and ``too_late``, the numbers of the players added
   after that, who don't play (see :ref:`live-games-joining`)

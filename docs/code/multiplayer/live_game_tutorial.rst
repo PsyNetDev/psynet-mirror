@@ -110,10 +110,12 @@ The game is the class ``RockPaperScissors``:
 ``name`` is a name for the game, which must differ from the name of every
 other game in the experiment. ``messages`` lists the kinds of message that a
 page can send, which the next section describes. ``min_players`` and
-``max_players`` say that the game is for exactly two players. If a player
-closes the game page and doesn't come back within 30 seconds, which allows
-for a reload, ``away_timeout`` ends the game, so their partner isn't left
-waiting. ``timeout`` ends it after five minutes even if both players stop
+``max_players`` say that the game is for exactly two players. A game page
+opens within seconds, so ``ready_timeout`` starts the game 20 seconds after
+the pair reaches it, even if a player hasn't opened the page. If a player
+closes the game page, or never opens it, and doesn't come back within 30
+seconds, which allows for a reload, ``away_timeout`` ends the game, so their
+partner isn't left waiting. ``timeout`` ends it after five minutes even if both players stop
 choosing. :ref:`live-games-time-limits` lists all of a game's time limits.
 
 ``initial_state`` returns the state at the start of the game. It receives the
@@ -547,7 +549,11 @@ The rest of the timeline deals with a partner who doesn't come back:
 - A partner who is late is failed, and the grouper's
   ``below_quorum="fail"`` fails the player left behind, who has nobody to
   play the second game with. Both keep what they earned in the first game.
-  Every player who stays in the loop is therefore still in their pair, so
+- A partner who never opened a game's page, or left it for good, isn't
+  coming back either. The ``PlayLiveGame``'s ``absent_action="fail"`` fails
+  them once the game's result is saved, and ``below_quorum="fail"`` again
+  fails the player left behind (see :ref:`live-games-absent`).
+- Every player who stays in the loop is therefore still in their pair, so
   the loop needs no check of its own.
 
 Reference: :ref:`live-games-leaving` and :doc:`late_slow_and_leaving_players`.

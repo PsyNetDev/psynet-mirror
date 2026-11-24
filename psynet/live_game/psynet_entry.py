@@ -5,7 +5,9 @@ The ready step: the game starts once every player is ready, or at the
 game's ready_timeout. Once it starts, the game ends at its duration or its
 time limit, and rejects messages from then on. The entry also keeps track of
 which players are away, and since when, so that a game with an
-away_timeout can end once too few players are left. A player added while
+away_timeout can end once too few players are left. A player who isn't
+ready when the game starts is away from then until their page's ready
+message arrives. A player added while
 the game runs gets the next number, and players whose game has ended, by
 the game's is_done, don't count towards min_players. Once the game's
 accepts_players returns False, ``accepts_players`` stays False, and a player
@@ -65,6 +67,11 @@ class PlayerReady(LiveMessage):
         entry = _psynet_entry(state)
         if player not in entry["ready"]:
             entry["ready"].append(player)
+        if entry["started_at"] is not None and player in entry["away"]:
+            # The game started without them, which made them away, but only
+            # an open page sends it.
+            entry["away"].remove(player)
+            entry["away_since"][player] = None
         playing = len(entry["participant_ids"]) - len(entry["too_late"])
         if len(entry["ready"]) == playing:
             game._end_ready_step(state, now)

@@ -11,6 +11,12 @@ It is the live counterpart of `public_goods`, with the same team set-up:
 - A member who doesn't come back for the next round within `LATE_AFTER`
   seconds of reading the results is failed (`late_action="fail"`). The
   other two carry on, sharing the pot between them.
+- A member who reaches a round but doesn't open its game page within
+  `LATE_AFTER` seconds isn't coming, for example because they closed their
+  page as the round began. The round starts without them, and the others'
+  pages show them as not here. Unless they arrive in time to play, they
+  don't share the pot, aren't paid for the round, and are failed once the
+  round ends (`absent_action="fail"`).
 - When only one member remains, they are failed too (`below_quorum="fail"`),
   because a public goods game needs others to play with. So is a
   participant for whom no team forms within `GROUPING_WAIT` (the grouper's

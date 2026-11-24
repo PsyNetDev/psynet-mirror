@@ -73,6 +73,9 @@ class PublicGoods(LiveGame):
     name = "public_goods"
     messages = [Contribute]
     duration = ROUND_SECONDS
+    # A page opens within seconds, so the round starts without a player who
+    # hasn't opened it by then.
+    ready_timeout = LATE_AFTER
 
     def initial_state(self, players):
         # Each player's contribution, in player order.
@@ -80,17 +83,35 @@ class PublicGoods(LiveGame):
 
     def view(self, state, player):
         # Contributions are public, so every player sees them all.
-        return {"contributions": state["contributions"]}
+        return {
+            "contributions": state["contributions"],
+            "no_shows": self._no_shows(state),
+        }
+
+    def _no_shows(self, state):
+        """Return the players who haven't opened the game page, who don't
+        share the pot and aren't paid for the round."""
+        return [
+            player
+            for player, absence in enumerate(self.absences(state))
+            if absence == "no_show"
+        ]
 
     def outcome(self, state, reason):
         contributions = state["contributions"]
+        no_shows = self._no_shows(state)
         pot = sum(contributions)
-        share = MULTIPLIER * pot / len(contributions)
+        n_players = len(contributions) - len(no_shows)
+        share = MULTIPLIER * pot / n_players if n_players else 0
         return {
             "contributions": contributions,
             "pot": pot,
+            "n_players": n_players,
             "share": share,
-            "payoffs": [ENDOWMENT - tokens + share for tokens in contributions],
+            "payoffs": [
+                0 if player in no_shows else ENDOWMENT - tokens + share
+                for player, tokens in enumerate(contributions)
+            ],
         }
 
     def answer(self, outcome, reason, player):
@@ -146,7 +167,7 @@ def contribution_page(round_number):
             tags.p(id="pg-rejection", cls="pg-rejection"),
             id="pg-game",
         ),
-        player_left_message="A player has left the game.",
+        player_left_message="A player isn't on the game page.",
         js_page_modules=["/static/public-goods.js"],
         js_vars={"public_goods_rules": RULES},
         css_links=["/static/public-goods.css"],
@@ -169,6 +190,8 @@ class ContributionTrial(Trial):
             # on without them.
             late_after=LATE_AFTER,
             late_action="fail",
+            # So is a player who never opens the game page.
+            absent_action="fail",
         )
 
     def show_feedback(self, experiment, participant):
@@ -176,7 +199,7 @@ class ContributionTrial(Trial):
         team = self.live_game.outcome
         return InfoPage(
             f"The group put {team['pot']} tokens in the pot, which was "
-            f"multiplied and shared between {len(team['contributions'])} "
+            f"multiplied and shared between {team['n_players']} "
             f"players: {team['share']:g} tokens each. You put in "
             f"{answer['contributed']}, so you earned {answer['earned']:g} tokens "
             "this round.",
