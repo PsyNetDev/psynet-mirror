@@ -82,16 +82,22 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     assert participant.failed
     assert participant not in SimpleSyncGroup.query.get(group.id).active_participants
 
-    finisher = _participant()
-    finisher.elt_id = ["successful_end", 0]
-    finished = SimpleSyncGroup(
-        group_type="finished-group",
-        initial_group_size=1,
-        max_group_size=2,
-        quorum=1,
-        n_active_participants=1,
-        accepts_top_ups=False,
-    )
+    finishers = {}
+    for group_type, accepts_top_ups in [("finished", False), ("open", True)]:
+        finisher = _participant()
+        finisher.elt_id = ["successful_end", 0]
+        group = SimpleSyncGroup(
+            group_type=f"{group_type}-group",
+            initial_group_size=1,
+            max_group_size=2,
+            quorum=1,
+            n_active_participants=1,
+            accepts_top_ups=accepts_top_ups,
+        )
+        db_session.add_all([finisher, group])
+        db_session.flush()
+        group.add_participant(finisher)
+        finishers[group_type] = finisher
     dissolved = SimpleSyncGroup(
         group_type="dissolved-group",
         initial_group_size=2,
@@ -100,9 +106,7 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
         active=False,
         accepts_top_ups=True,
     )
-    db_session.add_all([finisher, finished, dissolved])
-    db_session.flush()
-    finished.add_participant(finisher)
+    db_session.add(dissolved)
     db_session.commit()
 
     page = session.get(f"{launched_experiment.base_url}/dashboard/sync_groups").text
@@ -112,6 +116,11 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
     )
     finished_row = _row(page, "finished-group")
     assert "Finished" in finished_row
+    assert "<strong>0</strong>" in finished_row
+    assert f">{finishers['finished'].id}<" in finished_row
+    open_row = _row(page, "open-group")
+    assert "Active" in open_row
+    assert "Accepts top-ups" in open_row
     dissolved_row = _row(page, "dissolved-group")
     assert "Closed" in dissolved_row
     assert "Accepts top-ups" not in dissolved_row

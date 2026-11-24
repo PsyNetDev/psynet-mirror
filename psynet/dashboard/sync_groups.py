@@ -207,6 +207,20 @@ def _is_taking_part(participant):
     )
 
 
+def _members_taking_part(group, *, current_only):
+    """Return the group's members who are still taking part (see ``_is_taking_part``).
+
+    With ``current_only``, only admitted members who are still in the group;
+    otherwise also pending members and members who have left it.
+    """
+    return [
+        link.participant
+        for link in group.participant_links
+        if _is_taking_part(link.participant)
+        and (not current_only or (link.active and link.admitted_at is not None))
+    ]
+
+
 def _group_status(group):
     """Return ``"active"``, ``"finished"`` or ``"closed"`` for the Status column.
 
@@ -217,11 +231,10 @@ def _group_status(group):
     """
     if not group.active:
         return "closed"
-    participants = [link.participant for link in group.participant_links]
     if (
-        participants
+        group.participant_links
         and not group.accepts_top_ups
-        and not any(_is_taking_part(p) for p in participants)
+        and not _members_taking_part(group, current_only=False)
     ):
         return "finished"
     return "active"
@@ -290,7 +303,7 @@ def _group_row(group, waiting_by_participant):
         "id": group.id,
         "group_type": group.group_type or "—",
         "status": status,
-        "n_active_participants": len(group.active_participants),
+        "n_active_participants": len(_members_taking_part(group, current_only=True)),
         "leader_id": group.leader_id,
         "leader_worker_id": group.leader.worker_id if group.leader else "—",
         "end_time": _finish_time(group) if status == "finished" else group.end_time,
