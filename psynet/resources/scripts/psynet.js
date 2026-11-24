@@ -830,9 +830,18 @@
     // Show a trial without waiting for update() to finish: it may await
     // something until its signal is aborted, which happens only once the page
     // changes, so waiting would hold up the page changes queued behind it.
+    // An update() that fails, for example as a sound couldn't load, leaves
+    // nothing to answer, so the participant is asked to reload; one that a
+    // newer trial or page replaced while it waited is ignored.
     psynet.showPageModuleTrial = function (offset) {
-      psynet.updatePageModules(offset).catch((error) => {
-        psynet.log.error(error.stack || String(error));
+      let generation = psynet.pageModuleGeneration;
+      let shown = psynet.updatePageModules(offset);
+      let controller = psynet.updateController;
+      shown.catch((error) => {
+        if (controller?.signal.aborted || psynet.pageModuleGeneration !== generation) {
+          return;
+        }
+        psynet.handleTimelineTransitionFailure(error);
       });
     };
 

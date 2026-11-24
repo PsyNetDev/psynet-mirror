@@ -75,8 +75,10 @@ Keep anything specific to one trial in ``update``, and don't assume
 ``activate`` runs again before each trial. PsyNet doesn't wait for an
 asynchronous ``update`` to finish before calling it again, for example after a
 rejected answer, so an ``update`` that awaits an image should check afterwards
-that it is still the latest call. A module without trials to show can still
-return just the cleanup function.
+that it is still the latest call. If ``update`` throws, or returns a promise
+that rejects, while its trial is still the latest, the participant has nothing
+to answer, so PsyNet asks them to reload the page. A module without trials to
+show can still return just the cleanup function.
 
 When each trial's page comes from the server, PsyNet runs ``cleanup`` and
 ``activate`` again for every trial, so state kept in the module, such as a
