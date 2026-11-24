@@ -6,6 +6,14 @@ one trial after another, still assigning, scoring and saving one trial per
 response. If you're still deciding whether to do this, see
 :doc:`/design/presenting_trials`.
 
+This guide walks through
+:download:`the adaptive brightness demo <../../../demos/features/staircase_on_one_page/experiment.py>`,
+and its code examples are simplified from the demo. The participant sees two
+grey patches and presses the left or right arrow key to say which is
+brighter. A staircase, PsyNet's
+:class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`, makes the next
+pair more similar after each correct answer.
+
 Such a task is a :class:`~psynet.page.JSPage`: you write the page's HTML and
 one JavaScript module, and the module draws each trial from the data PsyNet
 gives it and answers it. When one trial's page has the same HTML, module and
@@ -24,10 +32,6 @@ unless the trials are fixed in advance (see
 `Showing the next trial without waiting`_). Meanwhile the page stays as the
 module left it, so hide the stimulus on answering if it shouldn't stay
 visible.
-
-:download:`The adaptive brightness demo <../../../demos/features/staircase_on_one_page/experiment.py>`
-is a complete example. It runs a staircase with PsyNet's
-:class:`~psynet.trial.staircase.GeometricStaircaseTrialMaker`.
 
 The trial's page
 ----------------
