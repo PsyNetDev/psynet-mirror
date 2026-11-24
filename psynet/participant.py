@@ -829,7 +829,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ``late_after``, with any ``late_action``, from its group or a group
         listed in its ``also_leave``), ``"no_show"`` or ``"left_game"``
         (didn't play a :class:`~psynet.live_game.PlayLiveGame`'s game, or
-        left it for good, with its ``absent_action="leave_group"``),
+        left it for good, with its ``absent_action``),
         ``"waited_too_long"`` (waited at a
         barrier for longer than its ``max_wait_time``, with any
         ``max_wait_action``), ``"group_dissolved"`` (still in the group when it was
@@ -844,7 +844,8 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ``"left_experiment"`` (failed,
         including returning the study, and for a member's other groups
         when a barrier's ``late_action="fail"`` or ``max_wait_action="fail"``,
-        or a dissolving group's ``below_quorum="fail"``, fails them), or
+        a PlayLiveGame's ``absent_action="fail"``, or a dissolving group's
+        ``below_quorum="fail"``, fails them), or
         ``"removed_by_experimenter"`` (removed from the dashboard, or by
         :meth:`~psynet.sync.SyncGroup.remove_participant` with that reason).
         A player sat out of their first round was never in a group, so this

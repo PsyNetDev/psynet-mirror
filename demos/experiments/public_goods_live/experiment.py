@@ -15,11 +15,19 @@ from the trial's ``live_game.answer``, which PsyNet works out from the
 game's outcome for a player who closed their page too.
 """
 
+from typing import List
+
 import pytest
 from dominate import tags
 
 import psynet.experiment
-from psynet.bot import Bot
+from psynet.bot import (
+    Bot,
+    BotDriver,
+    advance_past_wait_pages,
+    make_late_now,
+    run_bots_to_completion,
+)
 from psynet.live_game import (
     LiveGame,
     LiveGamePage,
@@ -39,7 +47,7 @@ TOKEN_VALUE = 0.02
 ROUND_SECONDS = 20
 RESULTS_SECONDS = 10
 # A member who hasn't reached the next round this long after the previous
-# round's game ended is taken out of the team. The game page says when it
+# round's game ended is failed. The game page says when it
 # ends, so this only has to cover reading the results.
 LATE_AFTER = 15
 GROUPING_WAIT = 20
@@ -157,13 +165,17 @@ class ContributionTrial(Trial):
             game_class=PublicGoods,
             page=contribution_page(self.sync_group_round),
             waiting_message="Waiting for the other players…",
+            # A player who closes their page is failed, and the others carry
+            # on without them.
             late_after=LATE_AFTER,
-            late_action="leave_group",
+            late_action="fail",
         )
 
     def show_feedback(self, experiment, participant):
         answer = self.answer
         if answer is None:
+            # The experimenter removed the player from their team during the
+            # round, before its game started.
             return InfoPage("Your group couldn't start this round.", time_estimate=5)
         team = self.live_game.outcome
         return InfoPage(
@@ -176,7 +188,12 @@ class ContributionTrial(Trial):
         )
 
 
-def left_team(participant):
+def removed_from_team(participant):
+    """Return whether the experimenter has removed the player from their team on the dashboard.
+
+    Nothing else leaves a player without a team and still playing: a late
+    player is failed, and so is the last player of a team that ends.
+    """
     return not participant.in_sync_group("team")
 
 
@@ -188,17 +205,11 @@ def game_over(participant):
     return InfoPage(f"The game is over. {bonus_text(participant)}", time_estimate=5)
 
 
-ENDED_EARLY_TEXTS = {
-    "no_group_formed": "We couldn't find two other players for you.",
-    "late": "You were away for too long, so the game ended early for you.",
-    "group_dissolved": "Too few players stayed, so the game ended early.",
-    "removed_by_experimenter": "You were removed from the game.",
-}
-
-
-def game_ended_early(participant):
-    text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
-    return InfoPage(f"{text} {bonus_text(participant)}", time_estimate=5)
+def removed_page(participant):
+    return InfoPage(
+        f"You were removed from the game. {bonus_text(participant)}",
+        time_estimate=5,
+    )
 
 
 def get_timeline():
@@ -215,9 +226,11 @@ def get_timeline():
             group_type="team",
             initial_group_size=3,
             quorum=2,
-            below_quorum="continue_without_group",
+            # Two players carry on without a third; a player left alone is
+            # failed, as is one for whom no group forms (max_wait_action
+            # defaults to "fail").
+            below_quorum="fail",
             max_wait_time=GROUPING_WAIT,
-            max_wait_action="continue_without_group",
             waiting_message="Waiting for two other players to join…",
         ),
         Module(
@@ -227,13 +240,14 @@ def get_timeline():
                 iterate_over=range(N_ROUNDS),
                 logic=lambda i: ContributionTrial.cue(round=i),
                 time_estimate_per_iteration=ContributionTrial.time_estimate,
-                stop_if=left_team,
+                # Checked before each round.
+                stop_if=removed_from_team,
             ),
         ),
         conditional(
             "game_over",
-            left_team,
-            PageMaker(game_ended_early, time_estimate=5),
+            removed_from_team,
+            PageMaker(removed_page, time_estimate=5),
             PageMaker(game_over, time_estimate=5),
         ),
     )
@@ -245,7 +259,7 @@ class Exp(psynet.experiment.Experiment):
     timeline = get_timeline()
 
     test_n_bots = 3
-    test_mode = "parallel"
+    test_mode = "serial"
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
@@ -272,14 +286,40 @@ class Exp(psynet.experiment.Experiment):
             )
         return {"player_round": rows}
 
+    def test_serial_run_bots(self, bots: List[BotDriver]):
+        for bot in bots:
+            bot.take_page()
+        advance_past_wait_pages(bots)
+        # Each game page moves on once its round's game ends.
+        for bot in bots:
+            bot.take_page()
+        assert all("The group put 15 tokens" in b.current_page_text for b in bots)
+
+        # bots[2] goes quiet on its results page, so the next round's
+        # barrier fails them as late, and the other two carry on.
+        for bot in bots[:2]:
+            bot.take_page()
+        bots[2].allow_failure()
+        make_late_now(bots, "public_goods")
+        assert bots[2].failed
+        run_bots_to_completion(bots[:2], timeout=N_ROUNDS * (ROUND_SECONDS + 30))
+
+        rows = self.get_basic_data()["player_round"]
+
+        def pots(bot):
+            return [
+                (r["round"], r["pot"]) for r in rows if r["participant_id"] == bot.id
+            ]
+
+        # Two players put in 0 and 5 tokens after the third was failed.
+        assert pots(bots[0]) == [(0, 15), (1, 5), (2, 5)], rows
+        assert pots(bots[2]) == [(0, 15)], rows
+
     def test_check_bot(self, bot: Bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
         trials = ContributionTrial.query.filter_by(participant_id=bot.id).all()
-        assert len(trials) == N_ROUNDS, (
-            bot.id,
-            bot.sync_group_removal_reason("team"),
-            [t.answer for t in trials],
-        )
+        if not bot.failed:
+            assert len(trials) == N_ROUNDS, [t.answer for t in trials]
         for trial in trials:
             game = trial.live_game
             player = game.player

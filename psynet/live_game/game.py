@@ -336,8 +336,8 @@ class LiveGame(RealtimeGame):
         It leaves out the players who came too late, after
         :meth:`accepts_players` returned ``False``, whom the game never sees.
 
-        A :class:`PlayLiveGame` with ``absent_action`` removes the same
-        players from their groups, with these reasons
+        A :class:`PlayLiveGame` with ``absent_action`` fails the same
+        players, or removes them from their groups, with these reasons
         (see :ref:`live-games-absent`).
         """
         return _absences(self, state)
@@ -554,9 +554,9 @@ class LiveGame(RealtimeGame):
         :meth:`performance_reward`, and copies the outcome to the round the
         game was played in, if any, as
         :attr:`~psynet.sync.SyncGroupRound.live_game_outcome`, and, for a
-        :class:`PlayLiveGame` with ``absent_action``, removes the players who
-        didn't play from their groups (unless the game failed), before this
-        method runs.
+        :class:`PlayLiveGame` with ``absent_action``, fails the players who
+        didn't play or removes them from their groups (unless the game
+        failed), before this method runs.
 
         Parameters
         ----------
