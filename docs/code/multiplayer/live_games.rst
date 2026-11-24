@@ -189,7 +189,7 @@ game, and then shows the group the game page:
                     tags.button("Paper", type="button", id="paper"),
                     tags.button("Scissors", type="button", id="scissors"),
                 ),
-                js_page_modules=["/static/rock-paper-scissors.js"],
+                module="/static/rock-paper-scissors.js",
                 time_estimate=30,
             ),
         ),
@@ -452,10 +452,11 @@ The game page
 -------------
 
 The game page is the :class:`~psynet.live_game.LiveGamePage` given to the
-``PlayLiveGame``, as in the example under `PlayLiveGame`_. It shows its
-content, and its options, such as the texts below, change how it plays the
-game. The page's JavaScript goes in a
-file in the experiment's ``static`` folder, listed in the page's ``js_page_modules``. It exports an ``activate``
+``PlayLiveGame``, as in the example under `PlayLiveGame`_. Like a
+:class:`~psynet.page.JSPage`, it is your own HTML and one JavaScript module,
+and its options, such as the texts below, change how it plays the game. The
+module is a file in the experiment's ``static`` folder, passed as the page's
+``module``. It exports an ``activate``
 function, which PsyNet runs each time the page opens
 (:doc:`/code/pages/custom_front_ends` explains page modules).
 A sketch of one, ``static/my-game.js``, for the ``Choose`` message under
@@ -699,7 +700,7 @@ member was late for the ``PlayLiveGame`` and their group broke up, or when
 their group ended before they reached it. PsyNet tells the participant with
 a notice at the top of the page, "Your group couldn't start the game.",
 which the page's ``no_game_message`` changes or turns off, and hides the
-page's content. When the page already has a notice saying that the
+page's HTML. When the page already has a notice saying that the
 participant's group left them, such as "Your partner is no longer in your
 group.", PsyNet doesn't add a second one. The page's
 ``psynet.liveGame`` methods then do nothing: ``send`` returns ``undefined``,

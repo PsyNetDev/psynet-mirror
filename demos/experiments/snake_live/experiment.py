@@ -378,7 +378,7 @@ class Exp(psynet.experiment.Experiment):
                     tags.ul(id="snake-scores"),
                     id="snake-game",
                 ),
-                js_page_modules=["/static/snake.js"],
+                module="/static/snake.js",
                 css_links=["/static/snake.css"],
                 # Fixed for the whole experiment. Settings that can differ
                 # between rounds go in the game's state and view instead, as in

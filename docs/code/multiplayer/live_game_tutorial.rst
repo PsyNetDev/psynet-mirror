@@ -247,13 +247,13 @@ in `Playing it as trials`_ below passes in:
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :pyobject: rock_paper_scissors_page
 
-Its content holds the page's elements, each with an ``id`` so that the
+Its HTML holds the page's elements, each with an ``id`` so that the
 JavaScript can find it. PsyNet hides it on a page without a game. The other
 options change the page's texts: ``waiting_status`` is what the page says
 until both pages have opened,
 ``player_left_message`` the notice while the partner is away, and
 ``no_game_message`` the notice on a page without a game.
-``js_page_modules`` lists the page's JavaScript.
+``module`` is the page's JavaScript, as on a :class:`~psynet.page.JSPage`.
 
 The JavaScript is in ``static/rock-paper-scissors.js``. It exports an
 ``activate`` function, which PsyNet runs when the page opens
@@ -403,7 +403,7 @@ then shows each player their score:
             page=LiveGamePage(
                 "rock_paper_scissors",
                 tags.div(...),  # the elements shown above
-                js_page_modules=["/static/rock-paper-scissors.js"],
+                module="/static/rock-paper-scissors.js",
                 time_estimate=60,
             ),
             late_after=20,

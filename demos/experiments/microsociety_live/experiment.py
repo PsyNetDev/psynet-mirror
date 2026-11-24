@@ -325,7 +325,7 @@ def lake_page():
         show_result_for=RESULTS_SECONDS,
         player_left_message=None,
         waiting_status="Waiting for the others to reach the lake…",
-        js_page_modules=["/static/fishing.js"],
+        module="/static/fishing.js",
         # Fixed for the whole experiment. Settings that can differ between
         # rounds go in the game's state and view instead, as in the
         # public_goods_live demo.

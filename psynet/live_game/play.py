@@ -81,7 +81,7 @@ class PlayLiveGame(EltCollection):
             page=LiveGamePage(
                 "rock_paper_scissors",
                 tags.div(tags.p(id="status"), ...),
-                js_page_modules=["/static/rock-paper-scissors.js"],
+                module="/static/rock-paper-scissors.js",
                 time_estimate=30,
             ),
             late_after=30,

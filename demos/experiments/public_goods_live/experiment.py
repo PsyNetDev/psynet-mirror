@@ -150,7 +150,7 @@ def contribution_page(round_number, settings):
             id="pg-game",
         ),
         player_left_message="A player has left the game.",
-        js_page_modules=["/static/public-goods.js"],
+        module="/static/public-goods.js",
         css_links=["/static/public-goods.css"],
         time_estimate=ROUND_SECONDS,
     )

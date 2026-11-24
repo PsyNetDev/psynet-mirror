@@ -731,6 +731,26 @@ class JsPsychPage(Page):
         )
 
 
+def _authored_html(page_class, html, kwargs):
+    """Return the HTML of a page whose front end the author writes, as markup.
+
+    Such pages, :class:`JSPage` and :class:`~psynet.live_game.LiveGamePage`,
+    take their HTML as a string, a ``dominate`` tag or a list of these, and
+    run one module, passed as ``module``.
+    """
+    if "js_page_modules" in kwargs:
+        raise TypeError(
+            f"{page_class} runs one module, passed as module=; import any "
+            "other modules from it."
+        )
+    parts = html if isinstance(html, (list, tuple)) else [html]
+    return Markup(
+        "".join(
+            part.render() if isinstance(part, dom_tag) else str(part) for part in parts
+        )
+    )
+
+
 class JSPage(Page):
     """
     A page whose front end is your own HTML and JavaScript module.
@@ -748,7 +768,7 @@ class JSPage(Page):
         Label for the page.
 
     html :
-        The page's HTML, as a string or a ``dominate`` tag. It stays the same
+        The page's HTML, as a string, a ``dominate`` tag or a list of these. It stays the same
         from trial to trial; put what changes in ``contents``. Page JavaScript
         goes in ``module``, not in ``<script>`` tags.
 
@@ -776,20 +796,13 @@ class JSPage(Page):
     def __init__(
         self,
         label: str,
-        html: Union[str, Markup, dom_tag],
+        html: Union[str, Markup, dom_tag, list],
         module: str,
         time_estimate: Optional[float] = None,
         contents: Optional[dict] = None,
         **kwargs,
     ):
-        if "js_page_modules" in kwargs:
-            raise TypeError(
-                "JSPage runs one module, passed as module=; import any other "
-                "modules from it."
-            )
-        if isinstance(html, dom_tag):
-            html = html.render()
-        self.html = Markup(html)
+        self.html = _authored_html(type(self).__name__, html, kwargs)
         super().__init__(
             label=label,
             time_estimate=time_estimate,

@@ -508,7 +508,7 @@ class Exp(psynet.experiment.Experiment):
                     tags.ul(id="canvas-scores"),
                     id="canvas-game",
                 ),
-                js_page_modules=["/static/shared-canvas.js"],
+                module="/static/shared-canvas.js",
                 css_links=["/static/shared-canvas.css"],
                 # Fixed for the whole experiment. Settings that can differ
                 # between rounds go in the game's state and view instead, as in
