@@ -6,6 +6,7 @@ authors customize node eligibility with ``custom_node_filter`` and ranking with
 ``select_node``; network adaptation remains an implementation detail.
 """
 
+import logging
 from typing import Callable, List, Literal, Optional, Sequence, Union
 
 from flask import has_app_context
@@ -622,11 +623,11 @@ class StaticTrialMaker(ChainTrialMaker):
         """Whether a rendered copy of ``page`` can be swapped in, with its answer sent in the background."""
         reason = page._cannot_be_left_early_because()
         if reason is not None:
-            _log_waiting_for_the_server("after", page, reason)
+            _log_waiting_for_the_server("after", page, reason, logging.INFO)
             return False
         reason = page._cannot_be_rendered_early_because()
         if reason is not None:
-            _log_waiting_for_the_server("before showing", page, reason)
+            _log_waiting_for_the_server("before showing", page, reason, logging.INFO)
             return False
         return True
 
