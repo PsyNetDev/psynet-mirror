@@ -36,14 +36,16 @@ you want to write yourself.
 
 - **Write the whole page yourself** (:class:`~psynet.page.JSPage`). If you'd
   rather design the screen from scratch, write its HTML and a JavaScript file
-  that brings it to life. For each trial, PsyNet passes your JavaScript that
-  trial's data, such as which stimulus to show, and your JavaScript draws it
-  and sends back the participant's answer. When one trial follows another on
-  the same design, the page stays on screen and only the data changes. That
-  makes trials follow each other instantly, which suits fast,
-  timing-sensitive tasks such as reaction-time tests or long runs of quick
-  ratings. This is also the natural choice when an AI assistant writes your
-  front end for you. See :doc:`/code/trials/keeping_a_task_on_one_page`.
+  that brings it to life. PsyNet passes your JavaScript the page's data, such
+  as which stimulus to show, and your JavaScript draws it and sends back the
+  participant's answer. This suits a one-off page, such as a custom sign-up
+  form, as well as trials. When one trial follows another on the same design,
+  the page stays on screen and only the data changes. That makes trials
+  follow each other instantly, which suits fast, timing-sensitive tasks such
+  as reaction-time tests or long runs of quick ratings. This is also the
+  natural choice when an AI assistant writes your front end for you. See
+  :ref:`custom_front_ends_js_page` and
+  :doc:`/code/trials/keeping_a_task_on_one_page`.
 
 - **Run a live game between participants**
   (:class:`~psynet.live_game.LiveGamePage`). For tasks where several

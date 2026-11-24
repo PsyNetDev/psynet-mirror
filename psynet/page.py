@@ -755,12 +755,15 @@ class JSPage(Page):
     """
     A page whose front end is your own HTML and JavaScript module.
 
-    The module's ``activate`` returns ``update``, which PsyNet calls with each
-    trial's ``contents``, a ``response`` handle to answer it with, and an
-    ``AbortSignal`` that is aborted once a newer trial is shown. When the
-    next page is a ``JSPage`` with the same HTML, module and ``page_config``,
-    the page stays on screen and ``update`` shows the next trial, whether it
-    comes from the server or was prepared in advance. See
+    It suits one-off pages, such as a custom form, as well as trials. The
+    module's ``activate`` returns ``update``, which PsyNet calls once the page
+    can be answered, with the page's ``contents``, a ``response`` handle to
+    answer it with, and an ``AbortSignal`` that is aborted once a newer trial
+    is shown. ``validate`` and ``save_answer`` treat the answer as on any
+    page. When the next page is a ``JSPage`` with the same HTML, module and
+    ``page_config``, the page stays on screen and ``update`` shows the next
+    trial, whether it comes from the server or was prepared in advance. See
+    :ref:`custom_front_ends_js_page` and
     :doc:`/code/trials/keeping_a_task_on_one_page`.
 
     Parameters

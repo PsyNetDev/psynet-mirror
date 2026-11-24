@@ -9,7 +9,7 @@ There are two ways to write a page's front end yourself:
   participant a way to respond;
 - write the whole page as a :class:`~psynet.page.JSPage`, your own HTML and
   one JavaScript module, when you'd rather design the screen from scratch;
-  see :doc:`/code/trials/keeping_a_task_on_one_page`.
+  see `Writing the whole page`_.
 
 See :ref:`choosing_a_kind_of_page` for how these compare. The examples on
 this page come from the ``demos/features/modular_page`` demo.
@@ -344,6 +344,65 @@ authors must include the static root in their wheel and source distribution.
 :doc:`/developer/package_static_resources` covers package layout,
 entry-point configuration, custom roots, zip-backed resources, validation,
 testing, and wheel packaging.
+
+.. _custom_front_ends_js_page:
+
+Writing the whole page
+----------------------
+
+A :class:`~psynet.page.JSPage` is your own HTML and one JavaScript module,
+for a one-off page, such as a sign-up form, as much as for trials. PsyNet
+treats its answer like any other page's: ``validate`` checks it on the
+server, and ``save_answer`` stores it on the participant::
+
+    from psynet.page import JSPage
+
+    JSPage(
+        "nickname",
+        """
+        <form id="nickname">
+          <label>Your nickname <input name="nickname" required></label>
+          <button disabled>Continue</button>
+        </form>
+        """,
+        module="/static/nickname.js",
+        validate=lambda answer: None if answer.strip() else "Enter a nickname.",
+        save_answer="nickname",
+        bot_response="Alex",
+        time_estimate=10,
+    )
+
+The module's ``activate`` sets the page up and returns ``update``, which
+PsyNet calls once the page can be answered, with a ``response`` handle to
+answer it with:
+
+.. code-block:: javascript
+
+    export function activate({root}) {
+        const form = root.querySelector("#nickname");
+        const button = form.querySelector("button");
+        let response = null;
+        form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            if (response === null) return;
+            response.answer(form.elements.nickname.value);
+            response = null;
+            button.disabled = true;
+        });
+        return {
+            update({response: handle}) {
+                response = handle;
+                button.disabled = false;
+            },
+        };
+    }
+
+If ``validate`` turns the answer down, PsyNet shows its message and calls
+``update`` again with a new handle, so the form can be corrected and sent
+again. For a page without an answer, such as a custom instructions screen,
+pass ``bot_response=None`` and answer with ``response.answer(null)``. Trials
+on a ``JSPage`` work the same way and can stay on screen from one trial to
+the next; see :doc:`/code/trials/keeping_a_task_on_one_page`.
 
 Custom page templates
 ---------------------

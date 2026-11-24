@@ -754,7 +754,7 @@
           !psynet.pageModuleUpdates.length
         ) {
           throw new Error(
-            "A JSPage's module must return {update}, which shows each trial's contents.",
+            "A JSPage's module must return {update}, which receives the page's contents and the response handle to answer with.",
           );
         }
       } catch (error) {
