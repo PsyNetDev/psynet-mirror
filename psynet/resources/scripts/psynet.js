@@ -818,10 +818,16 @@
     };
 
     // Show the trial ``offset`` trials after the last confirmed page.
+    // Each call's signal is aborted once a newer update() starts or the page
+    // is left, so that an update() still awaiting something can step aside.
     psynet.updatePageModules = async function (offset) {
       let [contents, ...upcomingContents] = psynet.predictedContents().slice(offset);
       let response = psynet.createResponseHandle();
       psynet.answers.handle = response;
+      psynet.updateController?.abort();
+      let controller = new AbortController();
+      psynet.updateController = controller;
+      let signal = controller.signal;
       let generation = psynet.pageModuleGeneration;
       for (let update of psynet.pageModuleUpdates) {
         // An earlier update() may have answered, or moved to another page.
@@ -831,7 +837,13 @@
         ) {
           break;
         }
-        await update({ contents, upcomingContents, response });
+        try {
+          await update({ contents, upcomingContents, response, signal });
+        } catch (error) {
+          // For example a fetch given the signal.
+          if (signal.aborted && error?.name === "AbortError") return;
+          throw error;
+        }
       }
     };
 
@@ -1133,6 +1145,8 @@
       activations = psynet.activeJSPageBehaviors,
     ) {
       psynet.pageModuleGeneration += 1;
+      psynet.updateController?.abort();
+      psynet.updateController = null;
       if (activations === psynet.activeJSPageBehaviors) {
         psynet.activeJSPageBehaviors = [];
       }

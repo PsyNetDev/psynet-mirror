@@ -736,7 +736,8 @@ class JSPage(Page):
     A page whose front end is your own HTML and JavaScript module.
 
     The module's ``activate`` returns ``update``, which PsyNet calls with each
-    trial's ``contents`` and a ``response`` handle to answer it with. When the
+    trial's ``contents``, a ``response`` handle to answer it with, and an
+    ``AbortSignal`` that is aborted once a newer trial is shown. When the
     next page is a ``JSPage`` with the same HTML, module and ``page_config``,
     the page stays on screen and ``update`` shows the next trial, whether it
     comes from the server or was prepared in advance. See
