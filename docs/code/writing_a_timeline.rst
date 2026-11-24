@@ -170,7 +170,7 @@ The browser waits for the server as usual when:
   :ref:`the trial maker guide <prepared_trials_swapped_in>` for the built-in
   ones);
 * the next page is a chat page, or one of its prompts or controls adds
-  JavaScript variables for the participant;
+  ``page_config`` that depends on the participant;
 * the answer includes a recording or another file to upload.
 
 If a page shows something that the previous answer changes, for example from

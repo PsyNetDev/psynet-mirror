@@ -44,7 +44,7 @@ two patches, and ``contents`` holds their shades of grey:
 .. literalinclude:: ../../../demos/features/staircase_on_one_page/experiment.py
    :pyobject: ContrastTrial.show_trial
 
-The HTML can be a string or a ``dominate`` tag. Configuration that is the
+The HTML can be a string, a ``dominate`` tag or a list of them. Configuration that is the
 same for every trial, such as the task's timings, goes in ``page_config``.
 Both ``contents`` and ``page_config`` must be JSON-serialisable, as they are
 sent to the browser.
