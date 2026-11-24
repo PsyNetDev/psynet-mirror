@@ -2453,7 +2453,9 @@ class Page(Elt):
             raise NotImplementedError(
                 f"{type(self).__name__} delegates rendering and must override render()."
             )
-        if not partial_mode and self.upcoming_pages is not None:
+        if not partial_mode and (
+            self.upcoming_pages is not None or self._shows_trials_itself()
+        ):
             # Fragments carry their key beside the HTML; a full page needs a
             # partial render to compute the same key.
             self._full_page_layout_key = self.layout_key(

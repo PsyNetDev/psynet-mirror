@@ -758,8 +758,8 @@ class JSPage(Page):
     The module's ``activate`` returns ``update``, which PsyNet calls with each
     trial's ``contents`` and a ``response`` handle to answer it with. When the
     next page is a ``JSPage`` with the same HTML, module and ``page_config``,
-    the page stays on screen and ``update`` shows the next trial; other pages
-    are swapped in or loaded as usual, and ``update`` draws them too. See
+    the page stays on screen and ``update`` shows the next trial, whether it
+    comes from the server or was prepared in advance. See
     :doc:`/code/trials/keeping_a_task_on_one_page`.
 
     Parameters

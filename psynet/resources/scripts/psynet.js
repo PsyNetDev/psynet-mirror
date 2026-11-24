@@ -987,18 +987,34 @@
       );
     };
 
+    // Whether the reply to a JSPage's only queued answer shows another
+    // JSPage, which keeps the page on screen if their layouts match.
+    let isNextJSPageReply = function (response) {
+      let queue = psynet.answers.queue;
+      return (
+        psynet.page?.attributes?.shows_trials_itself === true &&
+        response.page?.attributes?.shows_trials_itself === true &&
+        !response.page?.attributes?.timeline_hold &&
+        queue.length === 1 &&
+        queue[0].nextPageUuid === undefined
+      );
+    };
+
     // Return the reply's fragment if page modules can show it in place.
     psynet.predictedFragment = function (response) {
       let layoutKey = response.timeline_fragment?.layout_key;
-      if (!psynet.isPredictedReply(response)) {
+      let predicted = psynet.isPredictedReply(response);
+      if (!predicted && !isNextJSPageReply(response)) {
         return null;
       }
       if (!layoutKey || layoutKey !== psynet.layoutKey) {
-        psynet.log.warn(
-          "The next trial's page has different HTML from this one, so PsyNet " +
-            "couldn't show it in advance. Put what changes between trials in " +
-            "the page's contents.",
-        );
+        if (predicted) {
+          psynet.log.warn(
+            "The next trial's page has different HTML from this one, so PsyNet " +
+              "couldn't show it in advance. Put what changes between trials in " +
+              "the page's contents.",
+          );
+        }
         return null;
       }
       return psynet.prepareTimelineFragment(response.timeline_fragment);
