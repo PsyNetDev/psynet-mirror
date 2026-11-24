@@ -80,7 +80,9 @@ when the first trial appears; ``update`` for each trial, including the
 first; and ``cleanup`` once, when the participant leaves the page. This is
 the same whether the next trial comes from the server or was prepared in
 advance (see below). A ``JSPage`` whose module doesn't return ``update``
-fails with an error.
+fails with an error. If ``update`` throws, or returns a promise that
+rejects, while its trial is still the latest, the participant has nothing
+to answer, so PsyNet asks them to reload the page.
 
 So put anything specific to one trial in ``update``. State kept in the
 module, such as a running score, carries over from trial to trial, and so
