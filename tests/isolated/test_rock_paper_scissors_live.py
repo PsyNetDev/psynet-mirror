@@ -174,17 +174,18 @@ class TestRockPaperScissorsLive:
         assert not gives_feedback(SimpleNamespace(answer=None), None, None)
 
     @pytest.mark.parametrize(
-        "in_pair, index, plays_a_game, told_no_more_games",
+        "in_pair, index, plays_a_game, told_removed",
         [
             (True, 0, True, False),
             (True, 1, True, False),
             # Both games played.
             (True, 2, False, False),
+            # Removed from the pair by the experimenter.
             (False, 1, False, True),
         ],
     )
-    def test_a_participant_without_a_partner_plays_no_more_games(
-        self, demo, in_pair, index, plays_a_game, told_no_more_games
+    def test_a_participant_removed_from_their_pair_plays_no_more_games(
+        self, demo, in_pair, index, plays_a_game, told_removed
     ):
         # The conditions of the timeline's loop of games and of the page
         # after it, asked of a participant about to start the game at index.
@@ -205,31 +206,9 @@ class TestRockPaperScissorsLive:
             return switches[label].function(experiment=None, participant=participant)
 
         assert goes("for_loop") is plays_a_game
-        assert goes("no_more_games") is told_no_more_games
-
-    def test_the_page_after_the_games_says_why_there_are_no_more(self, demo):
-        def text(reason):
-            participant = SimpleNamespace(
-                sync_group_removal_reason=lambda group_type: (
-                    reason if group_type == "pair" else None
-                ),
-                performance_reward=0.25,
-            )
-            return str(demo.no_more_games(participant).content)
-
-        assert {reason: text(reason) for reason in demo.NO_PARTNER_TEXTS} == {
-            "no_group_formed": (
-                "We couldn't find you a partner, so there are no games. "
-                "Your bonus is $0.25."
-            ),
-            "late": (
-                "You didn't come back in time for the next game. Your bonus is $0.25."
-            ),
-            "group_dissolved": (
-                "Your partner has left, so there are no more games. "
-                "Your bonus is $0.25."
-            ),
-            "removed_by_experimenter": (
+        assert goes("removed") is told_removed
+        if told_removed:
+            participant.performance_reward = 0.25
+            assert str(demo.removed_page(participant).content) == (
                 "You were removed from the game. Your bonus is $0.25."
-            ),
-        }
+            )
