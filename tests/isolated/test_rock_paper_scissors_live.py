@@ -131,6 +131,22 @@ class TestRockPaperScissorsLive:
         assert reward(game.outcome(reason), reason, 0) == 0
         assert reward(game.outcome(reason), reason, 1) == pytest.approx(0.1)
 
+    def test_a_partner_who_never_opens_the_game_ends_it(self, demo):
+        game_class = demo.RockPaperScissors
+        game = LocalGame(
+            game_class,
+            players=2,
+            settings={"throws": 5, "reward_per_win": 0.05},
+            start=False,
+        )
+        game.send(0, {"type": "psynet_ready", "message": {}})
+        game.tick(game_class.ready_timeout)
+        game.tick(game_class.away_timeout)
+
+        assert game.is_over() and game.end_reason() == "players_left"
+        assert game.game.absences(game.state) == [None, "no_show"]
+        assert game.answer(0, "players_left")["throws"] == []
+
     @pytest.mark.parametrize(
         "case, player, summary, score",
         [

@@ -1,0 +1,1 @@
+Changed the `rock_paper_scissors_live` and `public_goods_live` demos to start a game sooner without a player who never opens the game page. In `public_goods_live` such a player is failed and left out of the pot and the round's pay, and a round that fewer than two players open ends at its start without a pot; the export gains `arrived`, `n_players` and `end_reason` columns.
