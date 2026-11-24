@@ -109,3 +109,67 @@ test("built-in rating pages advance while the server's replies are held back", {
     await assertNoBackendError(participant);
   });
 });
+
+// Delays each /response reply by the next of ``delays`` (in ms, cycling), and
+// records the page UUID of every answer the server accepted.
+async function scriptReplies(page, delays) {
+  const replies = { accepted: [] };
+  let count = 0;
+  await page.route("**/response", async (route) => {
+    const delay = delays[count++ % delays.length];
+    const pageUuid = /"page_uuid":\s*"([^"]+)"/.exec(route.request().postData() ?? "")?.[1];
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    if ((await response.json()).submission === "approved") replies.accepted.push(pageUuid);
+    await route.fulfill({ response });
+  });
+  return replies;
+}
+
+test("answers given ahead are each saved once, whatever the replies' timing", {
+  tag: "@inplace-only"
+}, async ({ page, context }) => {
+  const dir = path.resolve("demos/features/rapid_ratings_built_in");
+
+  await withExperiment(page, context, dir, async (participant) => {
+    await completeInitialGateway(participant);
+    const replies = await scriptReplies(participant, [600, 0, 250, 900, 50]);
+    const next = () => participant.getByRole("button", { name: "Next", exact: true }).click();
+    const picture = participant.locator("#prompt-image");
+    const expectPicture = (name) =>
+      expect(picture).toHaveAttribute("src", new RegExp(`${name.replace(" ", "-")}\\.svg\\?v=`), {
+        timeout: STEP_TIMEOUT_MS
+      });
+    // A double click must not answer twice or warn that the page is loading.
+    const rate = (rating) =>
+      participant.getByRole("button", { name: String(rating), exact: true }).dblclick();
+
+    await next();
+    await waitForMainBodyContains(participant, "Rate each picture from 1", STEP_TIMEOUT_MS);
+    await next();
+    const ratings = [
+      ["red circle", 5], ["orange triangle", 4], ["yellow star", 3], ["green square", 2],
+      ["teal hexagon", 1], ["blue diamond", 2], ["purple ring", 3], ["pink cross", 4]
+    ];
+    for (const [i, [name, rating]] of ratings.entries()) {
+      await expectPicture(name);
+      await rate(rating);
+      if (i === 3) {
+        await waitForMainBodyContains(participant, "Take a short break.", STEP_TIMEOUT_MS);
+        await next();
+      }
+    }
+    await waitForMainBodyContains(
+      participant,
+      "Your ratings: red circle 5, orange triangle 4, yellow star 3, green square 2, " +
+        "teal hexagon 1, blue diamond 2, purple ring 3, pink cross 4.",
+      STEP_TIMEOUT_MS
+    );
+    await expect(participant.locator("#alert-message")).toBeHidden();
+    // The intro, the instructions, eight ratings and the break.
+    expect(replies.accepted.length).toBe(11);
+    expect(new Set(replies.accepted).size).toBe(replies.accepted.length);
+    await assertNoBackendError(participant);
+  });
+});
+
