@@ -10,7 +10,6 @@ from psynet.experiment import import_local_experiment
 from psynet.live_game import Reject
 from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
-from psynet.timeline import StartSwitch
 
 
 def _choose(game, player, throw, action):
@@ -132,6 +131,22 @@ class TestRockPaperScissorsLive:
         assert reward(game.outcome(reason), reason, 0) == 0
         assert reward(game.outcome(reason), reason, 1) == pytest.approx(0.1)
 
+    def test_a_partner_who_never_opens_the_game_ends_it(self, demo):
+        game_class = demo.RockPaperScissors
+        game = LocalGame(
+            game_class,
+            players=2,
+            settings={"throws": 5, "reward_per_win": 0.05},
+            start=False,
+        )
+        game.send(0, {"type": "psynet_ready", "message": {}})
+        game.tick(game_class.ready_timeout)
+        game.tick(game_class.away_timeout)
+
+        assert game.is_over() and game.end_reason() == "players_left"
+        assert game.game.absences(game.state) == [None, "no_show"]
+        assert game.answer(0, "players_left")["throws"] == []
+
     @pytest.mark.parametrize(
         "case, player, summary, score",
         [
@@ -172,64 +187,3 @@ class TestRockPaperScissorsLive:
         assert gives_feedback(SimpleNamespace(answer=finished.answer(0)), None, None)
         # A trial whose pair didn't start a game.
         assert not gives_feedback(SimpleNamespace(answer=None), None, None)
-
-    @pytest.mark.parametrize(
-        "in_pair, index, plays_a_game, told_no_more_games",
-        [
-            (True, 0, True, False),
-            (True, 1, True, False),
-            # Both games played.
-            (True, 2, False, False),
-            (False, 1, False, True),
-        ],
-    )
-    def test_a_participant_without_a_partner_plays_no_more_games(
-        self, demo, in_pair, index, plays_a_game, told_no_more_games
-    ):
-        # The conditions of the timeline's loop of games and of the page
-        # after it, asked of a participant about to start the game at index.
-        switches = {
-            elt.label: elt
-            for elt in demo.Exp.timeline.all_elts
-            if isinstance(elt, StartSwitch)
-        }
-        participant = SimpleNamespace(
-            id=1,
-            in_sync_group=lambda group_type: in_pair and group_type == "pair",
-            for_loops={"games": {"lst": [0, 1], "index": index}},
-            module_state=None,
-            append_branch_log=lambda entry: None,
-        )
-
-        def goes(label):
-            return switches[label].function(experiment=None, participant=participant)
-
-        assert goes("for_loop") is plays_a_game
-        assert goes("no_more_games") is told_no_more_games
-
-    def test_the_page_after_the_games_says_why_there_are_no_more(self, demo):
-        def text(reason):
-            participant = SimpleNamespace(
-                sync_group_removal_reason=lambda group_type: (
-                    reason if group_type == "pair" else None
-                ),
-                performance_reward=0.25,
-            )
-            return str(demo.no_more_games(participant).content)
-
-        assert {reason: text(reason) for reason in demo.NO_PARTNER_TEXTS} == {
-            "no_group_formed": (
-                "We couldn't find you a partner, so there are no games. "
-                "Your bonus is $0.25."
-            ),
-            "late": (
-                "You didn't come back in time for the next game. Your bonus is $0.25."
-            ),
-            "group_dissolved": (
-                "Your partner has left, so there are no more games. "
-                "Your bonus is $0.25."
-            ),
-            "removed_by_experimenter": (
-                "You were removed from the game. Your bonus is $0.25."
-            ),
-        }

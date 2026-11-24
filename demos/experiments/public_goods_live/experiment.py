@@ -4,10 +4,10 @@ In each of ``N_ROUNDS`` rounds, every member has an endowment of tokens and
 chooses how many to put in the group pot. Unlike the ``public_goods`` demo,
 the choice is live: each member sees the others' contributions as they
 change, and can change their own until the round's ``ROUND_SECONDS`` are up.
-Then the pot is multiplied and shared between the members, and each token a
-member earns pays ``TOKEN_VALUE``. The endowment and multiplier are the
-game's ``SETTINGS``: the game keeps them in its state and sends them to the
-page in its view, so the page shows what the server pays.
+Then the pot is multiplied and shared between the members who opened the
+round, and each token a member earns pays ``TOKEN_VALUE``. The endowment and
+multiplier are the game's ``SETTINGS``: the game keeps them in its state and
+sends them to the page in its view, so the page shows what the server pays.
 
 Each round is one cued ``ContributionTrial`` per player, whose ``show_trial``
 starts a live game for the team and shows the game page. The trial's answer
@@ -17,11 +17,19 @@ from the trial's ``live_game.answer``, which PsyNet works out from the
 game's outcome for a player who closed their page too.
 """
 
+from typing import List
+
 import pytest
 from dominate import tags
 
 import psynet.experiment
-from psynet.bot import Bot
+from psynet.bot import (
+    Bot,
+    BotDriver,
+    advance_past_wait_pages,
+    make_late_now,
+    run_bots_to_completion,
+)
 from psynet.live_game import (
     LiveGame,
     LiveGamePage,
@@ -31,7 +39,7 @@ from psynet.live_game import (
 )
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
-from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop
+from psynet.timeline import Module, PageMaker, Timeline, for_loop
 from psynet.trial.main import Trial
 
 N_ROUNDS = 3
@@ -43,10 +51,15 @@ TOKEN_VALUE = 0.02
 ROUND_SECONDS = 20
 RESULTS_SECONDS = 10
 # A member who hasn't reached the next round this long after the previous
-# round's game ended is taken out of the team. The game page says when it
+# round's game ended is failed. The game page says when it
 # ends, so this only has to cover reading the results.
 LATE_AFTER = 15
+# A page opens within seconds, so a round starts without a player who hasn't
+# opened it this long after the team reached it.
+READY_SECONDS = 15
 GROUPING_WAIT = 20
+# The game's end reason for a round that fewer than two players opened.
+TOO_FEW = "too_few"
 
 
 class Contribute(LiveMessage):
@@ -66,6 +79,10 @@ class PublicGoods(LiveGame):
     name = "public_goods"
     messages = [Contribute]
     duration = ROUND_SECONDS
+    ready_timeout = READY_SECONDS
+    # A round always lasts its duration: a player who leaves during it keeps
+    # their part in it, and is failed as late at the next round's barrier.
+    away_timeout = None
 
     def initial_state(self, players, settings):
         return {
@@ -73,32 +90,82 @@ class PublicGoods(LiveGame):
             "multiplier": settings["multiplier"],
             # Each player's contribution, in player order.
             "contributions": [0 for player in players],
+            "too_few": False,
         }
 
+    def on_start(self, state):
+        # Played alone, a round would only multiply the player's own tokens,
+        # so it ends at once if fewer than min_players opened the game.
+        state["too_few"] = len(state["psynet"]["ready"]) < self.min_players
+
+    def is_over(self, state):
+        return state["too_few"]
+
+    def end_reason(self, state):
+        return TOO_FEW
+
     def view(self, state, player):
-        # Contributions are public, so every player sees them all.
+        # Contributions are public, so every player sees them all, with the
+        # pot and payoffs as the round's outcome would count them now. The
+        # numeric contributions replace _result's, which has None for
+        # no-shows, because the page shows a number for every row.
         return {
             "endowment": state["endowment"],
             "multiplier": state["multiplier"],
+            "no_shows": self._no_shows(state),
+            "too_few": state["too_few"],
+            **self._result(state),
             "contributions": state["contributions"],
         }
 
-    def outcome(self, state, reason):
-        contributions = state["contributions"]
-        pot = sum(contributions)
-        share = state["multiplier"] * pot / len(contributions)
+    def _no_shows(self, state):
+        """Return the players who haven't opened the game page, who don't
+        share the pot and aren't paid for the round."""
+        return [
+            player
+            for player, absence in enumerate(self.absences(state))
+            if absence == "no_show"
+        ]
+
+    def _result(self, state):
+        """Return the pot and each player's payoff, leaving out the
+        no-shows. A round that too few players opened has no pot, and the
+        players who opened it keep their endowment."""
+        no_shows = self._no_shows(state)
+        # What each player put in: None for a no-show.
+        contributions = [
+            None if player in no_shows else tokens
+            for player, tokens in enumerate(state["contributions"])
+        ]
+        played = [tokens for tokens in contributions if tokens is not None]
+        if state["too_few"]:
+            pot = share = None
+        else:
+            pot = sum(played)
+            share = state["multiplier"] * pot / len(played) if played else 0
         return {
             "contributions": contributions,
             "pot": pot,
+            "n_players": len(played),
             "share": share,
             "payoffs": [
-                state["endowment"] - tokens + share for tokens in contributions
+                0 if tokens is None else state["endowment"] - tokens + (share or 0)
+                for tokens in contributions
             ],
         }
 
+    def outcome(self, state, reason):
+        result = self._result(state)
+        if not result["n_players"]:
+            # Nobody opened the round ("not_joined"), so it had no pot either.
+            result.update(pot=None, share=None)
+        return result
+
     def answer(self, outcome, reason, player):
+        contributed = outcome["contributions"][player]
         return {
-            "contributed": outcome["contributions"][player],
+            "arrived": contributed is not None,
+            "contributed": contributed,
             "earned": outcome["payoffs"][player],
         }
 
@@ -149,7 +216,7 @@ def contribution_page(round_number, settings):
             tags.p(id="pg-rejection", cls="pg-rejection"),
             id="pg-game",
         ),
-        player_left_message="A player has left the game.",
+        player_left_message="A player isn't on the game page.",
         js_page_modules=["/static/public-goods.js"],
         css_links=["/static/public-goods.css"],
         time_estimate=ROUND_SECONDS,
@@ -168,18 +235,25 @@ class ContributionTrial(Trial):
             page=contribution_page(self.sync_group_round, SETTINGS),
             settings=SETTINGS,
             waiting_message="Waiting for the other players…",
+            # A player who closes their page is failed, and the others carry
+            # on without them.
             late_after=LATE_AFTER,
-            late_action="leave_group",
+            late_action="fail",
+            # So is a player who never opens the game page.
+            absent_action="fail",
         )
+
+    def gives_feedback(self, experiment, participant):
+        # A round that fewer than two players opened has no pot to show, and
+        # its players are failed (by absent_action or below_quorum) as it ends.
+        return self.live_game.outcome["pot"] is not None
 
     def show_feedback(self, experiment, participant):
         answer = self.answer
-        if answer is None:
-            return InfoPage("Your group couldn't start this round.", time_estimate=5)
         team = self.live_game.outcome
         return InfoPage(
             f"The group put {team['pot']} tokens in the pot, which was "
-            f"multiplied and shared between {len(team['contributions'])} "
+            f"multiplied and shared between {team['n_players']} "
             f"players: {team['share']:g} tokens each. You put in "
             f"{answer['contributed']}, so you earned {answer['earned']:g} tokens "
             "this round.",
@@ -187,8 +261,34 @@ class ContributionTrial(Trial):
         )
 
 
-def left_team(participant):
-    return not participant.in_sync_group("team")
+def _player_round_row(trial):
+    """Return a player's row of the export for one round."""
+    team = (trial.group_round and trial.group_round.live_game_outcome) or {}
+    answer = (trial.live_game and trial.live_game.answer) or {}
+    arrived = answer.get("arrived")
+    return {
+        "team_id": trial.sync_group_id,
+        "participant_id": trial.participant_id,
+        "trial_id": trial.id,
+        # Counted from 0, as in the other demos' exports.
+        "round": trial.sync_group_round,
+        # How the round ended: "finished" when its time was up, TOO_FEW when
+        # fewer than two players opened it, or "not_joined" when none did, so
+        # it had no pot.
+        "end_reason": trial.live_game and trial.live_game.end_reason,
+        # False for a player who never opened the round's game page, whose
+        # contributed and share are None.
+        "arrived": arrived,
+        "contributed": answer.get("contributed"),
+        # What the team put in the pot, before it was multiplied, or None
+        # for a round without one.
+        "pot": team.get("pot"),
+        # How many players opened the round, who shared the pot if it had one.
+        "n_players": team.get("n_players"),
+        # Each player's part of the multiplied pot.
+        "share": team.get("share") if arrived else None,
+        "earned": answer.get("earned"),
+    }
 
 
 def bonus_text(participant):
@@ -197,19 +297,6 @@ def bonus_text(participant):
 
 def game_over(participant):
     return InfoPage(f"The game is over. {bonus_text(participant)}", time_estimate=5)
-
-
-ENDED_EARLY_TEXTS = {
-    "no_group_formed": "We couldn't find two other players for you.",
-    "late": "You were away for too long, so the game ended early for you.",
-    "group_dissolved": "Too few players stayed, so the game ended early.",
-    "removed_by_experimenter": "You were removed from the game.",
-}
-
-
-def game_ended_early(participant):
-    text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
-    return InfoPage(f"{text} {bonus_text(participant)}", time_estimate=5)
 
 
 def get_timeline():
@@ -226,9 +313,11 @@ def get_timeline():
             group_type="team",
             initial_group_size=3,
             quorum=2,
-            below_quorum="continue_without_group",
+            # Two players carry on without a third; a player left alone is
+            # failed, as is one for whom no group forms (max_wait_action
+            # defaults to "fail").
+            below_quorum="fail",
             max_wait_time=GROUPING_WAIT,
-            max_wait_action="continue_without_group",
             waiting_message="Waiting for two other players to join…",
         ),
         Module(
@@ -238,15 +327,9 @@ def get_timeline():
                 iterate_over=range(N_ROUNDS),
                 logic=lambda i: ContributionTrial.cue(round=i),
                 time_estimate_per_iteration=ContributionTrial.time_estimate,
-                stop_if=left_team,
             ),
         ),
-        conditional(
-            "game_over",
-            left_team,
-            PageMaker(game_ended_early, time_estimate=5),
-            PageMaker(game_over, time_estimate=5),
-        ),
+        PageMaker(game_over, time_estimate=5),
     )
 
 
@@ -256,41 +339,48 @@ class Exp(psynet.experiment.Experiment):
     timeline = get_timeline()
 
     test_n_bots = 3
-    test_mode = "parallel"
+    test_mode = "serial"
 
     @classmethod
     def get_basic_data(cls, context=None, **kwargs):
         """Return one row per player per round."""
         trials = ContributionTrial.query.order_by(ContributionTrial.id).all()
-        rows = []
-        for t in trials:
-            team = (t.group_round and t.group_round.live_game_outcome) or {}
-            answer = (t.live_game and t.live_game.answer) or {}
-            rows.append(
-                {
-                    "team_id": t.sync_group_id,
-                    "participant_id": t.participant_id,
-                    "trial_id": t.id,
-                    # Counted from 0, as in the other demos' exports.
-                    "round": t.sync_group_round,
-                    "contributed": answer.get("contributed"),
-                    # What the team put in the pot, before it was multiplied.
-                    "pot": team.get("pot"),
-                    # Each player's part of the multiplied pot.
-                    "share": team.get("share"),
-                    "earned": answer.get("earned"),
-                }
-            )
-        return {"player_round": rows}
+        return {"player_round": [_player_round_row(t) for t in trials]}
+
+    def test_serial_run_bots(self, bots: List[BotDriver]):
+        for bot in bots:
+            bot.take_page()
+        advance_past_wait_pages(bots)
+        # Each game page moves on once its round's game ends.
+        for bot in bots:
+            bot.take_page()
+        assert all("The group put 15 tokens" in b.current_page_text for b in bots)
+
+        # bots[2] goes quiet on its results page, so the next round's
+        # barrier fails them as late, and the other two carry on.
+        for bot in bots[:2]:
+            bot.take_page()
+        bots[2].allow_failure()
+        make_late_now(bots, "public_goods")
+        assert bots[2].failed
+        run_bots_to_completion(bots[:2], timeout=N_ROUNDS * (ROUND_SECONDS + 30))
+
+        rows = self.get_basic_data()["player_round"]
+
+        def pots(bot):
+            return [
+                (r["round"], r["pot"]) for r in rows if r["participant_id"] == bot.id
+            ]
+
+        # Two players put in 0 and 5 tokens after the third was failed.
+        assert pots(bots[0]) == [(0, 15), (1, 5), (2, 5)], rows
+        assert pots(bots[2]) == [(0, 15)], rows
 
     def test_check_bot(self, bot: Bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
         trials = ContributionTrial.query.filter_by(participant_id=bot.id).all()
-        assert len(trials) == N_ROUNDS, (
-            bot.id,
-            bot.sync_group_removal_reason("team"),
-            [t.answer for t in trials],
-        )
+        if not bot.failed:
+            assert len(trials) == N_ROUNDS, [t.answer for t in trials]
         for trial in trials:
             game = trial.live_game
             player = game.player

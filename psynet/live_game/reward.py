@@ -2,9 +2,9 @@
 rewards from add_performance_reward, paid by effects queued during the game,
 the reward from the outcome of a player whose game ends before the game
 does, and, once the result is saved, the other players' rewards from the
-outcome, the copy of the outcome on the game's round, and the removal of
-players who didn't play from their groups, for a PlayLiveGame with
-``absent_action``. The group's top-ups stop when the game stops taking
+outcome, the copy of the outcome on the game's round, and, for a
+PlayLiveGame with ``absent_action``, failing the players who didn't play or
+removing them from their groups. The group's top-ups stop when the game stops taking
 players and, unless the PlayLiveGame says otherwise, when it ends. A
 player who came too late gets nothing from the game, which never saw
 them. A reward is also recorded on the trial
@@ -127,8 +127,14 @@ def _handles_ending(self, game_code, session_row):
         if participant_id not in ended_early
     ]
     players = _locked_players(session_row, remaining) if remaining else []
-    from .play import _remove_absent_players, _stop_top_ups_soon
+    from .play import _fail_absent_players, _remove_absent_players, _stop_top_ups_soon
 
+    # Group rows are locked after the players' rows and before their trials,
+    # in the sync group lock order, so absent players leave their groups
+    # before anyone is paid, and are failed after.
+    failing, left = [], []
+    if session_row.status != "failed":
+        failing, left = _remove_absent_players(self, session_row, players)
     if _has_outcome(session_row.status, session_row.outcome):
         _pay_outcome_rewards(self, session_row, players)
         _record_outcome_on_round(session_row)
@@ -136,8 +142,7 @@ def _handles_ending(self, game_code, session_row):
     entry = (session_row.final_state or {}).get("psynet")
     if entry is not None and entry["stop_top_ups_at_end"]:
         _stop_top_ups_soon(entry["group_id"], session_row.id)
-    if session_row.status != "failed":
-        _remove_absent_players(self, session_row, players)
+    _fail_absent_players(session_row, failing, left)
     return game_code(_record_from_row(session_row))
 
 
