@@ -10,15 +10,15 @@ const SOURCE = fs.readFileSync(
   "utf8"
 );
 const match = SOURCE.match(
-  /psynet\.isPredictedReply = function[\s\S]*?\n    \};/
+  /psynet\.isExpectedReply = function[\s\S]*?\n    \};/
 );
-assert.ok(match, "could not extract psynet.isPredictedReply");
+assert.ok(match, "could not extract psynet.isExpectedReply");
 
-function isPredictedReply(entry, page) {
+function isExpectedReply(entry, page) {
   const psynet = { answers: { queue: [entry] } };
   const fn = new Function(
     "psynet",
-    `return ${match[0].replace("psynet.isPredictedReply = ", "")}`
+    `return ${match[0].replace("psynet.isExpectedReply = ", "")}`
   )(psynet);
   return fn({ page });
 }
@@ -32,25 +32,30 @@ const page = (contents, attributes = {}) => ({
   contents,
 });
 
-describe("isPredictedReply", () => {
+describe("isExpectedReply", () => {
   it("adopts the page shown in advance", () => {
-    assert.equal(isPredictedReply(entry, page({ name: "yellow star" })), true);
+    assert.equal(isExpectedReply(entry, page({ name: "yellow star" })), true);
   });
 
   it("rejects a reply whose contents differ from those shown", () => {
-    assert.equal(isPredictedReply(entry, page({ name: "green square" })), false);
+    assert.equal(isExpectedReply(entry, page({ name: "green square" })), false);
+  });
+
+  it("with nothing shown after the answer, accepts any page but a hold", () => {
+    assert.equal(isExpectedReply({}, page({ name: "green square" })), true);
+    assert.equal(isExpectedReply({}, page({}, { timeline_hold: true })), false);
   });
 
   it("rejects another page or a timeline hold", () => {
     assert.equal(
-      isPredictedReply(entry, {
+      isExpectedReply(entry, {
         ...page({ name: "yellow star" }),
         attributes: { page_uuid: "1-6-p-def" },
       }),
       false
     );
     assert.equal(
-      isPredictedReply(entry, page({ name: "yellow star" }, { timeline_hold: true })),
+      isExpectedReply(entry, page({ name: "yellow star" }, { timeline_hold: true })),
       false
     );
   });
@@ -84,7 +89,7 @@ describe("sendAnswers", () => {
   });
 });
 
-const adoptionCode = ["psynet\\.isPredictedReply", "psynet\\.adoptRenderedReply"].map(
+const adoptionCode = ["psynet\\.isExpectedReply", "psynet\\.adoptRenderedReply"].map(
   (name) => {
     const found = SOURCE.match(new RegExp(`${name} = function[\\s\\S]*?\\n    \\};`));
     assert.ok(found, `could not extract ${name}`);
