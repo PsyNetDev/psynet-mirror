@@ -207,7 +207,11 @@ def too_few_players(participant):
 
 def save_game_over_reason(participant):
     """Save why the player's game is over, for the ended-early page."""
-    participant.var.game_over_reason = game_over_reason(participant)
+    # The cohort can change after the loop's last check, e.g. a latecomer
+    # is admitted, so the reason may no longer be found.
+    participant.var.game_over_reason = (
+        game_over_reason(participant) or "too_few_players"
+    )
 
 
 def keep_playing(participant):
