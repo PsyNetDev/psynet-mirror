@@ -2477,6 +2477,15 @@ class Page(Elt):
         )
         return self.page_config
 
+    @js_vars.setter
+    def js_vars(self, value):
+        warnings.warn(
+            "Page.js_vars has been renamed to page_config.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.page_config = value
+
     def _page_config_for(self, experiment, participant):
         """The page's ``page_config`` when it renders for ``participant``."""
         return self.page_config
