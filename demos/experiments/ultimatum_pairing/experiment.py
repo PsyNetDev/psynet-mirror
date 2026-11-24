@@ -157,7 +157,9 @@ def round_status(participant):
     """Return whether the regrouper paired the player, sat them out, or left them with no cohort."""
     if in_pair(participant):
         return "paired"
-    if pairing.sat_out(participant):
+    # A player left alone in their cohort can never be paired, so they
+    # don't sit out: their game is over.
+    if pairing.sat_out(participant) and not too_few_players(participant):
         return "sat_out"
     return "no_cohort"
 
@@ -184,15 +186,20 @@ def game_over_reason(participant):
     # don't count.
     if pairing.rounds_played(participant) >= N_ROUNDS:
         return "played_all_rounds"
-    if pairing.rounds_sat_out(participant) >= MAX_SIT_OUTS:
-        return "sat_out_too_often"
     # A latecomer is turned away if the cohort closes before pairing them.
     if participant.sync_group_removal_reason(COHORT) == "not_admitted":
         return "not_admitted"
-    cohort = cohort_of(participant)
-    if cohort is None or cohort.n_active_participants < 2:
+    if too_few_players(participant):
         return "too_few_players"
+    if pairing.rounds_sat_out(participant) >= MAX_SIT_OUTS:
+        return "sat_out_too_often"
     return None
+
+
+def too_few_players(participant):
+    """Return whether the player's cohort has ended or has nobody left to pair them with."""
+    cohort = cohort_of(participant)
+    return cohort is None or cohort.n_active_participants < 2
 
 
 def keep_playing(participant):

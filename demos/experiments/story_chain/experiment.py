@@ -45,6 +45,7 @@ from psynet.timeline import (
     for_loop,
     join,
 )
+from psynet.timeline_hold import default_group_barrier_arrival_message
 from psynet.trial.main import Trial
 
 GROUP = "story"
@@ -147,6 +148,7 @@ class StoryTurn(Trial):
             group_type=GROUP,
             waiting_message="Waiting for this turn to finish…",
             waiting_screen=waiting_for_writer,
+            on_arrival_message=turn_arrival_message,
             late_after=LATE_AFTER,
             late_action="fail",
         )
@@ -202,6 +204,13 @@ class StoryTurn(Trial):
                 time_limit=5,
             )
         return None
+
+
+def turn_arrival_message(kind, **kwargs):
+    """Don't tell the writer how many members are ready: they are all waiting for the writer."""
+    if kind == "notice":
+        return None
+    return default_group_barrier_arrival_message(kind=kind, **kwargs)
 
 
 def waiting_for_writer(participant, trial):

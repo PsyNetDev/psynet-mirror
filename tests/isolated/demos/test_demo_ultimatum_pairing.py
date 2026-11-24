@@ -16,6 +16,29 @@ pytestmark = pytest.mark.parametrize(
 
 
 @pytest.mark.parametrize(
+    "cohort_size, round_status, game_over_reason",
+    [(3, "sat_out", "sat_out_too_often"), (1, "no_cohort", "too_few_players")],
+)
+def test_a_player_left_alone_ends_rather_than_sitting_out(
+    in_experiment_directory, monkeypatch, cohort_size, round_status, game_over_reason
+):
+    demo = sys.modules[type(get_experiment()).__module__]
+    monkeypatch.setattr(demo.pairing, "sat_out", lambda participant: True)
+    monkeypatch.setattr(demo.pairing, "rounds_played", lambda participant: 0)
+    monkeypatch.setattr(
+        demo.pairing, "rounds_sat_out", lambda participant: demo.MAX_SIT_OUTS
+    )
+    cohort = SimpleNamespace(n_active_participants=cohort_size)
+    player = SimpleNamespace(
+        in_sync_group=lambda group_type: False,
+        sync_group_removal_reason=lambda group_type: None,
+        active_sync_groups={demo.COHORT: cohort},
+    )
+    assert demo.round_status(player) == round_status
+    assert demo.game_over_reason(player) == game_over_reason
+
+
+@pytest.mark.parametrize(
     "result, answer, expected",
     [
         ("timed_out", None, "own_time_out"),

@@ -358,6 +358,7 @@ class Exp(psynet.experiment.Experiment):
             # later than this is failed.
             late_after=60,
             late_action="fail",
+            waiting_message="Waiting for everyone to open the game…",
             game_class=Snake,
             page=LiveGamePage(
                 "snake_live",

@@ -11,8 +11,8 @@ waiting partners are not woken while later poller skips still lock their rows.
 The poller uses a fresh session per visit, so wake deferral is stored in a
 context variable rather than ``session.info``.
 A hold consumed immediately after skipping a released wait is marked
-``silent`` on the durable record so catch-up overlays stay a spinner for that
-visit. ``GET /timeline`` and ``POST /response`` skip ready holds under a
+``silent`` on the durable record so catch-up overlays stay a spinner for the
+first ``CATCH_UP_SPINNER_SECONDS`` of that visit. ``GET /timeline`` and ``POST /response`` skip ready holds under a
 participant row lock, but they do not share that lock protocol. The page
 lifecycle developer docs describe the resume protocol.
 """
@@ -51,6 +51,10 @@ from psynet.utils import (
 )
 
 _TIMELINE_HOLD_CHANNEL = "psynet_timeline_hold"
+
+# Partners normally catch up well within this, so the spinner doesn't flash
+# a message; the browser's next safety poll after it shows the message.
+CATCH_UP_SPINNER_SECONDS = 3.0
 
 RESERVED_DIRECT_MESSAGE_TYPES = frozenset({"timeline_hold_wake"})
 """Directed message types that only PsyNet itself may send.
@@ -445,6 +449,17 @@ class TimelineHoldRecord(SQLBase, SQLMixin):
     def _elapsed_at(self, timestamp):
         return max(0.0, (timestamp - self.started_at).total_seconds())
 
+    def is_silent(self):
+        """Return whether this catch-up hold still shows a bare spinner.
+
+        A catch-up hold that is still waiting after
+        ``CATCH_UP_SPINNER_SECONDS`` is waiting for someone, such as a
+        partner who never arrives, so it shows its waiting message.
+        """
+        return bool(self.silent) and (
+            self._elapsed_at(timenow()) < CATCH_UP_SPINNER_SECONDS
+        )
+
     def account_until(self, participant, timestamp):
         """Account newly elapsed visible waiting time through ``timestamp``."""
         if self.resumed_at is not None and timestamp > self.resumed_at:
@@ -724,7 +739,7 @@ class _TimelineHoldPage(Page):
         if participant is None:
             return False
         record = self.get_hold_record(participant)
-        return bool(record is not None and record.silent)
+        return record is not None and record.is_silent()
 
     def translated_waiting_message(self, participant):
         """Return the hold message for this participant, translating framework-provided ones."""
@@ -786,7 +801,7 @@ class _TimelineHoldPage(Page):
             "wake_token": record.wake_token,
             "safety_poll_ms": round(self.check_interval * 1000),
             "timeout_ms": remaining_timeout_ms,
-            "silent": bool(record.silent),
+            "silent": record.is_silent(),
             "replaces_page": self.waiting_screen_page(participant) is not None,
         }
 

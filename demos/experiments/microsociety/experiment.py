@@ -144,8 +144,7 @@ def get_timeline():
                     f"You have played your {MAX_ROUNDS} rounds."
                 ),
                 "not_admitted": InfoPage(
-                    "The society you joined couldn't start a round with you, "
-                    "so you didn't play.",
+                    "We couldn't add you to the society in time, so you didn't play.",
                     time_estimate=5,
                 ),
             },
@@ -496,7 +495,7 @@ class Exp(psynet.experiment.Experiment):
             bot.allow_failure()
         make_late_now([society[1]], "round_finished")
         advance_past_wait_pages([newcomers[3]])
-        assert "couldn't start a round with you" in newcomers[3].current_page_text
+        assert "couldn't add you to the society" in newcomers[3].current_page_text
         assert all(bot.failed for bot in society)
         run_bots_to_completion(bots)
 

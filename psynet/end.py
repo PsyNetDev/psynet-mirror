@@ -324,7 +324,9 @@ class UnsuccessfulEndLogic(EndLogic):
         arguments such as ``experiment``) that returns one, or ``None``.
         Without one, or when it returns ``None``, PsyNet explains its own
         multiplayer reasons: waiting too long at a barrier, being too slow
-        to reach the next one, or the group becoming too small.
+        to reach the next one, the group becoming too small, or not
+        playing a live game (see ``absent_action`` in
+        :class:`~psynet.live_game.PlayLiveGame`).
         A plain string replaces these built-in lines for every participant,
         so prefer a function that returns ``None`` for reasons you don't
         handle. Returning ``""`` shows no line at all. If the function
@@ -382,7 +384,7 @@ class UnsuccessfulEndLogic(EndLogic):
                 tags.p(
                     _p(
                         "final_page_unsuccessful",
-                        "However, you will still be paid for the time you spent already.",
+                        "You keep what you have earned so far.",
                     )
                 )
                 tags.p(self.summarize_reward(experiment, participant))
@@ -423,6 +425,16 @@ def _builtin_failure_reason(failure_tags):
             "final_page_unsuccessful",
             "Too few members of your group remained to continue, "
             "so we ended your session.",
+        )
+    if "no_show" in failure_tags:
+        return _p(
+            "final_page_unsuccessful",
+            "You didn't open the game in time, so we ended your session.",
+        )
+    if "left_game" in failure_tags:
+        return _p(
+            "final_page_unsuccessful",
+            "You were away from the game for too long, so we ended your session.",
         )
     waited_at_barrier = any(
         tag.startswith(("timeline_hold:barrier:", "while_loop:barrier:"))
