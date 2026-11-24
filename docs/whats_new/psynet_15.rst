@@ -6,6 +6,33 @@ PsyNet 15 is in development. This page collects its highlights as they land.
 The `changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_
 lists every change.
 
+Pages without waiting for the server
+------------------------------------
+
+**The next page appears as soon as the participant answers**, where PsyNet
+can tell what it is, and the answer is sent in the background:
+
+- A page that comes straight after another page in the timeline, with no
+  code in between, is rendered in advance. Nothing to change; opt a page out
+  with ``render_in_advance=False`` if it shows something the previous answer
+  changes (see :ref:`showing_the_next_page_without_waiting`).
+- Such pages get a **Back** button when the earlier page collects no answer,
+  as in a run of instruction pages. Hide it with ``show_back_button=False``
+  (see :ref:`going_back_to_the_previous_page`).
+- ``StaticTrialMaker(prepare_trials_in_advance=True)`` prepares a
+  participant's trials in order, shows the next trial's page as soon as the
+  participant answers and downloads the next trials' files early (see
+  :ref:`showing_the_next_trials_without_waiting`).
+- The new :class:`~psynet.page.JSPage` is a page written as your own HTML
+  and one JavaScript module. Consecutive trials share one page, which suits
+  fast tasks such as reaction time tasks (see
+  :doc:`/code/trials/keeping_a_task_on_one_page`).
+
+Code that relied on the old behaviour may notice that page UUIDs now follow
+from the participant and the page rather than being random, and that the
+undocumented ``psynet.nextPagePending`` is now
+``psynet.pageState.submitting``.
+
 Page configuration
 ------------------
 

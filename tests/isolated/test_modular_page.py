@@ -268,6 +268,25 @@ def test_js_vars_names_still_work_with_a_deprecation_warning():
         assert page.js_vars is page.page_config
 
 
+def test_get_js_vars_overrides_still_work_on_components_using_the_new_name():
+    class BuiltInPrompt(Prompt):
+        def get_page_config(self):
+            return {"built_in": 1}
+
+    class OldPrompt(BuiltInPrompt):
+        def get_js_vars(self):
+            return {**super().get_js_vars(), "old": 2}
+
+    class NewerPrompt(OldPrompt):
+        def get_page_config(self):
+            return {**super().get_page_config(), "newer": 3}
+
+    with pytest.warns(DeprecationWarning, match="OldPrompt.get_js_vars"):
+        config = NewerPrompt("Hi!").get_page_config()
+
+    assert config == {"built_in": 1, "old": 2, "newer": 3}
+
+
 def test_components_contribute_managed_javascript_lifecycle_resources():
     class ManagedPrompt(Prompt):
         def get_js_dependencies(self):

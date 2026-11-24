@@ -711,7 +711,7 @@ class StaticTrialMaker(ChainTrialMaker):
                     next_page._rendered_in_advance = True
                 shown.append(next_page)
                 ahead = not following.gives_feedback(experiment, participant)
-        # Page modules need the list, even if empty, to show the page itself.
+        # A JSPage needs the list, even if empty, to show the page itself.
         return (shown if adoptable else shown or None), media
 
     def _selection_hook_overrides(self):

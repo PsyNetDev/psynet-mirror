@@ -2393,6 +2393,33 @@ def test_page_level_early_exit_setting_overrides_the_recruiter_and_config():
     assert shown.early_exit_available(experiment, participant) is True
 
 
+@pytest.mark.parametrize("next_html,kept", [("<div>task</div>", True), ("<p/>", False)])
+def test_a_jspage_shows_the_next_timeline_jspage_with_its_layout_itself(
+    next_html, kept
+):
+    current = JSPage("a", "<div>task</div>", "/static/task.js", time_estimate=1)
+    following = JSPage("b", next_html, "/static/task.js", time_estimate=1)
+    following._rendered_in_advance = True
+    following._page_key = "main.1"
+    experiment = MagicMock()
+    experiment.timeline._pages_rendered_in_advance.return_value = [following]
+    participant = SimpleNamespace(
+        id=1,
+        unique_id="u",
+        page_count=3,
+        progress=0.0,
+        _progress_after=lambda time_estimate, progress: progress,
+    )
+
+    with (
+        patch.object(JSPage, "render", lambda self, *args, **kwargs: self.html),
+        patch.object(JSPage, "layout_key", lambda self, html, *args: str(html)),
+    ):
+        [upcoming] = current._upcoming_pages_payload(experiment, participant)
+
+    assert ("html" not in upcoming) is kept
+
+
 def test_pages_not_rendered_in_advance_keep_the_back_button():
     timeline = Timeline(
         InfoPage("A", time_estimate=1),
@@ -2401,3 +2428,11 @@ def test_pages_not_rendered_in_advance_keep_the_back_button():
     )
     assert timeline._can_go_back("main", 1)
     assert timeline._can_go_back("main", 2)
+
+
+def test_back_never_returns_to_a_page_without_a_next_button():
+    timeline = Timeline(
+        InfoPage("Moves on by itself", time_estimate=1, show_next_button=False),
+        InfoPage("B", time_estimate=1),
+    )
+    assert not timeline._can_go_back("main", 1)

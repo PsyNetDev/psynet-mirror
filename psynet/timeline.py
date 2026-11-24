@@ -2948,26 +2948,44 @@ class Page(Elt):
             return None
         payload = []
         progress, answered = participant.progress, self
+        own_layout_key = None
         for offset, page in enumerate(upcoming, start=1):
             page_uuid = make_page_uuid(
                 participant, participant.page_count + offset, page._page_key
             )
             progress = participant._progress_after(answered.time_estimate, progress)
-            answered = page
             if page._rendered_in_advance:
                 page._page_uuid = page_uuid
                 page._progress = progress
                 html = page.render(experiment, participant, partial_mode=True)
+                layout_key = page.layout_key(html, experiment, participant)
+                if answered._module_shows_the_next_trials() and (
+                    page._module_shows_the_next_trials()
+                ):
+                    if own_layout_key is None:
+                        own_layout_key = self.layout_key(
+                            self.render(experiment, participant, partial_mode=True),
+                            experiment,
+                            participant,
+                        )
+                    if layout_key and layout_key == own_layout_key:
+                        # The JSPage on screen shows it through update().
+                        payload.append(
+                            {"page_uuid": page_uuid, "contents": page.contents}
+                        )
+                        answered = page
+                        continue
                 payload.append(
                     {
                         "page_uuid": page_uuid,
                         "html": html,
                         "contents": page.contents,
-                        "layout_key": page.layout_key(html, experiment, participant),
+                        "layout_key": layout_key,
                     }
                 )
             else:
                 payload.append({"page_uuid": page_uuid, "contents": page.contents})
+            answered = page
         return payload
 
     def _previous_page_payload(self, experiment, participant):
@@ -3715,7 +3733,8 @@ class Timeline:
         As with pages rendered in advance, both pages must be next to each
         other directly in the timeline, so no code runs between them, and
         must show the same to every participant. Back sits beside Next, so
-        the page must have a Next button. The earlier page must collect no
+        the page must have a Next button, and so must the earlier page, so
+        that the participant can move on from it again. The earlier page must collect no
         answer, so going back never revises one, and must not override
         ``on_complete``, which would run again. Neither page may be one a
         barrier shows while the participant waits, as a release moves the
@@ -3727,15 +3746,20 @@ class Timeline:
         if not 0 < index < len(elts):
             return False
         page, previous = elts[index], elts[index - 1]
+
+        def has_next_button(page):
+            return any(isinstance(b, NextButton) for b in getattr(page, "buttons", ()))
+
         return (
             isinstance(page, Page)
             and page.show_back_button
-            and any(isinstance(b, NextButton) for b in getattr(page, "buttons", ()))
+            and has_next_button(page)
             and not page.is_timeline_hold
             and "barrier" not in page.links
             and page._cannot_be_rendered_early_because() is None
             and not page._recording_capture_sources()
             and isinstance(previous, ModularPage)
+            and has_next_button(previous)
             and isinstance(previous.control, NullControl)
             and not previous.is_timeline_hold
             and "barrier" not in previous.links
