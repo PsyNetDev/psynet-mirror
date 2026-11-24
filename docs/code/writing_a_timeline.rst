@@ -265,8 +265,10 @@ See :class:`~psynet.end.SuccessfulEndLogic` and
 :class:`~psynet.end.UnsuccessfulEndLogic`.
 
 When PsyNet ends a multiplayer session itself (a participant waited too long
-at a barrier, was too slow to reach the next one, or their group became too
-small), the unsuccessful end page says why, for example "We waited too long
+at a barrier, was too slow to reach the next one, their group became too
+small, or they didn't open or left a live game whose
+:class:`~psynet.live_game.PlayLiveGame` step has ``absent_action="fail"``),
+the unsuccessful end page says why, for example "We waited too long
 for other participants, so we ended your session." Other endings, such as
 failing a prescreen, get no such line. To explain your own reasons, pass a
 function of the participant that returns a line, or ``None`` to keep
@@ -299,6 +301,8 @@ in 3 s." and counts down:
 
 The rejected-consent page has no Finish button, so
 :class:`~psynet.end.RejectedConsentLogic` does not take ``time_limit``.
+
+.. _time_limits:
 
 Time limits
 -----------
@@ -334,7 +338,9 @@ the page's content, for example
 Answers given because of the time limit skip validation, and their
 :attr:`~psynet.timeline.Response.time_limit_reached` is ``True``. A later page
 maker or code block can check the previous page with
-``participant.response.time_limit_reached``.
+``participant.response.time_limit_reached``. To cover this in bot tests, give
+the page's bots the response ``BotResponse(time_limit_reached=True)`` (see
+:doc:`/test/backend`).
 
 In a group experiment, a time limit covers only its page. A following
 :class:`~psynet.sync.GroupBarrier` with ``late_after`` counts the late limit

@@ -59,7 +59,9 @@ Visit claim
 Hold record
     ``TimelineHoldRecord`` for the current ``page_uuid``. A hold consumed
     immediately after skipping a released wait is ``silent``, so overlay
-    HTML and arrival-message replacement stay empty for that visit.
+    HTML and arrival-message replacement stay empty for the first
+    ``CATCH_UP_SPINNER_SECONDS`` of that visit. A hold still waiting after
+    that shows its message from the next safety poll on.
 
 ``Participant.active_barriers`` is only unreleased links. After the
 release commit, the overlay’s ``is_ready_to_resume`` is true because the

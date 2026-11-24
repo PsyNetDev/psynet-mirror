@@ -24,6 +24,7 @@ from .psynet_entry import TOO_LATE
 from .record import (
     LiveGameFailed,
     LiveGameRecord,
+    LiveGameStatus,
     _computed_answer,
     _done_reason,
     _session_channel,
@@ -112,9 +113,10 @@ class LiveGameControl(NullControl):
         if _done_reason(session_id, participant.id) is not None:
             return None
         game = LiveGameRecord(session_id)
-        if game.status == "failed":
+        status = game.status
+        if status == LiveGameStatus.FAILED:
             raise LiveGameFailed(game)
-        if game.status != "running":
+        if status != LiveGameStatus.RUNNING:
             return None
         _check_session_can_still_end(session_id)
         _p = get_translator(context=True)
@@ -278,14 +280,17 @@ class LiveGamePage(ModularPage):
 
     player_left_message
         What a notice at the top of the page says while another player has
-        left the game page and not come back. By default it says "Another
+        left the game page and not come back, or, once the game has started
+        without them, hasn't opened it yet. By default it says "Another
         player has left the game." Set it to ``None`` for no notice.
 
     no_game_message
         What a notice at the top of the page says to a participant whose
-        group didn't start a game. By default it says "Your group couldn't
-        start the game." Set it to ``None`` for no notice. It isn't shown
-        when the page already says that the participant's group left them.
+        group didn't start a game, or, once it has ended, to a player whose
+        game too few players were ready for, which never started. By
+        default it says "Your group couldn't start the game." Set it to
+        ``None`` for no notice. It isn't shown when the page already says
+        that the participant's group left them.
 
     too_late_message
         What a notice at the top of the page says to a participant who

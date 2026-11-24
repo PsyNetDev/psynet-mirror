@@ -170,6 +170,19 @@ class BotResponse:
 
         blobs :
             A dictionary of blobs returned from the front-end.
+
+        time_limit_reached :
+            If ``True``, the bot lets the page's ``time_limit`` run out, as a
+            participant who doesn't answer in time. The page records its
+            ``time_limit_answer`` without validating it, and
+            :attr:`~psynet.timeline.Response.time_limit_reached` is ``True``.
+            The server accepts this at once, so the bot doesn't wait for the
+            deadline; use
+            :meth:`~psynet.participant.ParticipantDriver.run_out_of_time` when
+            the test needs the time to pass. ``raw_answer`` defaults to
+            ``None``; with ``time_limit_answer=CURRENT_ANSWER``, pass the
+            answer entered so far as ``raw_answer``. Pages without a
+            ``time_limit`` raise an error.
     """
 
     def __init__(
@@ -179,7 +192,15 @@ class BotResponse:
         answer=NoArgumentProvided,
         metadata=NoArgumentProvided,
         blobs=NoArgumentProvided,
+        time_limit_reached=False,
     ):
+        if (
+            time_limit_reached
+            and raw_answer == NoArgumentProvided
+            and answer == NoArgumentProvided
+        ):
+            raw_answer = None
+
         if raw_answer != NoArgumentProvided and answer != NoArgumentProvided:
             raise ValueError(
                 "raw_answer and answer cannot both be provided; you should probably just provide raw_answer."
@@ -194,6 +215,13 @@ class BotResponse:
         if metadata == NoArgumentProvided:
             metadata = {}
 
+        time_limit_reached = bool(time_limit_reached) or (
+            metadata.get("time_limit_reached") is True
+        )
+        if time_limit_reached:
+            metadata = {**metadata, "time_limit_reached": True}
+
+        self.time_limit_reached = time_limit_reached
         self.raw_answer = raw_answer
         self.answer = answer
         self.metadata = metadata
@@ -265,6 +293,17 @@ def advance_past_wait_pages(
         )
     if timeout is NoArgumentProvided:
         timeout = None if max_iterations is not None else 10.0
+    _advance_past_wait_pages(bots, timeout, stop_at, max_iterations=max_iterations)
+
+
+def _advance_past_wait_pages(
+    bots, timeout, stop_at, max_iterations=None, current_visits=frozenset()
+):
+    """Run :func:`advance_past_wait_pages`, also advancing bots on the pages in ``current_visits``.
+
+    ``current_visits`` holds the ``page_uuid`` of waits that ``stop_at``
+    mustn't leave bots at, as their barrier ID is also that of a later wait.
+    """
     stop_at = {stop_at} if isinstance(stop_at, str) else set(stop_at)
     deadline = None if timeout is None else time.monotonic() + timeout
     iteration = 0
@@ -278,7 +317,11 @@ def advance_past_wait_pages(
             # two would leave take_page submitting the stale waiting page.
             bot.refresh_status()
             page = bot.status.get("page") or {}
-            if page.get("barrier_id") in stop_at and not page.get("can_resume"):
+            if (
+                page.get("barrier_id") in stop_at
+                and not page.get("can_resume")
+                and bot.status.get("page_uuid") not in current_visits
+            ):
                 continue
             if _status_is_waiting(bot.status):
                 waiting.append(bot)
@@ -296,12 +339,21 @@ def advance_past_wait_pages(
             time.sleep(0.5)
 
 
-def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 10.0):
-    """Split the bots' pools at a :class:`~psynet.sync.Regrouper` now, then advance them past it.
+def regroup_now(
+    bots: List["BotDriver"],
+    regrouper,
+    timeout: Optional[float] = 10.0,
+    stop_at: Union[str, Sequence[str]] = (),
+):
+    """Pretend a :class:`~psynet.sync.Regrouper`'s deadline has passed, then move the bots on.
 
-    A bot test would otherwise wait out the regrouper's ``deadline`` or its
-    next ``every`` tick, for example to test a round that starts without a
-    member who is still reading their results. This moves two clocks back by
+    The bots' pools split now, as at the regrouper's ``deadline`` or next
+    ``every`` tick, and the bots move on into their new groups, as
+    :func:`advance_past_wait_pages` would move them. A bot test would
+    otherwise sleep until the deadline, for example to test a round that
+    starts without a member who is still reading their results.
+
+    This moves two clocks back by
     one ``deadline`` (or ``every`` period): the bots' arrival times at the
     regrouper and the creation times of the groups their pools' earlier
     splits formed. The next check then splits the pools as the deadline or
@@ -321,12 +373,15 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
         The regrouper from the timeline.
     timeout : float, optional
         Passed to :func:`advance_past_wait_pages`.
+    stop_at : str or sequence of str
+        Passed to :func:`advance_past_wait_pages`: IDs of barriers after the
+        regrouper, such as one inside the round, to leave bots waiting at.
 
     Raises
     ------
     ValueError
-        If the regrouper has neither ``deadline`` nor ``every``, or none of
-        the bots is waiting at it.
+        If the regrouper has neither ``deadline`` nor ``every``, none of the
+        bots is waiting at it, or ``stop_at`` names the regrouper itself.
 
     Examples
     --------
@@ -335,7 +390,16 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
         for bot in bots[:3]:
             bot.take_page()  # The fourth player is still reading.
         regroup_now(bots[:3], pairing)
+
+        # Responders wait at "offer_made" while the test plays the proposers.
+        regroup_now(bots, pairing, stop_at="offer_made")
     """
+    stop_at = (stop_at,) if isinstance(stop_at, str) else tuple(stop_at)
+    if regrouper.id in stop_at:
+        raise ValueError(
+            f"stop_at can't name the regrouper '{regrouper.id}': the split happens "
+            "in the background, so bots waiting there would be left before it."
+        )
     period = regrouper.deadline or regrouper.every
     if period is None:
         raise ValueError(
@@ -354,7 +418,7 @@ def regroup_now(bots: List["BotDriver"], regrouper, timeout: Optional[float] = 1
             pools[group and group.id] = group
         for within_group in pools.values():
             _backdate_splits(regrouper, within_group, period)
-    advance_past_wait_pages(bots, timeout=timeout)
+    advance_past_wait_pages(bots, timeout=timeout, stop_at=stop_at)
 
 
 def _backdate_splits(regrouper, within_group, seconds):
@@ -379,12 +443,19 @@ def _backdate_arrivals(barrier, participants, seconds):
 
 
 def make_late_now(
-    bots: List["BotDriver"], barrier_id: str, timeout: Optional[float] = 10.0
+    bots: List["BotDriver"],
+    barrier_id: str,
+    timeout: Optional[float] = 10.0,
+    stop_at: Union[str, Sequence[str]] = (),
 ):
-    """Make the members who haven't reached a :class:`~psynet.sync.GroupBarrier` late now, then advance the bots past it.
+    """Pretend a :class:`~psynet.sync.GroupBarrier`'s ``late_after`` has passed, then move the bots on.
 
-    A bot test would otherwise wait out the barrier's ``late_after`` in real
-    time to test a player who goes quiet. For each group of a bot waiting at
+    Members who haven't reached the barrier are now late, so the barrier's
+    ``late_action`` applies to them, and the bots waiting there move on, as
+    :func:`advance_past_wait_pages` would move them. A bot test would
+    otherwise sleep for ``late_after`` to test a player who goes quiet.
+
+    For each group of a bot waiting at
     the barrier, this moves the group's clocks back: the time it last passed
     a barrier, and its members' times of joining and page deadlines. They
     move back by ``late_after``, plus what is left of a quiet member's timed
@@ -403,11 +474,16 @@ def make_late_now(
         The barrier's ID.
     timeout : float, optional
         Passed to :func:`advance_past_wait_pages`.
+    stop_at : str or sequence of str
+        Passed to :func:`advance_past_wait_pages`: IDs of barriers to leave
+        bots waiting at once they are past this one, such as the next turn's.
+        It can name ``barrier_id`` itself, for a turn-taking game whose turns
+        share one barrier: the bots then stop at its next visit.
 
     Raises
     ------
     ValueError
-        If none of the bots is waiting at the barrier, or it has no
+        If none of the bots is waiting at the barrier, or the barrier has no
         ``late_after``.
 
     Examples
@@ -417,6 +493,10 @@ def make_late_now(
         bots[0].take_page(response=4)
         bots[1].take_page(response=8)
         make_late_now(bots, "round_finished")  # bots[2] goes quiet.
+
+        # The others finish the turn and wait at the next turn's visit of
+        # the barrier that every turn shares.
+        make_late_now(bots, "turn_finished", stop_at="turn_finished")
     """
     with transaction():
         participants = [Participant.query.get(bot.id) for bot in bots]
@@ -451,7 +531,8 @@ def make_late_now(
                     left = (link.page_deadline - now).total_seconds()
                     page_left = max(page_left, left + answer_arrival)
             _backdate_group(group, late_after + page_left + 1)
-    advance_past_wait_pages(bots, timeout=timeout)
+        current_visits = frozenset(p.page_uuid for p in waiting)
+    _advance_past_wait_pages(bots, timeout, stop_at, current_visits=current_visits)
 
 
 def _backdate_group(group, seconds):
