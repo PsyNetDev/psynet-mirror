@@ -81,7 +81,10 @@ Custom controls are defined in the same way:
 
 ``color`` is an instance attribute set in the constructor.
 ``get_js_page_modules()`` supplies behavior that PsyNet activates for each
-page hosting the control. ``metadata`` returns optional information saved with
+page hosting the control, including a page swapped in before the server
+serves it (see :ref:`the trial maker guide <prepared_trials_swapped_in>`). A module that shows trials
+through ``update()`` belongs to the page instead: pass it as the page's
+``js_page_modules``. ``metadata`` returns optional information saved with
 the participant's response. ``get_bot_response()`` supplies the answer that
 bots give in automated tests.
 

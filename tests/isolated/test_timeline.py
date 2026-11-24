@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from markupsafe import Markup
 
+from psynet.chatroom import ChatRoom
 from psynet.end import (
     RejectedConsentLogic,
     SuccessfulEndLogic,
@@ -24,6 +25,7 @@ from psynet.exit import (
 from psynet.experiment import Experiment
 from psynet.modular_page import (
     ModularPage,
+    MusicNotationPrompt,
     Prompt,
     PushButtonControl,
     RadioButtonControl,
@@ -170,12 +172,29 @@ def test_only_pages_built_from_declared_components_are_swapped_in():
     class CustomControl(PushButtonControl):
         pass
 
-    def because(control=None, **kwargs):
+    def page(control=None, prompt=None, **kwargs):
         control = control or PushButtonControl(["a"])
-        page = ModularPage("q", Prompt("?"), control, time_estimate=1, **kwargs)
-        return page._not_swappable_because()
+        return ModularPage(
+            "q", prompt or Prompt("?"), control, time_estimate=1, **kwargs
+        )
+
+    def because(control=None, **kwargs):
+        return page(control, **kwargs)._not_swappable_because()
 
     assert because() is None
+    # A component's page modules only run as the page appears, but the page's
+    # own modules show the next trials themselves.
+    music = page(prompt=MusicNotationPrompt("X:1\nK:C\nC"))
+    assert music._not_swappable_because() is None
+    assert not music._show_in_advance()
+    own = page(js_page_modules=["/static/task.js"])
+    assert own._not_swappable_because() == (
+        "it has page modules, which show trials in advance instead"
+    )
+    assert own._show_in_advance()
+    assert because(chatroom=ChatRoom("room")) == (
+        "ChatRoom doesn't set can_swap_in_advance"
+    )
     assert because(CustomControl(["a"])) == (
         "CustomControl doesn't set can_swap_in_advance"
     )

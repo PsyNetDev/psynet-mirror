@@ -378,8 +378,8 @@ changed, the browser replaces it with the server's page and logs a warning.
 Only a :class:`~psynet.modular_page.ModularPage` whose prompt and control
 allow it is swapped in, which means that they render the same while an
 earlier trial is on screen as when the server serves them, and run as usual
-when swapped in. The built-in ``Prompt``, ``ImagePrompt``, ``AudioPrompt``
-and ``ColorPrompt`` allow it, and so do ``NullControl``, ``PushButtonControl``,
+when swapped in. The built-in ``Prompt``, ``ImagePrompt``, ``AudioPrompt``,
+``ColorPrompt`` and ``MusicNotationPrompt`` allow it, and so do ``NullControl``, ``PushButtonControl``,
 ``KeyboardPushButtonControl``, ``TextControl``, ``RadioButtonControl``,
 ``CheckboxControl``, ``DropdownControl``, ``NumberControl``, ``SliderControl``,
 ``MultiRatingControl`` and ``RatingControl``. A prompt or control of your own
@@ -399,6 +399,9 @@ The browser also waits for the server as before when:
   ``render_in_advance=False``;
 * the page has a ``validate`` function or ``check_ready_for_response``, or
   offers the participant a Leave button;
+* the page has page modules of its own (``js_page_modules``), which show the
+  next trials themselves (see :doc:`trials/keeping_a_task_on_one_page`); the
+  page modules of its prompt and control don't count;
 * an answer includes a recording or another file to upload;
 * a trial gives feedback, or ``show_after_trial`` returns a page; the trial
   after it waits for the server.

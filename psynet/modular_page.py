@@ -2291,6 +2291,7 @@ class ModularPage(Page):
         # Reusable components contribute page-local assets through hooks so they
         # do not need inline <style>/<script> (forbidden by the SPA contract).
         components = list(self._iter_layout_components())
+        has_own_page_modules = bool(kwargs.get("js_page_modules"))
         assets = self._collect_component_assets(components, kwargs)
 
         active_roles = {role: component for role, component in components}
@@ -2341,6 +2342,7 @@ class ModularPage(Page):
             **assets,
             **kwargs,
         )
+        self._has_own_page_modules = has_own_page_modules
         self.control._check_page(self)
 
     def _page_config_for(self, experiment, participant):
@@ -2468,7 +2470,16 @@ class ModularPage(Page):
             return super().validate(response, **kwargs)
 
     def _swap_components(self):
-        return [self, self.prompt, self.control]
+        return [
+            component
+            for component in (self, self.prompt, self.control, self.chatroom)
+            if component is not None
+        ]
+
+    def _page_modules_show_trials(self):
+        # A component's page modules run as the page appears; only the page's
+        # own modules may show trials through update().
+        return self._has_own_page_modules
 
     def _may_reject_answers(self):
         return (
@@ -5173,6 +5184,8 @@ class MusicNotationPrompt(Prompt):
     text_align :
         Alignment instructions for this text.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,

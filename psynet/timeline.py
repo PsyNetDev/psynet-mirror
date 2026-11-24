@@ -2863,13 +2863,17 @@ class Page(Elt):
         from .modular_page import RecordControl
 
         return (
-            bool(self.js_page_modules)
+            self._page_modules_show_trials()
             and self.time_limit is None
             and self.background_recording is None
             and not isinstance(getattr(self, "control", None), RecordControl)
             and not self.requires_full_page_reload
             and not self.media.urls
         )
+
+    def _page_modules_show_trials(self):
+        """Whether the page has page modules that may show trials through ``update``."""
+        return bool(self.js_page_modules)
 
     def _browser_page_uuid(self, participant):
         """The page UUID that the browser submits the page's answer with."""
@@ -2985,8 +2989,8 @@ class Page(Elt):
         if undeclared:
             return f"{', '.join(undeclared)} doesn't set can_swap_in_advance"
         reasons = {
-            "it has page modules, which show trials in advance instead": bool(
-                self.js_page_modules
+            "it has page modules, which show trials in advance instead": (
+                self._page_modules_show_trials()
             ),
             "it has a time limit": self.time_limit is not None,
             "it records in the background": self.background_recording is not None,

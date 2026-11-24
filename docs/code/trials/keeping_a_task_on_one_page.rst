@@ -144,7 +144,7 @@ Showing the next trial without waiting
 
 When nothing the participant answers changes which trials come next, the
 browser can show the next trial straight away instead of waiting for the
-server. Trial pages without page modules, such as an
+server. Trial pages without page modules of their own, such as an
 :class:`~psynet.modular_page.ImagePrompt` with a
 :class:`~psynet.modular_page.PushButtonControl`, do this too (see
 :ref:`showing_the_next_trials_without_waiting`), but they rebuild the page for
