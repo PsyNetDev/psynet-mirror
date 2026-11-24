@@ -4,8 +4,8 @@ In each of ``N_ROUNDS`` rounds, every member has ``ENDOWMENT`` tokens and
 chooses how many to put in the group pot. Unlike the ``public_goods`` demo,
 the choice is live: each member sees the others' contributions as they
 change, and can change their own until the round's ``ROUND_SECONDS`` are up.
-Then the pot is multiplied by ``MULTIPLIER`` and shared between the members,
-and each token a member earns pays ``TOKEN_VALUE``.
+Then the pot is multiplied by ``MULTIPLIER`` and shared between the members
+who opened the round, and each token a member earns pays ``TOKEN_VALUE``.
 
 Each round is one cued ``ContributionTrial`` per player, whose ``show_trial``
 starts a live game for the team and shows the game page. The trial's answer
@@ -100,7 +100,9 @@ class PublicGoods(LiveGame):
 
     def view(self, state, player):
         # Contributions are public, so every player sees them all, with the
-        # pot and payoffs as the round's outcome would count them now.
+        # pot and payoffs as the round's outcome would count them now. The
+        # numeric contributions replace _result's, which has None for
+        # no-shows, because the page shows a number for every row.
         return {
             "no_shows": self._no_shows(state),
             "too_few": state["too_few"],

@@ -136,8 +136,9 @@ class LiveGame(RealtimeGame):
     #: and PsyNet logs an error that says so.
     max_players = None
 
-    #: Seconds a player can be away, with none of their game pages open,
-    #: before they count as gone. Once fewer than :attr:`min_players` players
+    #: Seconds a player can be away, with none of their game pages open or
+    #: without having opened the game page when the game started, before
+    #: they count as gone. Once fewer than :attr:`min_players` players
     #: aren't gone, the game ends with the reason ``"players_left"``. Allow
     #: 30 seconds or more, for a reload. Set it to ``None`` for a game that
     #: carries on however many players are away (see :ref:`live-games-leaving`).

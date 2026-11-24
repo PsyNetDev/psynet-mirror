@@ -828,8 +828,9 @@ and an empty list once they're all back. Like the notice, it counts a
 player once they've been away for a few seconds, so a reload doesn't. A
 player who hasn't opened the page by the time the game starts counts as
 away from the start, until their page opens. So does a player added while
-the game runs. The notice only says what happened: a game that should end when a player
-leaves ends through its ``away_timeout``, ``on_leave`` or ``is_over``.
+the game runs. The notice only says what happened: a game that should end
+when a player leaves ends through its ``away_timeout``, ``on_leave`` or
+``is_over``.
 
 Reloading and dropped connections
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

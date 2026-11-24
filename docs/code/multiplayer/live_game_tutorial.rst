@@ -81,8 +81,9 @@ ordinary Python:
 ``Action`` is the type of a player's choice, which the message below uses for
 its ``action`` field, and ``ACTIONS`` lists the three choices, for the page's
 buttons and the bots. ``GAMES``, ``RESULT_SECONDS`` and ``LATE_AFTER`` are
-used by the demo's trials and timeline, and ``READY_SECONDS`` by the game, which "Playing it as trials" and
-"When a partner leaves" below describe.
+used by the demo's trials and timeline, which "Playing it as trials" and
+"When a partner leaves" below describe. ``READY_SECONDS`` is used by the
+game, which "The game and its state" describes.
 
 PsyNet numbers a game's players from 0, so the two players here are 0 and 1,
 and ``1 - player`` is the other one. A throw's
@@ -115,8 +116,8 @@ opens within seconds, so ``ready_timeout`` starts the game 20 seconds after
 the pair reaches it, even if a player hasn't opened the page. If a player
 closes the game page, or never opens it, and doesn't come back within 30
 seconds, which allows for a reload, ``away_timeout`` ends the game, so their
-partner isn't left waiting. ``timeout`` ends it after five minutes even if both players stop
-choosing. :ref:`live-games-time-limits` lists all of a game's time limits.
+partner isn't left waiting. ``timeout`` ends it after five minutes even if
+both players stop choosing. :ref:`live-games-time-limits` lists all of a game's time limits.
 
 ``initial_state`` returns the state at the start of the game. It receives the
 players' numbers, ``[0, 1]``, and the game's settings:
