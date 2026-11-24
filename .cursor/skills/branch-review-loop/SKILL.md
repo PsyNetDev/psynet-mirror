@@ -56,6 +56,11 @@ for the user's approval. They may prefer fewer reviews or other models.
   (`psynet test local` in a relevant demo; see "Testing" in `AGENTS.md`).
   Use the change the way a user would early, not only after the reviews
   converge.
+- Push fixes with `git push -o ci.skip` (see "CI status checks" in
+  `AGENTS.md`): reviewers read the local worktree, so these pushes only
+  keep the MR up to date. Run the affected test files locally before each
+  review, and CI once at the converged head, before asking for approval.
+  A fix for a CI failure restarts the count only if it changes behaviour.
 
 ## When to step back
 
@@ -74,4 +79,4 @@ When the loop ends, whether it converged or you stopped it, update the MR
 title and description as in `branch-review` step 7. If it stopped without
 converging, say so and list the open findings. In **Automatic code
 review**, record the reviewer models, the number of reviews, the last
-reviewed commit, and what later commits change.
+reviewed commit, what later commits change, and the commit CI ran on.
