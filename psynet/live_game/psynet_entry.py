@@ -5,18 +5,20 @@ The ready step: the game starts once every player is ready, or at the
 game's ready_timeout. Once it starts, the game ends at its duration or its
 time limit, and rejects messages from then on. The entry also keeps track of
 which players are away, and since when, so that a game with an
-away_timeout can end once too few players are left. A player added while
-the game runs gets the next number, and players whose game has ended, by
-the game's is_done, don't count towards min_players. Once the game's
-accepts_players returns False, ``accepts_players`` stays False, and a player
-added after that is in ``too_late``: the game's own methods never get
-them, and their game ends at once. ``last_event``, the
-time of the latest event the game handled once it started, other than
-rejected messages and ready messages, which can't end a started game, is
-when a started game ended,
-unless Dallinger's max_duration, which is only a safety net, ended it. Ending
-jobs and final views read absences at that time, so they agree on who didn't
-play.
+away_timeout can end once too few players are left. A player who isn't
+ready when the game starts is away from then until their page joins the
+game or, if it joined before the start, until its ready message arrives. A
+player added while the game runs gets the next number, and players whose
+game has ended, by the game's is_done, don't count towards min_players.
+Once the game's accepts_players returns False, ``accepts_players`` stays
+False, and a player added after that is in ``too_late``: the game's own
+methods never get them, and their game ends at once.
+
+``last_event``, the time of the latest event the game handled once it
+started, other than rejected messages and ready messages, which can't end a
+started game, is when a started game ended, unless Dallinger's
+max_duration, which is only a safety net, ended it. Ending jobs and final
+views read absences at that time, so they agree on who didn't play.
 
 The game's clock: Dallinger's session clock starts when the game is
 created, before the ready step, but the game's methods get ``now`` in
@@ -26,6 +28,7 @@ seconds since the game started, which these wrappers convert to. The entry's
 import contextvars
 
 from dallinger.realtime import Reject
+from dallinger.realtime.game import FAILED, FINISHED  # noqa: F401 (re-exported)
 
 from .messages import LiveMessage, _parse_message
 from .record import _game_time
@@ -54,6 +57,11 @@ class PlayerReady(LiveMessage):
     added once the game has started already count as ready, so bots added
     then, and newcomers who never open the game page, don't send it, but a
     newcomer's game page still sends it when it connects.
+
+    A player who wasn't ready when the game started is away until their
+    page joins the game or, for a page that joined just before the start,
+    until this message arrives. :meth:`~LiveGame.absences` says
+    ``"no_show"`` for them until it arrives.
     """
 
     type = "psynet_ready"
@@ -62,8 +70,14 @@ class PlayerReady(LiveMessage):
         """Mark the player ready, and start the game once every player
         is."""
         entry = _psynet_entry(state)
-        if player not in entry["ready"]:
-            entry["ready"].append(player)
+        if player in entry["ready"]:
+            return
+        entry["ready"].append(player)
+        if entry["started_at"] is not None and player in entry["away"]:
+            # The game started without them, which made them away, but only
+            # an open page sends it.
+            entry["away"].remove(player)
+            entry["away_since"][player] = None
         playing = len(entry["participant_ids"]) - len(entry["too_late"])
         if len(entry["ready"]) == playing:
             game._end_ready_step(state, now)
@@ -71,7 +85,7 @@ class PlayerReady(LiveMessage):
 
 # Documented in docs/reference/api/live_game.rst, since Sphinx doesn't
 # read a comment on a re-exported constant.
-NOT_STARTED = "The game hasn't started yet."
+NOT_STARTED_MESSAGE = "The game hasn't started yet."
 
 _TIME_UP = "The game's time is up."
 
@@ -123,7 +137,7 @@ def _apply_once_started(self, method, outermost, state, player_id, message, now,
             _record_event(entry, now)
         return None
     if entry["started_at"] is None:
-        raise Reject(NOT_STARTED)
+        raise Reject(NOT_STARTED_MESSAGE)
     game_now = _game_time(entry["started_at"], now) if outermost else now
     end = _game_end(entry)
     if end is not None and game_now >= end:
