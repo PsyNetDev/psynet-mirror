@@ -488,6 +488,7 @@ class Exp(psynet.experiment.Experiment):
             # later than this is failed.
             late_after=60,
             late_action="fail",
+            waiting_message="Waiting for everyone to open the game…",
             game_class=SharedCanvas,
             page=LiveGamePage(
                 "shared_canvas_live",

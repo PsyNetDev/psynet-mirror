@@ -48,6 +48,7 @@ from psynet.sync import (
     leave_group,
 )
 from psynet.timeline import (
+    CodeBlock,
     Module,
     Timeline,
     join,
@@ -123,10 +124,12 @@ def get_timeline():
                 expected_repetitions=N_ROUNDS,
             ),
         ),
+        # Read before leaving, which would make every player look alone.
+        CodeBlock(save_game_over_reason),
         leave_group(COHORT),
         switch(
             "game_over",
-            game_over_reason,
+            lambda participant: participant.var.game_over_reason,
             {
                 "played_all_rounds": [],
                 "sat_out_too_often": InfoPage(
@@ -157,7 +160,9 @@ def round_status(participant):
     """Return whether the regrouper paired the player, sat them out, or left them with no cohort."""
     if in_pair(participant):
         return "paired"
-    if pairing.sat_out(participant):
+    # A player left alone in their cohort can never be paired, so they
+    # don't sit out: their game is over.
+    if pairing.sat_out(participant) and not too_few_players(participant):
         return "sat_out"
     return "no_cohort"
 
@@ -184,15 +189,29 @@ def game_over_reason(participant):
     # don't count.
     if pairing.rounds_played(participant) >= N_ROUNDS:
         return "played_all_rounds"
-    if pairing.rounds_sat_out(participant) >= MAX_SIT_OUTS:
-        return "sat_out_too_often"
     # A latecomer is turned away if the cohort closes before pairing them.
     if participant.sync_group_removal_reason(COHORT) == "not_admitted":
         return "not_admitted"
-    cohort = cohort_of(participant)
-    if cohort is None or cohort.n_active_participants < 2:
+    if too_few_players(participant):
         return "too_few_players"
+    if pairing.rounds_sat_out(participant) >= MAX_SIT_OUTS:
+        return "sat_out_too_often"
     return None
+
+
+def too_few_players(participant):
+    """Return whether the player's cohort has ended or has nobody left to pair them with."""
+    cohort = cohort_of(participant)
+    return cohort is None or cohort.n_active_participants < 2
+
+
+def save_game_over_reason(participant):
+    """Save why the player's game is over, for the ended-early page."""
+    # The cohort can change after the loop's last check, e.g. a latecomer
+    # is admitted, so the reason may no longer be found.
+    participant.var.game_over_reason = (
+        game_over_reason(participant) or "too_few_players"
+    )
 
 
 def keep_playing(participant):
