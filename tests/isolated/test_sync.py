@@ -5082,7 +5082,9 @@ def test_dashboard_fail_moves_the_failed_participants_open_page_on(
     exp = get_experiment()
     original_timeline = exp.timeline
     exp.timeline = Timeline(
-        InfoPage("playing", time_estimate=1), InfoPage("done", time_estimate=1)
+        InfoPage("playing", time_estimate=1),
+        CodeBlock(lambda participant: participant.fail("self")),
+        InfoPage("done", time_estimate=1),
     )
     try:
         first, second = _working_participants(exp, 2)
@@ -5098,6 +5100,17 @@ def test_dashboard_fail_moves_the_failed_participants_open_page_on(
 
         _fail_sync_group_participant(first.id, group.id, "manual_failure")
         db_session.commit()
+        # For a page whose websocket connects after the message was published.
+        assert arrival_notice_payload(first.unique_id)["failed_on_page"] == page_uuid
+        # Not once the failure page is shown, nor for a failure in one's own request.
+        _json_timeline(exp, first)
+        _json_timeline(exp, second)
+        second = Participant.query.get(second.id)
+        _process_response(exp, second, second.page_uuid)
+        db_session.commit()
+        for participant in (first, second):
+            assert "failed_on_page" not in arrival_notice_payload(participant.unique_id)
+        assert Participant.query.get(second.id).failed
     finally:
         exp.timeline = original_timeline
 
@@ -5108,8 +5121,6 @@ def test_dashboard_fail_moves_the_failed_participants_open_page_on(
             "targets": [{"reason": "participant_failed", "page_uuid": page_uuid}],
         },
     ) in publications
-    # For a page whose websocket connects after the message was published.
-    assert arrival_notice_payload(first.unique_id)["failed_on_page"] == page_uuid
 
 
 @pytest.mark.parametrize(

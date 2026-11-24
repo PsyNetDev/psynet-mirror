@@ -184,8 +184,9 @@ A participant can be in groups of different ``group_type`` at the same time,
 but in only one group of each type. To regroup participants, close the group
 with a :class:`~psynet.sync.GroupCloser` and place another grouper with the
 same ``group_type``. A ``GroupCloser`` is a group barrier, so members wait
-there for each other; the end of the timeline needs none, because a group
-whose members have all finished closes by itself. The ``group_closer`` feature demo forms groups of three,
+there for each other. The end of the timeline needs none: a group isn't
+closed when its members finish, but nobody waits for it either, and the
+dashboard's **Sync groups** tab shows it as *Finished*. The ``group_closer`` feature demo forms groups of three,
 then groups of two, and assigns roles at a barrier each time:
 
 .. literalinclude:: ../../../demos/features/group_closer/experiment.py

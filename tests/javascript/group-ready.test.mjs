@@ -66,6 +66,11 @@ it("ignores an arrival snapshot that comes back after the page changed", () => {
   assert.deepEqual(applied, [{ request: 1, failed_on_page: "page-2" }]);
   // A participant failed before the websocket connected still moves on.
   assert.deepEqual(failedOn, ["page-2"]);
+
+  psynet.moveOnAfterFailure = () => true;
+  psynet.fetchArrivalNotice();
+  pending.at(-1)({ request: 2, failed_on_page: "page-2" });
+  assert.equal(applied.length, 1);
 });
 
 it("fetches once for refresh requests that come close together", (t) => {
