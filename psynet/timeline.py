@@ -2475,6 +2475,15 @@ class Page(Elt):
         )
         return self.page_config
 
+    @js_vars.setter
+    def js_vars(self, value):
+        warnings.warn(
+            "Page.js_vars has been renamed to page_config.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.page_config = value
+
     def _page_config_for(self, experiment, participant):
         """The page's ``page_config`` when it renders for ``participant``."""
         return self.page_config
@@ -2488,11 +2497,7 @@ class Page(Elt):
             )
         full_page_layout_key = None
         if not partial_mode and (
-            self.upcoming_pages is not None
-            or (
-                self._shows_trials_itself()
-                and self._cannot_be_rendered_early_because() is None
-            )
+            self.upcoming_pages is not None or self._module_shows_the_next_trials()
         ):
             # Fragments carry their key beside the HTML; a full page needs a
             # partial render to compute the same key. It is passed to the
@@ -2894,12 +2899,26 @@ class Page(Elt):
 
         Only a :class:`~psynet.page.JSPage` can, as its module's ``update``
         shows each trial, and only if it needs nothing PsyNet sets up for each
-        page, such as a time limit, recording, media or a full page reload.
+        page, such as a time limit, recording, media or a full page reload,
+        and doesn't override ``consume``, which would run only once the
+        server serves the trial.
         """
         return (
-            self._shows_trials_itself()
-            and not any(self._needs_the_server_because().values())
+            self._module_shows_the_next_trials()
             and not self.media.urls
+            and type(self).consume is Page.consume
+        )
+
+    def _module_shows_the_next_trials(self):
+        """Whether the page's module can show the next trials the server serves, keeping the page.
+
+        The reply's layout key tells the browser whether the server's page
+        still matches the one on screen. Unlike swapping in a page rendered
+        in advance, this needs no ``can_swap_in_advance``, so a subclass of
+        :class:`~psynet.page.JSPage` keeps its page too.
+        """
+        return self._shows_trials_itself() and not any(
+            self._needs_the_server_because().values()
         )
 
     def _shows_trials_itself(self):

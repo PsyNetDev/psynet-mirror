@@ -211,3 +211,31 @@ describe("nextPage while answers given in advance are sent", () => {
     assert.deepEqual(metadata.event_log, ["promptStart"]);
   });
 });
+
+describe("finalizePageReady", () => {
+  it("doesn't wait for a page module's update() to finish", async () => {
+    const code = ["psynet\\.showPageModuleTrial = function", "psynet\\.finalizePageReady = async function"]
+      .map((start) => extract(new RegExp(`${start}[\\s\\S]*?\\n    \\};`)))
+      .join("\n");
+    let updated = false;
+    const psynet = {
+      pageModuleGeneration: 1,
+      page: { attributes: {} },
+      pageModuleUpdates: [() => {}],
+      setPageReady() {},
+      trial: { async registerEvent() {} },
+      ensureArrivalUpdates() {},
+      waiting: { start() {} },
+      setTimelineTransitionBusy() {},
+      log: { error() {} },
+      // Like an update() that waits for its signal, aborted only on leaving.
+      updatePageModules() {
+        updated = true;
+        return new Promise(() => {});
+      },
+    };
+    new Function("psynet", code)(psynet);
+    await psynet.finalizePageReady();
+    assert.equal(updated, true);
+  });
+});

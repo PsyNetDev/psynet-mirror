@@ -6748,9 +6748,21 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 simple=True,
             )
         payload = request.get_json(silent=True) or {}
+        page_uuid = payload.get("page_uuid") if isinstance(payload, dict) else None
+        stored = exit_domain._stored_exit_plan(participant)
         if (
-            not isinstance(payload, dict)
-            or payload.get("page_uuid") != participant.page_uuid
+            not isinstance(page_uuid, str)
+            or not participant.page_uuid
+            or not hmac.compare_digest(page_uuid, participant.page_uuid)
+            or participant.failed
+            # An error-recovery offer or a committed exit must not be replaced.
+            or (
+                stored is not None
+                and (
+                    stored.context is exit_domain.ExitContext.ERROR_RECOVERY
+                    or stored.status is exit_domain.ExitPlanStatus.COMMITTED
+                )
+            )
         ):
             return cls._stale_early_exit_response()
         experiment = get_experiment()
@@ -7893,7 +7905,11 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         html = page.render(experiment, participant, partial_mode=True)
         payload = {"html": html, "page_uuid": participant.page_uuid}
         upcoming = page._upcoming_pages_payload(experiment, participant)
-        if upcoming is not None or page._cannot_be_rendered_early_because() is None:
+        if (
+            upcoming is not None
+            or page._cannot_be_rendered_early_because() is None
+            or page._module_shows_the_next_trials()
+        ):
             # Tells the browser whether its page modules can show this page, or
             # whether a page it swapped in, rendered earlier, still shows what
             # the server shows now.
