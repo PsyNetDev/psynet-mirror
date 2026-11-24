@@ -82,7 +82,8 @@ ordinary Python:
 its ``action`` field, and ``ACTIONS`` lists the three choices, for the page's
 buttons and the bots. ``GAMES``, ``RESULT_SECONDS`` and ``LATE_AFTER`` are
 used by the demo's trials and timeline, which "Playing it as trials" and
-"When a partner leaves" below describe.
+"When a partner leaves" below describe. ``READY_SECONDS`` is used by the
+game, which "The game and its state" describes.
 
 PsyNet numbers a game's players from 0, so the two players here are 0 and 1,
 and ``1 - player`` is the other one. A throw's
@@ -110,11 +111,13 @@ The game is the class ``RockPaperScissors``:
 ``name`` is a name for the game, which must differ from the name of every
 other game in the experiment. ``messages`` lists the kinds of message that a
 page can send, which the next section describes. ``min_players`` and
-``max_players`` say that the game is for exactly two players. If a player
-closes the game page and doesn't come back within 30 seconds, which allows
-for a reload, ``away_timeout`` ends the game, so their partner isn't left
-waiting. ``timeout`` ends it after five minutes even if both players stop
-choosing. :ref:`live-games-time-limits` lists all of a game's time limits.
+``max_players`` say that the game is for exactly two players. A game page
+opens within seconds, so ``ready_timeout`` starts the game 20 seconds after
+the pair reaches it, even if a player hasn't opened the page. If a player
+closes the game page, or never opens it, and doesn't come back within 30
+seconds, which allows for a reload, ``away_timeout`` ends the game, so their
+partner isn't left waiting. ``timeout`` ends it after five minutes even if
+both players stop choosing. :ref:`live-games-time-limits` lists all of a game's time limits.
 
 ``initial_state`` returns the state at the start of the game. It receives the
 players' numbers, ``[0, 1]``, and the game's settings:
@@ -207,8 +210,10 @@ game as soon as it returns ``True``.
 
 ``outcome`` is the game's result for the whole pair, which is saved with the
 experiment's data: here, the choices of each throw. ``reason`` says why the
-game ended. For example, it is ``"finished"`` when ``is_over`` ended the
-game, and ``"timeout"`` when the game's ``timeout`` did.
+game ended. For example, it is :data:`~psynet.live_game.FINISHED`
+(``"finished"``) when ``is_over`` ended the game, and
+:data:`~psynet.live_game.TIMEOUT` (``"timeout"``) when the game's
+``timeout`` did.
 
 ``answer`` turns the outcome into each player's answer on the game page:
 their own throws, with both choices and the result for them, the throws each
@@ -394,7 +399,7 @@ then shows each player their score:
         SimpleGrouper(
             group_type="pair",
             initial_group_size=2,
-            below_quorum="continue_without_group",
+            below_quorum="fail",
         ),
         PlayLiveGame(
             group_type="pair",
@@ -407,7 +412,7 @@ then shows each player their score:
                 time_estimate=60,
             ),
             late_after=20,
-            late_action="leave_group",
+            late_action="fail",
         ),
         PageMaker(show_score, time_estimate=5),
     )
@@ -416,7 +421,7 @@ then shows each player their score:
     def show_score(participant):
         answer = participant.live_games["rock_paper_scissors"].answer
         if answer is None:
-            return InfoPage("Your partner didn't arrive in time.", time_estimate=5)
+            return InfoPage("Your pair couldn't play the game.", time_estimate=5)
         return InfoPage(f"You won {answer['wins']} throws.", time_estimate=5)
 
 - The :class:`~psynet.sync.SimpleGrouper` puts participants into pairs.
@@ -426,16 +431,18 @@ then shows each player their score:
   ``group_type`` is the grouper's. Its ``settings`` are what
   ``initial_state`` receives.
 - ``late_after`` limits that wait. A partner who keeps the other player
-  waiting more than 20 seconds is late, and with
-  ``late_action="leave_group"`` leaves the pair. The player who was on time
-  then goes on to the game page without a game, as the grouper's
-  ``below_quorum="continue_without_group"`` says. Every ``PlayLiveGame``
-  needs a limit like this.
+  waiting more than 20 seconds is late, and ``late_action="fail"`` fails
+  them. A game for two can't go on with one player, so the grouper's
+  ``below_quorum="fail"`` fails the player who was on time too. Failing
+  isn't a penalty: it ends a session that can no longer contribute, and
+  players keep what they have earned. Every ``PlayLiveGame`` needs a limit
+  like this.
 - ``page`` is the game page, as in `The game page`_ above.
 - On the next page, ``participant.live_games`` has the participant's record
   of the game, keyed by the game's ``name``. Its ``answer`` is what the
-  game's ``answer`` returned for them, or ``None`` if the pair didn't start
-  a game.
+  game's ``answer`` returned for them, or ``None`` if they have no answer,
+  for example because their group broke up before the game started (see
+  :ref:`live-games-record`).
 
 Reference: :ref:`live-games-play`, including :ref:`the wait before the game
 <live-games-wait>`, and :ref:`live-games-record`.
@@ -462,7 +469,8 @@ then scores the game:
 - ``show_trial`` returns the ``PlayLiveGame``, with the number of throws and
   what a throw won pays from the trial's definition as its settings. Its barrier is the
   :class:`~psynet.sync.GroupBarrier` that a trial a group plays needs, so
-  this trial needs no other.
+  this trial needs no other. Its ``waiting_message`` is what a player sees
+  while they wait there for their partner.
 - ``rock_paper_scissors_page``, from `The game page`_ above, builds the
   page from the trial's definition, so its first element says which game
   this is, how many throws it has and what a throw won pays.
@@ -530,27 +538,27 @@ When a partner leaves
 The rest of the timeline deals with a partner who doesn't come back:
 
 - The grouper's ``max_wait_time`` fails a participant who waits five minutes
-  without a partner, and sends them to the end of the experiment. To let them
-  carry on without a partner instead, give the grouper
-  ``max_wait_action="continue_without_group"``.
+  without a partner, and sends them to the end of the experiment. Keep
+  this unless the design has a meaningful task for them alone, for which
+  the advanced ``max_wait_action="continue_without_group"`` lets them carry
+  on without a partner.
 - Before the second game, the partner may still be reading the first game's
   result, so the result page has a ``time_limit`` of ``RESULT_SECONDS``.
   ``late_after`` counts from 10 seconds after it has run out, time for an
   answer sent at the deadline to arrive, so ``LATE_AFTER`` only has to
   cover the moments after that. A partner who closed their tab on the result
   page is late 30 + 10 + 20 = 60 seconds after it opened.
-- A partner who is late leaves the pair, and
-  ``below_quorum="continue_without_group"`` lets the player left behind carry
-  on with the experiment.
-- ``stop_if`` ends the loop for a participant who is no longer in a pair.
-  PsyNet checks it before each game, never during one. The ``conditional``
-  after the loop then shows that participant a page that says why there are
-  no more games:
-
-  .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
-     :start-at: def left_pair(participant):
-     :end-before: class Exp(psynet.experiment.Experiment):
-     :dedent:
+- A partner who is late is failed, and the grouper's
+  ``below_quorum="fail"`` fails the player left behind, who has nobody to
+  play the second game with. Both keep what they earned in the first game.
+- A partner who never opened the first game's page, or left it for good,
+  is late in the same way, 30 seconds after the game ended, since they
+  never opened their result page. The player left behind sees their result
+  first. ``PlayLiveGame``'s ``absent_action="fail"`` would fail the absent
+  partner, and so the player left behind, as soon as the game's result is
+  saved, before they see it (see :ref:`live-games-absent`).
+- Every player who stays in the loop is therefore still in their pair, so
+  the loop needs no check of its own.
 
 Reference: :ref:`live-games-leaving` and :doc:`late_slow_and_leaving_players`.
 
@@ -872,7 +880,7 @@ and that each trial's score and reward match the throws the bot won:
 
 ``bot.live_games`` gives, for each ``PlayLiveGame`` the participant reached,
 keyed by its ``id_``, which is the game's ``name`` unless given, the record of their latest game there, here their
-second game: whether it ``finished``, its outcome, the participant's answer
+second game: its ``end_reason``, its outcome, the participant's answer
 and the game's messages. Snake's result page reads its player's answer the same way.
 
 To test a game's rules without starting the experiment, play it in Python

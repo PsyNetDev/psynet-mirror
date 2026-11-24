@@ -133,7 +133,8 @@ group step:
 
 - **The wait before it** is a group barrier, so everything :doc:`groups` says
   about waiting applies, and it needs a limit: usually how long a member may
-  keep the others waiting before they're late and leave the group. A group
+  keep the others waiting before they're late and are failed, while the
+  others play without them if the game allows it. A group
   that takes newcomers can't wait for its slowest member, since it can't tell
   a slow member from one who hasn't joined yet, so there each member waits a
   set time and then moves on.
