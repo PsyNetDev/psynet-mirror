@@ -35,7 +35,6 @@ class RatingTrial(StaticTrial):
                 arrange_vertically=False,
                 bot_response="3",
             ),
-            time_estimate=self.time_estimate,
         )
 
 
