@@ -161,7 +161,7 @@ answers before it, so their pages always wait for the server.
 
 The trial maker then creates all of a participant's trials, in order, when they
 reach it, and each trial page also carries the ``contents`` of the next few
-trials (:attr:`~psynet.trial.static.StaticTrialMaker.n_upcoming_trials`, 5 by
+trials (:attr:`~psynet.trial.static.StaticTrialMaker.n_upcoming_trials`, 2 by
 default). The page module needs no changes. When the participant answers,
 PsyNet calls ``update`` with the next trial's ``contents`` at once, and sends
 the answers to the server in the background, one at a time and in order.
