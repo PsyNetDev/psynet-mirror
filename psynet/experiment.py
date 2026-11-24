@@ -15,7 +15,7 @@ import traceback
 import uuid
 import zipfile
 from collections import Counter, OrderedDict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from functools import cache, partial
 from importlib import resources
@@ -164,6 +164,7 @@ from .timeline import (
     DatabaseCheck,
     FailedValidation,
     ModuleState,
+    Page,
     ParticipantFailRoutine,
     PreDeployRoutine,
     RecruitmentCriterion,
@@ -6720,6 +6721,49 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             locale=get_locale() if locale is None else locale,
         )
 
+    @experiment_route("/prepare_early_exit_plan/<assignment_id>", methods=["POST"])
+    @classmethod
+    @with_transaction
+    def route_prepare_early_exit_plan(cls, assignment_id):
+        """Prepare the Leave offer for the page on screen and return its confirmation.
+
+        The browser asks once the participant clicks Leave, rather than each
+        page carrying an offer from when it was rendered, as pages can be
+        rendered before the server serves them. The page UUID can't be
+        guessed without the participant's ``unique_id``, so only the
+        participant's browser receives the offer.
+        """
+        try:
+            participant = cls.get_participant_from_assignment_id(
+                assignment_id, for_update=True
+            )
+        except (
+            ValueError,
+            sqlalchemy.orm.exc.NoResultFound,
+            sqlalchemy.orm.exc.MultipleResultsFound,
+        ):
+            return error_response(
+                error_text="No participant matches this assignment.",
+                status=404,
+                simple=True,
+            )
+        payload = request.get_json(silent=True) or {}
+        if (
+            not isinstance(payload, dict)
+            or payload.get("page_uuid") != participant.page_uuid
+        ):
+            return cls._stale_early_exit_response()
+        experiment = get_experiment()
+        page = experiment.timeline.get_current_elt(experiment, participant)
+        if not isinstance(page, Page) or not page.early_exit_available(
+            experiment, participant
+        ):
+            return cls._stale_early_exit_response()
+        plan = experiment.prepare_voluntary_exit_plan(participant)
+        return success_response(
+            offer_id=plan.plan_id, confirmation=asdict(plan.confirmation)
+        )
+
     @experiment_route("/execute_early_exit_plan/<assignment_id>", methods=["POST"])
     @classmethod
     @with_transaction
@@ -7112,8 +7156,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not isinstance(participant, Bot):
                 participant.client_ip_address = cls.get_client_ip_address()
             page = cls.get_current_page(experiment, participant)
-            if page.early_exit_available(experiment, participant):
-                experiment.prepare_voluntary_exit_plan(participant)
             participant_id = participant.id
             unique_id = participant.unique_id
             db.session.commit()
@@ -7505,9 +7547,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if page is None:
             return page
         cls._pre_render(page, participant)
-        available = getattr(page, "early_exit_available", None)
-        if callable(available) and available(experiment, participant):
-            experiment.prepare_voluntary_exit_plan(participant)
         return page
 
     @staticmethod

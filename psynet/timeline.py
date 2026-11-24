@@ -2475,10 +2475,6 @@ class Page(Elt):
         js_vars = {**self._js_vars_for(experiment, participant), **internal_js_vars}
         inplace_timeline_transitions = config.get("inplace_timeline_transitions")
         show_early_exit_button = self.early_exit_available(experiment, participant)
-        if show_early_exit_button:
-            early_exit_plan = experiment.prepared_voluntary_exit_plan(participant)
-        else:
-            early_exit_plan = None
 
         css_links = version_static_urls(self.css_links + experiment.css_links)
         legacy_js_links = version_static_urls(self.legacy_js_links)
@@ -2540,10 +2536,6 @@ class Page(Elt):
             "show_early_exit_button": show_early_exit_button,
             "show_abort_button": show_early_exit_button,
             "show_termination_button": show_early_exit_button,
-            "early_exit_confirmation": (
-                early_exit_plan.confirmation if early_exit_plan else None
-            ),
-            "early_exit_offer_id": early_exit_plan.plan_id if early_exit_plan else None,
             "aggressive_termination_on_no_focus": self.aggressive_termination_on_no_focus,
         }
         rendered = render_string_with_translations(
