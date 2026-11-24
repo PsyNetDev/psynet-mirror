@@ -270,7 +270,8 @@ For this to work:
 - A ``JSPage`` doesn't need the page's ``media``. Put the files' URLs in
   ``contents`` and load them with ``psynet.media.loadAudio`` or
   ``new Image()``, as above, so that the page can stay on screen and show
-  trials in advance.
+  trials in advance. A page with ``media`` is replaced by the next trial's
+  page, rendered in advance, so the module starts afresh for each trial.
 - The browser doesn't run ahead after a trial whose class overrides
   :meth:`~psynet.trial.main.Trial.show_feedback`, even if it sometimes
   returns ``None``, as whether it does depends on the answer.

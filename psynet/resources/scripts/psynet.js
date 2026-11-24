@@ -899,6 +899,15 @@
             // The events of this trial only, as later trials share the page.
             event_log: psynet.trial.eventLog.splice(0),
           };
+          // As psynet.nextPage would, for example after a JSPage with media,
+          // whose next pages the server sends rendered.
+          if (
+            psynet.nextRenderedPage() &&
+            !psynet.pageState.asynchronousUploadSources?.length
+          ) {
+            psynet.answerWithRenderedPage(value, metadata);
+            return true;
+          }
           // showNextPredictedTrial sets nextPageUuid if it shows a trial next.
           // Recordings are only this page's while it shows nothing in advance.
           answers.queue.push({
@@ -3613,8 +3622,9 @@
               onEnd: null,
             };
 
+            // A page change stops the trial; a JSPage kept for the next
+            // trial keeps it, though the page UUID changes.
             const soundTrial = psynet.trial;
-            const soundPageUuid = window.pageUuid;
             let stopTimer = null;
             let completionTimer = null;
             let stopCompletionTimer = null;
@@ -3653,7 +3663,6 @@
             let isSoundTrialActive = function () {
               return (
                 psynet.trial === soundTrial &&
-                window.pageUuid === soundPageUuid &&
                 !soundTrial.stopping &&
                 !soundTrial.stopped
               );
