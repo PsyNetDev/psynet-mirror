@@ -88,10 +88,26 @@ does whatever stays on the page: focus on the last button clicked, a sound
 still playing, a pressed-looking button. Reset these in ``update`` or when
 answering.
 
-PsyNet doesn't wait for an asynchronous ``update`` to finish before calling
-it again, for example when an answer is rejected and the same trial is shown
-again. An ``update`` that awaits something, such as an image loading, should
-therefore check afterwards that it is still the latest call.
+``update`` also receives a ``signal``, a standard
+`AbortSignal <https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal>`_
+that PsyNet aborts when it calls ``update`` again or the participant leaves
+the page. PsyNet doesn't wait for an asynchronous ``update`` to finish first,
+so an ``update`` that awaits something, such as an image loading, should
+return without drawing if ``signal.aborted`` is then true; otherwise it could
+draw its trial over the next one::
+
+    async update({contents, response, signal}) {
+        const image = new Image();
+        image.src = contents.image_url;
+        await image.decode();
+        if (signal.aborted) return;  // a newer trial has started
+        // Show the image, then:
+        response.startClock();
+    },
+
+The signal can also be passed on, for example as ``fetch(url, {signal})``,
+to cancel a download that is no longer needed. The ``AbortError`` this
+raises in an ``update`` that has been superseded is ignored.
 
 The next trial's ``update`` can follow an answer at once, so play any
 feedback on the answer before answering. Pass the time of the input as
@@ -192,15 +208,13 @@ plays it, so ``update`` can start the next trial's sound at once:
 
 .. code-block:: javascript
 
-    async update({contents, upcomingContents, response: handle}) {
-        latest = handle;  // declared in activate
+    async update({contents, upcomingContents, response: handle, signal}) {
         for (const next of upcomingContents) {
             // A failed download shows up when that trial loads its sound.
             psynet.media.loadAudio(next.sound_url).catch(() => {});
         }
         const sound = await psynet.media.loadAudio(contents.sound_url);
-        // A rejected answer can show the trial again while the sound loads.
-        if (latest !== handle) return;
+        if (signal.aborted) return;  // a newer trial has started
         sound.play();
         handle.startClock();
     },

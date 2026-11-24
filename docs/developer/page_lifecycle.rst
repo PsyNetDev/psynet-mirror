@@ -361,11 +361,14 @@ The activation context contains ``root``, ``trial``, ``config`` (the page's
 ``page_config``), ``page``, and ``psynet``, plus ``vars``, a deprecated name
 of ``config``. ``activate()`` may return an asynchronous cleanup function, or
 an object ``{update, cleanup}``. PsyNet calls
-``update({contents, upcomingContents, response})`` after the page is ready; see
-:doc:`/code/trials/keeping_a_task_on_one_page`. Answers given through
-``response`` go to ``/response`` in the background, in order, from the answer
-queue in ``psynet.js``. A reply with the page UUID of the trial shown, and the
-shown page's layout key, is adopted without an in-place swap. A page UUID is
+``update({contents, upcomingContents, response, signal})`` after the page is
+ready, aborting the previous call's ``signal`` first and the last one when the
+page is left; see :doc:`/code/trials/keeping_a_task_on_one_page`. Answers
+given through ``response`` go to ``/response`` in the background, in order,
+from the answer queue in ``psynet.js``. A reply that keeps a ``JSPage`` on
+screen is adopted without an in-place swap (``psynet.keptPageFragment``): it
+must be a ``JSPage`` with the shown page's layout key and, if a trial was
+shown in advance, that trial's page UUID and contents. A page UUID is
 made from the participant's id, how many pages they have been shown and what
 the page is (its trial, or its position in the timeline; see
 ``make_page_uuid``), so the server can tell the browser the page UUIDs of the
