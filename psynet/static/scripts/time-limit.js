@@ -12,8 +12,8 @@
 // If the server's deadline is still some way off, it returns the seconds
 // left and the countdown resumes.
 
-export function activate({root, vars, psynet}) {
-    var config = vars["timeLimit"];
+export function activate({root, config: pageConfig, psynet}) {
+    var config = pageConfig["timeLimit"];
     if (!config) return undefined;
     // secondsLeft was measured when the server drew the page, before the
     // page's scripts loaded.

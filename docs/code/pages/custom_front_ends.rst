@@ -134,6 +134,24 @@ work, with a deprecation warning, until PsyNet 16.
 
     const maximumLength = psynet.pageConfig.color_text_config.maximum_length;
 
+Choose where each value goes by how often it can change:
+
+- **Configuration that is the same for every trial the page shows**, such
+  as timings, sizes and labels, goes in ``page_config``.
+- **What the page shows**, such as a trial's stimulus or a condition's
+  parameters, goes in the page's ``contents``, which the page's JavaScript
+  reads as ``psynet.page.contents`` and a page module's ``update`` receives
+  for each trial. When you write the page's JavaScript yourself, take what
+  changes between trials from ``contents`` rather than ``page_config``: PsyNet
+  can then keep the page on screen from one trial to the next (see
+  :doc:`/code/trials/keeping_a_task_on_one_page`). Built-in prompts, such as
+  ``ImagePrompt``, put their stimulus in their HTML, which is fine when each
+  trial has its own page.
+- **In a live game, anything that can differ between rounds or groups** goes
+  in the game's :ref:`settings <live-games-settings>`, which the game keeps in
+  its state and sends in its views, so that the page shows what the server
+  uses.
+
 PsyNet calls ``get_page_config()`` once, when the page is built. A page written
 directly in the experiment's timeline is built when the experiment loads, so
 every participant gets the same values. For a value that depends on the

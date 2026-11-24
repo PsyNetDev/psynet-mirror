@@ -21,24 +21,23 @@ class TestPublicGoodsLive:
         return import_local_experiment()["module"]
 
     def test_the_pot_is_multiplied_and_shared_equally(self, demo):
-        game = LocalGame(demo.PublicGoods, players=3)
+        settings = {"endowment": 10, "multiplier": 2}
+        game = LocalGame(demo.PublicGoods, players=3, settings=settings)
         for player, tokens in enumerate([10, 4, 0]):
             game.send(player, demo.Contribute(tokens=tokens))
         # A player can change their mind until the time is up.
         game.send(1, demo.Contribute(tokens=2), now=5)
 
         outcome = game.outcome()
-        share = demo.MULTIPLIER * 12 / 3
-        assert (outcome["pot"], outcome["share"]) == (12, share)
-        assert outcome["payoffs"] == [
-            demo.ENDOWMENT - 10 + share,
-            demo.ENDOWMENT - 2 + share,
-            demo.ENDOWMENT + share,
-        ]
-        assert game.answer(2) == {"contributed": 0, "earned": demo.ENDOWMENT + share}
-        assert game.view(0)["contributions"] == [10, 2, 0]
+        assert (outcome["pot"], outcome["share"]) == (12, 8)
+        assert outcome["payoffs"] == [8, 16, 18]
+        assert game.answer(2) == {"contributed": 0, "earned": 18}
+        # The page shows the pot from the settings in the view.
+        view = game.view(0)
+        assert (view["endowment"], view["multiplier"]) == (10, 2)
+        assert view["contributions"] == [10, 2, 0]
 
     def test_a_contribution_is_between_none_and_the_endowment(self, demo):
-        game = LocalGame(demo.PublicGoods, players=3)
+        game = LocalGame(demo.PublicGoods, players=3, settings=demo.SETTINGS)
         with pytest.raises(Reject, match="between 0 and"):
-            game.send(0, demo.Contribute(tokens=demo.ENDOWMENT + 1))
+            game.send(0, demo.Contribute(tokens=demo.SETTINGS["endowment"] + 1))

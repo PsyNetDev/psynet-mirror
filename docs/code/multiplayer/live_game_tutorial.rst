@@ -676,12 +676,18 @@ copy these into the JavaScript, the demo keeps them in one place:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/experiment.py
    :start-at: #: What the game page needs to draw the board.
-   :end-at: RULES = {
+   :end-at: BOARD = {
    :dedent:
 
 The game page passes it to the JavaScript with
-``page_config={"snake_rules": RULES}``, and ``activate`` reads it from ``config``.
-``live`` is short for ``psynet.liveGame``:
+``page_config={"snake_board": BOARD}``, and ``activate`` reads it from ``config``.
+``page_config`` suits configuration that stays the same for the whole
+experiment. A value that can differ between rounds, such as a condition's payoff,
+goes in the game's :ref:`settings <live-games-settings>`: the game keeps it in
+its state and sends it in its views, so the page shows what the server uses.
+The ``public_goods_live`` demo does this.
+
+In the page's JavaScript, ``live`` is short for ``psynet.liveGame``:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/static/snake.js
    :language: javascript
@@ -699,7 +705,7 @@ Each view shows the whole board, so the page draws each view as it arrives:
 
 The view lists the snakes in player order, and ``live.player`` is this
 player's number, so their snake is ``view.snakes[live.player]``, and its
-color is ``rules.colors[live.player]``.
+color is ``board.colors[live.player]``.
 
 The page sends a turn when the player presses an arrow key, or W, A, S or D.
 It sends nothing before the game starts, after it ends or while the snake is

@@ -2145,8 +2145,16 @@ class ModularPage(Page):
         objects instead.
 
     page_config
-        Optional dictionary of settings for the page's JavaScript, read as
-        ``psynet.pageConfig``. They stay fixed while the page is shown.
+        Optional dictionary that configures the page's JavaScript, read as
+        ``psynet.pageConfig``, such as a task's timings. It is the same for
+        every trial the page shows; what changes between trials goes in
+        ``contents``. See :doc:`/code/pages/custom_front_ends`.
+
+    contents
+        Optional dictionary of what this page shows, such as a trial's
+        stimulus and parameters, read as ``psynet.page.contents``; a page
+        module's ``update`` receives it for each trial. It can change from
+        one trial to the next, which ``page_config`` can't.
 
     js_vars
         Deprecated name of ``page_config``.
@@ -5184,10 +5192,6 @@ class MusicNotationPrompt(Prompt):
     def get_js_page_modules(self):
         """Activate score rendering for each hosting page."""
         return [package_static_url("psynet", "scripts/music-notation-prompt.js")]
-
-    def get_page_config(self):
-        """Provide the ABC notation consumed by the page module."""
-        return {"music_notation_prompt": {"content": self.content}}
 
     def update_events(self, events):
         super().update_events(events)

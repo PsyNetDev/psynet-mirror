@@ -55,7 +55,7 @@ OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
 
 #: What the game page needs to draw the board. The game page passes it to
 #: static/snake.js.
-RULES = {"size": SIZE, "square": SQUARE, "colors": COLORS}
+BOARD = {"size": SIZE, "square": SQUARE, "colors": COLORS}
 
 
 def step(square, direction):
@@ -380,7 +380,10 @@ class Exp(psynet.experiment.Experiment):
                 ),
                 js_page_modules=["/static/snake.js"],
                 css_links=["/static/snake.css"],
-                page_config={"snake_rules": RULES},
+                # Fixed for the whole experiment. Settings that can differ
+                # between rounds go in the game's state and view instead, as in
+                # the public_goods_live demo.
+                page_config={"snake_board": BOARD},
                 time_estimate=60,
             ),
         ),

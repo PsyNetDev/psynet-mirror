@@ -18,9 +18,8 @@ function tokenRow(name, tokens, endowment, you) {
   return row;
 }
 
-export function activate({root, config, psynet}) {
+export function activate({root, psynet}) {
   let live = psynet.liveGame;
-  let rules = config.public_goods_rules;
   let status = root.querySelector("#pg-status");
   let timeLeft = root.querySelector("#pg-time-left");
   let slider = root.querySelector("#pg-tokens");
@@ -38,7 +37,8 @@ export function activate({root, config, psynet}) {
   });
 
   function render(view) {
-    let contributions = view.contributions;
+    // The settings come in the view, so the page shows what the server pays.
+    let {contributions, endowment, multiplier} = view;
     let mine = contributions[live.player];
     if (document.activeElement !== slider) {
       slider.value = mine;
@@ -49,16 +49,16 @@ export function activate({root, config, psynet}) {
           // "You", or the player's pseudonym, as the group's other pages show them.
           live.players[player]?.label ?? `Player ${player + 1}`,
           tokens,
-          rules.endowment,
+          endowment,
           player === live.player
         )
       )
     );
     let total = contributions.reduce((a, b) => a + b, 0);
-    let share = (rules.multiplier * total) / contributions.length;
-    pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
+    let share = (multiplier * total) / contributions.length;
+    pot.textContent = `Pot: ${total} tokens × ${multiplier} = ${+(multiplier * total).toFixed(2)}`;
     let shareText = +share.toFixed(2);
-    let earned = +(rules.endowment - mine + share).toFixed(2);
+    let earned = +(endowment - mine + share).toFixed(2);
     instructions.hidden = live.ended;
     earn.textContent = live.ended
       ? `Each player gets ${shareText} tokens from the pot, and you earn ${earned} tokens.`

@@ -422,7 +422,6 @@ def test_omitted_prompt_does_not_contribute_managed_resources():
 
     assert page.js_dependencies == []
     assert page.js_page_modules == []
-    assert "music_notation_prompt" not in page.page_config
     assert page.page_config["modular_page_components"]["prompt"] is None
 
 
@@ -448,7 +447,6 @@ def test_music_notation_prompt_uses_managed_javascript():
     assert page.js_page_modules == [
         "/static/packages/psynet/scripts/music-notation-prompt.js"
     ]
-    assert page.page_config["music_notation_prompt"] == {"content": "C D E F"}
 
 
 def test_only_survey_js_pages_load_survey_js():

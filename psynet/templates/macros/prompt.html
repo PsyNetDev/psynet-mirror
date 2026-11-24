@@ -385,7 +385,7 @@
 {% macro abc_notation(params) %}
     {{ simple(params) }}
 
-    <div id="abcScore"></div>
+    <div id="abcScore" data-abc="{{ params.content }}"></div>
 
 {% endmacro %}
 

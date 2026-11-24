@@ -7,8 +7,8 @@
 // room traffic to members only, as directed messages.
 import { leftoverLiveAfterHistory } from "./chatroom-history-merge.mjs";
 
-export async function activate({root, vars}) {
-    var CONFIG       = vars["chatroom_config"] || {};
+export async function activate({root, config}) {
+    var CONFIG       = config["chatroom_config"] || {};
     var ROOM_ID      = CONFIG.room_id;
     var CHANNEL      = CONFIG.channel;
     var SHOW_PARTS   = CONFIG.show_participants;
