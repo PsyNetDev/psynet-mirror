@@ -825,11 +825,10 @@ game." Change it with the page's ``player_left_message``, such as
 show it your own way, set ``player_left_message=None`` and use
 ``onPlayersAway``, which gets the numbers of the players who are away,
 and an empty list once they're all back. Like the notice, it counts a
-player once they've been away for a few seconds, so a reload doesn't. One
-of the game's first players who hasn't opened the page yet isn't away
-before the game starts, but is from the start until their page opens, as a
-player added while the game runs is until theirs opens. The
-notice only says what happened: a game that should end when a player
+player once they've been away for a few seconds, so a reload doesn't. A
+player who hasn't opened the page by the time the game starts counts as
+away from the start, until their page opens. So does a player added while
+the game runs. The notice only says what happened: a game that should end when a player
 leaves ends through its ``away_timeout``, ``on_leave`` or ``is_over``.
 
 Reloading and dropped connections
@@ -874,9 +873,9 @@ the ``PlayLiveGame``'s, and the others are the game's:
        leaves the group, as ``max_wait_action`` says (see `PlayLiveGame`_).
    * - ``ready_timeout``
      - 60 seconds after the wait
-     - The game starts without the players who aren't ready yet, or ends
-       with the reason ``"not_joined"`` if none of them has opened the game
-       page (see `The ready step`_).
+     - The game starts without the players who aren't ready yet, who count
+       as away from then, or ends with the reason ``"not_joined"`` if none
+       of them has opened the game page (see `The ready step`_).
    * - ``duration``
      - ``None``
      - The game ends with the reason ``"finished"``.
@@ -886,7 +885,8 @@ the ``PlayLiveGame``'s, and the others are the game's:
        the reason ``"timeout"``.
    * - ``away_timeout``
      - 60 seconds
-     - A player who has been away that long is gone, and once fewer than
+     - A player who has been away that long, counted from the start for a
+       player who wasn't ready, is gone, and once fewer than
        ``min_players`` players aren't, the game ends with the reason
        ``"players_left"`` (see `Joining and leaving`_).
    * - ``time_limit``

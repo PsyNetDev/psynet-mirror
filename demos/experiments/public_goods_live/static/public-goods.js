@@ -43,8 +43,11 @@ export function activate({root, vars, psynet}) {
     if (document.activeElement !== slider) {
       slider.value = mine;
     }
-    // Before the round starts, every player who isn't ready yet is a no-show.
-    let noShows = live.started ? view.no_shows : [];
+    // Before the round starts, every player who isn't ready yet is a no-show,
+    // and so is this player for a moment after, until their page is ready.
+    let noShows = live.started
+      ? view.no_shows.filter((player) => player !== live.player)
+      : [];
     rows.replaceChildren(
       ...contributions.map((tokens, player) =>
         tokenRow(
@@ -57,18 +60,17 @@ export function activate({root, vars, psynet}) {
         )
       )
     );
-    // As the game's outcome counts them: no-shows have no part in the pot.
-    let total = contributions
-      .filter((tokens, player) => !noShows.includes(player))
-      .reduce((a, b) => a + b, 0);
-    let nPlayers = contributions.length - noShows.length;
-    let share = nPlayers > 0 ? (rules.multiplier * total) / nPlayers : 0;
-    pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
-    let shareText = +share.toFixed(2);
-    let earned = noShows.includes(live.player)
-      ? 0
-      : +(rules.endowment - mine + share).toFixed(2);
     instructions.hidden = live.ended;
+    if (view.too_few) {
+      pot.textContent = "No pot this round.";
+      earn.textContent = `Too few players opened the game, so you keep your ${rules.endowment} tokens.`;
+      return;
+    }
+    // The server's pot and payoffs, as the round's outcome counts them.
+    let total = view.pot;
+    pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
+    let shareText = +view.share.toFixed(2);
+    let earned = live.started ? +view.payoffs[live.player].toFixed(2) : rules.endowment;
     earn.textContent = live.ended
       ? `Each player gets ${shareText} tokens from the pot, and you earn ${earned} tokens.`
       : `If the round ended now, each player would get ${shareText} tokens ` +
@@ -81,7 +83,9 @@ export function activate({root, vars, psynet}) {
   live.onChange(render);
   // The rows show what's happening, so the status says nothing while the
   // round is played.
-  live.showStatus(status, null, { ended: "Time's up." });
+  live.showStatus(status, null, {
+    ended: (view) => (view.too_few ? "The round can't be played." : "Time's up."),
+  });
   live.showRejections(rejection);
   slider.addEventListener("input", () => {
     live.send("contribute", {tokens: Number(slider.value)});

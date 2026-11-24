@@ -2112,6 +2112,29 @@ def test_a_player_who_never_opens_the_game_page_is_away_from_the_start():
     assert game.game.absences(game.state) == [None, "no_show"]
 
 
+@pytest.mark.parametrize("limit", [None, 30])
+def test_a_no_show_counts_with_the_leavers_towards_min_players(limit):
+    class Trio(_Game):
+        name = "trio_with_no_show"
+        away_timeout = limit
+
+    game = LocalGame(Trio, players=3, start=False)
+    for player in [0, 1]:
+        game.send(player, READY)
+    game.tick(Trio.ready_timeout)
+    # Two players are enough, until a second one leaves.
+    game.leave(1, now=5)
+    game.tick(35)
+
+    assert game.state["psynet"]["away"] == [2, 1]
+    if limit is None:
+        assert not game.is_over()
+        assert game.game.absences(game.state) == [None, None, "no_show"]
+    else:
+        assert game.is_over() and game.end_reason() == PLAYERS_LEFT
+        assert game.game.absences(game.state) == [None, "left_game", "no_show"]
+
+
 def test_by_default_a_game_for_two_ends_a_minute_after_one_player_leaves():
     class Pair(LiveGame):
         name = "pair_by_default"

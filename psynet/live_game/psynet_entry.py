@@ -7,9 +7,9 @@ time limit, and rejects messages from then on. The entry also keeps track of
 which players are away, and since when, so that a game with an
 away_timeout can end once too few players are left. A player who isn't
 ready when the game starts is away from then until their page's ready
-message arrives. A player added while
-the game runs gets the next number, and players whose game has ended, by
-the game's is_done, don't count towards min_players. Once the game's
+message arrives. A player added while the game runs gets the next number,
+and players whose game has ended, by the game's is_done, don't count
+towards min_players. Once the game's
 accepts_players returns False, ``accepts_players`` stays False, and a player
 added after that is in ``too_late``: the game's own methods never get
 them, and their game ends at once. ``last_event``, the
@@ -56,7 +56,8 @@ class PlayerReady(LiveMessage):
     player who was there when the game started became ready. Players
     added once the game has started already count as ready, so bots added
     then, and newcomers who never open the game page, don't send it, but a
-    newcomer's game page still sends it when it connects.
+    newcomer's game page still sends it when it connects. A player who
+    wasn't ready when the game started is away until it arrives.
     """
 
     type = "psynet_ready"

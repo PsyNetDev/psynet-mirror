@@ -81,7 +81,7 @@ ordinary Python:
 ``Action`` is the type of a player's choice, which the message below uses for
 its ``action`` field, and ``ACTIONS`` lists the three choices, for the page's
 buttons and the bots. ``GAMES``, ``RESULT_SECONDS`` and ``LATE_AFTER`` are
-used by the demo's trials and timeline, which "Playing it as trials" and
+used by the demo's trials and timeline, and ``READY_SECONDS`` by the game, which "Playing it as trials" and
 "When a partner leaves" below describe.
 
 PsyNet numbers a game's players from 0, so the two players here are 0 and 1,

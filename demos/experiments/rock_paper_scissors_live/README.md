@@ -24,7 +24,7 @@ what its game paid.
 
 - A partner who never opens the game page, for example because they closed
   their page just as the pair formed: the game starts without them after
-  `LATE_AFTER`, 20 seconds (the game's `ready_timeout`), and the other
+  `READY_SECONDS`, 20 seconds (the game's `ready_timeout`), and the other
   player's page says that their partner isn't on the game page. If the
   partner doesn't open it within 30 seconds, the game's `away_timeout`, the
   game ends.

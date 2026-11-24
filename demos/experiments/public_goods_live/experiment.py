@@ -29,7 +29,6 @@ from psynet.bot import (
     run_bots_to_completion,
 )
 from psynet.live_game import (
-    PLAYERS_LEFT,
     LiveGame,
     LiveGamePage,
     LiveMessage,
@@ -51,10 +50,12 @@ RESULTS_SECONDS = 10
 # round's game ended is failed. The game page says when it
 # ends, so this only has to cover reading the results.
 LATE_AFTER = 15
-# Seconds a player can be away from a round's game page before they count as
-# gone.
-AWAY_SECONDS = 10
+# A page opens within seconds, so a round starts without a player who hasn't
+# opened it this long after the team reached it.
+READY_SECONDS = 15
 GROUPING_WAIT = 20
+# The game's end reason for a round that fewer than two players opened.
+TOO_FEW = "too_few"
 
 #: What the game page needs to show the pot. The game page passes it to
 #: static/public-goods.js.
@@ -77,24 +78,31 @@ class PublicGoods(LiveGame):
     name = "public_goods"
     messages = [Contribute]
     duration = ROUND_SECONDS
-    # A page opens within seconds, so the round starts without a player who
-    # hasn't opened it by then.
-    ready_timeout = LATE_AFTER
-    # A player away this long, including one who never opened the page, has
-    # left, so a round with fewer than two players left ends early rather
-    # than being played alone. It is shorter than a round but allows for a
-    # reload.
-    away_timeout = AWAY_SECONDS
+    ready_timeout = READY_SECONDS
 
     def initial_state(self, players):
         # Each player's contribution, in player order.
-        return {"contributions": [0 for player in players]}
+        return {"contributions": [0 for player in players], "too_few": False}
+
+    def on_start(self, state):
+        # Played alone, a round would only multiply the player's own tokens,
+        # so it ends at once if fewer than min_players opened the game.
+        state["too_few"] = len(state["psynet"]["ready"]) < self.min_players
+
+    def is_over(self, state):
+        return state["too_few"]
+
+    def end_reason(self, state):
+        return TOO_FEW
 
     def view(self, state, player):
-        # Contributions are public, so every player sees them all.
+        # Contributions are public, so every player sees them all, with the
+        # pot and payoffs as the round's outcome would count them now.
         return {
-            "contributions": state["contributions"],
             "no_shows": self._no_shows(state),
+            "too_few": state["too_few"],
+            **self._result(state),
+            "contributions": state["contributions"],
         }
 
     def _no_shows(self, state):
@@ -106,27 +114,35 @@ class PublicGoods(LiveGame):
             if absence == "no_show"
         ]
 
-    def outcome(self, state, reason):
+    def _result(self, state):
+        """Return the pot and each player's payoff, leaving out the
+        no-shows. A round that too few players opened has no pot, and the
+        players who opened it keep their endowment."""
         no_shows = self._no_shows(state)
-        # What each player put in the pot: None for a no-show, and nothing
-        # in a round that ended because too few players were left.
+        # What each player put in: None for a no-show.
         contributions = [
-            None if player in no_shows else 0 if reason == PLAYERS_LEFT else tokens
+            None if player in no_shows else tokens
             for player, tokens in enumerate(state["contributions"])
         ]
         played = [tokens for tokens in contributions if tokens is not None]
-        pot = sum(played)
-        share = MULTIPLIER * pot / len(played) if played else 0
+        if state["too_few"]:
+            pot = share = None
+        else:
+            pot = sum(played)
+            share = MULTIPLIER * pot / len(played) if played else 0
         return {
             "contributions": contributions,
             "pot": pot,
             "n_players": len(played),
             "share": share,
             "payoffs": [
-                0 if tokens is None else ENDOWMENT - tokens + share
+                0 if tokens is None else ENDOWMENT - tokens + (share or 0)
                 for tokens in contributions
             ],
         }
+
+    def outcome(self, state, reason):
+        return self._result(state)
 
     def answer(self, outcome, reason, player):
         contributed = outcome["contributions"][player]
@@ -210,15 +226,14 @@ class ContributionTrial(Trial):
             absent_action="fail",
         )
 
+    def gives_feedback(self, experiment, participant):
+        # A round with too few players has no pot to show, and its player
+        # is failed by the grouper's below_quorum as it ends.
+        return self.live_game.end_reason != TOO_FEW
+
     def show_feedback(self, experiment, participant):
         answer = self.answer
         team = self.live_game.outcome
-        if self.live_game.end_reason == PLAYERS_LEFT:
-            return InfoPage(
-                "Too few players were left, so the round ended early and "
-                f"nothing went in the pot. You keep your {ENDOWMENT} tokens.",
-                time_estimate=RESULTS_SECONDS,
-            )
         return InfoPage(
             f"The group put {team['pot']} tokens in the pot, which was "
             f"multiplied and shared between {team['n_players']} "
@@ -240,11 +255,15 @@ def _player_round_row(trial):
         "trial_id": trial.id,
         # Counted from 0, as in the other demos' exports.
         "round": trial.sync_group_round,
+        # How the round ended: "finished" when its time was up, or TOO_FEW
+        # when fewer than two players opened it, so it had no pot.
+        "end_reason": trial.live_game and trial.live_game.end_reason,
         # False for a player who never opened the round's game page, whose
         # contributed and share are None.
         "arrived": arrived,
         "contributed": answer.get("contributed"),
-        # What the team put in the pot, before it was multiplied.
+        # What the team put in the pot, before it was multiplied, or None
+        # for a round without one.
         "pot": team.get("pot"),
         # How many players shared the pot.
         "n_players": team.get("n_players"),

@@ -52,6 +52,9 @@ RESULT_SECONDS = 30
 # Seconds a partner can keep the other waiting for the next game, besides the
 # result page, whose time limit the wait allows for.
 LATE_AFTER = 20
+# A page opens within seconds, so a game starts without a partner who hasn't
+# opened it this long after the pair reached it.
+READY_SECONDS = 20
 
 
 def result_for(player, choices):
@@ -115,9 +118,7 @@ class RockPaperScissors(LiveGame):
     name = "rock_paper_scissors"
     messages = [Choose]
     min_players = max_players = 2
-    # A page opens within seconds, so a partner who hasn't opened it by then
-    # probably isn't coming, and the game starts without them.
-    ready_timeout = LATE_AFTER
+    ready_timeout = READY_SECONDS
     # A player whose partner closes the page for good, or never opens it,
     # isn't left waiting: the game ends 30 seconds later, which allows for a
     # reload.

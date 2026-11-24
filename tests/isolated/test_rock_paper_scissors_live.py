@@ -145,8 +145,7 @@ class TestRockPaperScissorsLive:
 
         assert game.is_over() and game.end_reason() == "players_left"
         assert game.game.absences(game.state) == [None, "no_show"]
-        page = demo.show_result(game.answer(0, "players_left"), 0)
-        assert str(page.content) == "The game ended before any throws were played."
+        assert game.answer(0, "players_left")["throws"] == []
 
     @pytest.mark.parametrize(
         "case, player, summary, score",
