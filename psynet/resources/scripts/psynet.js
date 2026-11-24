@@ -1038,6 +1038,8 @@
       let { prompt, control, response } = psynet.page;
       psynet.refreshTemplateData();
       Object.assign(psynet.page, { prompt, control, response });
+      psynet.ensureArrivalUpdates(psynet.page.attributes?.arrival_updates);
+      psynet.waiting.start(psynet.page.attributes?.waiting);
       psynet.initEarlyExitButton();
       initModal("comment-modal", "comment-button");
       psynet.pageLoadTime = new Date();
