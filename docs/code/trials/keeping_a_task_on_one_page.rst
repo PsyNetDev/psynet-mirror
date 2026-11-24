@@ -6,9 +6,11 @@ one trial after another, still assigning, scoring and saving one trial per
 response. If you're still deciding whether to do this, see
 :doc:`/design/presenting_trials`.
 
-The browser doesn't reload between pages: PsyNet swaps in the next page's
-content. Trial pages that share a layout and answer on a key press therefore
-already look like one page. This works with any trial maker, including
+Such a task is a :class:`~psynet.page.JSPage`: you write the page's HTML and
+one JavaScript module, and the module draws each trial from the data PsyNet
+gives it and answers it. When one trial's page has the same HTML, module and
+``page_config`` as the last, the page stays on screen and only the data
+changes. This works with any trial maker, including
 adaptive ones such as staircases, where each answer decides what comes next.
 Each answer waits for the server to send the next trial's page, unless the
 trials are fixed in advance (see `Showing the next trial without waiting`_).
@@ -20,29 +22,32 @@ is a complete example. It runs a staircase with PsyNet's
 The trial's page
 ----------------
 
-Write ``show_trial`` as usual. Give every trial's page the same HTML, and put
-the data that changes from trial to trial in the page's ``contents``::
+Write ``show_trial`` as usual, returning a :class:`~psynet.page.JSPage`.
+Give every trial's page the same HTML, and put the data that changes from
+trial to trial in the page's ``contents``::
 
     def show_trial(self, experiment, participant):
-        return ModularPage(
+        return JSPage(
             "contrast",
             patches_html,
+            module="/static/contrast.js",
             contents={"left": self.definition["left"], "right": self.definition["right"]},
-            show_next_button=False,
-            js_page_modules=["/static/contrast.js"],
             bot_response=...,
             time_estimate=self.time_estimate,
         )
 
+The HTML can be a string or a ``dominate`` tag. Configuration that is the
+same for every trial, such as the task's timings, goes in ``page_config``.
+
 When the participant answers, PsyNet completes the trial and the trial maker
-chooses the next one, as on any trial page. The browser then swaps in the next
-trial's page, and because the layout is the same, only the stimulus appears to
-change.
+chooses the next one, as on any trial page. Because the next trial's page has
+the same HTML, the page stays on screen and the module shows the next
+trial.
 
 The page module
 ---------------
 
-The page module answers on a key press instead of a Next button. Its
+The module answers on a key press instead of a Next button. Its
 ``activate`` function sets up what stays the same from trial to trial, such as
 listeners, and returns an object with two functions:
 
@@ -75,8 +80,8 @@ Keep anything specific to one trial in ``update``, and don't assume
 ``activate`` runs again before each trial. PsyNet doesn't wait for an
 asynchronous ``update`` to finish before calling it again, for example after a
 rejected answer, so an ``update`` that awaits an image should check afterwards
-that it is still the latest call. A module without trials to show can still
-return just the cleanup function.
+that it is still the latest call. A ``JSPage`` whose module doesn't return
+``update`` fails with an error.
 
 When each trial's page comes from the server, PsyNet runs ``cleanup`` and
 ``activate`` again for every trial, so state kept in the module, such as a
@@ -144,12 +149,12 @@ Showing the next trial without waiting
 
 When nothing the participant answers changes which trials come next, the
 browser can show the next trial straight away instead of waiting for the
-server. Trial pages without page modules of their own, such as an
+server. Other trial pages, such as an
 :class:`~psynet.modular_page.ImagePrompt` with a
 :class:`~psynet.modular_page.PushButtonControl`, do this too (see
 :ref:`showing_the_next_trials_without_waiting`), but they rebuild the page for
-each trial. With a page module the page stays on screen, along with anything
-it holds, such as a game's state. Pass ``prepare_trials_in_advance=True`` to a
+each trial. A ``JSPage`` stays on screen, along with anything it holds, such
+as a game's state. Pass ``prepare_trials_in_advance=True`` to a
 :class:`~psynet.trial.static.StaticTrialMaker`::
 
     trial_maker = StaticTrialMaker(
@@ -167,7 +172,7 @@ answers before it, so their pages always wait for the server.
 The trial maker then creates all of a participant's trials, in order, when they
 reach it, and each trial page also carries the ``contents`` of the next few
 trials (:attr:`~psynet.trial.static.StaticTrialMaker.n_upcoming_trials`, 5 by
-default). The page module needs no changes. When the participant answers,
+default). The module needs no changes. When the participant answers,
 PsyNet calls ``update`` with the next trial's ``contents`` at once, and sends
 the answers to the server in the background, one at a time and in order.
 ``update`` also receives ``upcomingContents``, the contents of the known
@@ -218,7 +223,7 @@ after a trial with feedback or with pages from
 trials. With a feedback
 page after every trial, it never runs ahead, and the participant waits for
 the server twice per trial. To give feedback straight away, show it from the
-page module instead, which needs the correct answer in ``contents``. Answers
+module instead, which needs the correct answer in ``contents``. Answers
 are sent as soon as they are given, so only the answers waiting behind a slow
 reply can be lost. While answers are waiting, the browser asks the
 participant before the page reloads or closes. If they leave anyway, those
@@ -228,16 +233,16 @@ lost and its clock starts again.
 
 For this to work:
 
-- Every trial page must have the same HTML, JavaScript and ``page_config``.
-  ``page_config`` configures the page, such as a task's timings, and stays
-  the same for all the trials it shows. What changes between trials goes in
-  ``contents``, which each ``update()`` receives. PsyNet renders each
-  trial's page once to compare them; a trial whose HTML, JavaScript or
-  ``page_config`` differs isn't shown in advance, but waits for the server, and
-  PsyNet logs a warning. If no trial at all could be shown in advance,
-  bot tests such as ``psynet test local`` fail. A prompt that puts the stimulus in its HTML,
-  such as ``ImagePrompt``, makes every trial's HTML differ, so pass the
-  stimulus in ``contents`` instead.
+- Every trial page must be a ``JSPage`` with the same HTML, module and
+  ``page_config``. ``page_config`` configures the page, such as a task's
+  timings, and stays the same for all the trials it shows. What changes
+  between trials goes in ``contents``, which each ``update()`` receives.
+  PsyNet renders each trial's page once to compare them; a trial whose HTML,
+  JavaScript or ``page_config`` differs isn't shown in advance, but waits for
+  the server, and PsyNet logs a warning. If no trial at all could be shown in
+  advance, bot tests such as ``psynet test local`` fail. A stimulus written
+  into the HTML makes every trial's HTML differ, so pass it in ``contents``
+  instead.
 - ``show_trial`` and ``show_after_trial`` must not change anything or
   choose at random, because PsyNet also calls them for upcoming trials,
   before they are answered.
@@ -246,10 +251,9 @@ For this to work:
 - The trial maker picks all the trials' nodes when the participant reaches
   it, before any is answered, so ``custom_node_filter`` and ``select_node``
   can't adapt to the participant's answers.
-- Pages with a ``time_limit``, background recording, ``media`` (such as an
-  :class:`~psynet.modular_page.AudioPrompt`) or a full page reload aren't
-  shown in advance, because PsyNet sets these up for each page. Their files
-  are still downloaded early.
+- Pages with a ``time_limit``, background recording, ``media`` or a full page
+  reload work, but aren't shown in advance, because PsyNet sets these up for
+  each page. Their files are still downloaded early.
 - The browser doesn't run ahead after a trial whose class overrides
   :meth:`~psynet.trial.main.Trial.show_feedback`, even if it sometimes
   returns ``None``, as whether it does depends on the answer.
@@ -259,8 +263,8 @@ Also keep in mind:
 - ``contents``, including that of upcoming trials, is visible to anyone who
   inspects the page. Only put the correct answer there if seeing it doesn't
   matter, for example because the participant could work it out anyway.
-- Bots answer each page through ``bot_response`` and don't run the page
-  module, so ``psynet test local`` doesn't test it. Test the module with a
+- Bots answer each page through ``bot_response`` and don't run the module,
+  so ``psynet test local`` doesn't test it. Test the module with a
   Playwright spec; see :doc:`/test/frontend`.
 
 Trials prepared in advance can't use sync groups, repeat trials, performance

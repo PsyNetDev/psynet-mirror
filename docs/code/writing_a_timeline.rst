@@ -163,10 +163,8 @@ The browser waits for the server as usual when:
   :class:`~psynet.modular_page.NumberControl`, which ask for a missing answer;
 * either page has a ``time_limit``, background recording, a ``session_id`` or
   a full page reload;
-* the next page has page modules of its own (``js_page_modules``); those of
-  its prompt and control don't count;
 * the next page isn't built from components that allow it, such as an
-  :class:`~psynet.page.InfoPage` or a
+  :class:`~psynet.page.InfoPage`, a :class:`~psynet.page.JSPage` or a
   :class:`~psynet.modular_page.ModularPage` whose prompt and control set
   ``can_swap_in_advance = True`` (see
   :ref:`the trial maker guide <prepared_trials_swapped_in>` for the built-in

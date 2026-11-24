@@ -1987,6 +1987,7 @@ class Page(Elt):
             "is_unity_page": isinstance(self, UnityPage),
             "requires_full_page_reload": self.requires_full_page_reload,
             "expect_scrolling": self.expect_scrolling,
+            "shows_trials_itself": self._shows_trials_itself(),
             "background_recording": (
                 _browser_config(self, get_experiment(), participant)
                 if self.background_recording is not None
@@ -2856,24 +2857,21 @@ class Page(Elt):
     def _show_in_advance(self):
         """Whether the page can show trials before the server confirms them.
 
-        Only page modules can, as their ``update`` shows each trial, and only
-        on pages that need nothing PsyNet sets up for each page: a time limit,
-        recording, media or a full page reload.
+        Only a :class:`~psynet.page.JSPage` can, as its module's ``update``
+        shows each trial, and only if it needs nothing PsyNet sets up for each
+        page: a time limit, recording, media or a full page reload.
         """
-        from .modular_page import RecordControl
-
         return (
-            self._page_modules_show_trials()
+            self._shows_trials_itself()
             and self.time_limit is None
             and self.background_recording is None
-            and not isinstance(getattr(self, "control", None), RecordControl)
             and not self.requires_full_page_reload
             and not self.media.urls
         )
 
-    def _page_modules_show_trials(self):
-        """Whether the page has page modules that may show trials through ``update``."""
-        return bool(self.js_page_modules)
+    def _shows_trials_itself(self):
+        """Whether the page's JavaScript shows each trial through ``update``, as a :class:`~psynet.page.JSPage`'s does."""
+        return False
 
     def _browser_page_uuid(self, participant):
         """The page UUID that the browser submits the page's answer with."""
@@ -2888,8 +2886,8 @@ class Page(Elt):
     def _upcoming_pages_payload(self, experiment, participant):
         """Describe ``upcoming_pages`` for the browser, each by the page UUID it will have.
 
-        Page modules show a page from its ``contents``; other pages are sent
-        rendered, for the browser to swap in.
+        A :class:`~psynet.page.JSPage` shows the next page from its
+        ``contents``; other pages are sent rendered, for the browser to swap in.
         """
         upcoming = self.upcoming_pages
         if upcoming is None:
@@ -2989,9 +2987,6 @@ class Page(Elt):
         if undeclared:
             return f"{', '.join(undeclared)} doesn't set can_swap_in_advance"
         reasons = {
-            "it has page modules, which show trials in advance instead": (
-                self._page_modules_show_trials()
-            ),
             "it has a time limit": self.time_limit is not None,
             "it records in the background": self.background_recording is not None,
             "it needs a full page reload": self.requires_full_page_reload,

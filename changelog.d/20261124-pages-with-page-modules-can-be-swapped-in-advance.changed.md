@@ -1,0 +1,1 @@
+Pages with page modules are now swapped in before the server replies, like other pages built from components that allow it, so a series of `MusicNotationPrompt` pages switches as quickly as `ImagePrompt` pages. A chat page still waits for the server.

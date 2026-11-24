@@ -31,7 +31,7 @@ from psynet.modular_page import (
     RadioButtonControl,
     SliderControl,
 )
-from psynet.page import InfoPage, SuccessfulEndPage, UnsuccessfulEndPage
+from psynet.page import InfoPage, JSPage, SuccessfulEndPage, UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.timeline import (
     AsyncCodeBlock,
@@ -182,16 +182,20 @@ def test_only_pages_built_from_declared_components_are_swapped_in():
         return page(control, **kwargs)._not_swappable_because()
 
     assert because() is None
-    # A component's page modules only run as the page appears, but the page's
-    # own modules show the next trials themselves.
+    # Page modules run as usual on a swapped-in page; only a JSPage's module
+    # shows the next trials itself.
     music = page(prompt=MusicNotationPrompt("X:1\nK:C\nC"))
     assert music._not_swappable_because() is None
     assert not music._show_in_advance()
-    own = page(js_page_modules=["/static/task.js"])
-    assert own._not_swappable_because() == (
-        "it has page modules, which show trials in advance instead"
-    )
-    assert own._show_in_advance()
+    assert because(js_page_modules=["/static/setup.js"]) is None
+    task = JSPage("task", "<div id='task'></div>", "/static/task.js", time_estimate=1)
+    assert task._not_swappable_because() is None
+    assert task._show_in_advance()
+    assert not JSPage(
+        "task", "<div></div>", "/static/task.js", time_estimate=1, time_limit=5
+    )._show_in_advance()
+    with pytest.raises(TypeError, match="one module"):
+        JSPage("task", "", "/static/task.js", js_page_modules=["/static/b.js"])
     assert because(chatroom=ChatRoom("room")) == (
         "ChatRoom doesn't set can_swap_in_advance"
     )

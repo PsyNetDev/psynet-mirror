@@ -731,6 +731,84 @@ class JsPsychPage(Page):
         )
 
 
+class JSPage(Page):
+    """
+    A page whose front end is your own HTML and JavaScript module.
+
+    The module's ``activate`` returns ``update``, which PsyNet calls with each
+    trial's ``contents`` and a ``response`` handle to answer it with. When the
+    next page is a ``JSPage`` with the same HTML, module and ``page_config``,
+    the page stays on screen and ``update`` shows the next trial; other pages
+    are swapped in or loaded as usual, and ``update`` draws them too. See
+    :doc:`/code/trials/keeping_a_task_on_one_page`.
+
+    Parameters
+    ----------
+    label :
+        Label for the page.
+
+    html :
+        The page's HTML, as a string or a ``dominate`` tag. It stays the same
+        from trial to trial; put what changes in ``contents``. Page JavaScript
+        goes in ``module``, not in ``<script>`` tags.
+
+    module :
+        URL of the JavaScript module that runs the page. Its ``activate``
+        must return ``{update}`` or ``{update, cleanup}``. To load other code,
+        import it from this module or list it in ``js_dependencies``.
+
+    time_estimate :
+        Time estimated for the page.
+
+    contents :
+        What this page shows, such as a trial's stimulus. ``update`` receives
+        it.
+
+    **kwargs :
+        Further arguments to pass to :class:`psynet.timeline.Page`, such as
+        ``page_config``, ``css`` and ``bot_response``. A ``time_limit``,
+        background recording or ``media`` work as on any page, but make the
+        page wait for the server between trials.
+    """
+
+    can_swap_in_advance = True
+
+    def __init__(
+        self,
+        label: str,
+        html: Union[str, Markup, dom_tag],
+        module: str,
+        time_estimate: Optional[float] = None,
+        contents: Optional[dict] = None,
+        **kwargs,
+    ):
+        if "js_page_modules" in kwargs:
+            raise TypeError(
+                "JSPage runs one module, passed as module=; import any other "
+                "modules from it."
+            )
+        if isinstance(html, dom_tag):
+            html = html.render()
+        self.html = Markup(html)
+        super().__init__(
+            label=label,
+            time_estimate=time_estimate,
+            template_fragment_str="{{ js_page_html }}",
+            template_arg={"js_page_html": self.html},
+            js_page_modules=[module],
+            contents=contents,
+            **kwargs,
+        )
+
+    def _shows_trials_itself(self):
+        return True
+
+    def _collect_spa_incompatibility_codes(self):
+        codes = super()._collect_spa_incompatibility_codes()
+        codes.extend(self._collect_spa_markup_contract_codes(str(self.html)))
+        return list(dict.fromkeys(codes))
+
+
 class ExecuteFrontEndJS(InfoPage):
     """Execute JavaScript in a lifecycle-managed page module."""
 

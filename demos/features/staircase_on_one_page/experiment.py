@@ -3,8 +3,7 @@ import random
 from dominate import tags
 
 import psynet.experiment
-from psynet.modular_page import ModularPage
-from psynet.page import InfoPage
+from psynet.page import InfoPage, JSPage
 from psynet.timeline import PageMaker, Timeline
 from psynet.trial.staircase import (
     GeometricStaircaseNode,
@@ -41,7 +40,7 @@ class ContrastTrial(GeometricStaircaseTrial):
 
     def show_trial(self, experiment, participant):
         pair = self.definition
-        return ModularPage(
+        return JSPage(
             "contrast",
             tags.div(
                 tags.p("Which patch is brighter?"),
@@ -60,8 +59,7 @@ class ContrastTrial(GeometricStaircaseTrial):
                 cls="text-center",
             ),
             contents={"left": pair["left"], "right": pair["right"]},
-            show_next_button=False,
-            js_page_modules=["/static/contrast.js"],
+            module="/static/contrast.js",
             bot_response="left" if pair["left"] > pair["right"] else "right",
             time_estimate=self.time_estimate,
         )

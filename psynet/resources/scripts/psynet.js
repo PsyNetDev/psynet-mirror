@@ -749,6 +749,14 @@
             psynet.pageModuleUpdates.push(update);
           }
         }
+        if (
+          psynetTemplateData.page?.attributes?.shows_trials_itself &&
+          !psynet.pageModuleUpdates.length
+        ) {
+          throw new Error(
+            "A JSPage's module must return {update}, which shows each trial's contents.",
+          );
+        }
       } catch (error) {
         psynet.pageModuleUpdates = [];
         await psynet.deactivatePageJavascript(activated);

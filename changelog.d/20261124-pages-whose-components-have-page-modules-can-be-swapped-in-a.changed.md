@@ -1,1 +1,0 @@
-Pages are now swapped in before the server replies even when their prompt or control has page modules, so a series of `MusicNotationPrompt` pages switches as quickly as `ImagePrompt` pages. Only page modules passed to the page itself (`js_page_modules`), which show the next trials through `update()`, keep a page from being swapped in. A chat page still waits for the server.

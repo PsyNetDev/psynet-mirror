@@ -603,10 +603,10 @@ class StaticTrialMaker(ChainTrialMaker):
             f"Trial maker {self.id!r} prepares trials in advance, but each "
             "trial's page had different HTML, JavaScript or page_config from the "
             "previous one's, so none could be shown in advance. Put what changes "
-            "between trials in the page's contents, which its page modules' "
+            "between trials in the page's contents, which its JSPage module's "
             "update() receives; the server log names the trials. A picture in the "
-            "page's HTML, as with ImagePrompt, makes every trial's page different. "
-            "Pages without page modules are sent rendered instead and aren't checked."
+            "page's HTML makes every trial's page different. Pages other than "
+            "JSPage are sent rendered instead and aren't checked."
         )
 
     def _swappable(self, page, experiment, participant):

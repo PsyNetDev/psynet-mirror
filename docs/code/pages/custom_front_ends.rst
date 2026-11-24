@@ -1,10 +1,18 @@
 Custom front ends
 =================
 
-Custom front ends are usually written as custom prompts and controls for
-modular pages. A *prompt* displays a stimulus to the participant, and a
-*control* gives the participant a way to respond. The examples on this page
-come from the ``demos/features/modular_page`` demo.
+There are two ways to write a page's front end yourself:
+
+- write custom prompts and controls for modular pages, which this page
+  describes, when you want them to sit alongside the built-in ones. A
+  *prompt* displays a stimulus to the participant, and a *control* gives the
+  participant a way to respond;
+- write the whole page as a :class:`~psynet.page.JSPage`, your own HTML and
+  one JavaScript module, when you'd rather design the screen from scratch;
+  see :doc:`/code/trials/keeping_a_task_on_one_page`.
+
+See :ref:`choosing_a_kind_of_page` for how these compare. The examples on
+this page come from the ``demos/features/modular_page`` demo.
 
 Custom prompts
 --------------
@@ -82,9 +90,8 @@ Custom controls are defined in the same way:
 ``color`` is an instance attribute set in the constructor.
 ``get_js_page_modules()`` supplies behavior that PsyNet activates for each
 page hosting the control, including a page swapped in before the server
-serves it (see :ref:`the trial maker guide <prepared_trials_swapped_in>`). A module that shows trials
-through ``update()`` belongs to the page instead: pass it as the page's
-``js_page_modules``. ``metadata`` returns optional information saved with
+serves it (see :ref:`the trial maker guide <prepared_trials_swapped_in>`).
+``metadata`` returns optional information saved with
 the participant's response. ``get_bot_response()`` supplies the answer that
 bots give in automated tests.
 

@@ -1,8 +1,7 @@
 from dominate import tags
 
 import psynet.experiment
-from psynet.modular_page import ModularPage
-from psynet.page import InfoPage
+from psynet.page import InfoPage, JSPage
 from psynet.timeline import PageMaker, Timeline
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
@@ -25,7 +24,7 @@ class RatingTrial(StaticTrial):
 
     def show_trial(self, experiment, participant):
         name = self.definition["name"]
-        return ModularPage(
+        return JSPage(
             "rating",
             tags.div(
                 tags.p("How much do you like this picture?"),
@@ -53,8 +52,7 @@ class RatingTrial(StaticTrial):
                 "name": name,
                 "url": f"/static/pictures/{name.replace(' ', '-')}.svg",
             },
-            show_next_button=False,
-            js_page_modules=["/static/rate-picture.js"],
+            module="/static/rate-picture.js",
             bot_response=3,
             time_estimate=self.time_estimate,
         )

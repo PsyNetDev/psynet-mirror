@@ -7,8 +7,9 @@ from dallinger import db
 
 from psynet.bot import BotDriver
 from psynet.experiment import get_experiment
-from psynet.modular_page import ModularPage
+from psynet.page import InfoPage
 from psynet.participant import Participant
+from psynet.timeline import Page
 from psynet.trial.main import Trial
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
@@ -66,7 +67,7 @@ def test_pages_are_pre_rendered_once_before_they_are_compared(monkeypatch):
         pre_rendered.append(self)
         self.page_config = {**self.page_config, "pre_rendered": True}
 
-    monkeypatch.setattr(ModularPage, "pre_render", pre_render)
+    monkeypatch.setattr(Page, "pre_render", pre_render)
     page = trial.show_trial(None, participant)
     shown, _ = trial.trial_maker._upcoming(trial, page, None, participant)
     assert len(shown) == 3
@@ -111,7 +112,7 @@ def test_a_break_does_not_count_towards_the_next_trial():
         ).json()
         assert reply["submission"] == "rejected" and reply["stale_page"]
     assert Participant.query.get(bot.id).page_uuid == current
-    while "break" not in str(bot.get_current_page().prompt.text).lower():
+    while not isinstance(bot.get_current_page(), InfoPage):
         bot.take_page()
     # Bots report each page's time_estimate as its time_taken.
     bot.take_page()

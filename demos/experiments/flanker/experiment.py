@@ -10,8 +10,7 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.bot import BotResponse
-from psynet.modular_page import ModularPage
-from psynet.page import InfoPage
+from psynet.page import InfoPage, JSPage
 from psynet.timeline import FailedValidation, PageMaker, Timeline
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
@@ -43,7 +42,7 @@ class FlankerTrial(StaticTrial):
     time_estimate = 2
 
     def show_trial(self, experiment, participant):
-        return ModularPage(
+        return JSPage(
             "flanker",
             tags.div(
                 tags.div(id="flanker-stimulus", cls="flanker-stimulus"),
@@ -68,13 +67,12 @@ class FlankerTrial(StaticTrial):
                 )
             },
             page_config={"flanker": {"timings": TIMINGS}},
-            js_page_modules=["/static/flanker.js"],
+            module="/static/flanker.js",
             css=[
                 ".flanker-stimulus { height: 6rem; display: flex; "
                 "align-items: center; justify-content: center; "
                 "font: 3.5rem monospace; letter-spacing: 0.2em; }"
             ],
-            show_next_button=False,
             validate=validate_answer,
             bot_response=bot_response,
             time_estimate=self.time_estimate,
