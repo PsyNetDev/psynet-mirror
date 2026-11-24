@@ -704,6 +704,9 @@ class StaticTrialMaker(ChainTrialMaker):
             )
             if ahead:
                 next_page._page_key = following._page_key
+                if next_page.time_estimate is None:
+                    # As the trial's page maker gives the page it shows.
+                    next_page.time_estimate = following._get_trial_time_estimate(self)
                 if swappable:
                     next_page._rendered_in_advance = True
                 shown.append(next_page)
