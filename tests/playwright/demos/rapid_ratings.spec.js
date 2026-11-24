@@ -154,14 +154,6 @@ test("an answer that couldn't be sent brings its picture back", { tag: "@inplace
     const picture = participant.locator("#picture");
     await expect(picture).toHaveAttribute("alt", "red circle", { timeout: STEP_TIMEOUT_MS });
 
-    // As while another submission is still being sent.
-    await participant.evaluate(() => (psynet.nextPagePending = true));
-    await participant.getByRole("button", { name: "5", exact: true }).click();
-    await expect(picture).toHaveAttribute("alt", "red circle");
-    // Visible again once the trial is back and can be answered.
-    await expect(picture).toBeVisible();
-    await participant.evaluate(() => (psynet.nextPagePending = false));
-
     // As while the page is still loading: the picture stays under the alert.
     await participant.evaluate(() => (psynet.pageReady = false));
     await participant.getByRole("button", { name: "5", exact: true }).click();

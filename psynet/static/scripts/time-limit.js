@@ -65,7 +65,7 @@ export function activate({root, vars, psynet}) {
 
     function submit() {
         if (submitted || stopped) return;
-        if (!psynet.pageReady || psynet.nextPagePending || psynet.timelineHold) {
+        if (!psynet.pageReady || psynet.pageState.submitting || psynet.timelineHold) {
             // Another submission is under way, or the page is still loading.
             timer = window.setTimeout(submit, 500);
             return;
@@ -115,7 +115,7 @@ export function activate({root, vars, psynet}) {
             // The page moves on at zero, so the label never reads "0 s".
             label.textContent = Math.max(left, 1);
         });
-        if (line) line.hidden = left === 0 || Boolean(psynet.nextPagePending || psynet.timelineHold);
+        if (line) line.hidden = left === 0 || Boolean(psynet.pageState.submitting || psynet.timelineHold);
         if (left > 0) timer = window.setTimeout(tick, 250);
         else submit();
     }

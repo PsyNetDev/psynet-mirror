@@ -197,6 +197,8 @@ describe("approved response into a waiting screen", () => {
       adoptRenderedReply: () => false,
       predictedFragment: () => null,
       resetAnswers() {},
+      changePage: (change) => change(),
+      pageState: {},
       endPageRecording: record("endPageRecording"),
       updatePageForTimelineHold: record("updatePageForTimelineHold"),
       beginTimelineHold: record("beginTimelineHold"),
@@ -211,7 +213,8 @@ describe("approved response into a waiting screen", () => {
     const handle = new Function(
       "psynet",
       "psynetTemplateData",
-      `${extractFunction("handleApprovedResponse")}; return handleApprovedResponse;`
+      `${SOURCE.match(/let showReply = async function[\s\S]*?\n    \};/)[0]}
+      ${extractFunction("handleApprovedResponse")}; return handleApprovedResponse;`
     )(psynet, templateData);
     return { handle, calls };
   }

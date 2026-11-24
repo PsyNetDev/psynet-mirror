@@ -56,11 +56,16 @@ describe("isPredictedReply", () => {
   });
 });
 
-const sendingCode = ["psynet\\.sendAnswers", "let sendQueuedAnswers"].map((name) => {
-  const found = SOURCE.match(new RegExp(`${name} = async function[\\s\\S]*?\\n    \\};`));
-  assert.ok(found, `could not extract ${name}`);
+const extract = (pattern) => {
+  const found = SOURCE.match(pattern);
+  assert.ok(found, `could not extract ${pattern}`);
   return found[0];
-});
+};
+const serialQueueCode = extract(/let serialQueue = function[\s\S]*?\n    \};/);
+const queueCode = serialQueueCode + "let queueSubmission = serialQueue();";
+const sendingCode = ["psynet\\.sendAnswers", "let sendQueuedAnswers"].map((name) =>
+  extract(new RegExp(`${name} = async function[\\s\\S]*?\\n    \\};`))
+);
 
 describe("sendAnswers", () => {
   it("stops when an answer couldn't be sent and isn't shown again", async () => {
@@ -72,7 +77,7 @@ describe("sendAnswers", () => {
         return false;
       },
     };
-    new Function("psynet", sendingCode.join("\n"))(psynet);
+    new Function("psynet", queueCode + sendingCode.join("\n"))(psynet);
     await psynet.sendAnswers();
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(psynet.calls, 1);
@@ -95,6 +100,7 @@ describe("adoptRenderedReply", () => {
       },
       log: { warn() {} },
       media: { prefetch() {} },
+      changePage: (change) => change(),
     };
     new Function("psynet", "psynetTemplateData", adoptionCode.join("\n"))(psynet, {
       flags: {},
@@ -115,9 +121,8 @@ describe("adoptRenderedReply", () => {
   });
 });
 
-const prefetchCode = SOURCE.match(
-  /psynet\.media\.prefetchToken = 0;[\s\S]*?psynet\.media\.prefetch = function[\s\S]*?\n    \};/
-)[0];
+const prefetchCode = extract(/psynet\.media\.prefetch = function[\s\S]*?\n    \};/);
+const changePageCode = serialQueueCode + "psynet.changePage = serialQueue();";
 
 describe("prefetch after adopting a reply mid-swap", () => {
   it("still fetches the next pages' media once the swap ends", async () => {
@@ -126,14 +131,16 @@ describe("prefetch after adopting a reply mid-swap", () => {
       answers: { queue: [{ ...entry, pageUuid: "1-4-p-xyz", nextLayoutKey: "k1" }] },
       log: { warn() {} },
       media: { prefetched: new Map([["/a.wav", null]]), prefetchedImages: new Map() },
-      pageSwap: new Promise((resolve) => (endSwap = resolve)),
     };
     const fetch = async () => ({ ok: true, blob: async () => null });
-    new Function("psynet", "psynetTemplateData", "fetch", prefetchCode + adoptionCode.join("\n"))(
-      psynet,
-      { flags: {} },
-      fetch
-    );
+    new Function(
+      "psynet",
+      "psynetTemplateData",
+      "fetch",
+      changePageCode + prefetchCode + adoptionCode.join("\n")
+    )(psynet, { flags: {} }, fetch);
+    const swap = new Promise((resolve) => (endSwap = resolve));
+    psynet.changePage(() => swap);
     psynet.adoptRenderedReply({
       page: page({ name: "yellow star" }, { upcoming_media: { audio: ["/b.wav"] } }),
       timeline_fragment: { layout_key: "k1" },
@@ -142,40 +149,59 @@ describe("prefetch after adopting a reply mid-swap", () => {
     psynet.media.prefetch(undefined);
     assert.ok(psynet.media.prefetched.has("/a.wav"));
     endSwap();
-    await psynet.pageSwap;
+    await psynet.changePage(() => {});
     assert.deepEqual([...psynet.media.prefetched.keys()], ["/b.wav"]);
   });
 });
 
-const nextPageCode = ["psynet\\.nextPage", "psynet\\.sendAnswersGivenAhead"]
-  .map((name) => SOURCE.match(new RegExp(`${name} = async function[\\s\\S]*?\\n    \\};`))[0])
-  .join("\n");
+const submissionCode =
+  serialQueueCode +
+  extract(/let queueSubmission = serialQueue\(\);[\s\S]*?(?=\n    \/\/ Show the page before this one again)/);
 
 describe("nextPage while answers given in advance are sent", () => {
   it("times the answer from the click and ignores a second click", async () => {
     let finishSending;
-    const submitted = [];
+    const posted = [];
     const psynet = {
       pageReady: true,
+      pageState: {},
+      pageModuleGeneration: 0,
       pageLoadTime: new Date(Date.now() - 500),
       trial: { eventLog: ["promptStart"] },
       response: { staged: { blobs: {} } },
-      var: {},
+      comments: [],
       log: { info() {} },
-      answers: { sending: new Promise((resolve) => (finishSending = resolve)) },
+      answers: { queue: [{ value: "earlier", metadata: {} }], sending: null },
       nextRenderedPage: () => null,
       setTimelineTransitionBusy() {},
-      sendSubmission: async (rawAnswer, metadata) => submitted.push([rawAnswer, metadata]),
     };
-    new Function("psynet", nextPageCode)(psynet);
+    const submitGenericResponse = async (rawAnswer, metadata) => {
+      posted.push([rawAnswer, metadata]);
+      if (rawAnswer === "earlier") {
+        await new Promise((resolve) => (finishSending = resolve));
+        psynet.answers.queue.shift();
+      }
+      return true;
+    };
+    new Function(
+      "psynet",
+      "psynetTemplateData",
+      "submitGenericResponse",
+      "onSuccessResponse",
+      "onErrorResponse",
+      submissionCode + sendingCode.join("\n")
+    )(psynet, { flags: {} }, submitGenericResponse);
+    psynet.sendAnswers();
     const first = psynet.nextPage("A");
     assert.equal(await psynet.nextPage("B"), false);
     await new Promise((resolve) => setTimeout(resolve, 300));
-    finishSending({ sent: true });
-    await first;
-    assert.equal(submitted.length, 1);
-    const [answer, metadata] = submitted[0];
-    assert.equal(answer, "A");
+    finishSending();
+    assert.equal(await first, true);
+    assert.deepEqual(
+      posted.map(([answer]) => answer),
+      ["earlier", "A"]
+    );
+    const metadata = posted[1][1];
     assert.ok(metadata.time_taken < 0.7, `time_taken was ${metadata.time_taken}`);
     assert.deepEqual(metadata.event_log, ["promptStart"]);
   });

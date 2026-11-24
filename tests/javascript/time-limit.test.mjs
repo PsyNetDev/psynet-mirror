@@ -16,6 +16,7 @@ it("counts down from when the page arrived, not from when the script ran", async
   const submissions = [];
   const psynet = {
     pageReady: true,
+    pageState: {},
     pageReceivedAt: Date.now() - 3000,
     nextPage: (rawAnswer, metadata) => submissions.push(metadata),
   };
@@ -37,6 +38,7 @@ it("announces the time-out and can submit the current answer", async () => {
   const submissions = [];
   const psynet = {
     pageReady: true,
+    pageState: {},
     pageReceivedAt: Date.now() - 10000,
     response: { staged: { rawAnswer: null, metadata: {}, blobs: {} } },
     SUBMISSION_HANDLED: Symbol("handled"),
@@ -82,6 +84,7 @@ it("resumes the countdown when the server's deadline is still to come", async ()
   let calls = 0;
   const psynet = {
     pageReady: true,
+    pageState: {},
     pageReceivedAt: Date.now() - 10000,
     nextPage: (rawAnswer, metadata, blobs, onRejection) => {
       calls += 1;
@@ -103,6 +106,7 @@ it("does not retry a submission the server refused with a message", async () => 
   let calls = 0;
   const psynet = {
     pageReady: true,
+    pageState: {},
     pageReceivedAt: Date.now() - 10000,
     nextPage: (rawAnswer, metadata, blobs, onRejection) => {
       calls += 1;

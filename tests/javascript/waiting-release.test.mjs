@@ -23,7 +23,7 @@ function waitingHarness({ statuses, cancelRelease = false }) {
   const calls = [];
   const psynet = {
     uniqueId: "participant-1",
-    nextPagePending: false,
+    pageState: { submitting: false },
     pageReady: true,
     timelineHold: null,
     answers: { sending: null },
@@ -123,13 +123,13 @@ describe("psynet.waiting", () => {
     assert.deepEqual(harness.calls, ["hide notice", "submit interrupted=true"]);
   });
 
-  it("waits for answers given in advance before submitting as interrupted", async () => {
+  it("waits for a pending submission before submitting as interrupted", async () => {
     const harness = waitingHarness({ statuses: [RELEASED] });
-    harness.psynet.answers.sending = Promise.resolve({ sent: true });
+    harness.psynet.pageState.submitting = true;
     await harness.start(INTERRUPTIBLE);
     await harness.advance(3000);
     assert.ok(!harness.calls.includes("submit interrupted=true"));
-    harness.psynet.answers.sending = null;
+    harness.psynet.pageState.submitting = false;
     await harness.advance(500);
     assert.equal(harness.calls.at(-1), "submit interrupted=true");
   });

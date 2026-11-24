@@ -44,7 +44,7 @@ test("same-session timeline update preserves page fragment and emits pageUpdated
             messageCount: window.__sameSessionUnityMessages?.length || 0,
             markerText:
               document.getElementById("same-session-marker")?.textContent || "",
-            nextPagePending: window.psynet.nextPagePending
+            submitting: window.psynet.pageState.submitting
           })),
         { timeout: STEP_TIMEOUT_MS }
       )
@@ -52,7 +52,7 @@ test("same-session timeline update preserves page fragment and emits pageUpdated
         pageStep: 2,
         messageCount: 1,
         markerText: "First same-session page",
-        nextPagePending: false
+        submitting: false
       });
 
     const updatePayload = await experimentPage.evaluate(
@@ -126,7 +126,7 @@ test("non-same-session Unity transitions fall back to timeline reload", { tag: "
       window.__timelineReloadCalls = 0;
       window.psynet.loadNextTimelinePageWithReload = function () {
         window.__timelineReloadCalls += 1;
-        window.psynet.nextPagePending = false;
+        window.psynet.pageState.submitting = false;
       };
 
       return window.psynet.nextPage("different-session");
@@ -138,7 +138,7 @@ test("non-same-session Unity transitions fall back to timeline reload", { tag: "
         () =>
           experimentPage.evaluate(() => ({
             reloadCalls: window.__timelineReloadCalls,
-            nextPagePending: window.psynet.nextPagePending,
+            submitting: window.psynet.pageState.submitting,
             markerText:
               document.getElementById("same-session-marker")?.textContent || "",
             messageCount: window.__sameSessionUnityMessages?.length || 0
@@ -147,7 +147,7 @@ test("non-same-session Unity transitions fall back to timeline reload", { tag: "
       )
       .toEqual({
         reloadCalls: 1,
-        nextPagePending: false,
+        submitting: false,
         markerText: "First same-session page",
         messageCount: 0
       });

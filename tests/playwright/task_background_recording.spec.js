@@ -30,7 +30,7 @@ for (const capture of [true, false]) {
         const button = p.getByRole("button", {name: `Complete Unity step ${step}`, exact: true});
         await expect(button).toBeVisible({timeout: 30000});
         await expect(p.locator("#background-recording-permission")).toHaveCount(0);
-        await expect.poll(() => p.evaluate(() => psynet.nextPagePending)).toBe(false);
+        await expect.poll(() => p.evaluate(() => psynet.pageState.submitting)).toBe(false);
         if (step < 3) {
           await captured();
           await keepCameraTrack();
