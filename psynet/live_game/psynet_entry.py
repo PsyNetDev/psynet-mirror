@@ -7,8 +7,9 @@ doesn't start: ``too_few_ready`` ends it at once, without on_start, and its
 no-shows stay no-shows. Dallinger lets bots play only after a tick in a game
 with a tick_rate, so ``join_tick_at`` asks for a tick as a player joins
 during the ready step, which lets a bot send its ready message in time even
-if the first tick would come after the ready_timeout. Once it starts, the game ends at its duration or its
-time limit, and rejects messages from then on. The entry also keeps track of
+if the first tick would come after the ready_timeout. Once it starts, the
+game ends at its duration or its time limit, and rejects messages from then
+on. The entry also keeps track of
 which players are away, and since when, so that a game with an
 away_timeout can end once too few players are left. A player who isn't
 ready when the game starts is away from then until their page joins the
@@ -232,7 +233,9 @@ def _record_join(self, method, outermost, state, player_id, now):
         return _UNCHANGED
     if entry["started_at"] is None and self.tick_rate:
         # Dallinger lets bots play only after a tick, so a bot that joins
-        # gets one before the ready step ends without its ready message.
+        # gets one before the ready step ends without its ready message. A
+        # page's join gets one too: a tick that changes nothing but sends
+        # the views again.
         entry["join_tick_at"] = now
     _record_event(entry, now)
     if player in entry["away"]:

@@ -259,7 +259,8 @@ JavaScript can find it. PsyNet hides it on a page without a game. The other
 options change the page's texts: ``waiting_status`` is what the page says
 until both pages have opened,
 ``player_left_message`` the notice while the partner is away, and
-``no_game_message`` the notice on a page without a game.
+``no_game_message`` the notice on a page without a game, which a player
+also sees when their partner never opens the game page.
 ``js_page_modules`` lists the page's JavaScript.
 
 The JavaScript is in ``static/rock-paper-scissors.js``. It exports an

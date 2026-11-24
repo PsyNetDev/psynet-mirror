@@ -358,7 +358,7 @@ page closes before the game starts isn't ready any more, until the page
 reconnects.
 
 If fewer than the game's ``min_players`` players are ready at the
-``ready_timeout``, none of them included, the game can't be played, so it
+``ready_timeout``, even if none are, the game can't be played, so it
 doesn't start: it ends at once, with the reason
 :data:`~psynet.live_game.TOO_FEW_READY`, ``"too_few_ready"``, without
 running ``on_start``, and the players who weren't ready are no-shows (see
@@ -1237,8 +1237,8 @@ PsyNet ends a game with ``"players_left"`` once too few players are left
 (see `Joining and leaving`_), and with ``"too_few_ready"`` if too few were
 ready for it to start (see `The ready step`_). That game never started, so
 ``outcome`` gets a state that no message, ``tick`` or ``on_start`` has
-changed, which it must handle too. If the game's code
-raised an error, ``reason`` is ``"failed"``, and ``outcome`` is the outcome
+changed, though ``on_join``, ``on_leave`` and ``on_add`` may have, and it
+must handle that state too. If the game's code raised an error, ``reason`` is ``"failed"``, and ``outcome`` is the outcome
 of the state just before the error. :mod:`psynet.live_game` has constants
 for the common reasons: :data:`~psynet.live_game.FINISHED`,
 :data:`~psynet.live_game.TIMEOUT`, :data:`~psynet.live_game.PLAYERS_LEFT`,

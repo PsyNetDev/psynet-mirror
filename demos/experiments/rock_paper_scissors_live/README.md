@@ -30,8 +30,8 @@ what its game paid.
   partner, then moves on to the result.
 - A partner who closes the game page during a game: the other player's page
   says so. If the partner doesn't come back within 30 seconds, the game's
-  `away_timeout`, the game ends. Both players are paid for the throws they won, including the
-  partner who never comes back.
+  `away_timeout`, the game ends. Both players are paid for the throws they
+  won, including the partner who never comes back.
 - In both cases, the other player sees their result and then, after the
   first game, waits for the partner at the start of the second game, as in
   the next case, but only until 30 seconds after the game ended: 10 seconds
