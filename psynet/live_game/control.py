@@ -280,15 +280,17 @@ class LiveGamePage(ModularPage):
 
     player_left_message
         What a notice at the top of the page says while another player has
-        left the game page and not come back, or, once the game has started,
-        hasn't opened it yet. By default it says "Another player has left
-        the game." Set it to ``None`` for no notice.
+        left the game page and not come back, or, once the game has started
+        without them, hasn't opened it yet. By default it says "Another
+        player has left the game." Set it to ``None`` for no notice.
 
     no_game_message
         What a notice at the top of the page says to a participant whose
-        group didn't start a game. By default it says "Your group couldn't
-        start the game." Set it to ``None`` for no notice. It isn't shown
-        when the page already says that the participant's group left them.
+        group didn't start a game, or, once it has ended, to a player whose
+        game too few players were ready for, which never started. By
+        default it says "Your group couldn't start the game." Set it to
+        ``None`` for no notice. It isn't shown when the page already says
+        that the participant's group left them.
 
     too_late_message
         What a notice at the top of the page says to a participant who
