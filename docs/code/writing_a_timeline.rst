@@ -197,7 +197,9 @@ For the same reason, a participant can go back to the page before the
 current one, for example to reread instructions. Such pages show a Back
 button just left of Next, which stays where it was. The browser already has
 the earlier page, so it appears at once. Going back takes back the time
-credit and progress the earlier page gave. The `back_button demo
+credit and progress the earlier page gave. Like any page, the earlier page
+stores a new response, without an answer, each time the participant reaches
+it, so its responses appear once for each visit. The `back_button demo
 <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/back_button>`__
 shows a run of instruction pages with Back buttons.
 
@@ -207,7 +209,8 @@ directly next to each other in the timeline, which the browser could show
 without waiting for the server as described above. The earlier page must
 collect no answer, like :class:`~psynet.page.InfoPage`, so going back never
 changes an answer. It must also not override ``on_complete``, and the pages
-must not be inside a module that collects its answers. So questions, trial
+must not be inside a module that collects its answers or among the pages a
+barrier shows while participants wait. So questions, trial
 pages, and the first page after a code block, a condition or the start of a
 module, can't be gone back to. Pages whose controls answer on click, such
 as :class:`~psynet.modular_page.PushButtonControl`, have no Back button.
