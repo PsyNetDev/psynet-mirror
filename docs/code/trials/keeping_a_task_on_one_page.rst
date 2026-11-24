@@ -12,8 +12,8 @@ gives it and answers it. When one trial's page has the same HTML, module and
 ``page_config`` as the last, the page stays on screen and only the data
 changes. This works with any trial maker, including
 adaptive ones such as staircases, where each answer decides what comes next.
-Each answer waits for the server to send the next trial's page, unless the
-trials are fixed in advance (see `Showing the next trial without waiting`_).
+Each answer waits for the server to send the next trial, unless the trials
+are fixed in advance (see `Showing the next trial without waiting`_).
 
 :download:`The adaptive brightness demo <../../../demos/features/staircase_on_one_page/experiment.py>`
 is a complete example. It runs a staircase with PsyNet's
@@ -83,22 +83,18 @@ rejected answer, so an ``update`` that awaits an image should check afterwards
 that it is still the latest call. A ``JSPage`` whose module doesn't return
 ``update`` fails with an error.
 
-When each trial's page comes from the server, PsyNet runs ``cleanup`` and
-``activate`` again for every trial, so state kept in the module, such as a
-running score, starts afresh. When the browser shows trials in advance (see
-below), the module keeps running from trial to trial instead, and whatever
-stays on the page carries over: focus on the last button clicked, a sound
-still playing, a pressed-looking button. Reset these in ``update`` or when
-answering.
+The module keeps running from trial to trial: PsyNet runs ``activate`` once,
+``update`` for each trial, and ``cleanup`` when the participant moves on to a
+page with different HTML, module or ``page_config``, such as a break. This is
+the same whether the next trial comes from the server or was prepared in
+advance (see below). State kept in the module, such as a running score,
+carries over, and so does whatever stays on the page: focus on the last
+button clicked, a sound still playing, a pressed-looking button. Reset these
+in ``update`` or when answering.
 
-PsyNet waits for ``cleanup`` before replacing the page. A ``cleanup`` that
-returns a promise can therefore let feedback on the last answer finish
-before the next page appears, for example
-``cleanup: () => feedbackShown.then(removeListeners)``. When the browser
-shows trials in advance, ``cleanup`` doesn't run between trials and the next
-trial's ``update`` follows the answer at once, so play the feedback before
-answering, and pass the time of the input as ``at`` so that it doesn't count
-towards ``time_taken``:
+The next trial's ``update`` can follow an answer at once, so play any
+feedback on the answer before answering, and pass the time of the input as
+``at`` so that the feedback doesn't count towards ``time_taken``:
 
 .. code-block:: javascript
 
