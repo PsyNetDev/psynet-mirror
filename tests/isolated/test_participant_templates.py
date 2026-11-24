@@ -1043,7 +1043,7 @@ def test_arrival_notice_socket_fetches_current_notice_on_open():
     )
     fetch = js[
         js.index("psynet.fetchArrivalNotice = function") : js.index(
-            "psynet.ensureArrivalUpdates"
+            "psynet.ensureArrivalUpdates = function"
         )
     ]
     assert "psynet.fetchArrivalNotice = function" in js
