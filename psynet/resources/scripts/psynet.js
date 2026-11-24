@@ -3866,10 +3866,10 @@
       if (psynet.isSameSessionPageUpdate(response)) {
         psynet.page = response.page;
         psynet.submissionPageUuid = response.page.attributes.page_uuid;
-        psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);
-        psynet.waiting.start(response.page.attributes?.waiting);
         psynet.var.pageUuid = response.page.attributes.page_uuid;
         window.pageUuid = psynet.var.pageUuid;
+        psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);
+        psynet.waiting.start(response.page.attributes?.waiting);
         psynet.pageLoadTime = new Date();
         psynet.var.backgroundRecording = response.page.attributes.background_recording;
         await psynet.prepareBackgroundRecording();
