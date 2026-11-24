@@ -621,9 +621,8 @@ class StaticTrialMaker(ChainTrialMaker):
         """Whether a rendered copy of ``page`` can be swapped in, with its answer sent in the background.
 
         Its answer reaches the server after the next trial is on screen, so the
-        server must accept any answer, and a Leave offer rendered in advance
-        belongs to the page it was rendered on. The first time each reason
-        stops a page, the log says so.
+        server must accept any answer. The first time each reason stops a
+        page, the log says so.
         """
         reason = page._not_swappable_because()
         if reason is None and page._may_reject_answers():
@@ -631,8 +630,6 @@ class StaticTrialMaker(ChainTrialMaker):
                 "the server may turn its answers down (validate or "
                 "check_ready_for_response)"
             )
-        if reason is None and page.early_exit_available(experiment, participant):
-            reason = "it offers a Leave button"
         logged = self.__dict__.setdefault("_logged_swap_reasons", set())
         if reason is not None and reason not in logged:
             logged.add(reason)
