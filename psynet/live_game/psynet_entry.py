@@ -2,7 +2,9 @@
 _psynet_entry returns, and the wrappers that keep it up to date.
 
 The ready step: the game starts once every player is ready, or at the
-game's ready_timeout. Once it starts, the game ends at its duration or its
+game's ready_timeout. If fewer than its min_players are ready then, it
+doesn't start: ``too_few_ready`` ends it at once, without on_start, and its
+no-shows stay no-shows. Once it starts, the game ends at its duration or its
 time limit, and rejects messages from then on. The entry also keeps track of
 which players are away, and since when, so that a game with an
 away_timeout can end once too few players are left. A player who isn't
@@ -44,7 +46,9 @@ class PlayerReady(LiveMessage):
     """The message that says a player is ready to play. A game page sends it
     by itself a moment after it opens, once it has checked the server's time,
     and a bot sends it at once. The game starts when every player is
-    ready, or at the game's :attr:`~LiveGame.ready_timeout`.
+    ready, or at the game's :attr:`~LiveGame.ready_timeout`, unless fewer
+    than its :attr:`~LiveGame.min_players` are ready then, which ends it
+    with the reason :data:`~psynet.live_game.TOO_FEW_READY`.
 
     Every game reads it, so don't list it in a game's
     :attr:`~LiveGame.messages`. PsyNet handles it before the game's
@@ -96,6 +100,11 @@ TIMEOUT = "timeout"
 #: The reason a game with an :attr:`~LiveGame.away_timeout` ends with when
 #: too few players are left.
 PLAYERS_LEFT = "players_left"
+
+#: The reason a game ends with, without starting, when fewer than its
+#: :attr:`~LiveGame.min_players` players are ready at the end of the ready
+#: step, including when none of them opened the game page.
+TOO_FEW_READY = "too_few_ready"
 
 #: The reason the game of a player added after the game's
 #: :meth:`~LiveGame.accepts_players` returned ``False`` ends with, at once,
@@ -336,6 +345,7 @@ def _add_psynet_entry(self, method, outermost, players, *settings):
         "away": [],
         "away_since": [None] * len(participant_ids),
         "players_left": False,
+        "too_few_ready": False,
         "duration": self.duration,
         "started_at": None,
         "ends_at": None,

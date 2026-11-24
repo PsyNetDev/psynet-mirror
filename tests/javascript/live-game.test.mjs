@@ -552,6 +552,25 @@ describe("psynet.liveGame", () => {
     assert.equal(sockets.length, 0);
   });
 
+  it("shows the no-game notice to a ready player whose game too few players were ready for", () => {
+    session = { ...session, noGameMessage: "No partner." };
+    const final = (you) => ({ ...view(null), psynet: { ...view(null).psynet, ready: [0], you } });
+    for (const you of [1, 0]) {
+      changePage();
+      liveGame.onChange(() => {});
+      sockets.at(-1).view(final(you), "too_few_ready");
+    }
+    // Only the ready player, 0, sees it, and it goes with the page.
+    assert.deepEqual(
+      notices.filter(([, text]) => text !== null),
+      [["psynet-no-game-notice", "No partner."]]
+    );
+    assert.equal(hiddenGames, 0);
+    const before = notices.length;
+    leavePage();
+    assert.ok(plain(notices.slice(before)).some(([id, text]) => id === "psynet-no-game-notice" && text === null));
+  });
+
   it("turns away a newcomer to a game that had stopped taking players, with the Next button", () => {
     session = {
       ...session,

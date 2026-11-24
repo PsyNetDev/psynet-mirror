@@ -352,12 +352,22 @@ doesn't miss the start. A game page says its player is ready by itself a
 moment after it opens, and a bot is ready at once. The game starts once every
 player is ready, or at the game's ``ready_timeout``, 60 seconds after the
 wait ended unless the game sets it, and players who aren't ready then can
-still join and play. Until they do, they count as away from the start, so
-the game's ``away_timeout`` ends a game that too few players opened (see
-`Joining and leaving`_). If none of the players has opened the game page by
-then, the game ends instead, with the reason ``"not_joined"``. A player
-whose page closes before the game starts isn't ready any more, until the
-page reconnects.
+still join and play. Until they do, they count as away from the start, for
+the game's ``away_timeout`` (see `Joining and leaving`_). A player whose
+page closes before the game starts isn't ready any more, until the page
+reconnects.
+
+If fewer than the game's ``min_players`` players are ready at the
+``ready_timeout``, none of them included, the game can't be played, so it
+doesn't start: it ends at once, with the reason
+:data:`~psynet.live_game.TOO_FEW_READY`, ``"too_few_ready"``, without
+running ``on_start``, and the players who weren't ready are no-shows (see
+`Players who don't play`_). A game for two thus ends when one player never
+opens the game page, rather than starting and waiting for them. A game
+that should carry on short-handed sets a lower ``min_players``. A page
+counts as ready once it has sent its ready message, a moment after it
+opens, so a page that opens in the last moment before the
+``ready_timeout`` may not count.
 
 Until the game starts, it rejects messages with the reason ``"The game
 hasn't started yet."``, and its ``tick`` and ``bot`` don't run, so disable
@@ -454,10 +464,11 @@ view tells each player whether they or their partner left:
             ]
             return {..., "left": "you" if player in left else "partner" if left else None}
 
-A game in which a no-show leaves the others without a game, such as one for
-two, can end at the start, as the ``bargaining_live`` game does: its
-``on_start`` notes the no-shows from ``absences``, and its ``is_over`` then
-returns ``True``.
+A game that too few players are ready for ends without starting, with the
+reason ``"too_few_ready"`` (see `The ready step`_), and ``absences`` says
+``"no_show"`` for the players who weren't ready, so ``absent_action`` fails
+them as usual. The ``bargaining_live`` game's outcome says who didn't
+arrive from ``absences``, and its feedback page checks the reason.
 
 .. _live-games-page:
 
@@ -719,16 +730,20 @@ disabled. So a page needs no check for this, unless it starts work of its
 own, such as an animation loop, which it can skip when
 ``psynet.liveGame.hasGame`` is ``false``.
 
+A game that too few players were ready for never starts (see `The ready
+step`_). Once it has ended, the pages of the players who were ready show the
+same notice, but keep their content, which shows the final view.
+
 Joining in time
 ~~~~~~~~~~~~~~~
 
 The page joins the game once it has loaded, or earlier, when its JavaScript
 first uses ``psynet.liveGame``, so even a page without JavaScript of its own
 counts as ready. Set up the page's callbacks in ``activate``, so the page
-doesn't miss the first view. If none of the group has opened the page by
-the game's ``ready_timeout``, 60 seconds after the wait ends unless the game
-sets it, the game ends with the reason ``"not_joined"`` (see `The ready
-step`_).
+doesn't miss the first view. If fewer than the game's ``min_players``
+players have opened the page by the game's ``ready_timeout``, 60 seconds
+after the wait ends unless the game sets it, the game ends without starting,
+with the reason ``"too_few_ready"`` (see `The ready step`_).
 
 Rejected messages
 ~~~~~~~~~~~~~~~~~
@@ -760,7 +775,7 @@ through the error page. In ``psynet test``, the bot's request raises, so a
 game with a bug fails the test. A player whose own game ended before the
 game failed, through ``is_done``, has their result and moves on as usual.
 Endings that are part of play, such as ``"players_left"``, ``"timeout"`` and
-``"not_joined"``, aren't failures.
+``"too_few_ready"``, aren't failures.
 
 The participant can leave the page only once their result is saved, a few
 seconds after the game ends, and the page then moves on by
@@ -826,8 +841,8 @@ show it your own way, set ``player_left_message=None`` and use
 ``onPlayersAway``, which gets the numbers of the players who are away,
 and an empty list once they're all back. Like the notice, it counts a
 player once they've been away for a few seconds, so a reload doesn't. A
-player who hasn't opened the page by the time the game starts counts as
-away from the start, until their page opens. So does a player added while
+player who hasn't opened the page by the time the game starts without them
+counts as away from the start, until their page opens. So does a player added while
 the game runs. The notice only says what happened: a game that should end
 when a player leaves ends through its ``away_timeout``, ``on_leave`` or
 ``is_over``.
@@ -875,8 +890,9 @@ the ``PlayLiveGame``'s, and the others are the game's:
    * - ``ready_timeout``
      - 60 seconds after the wait
      - The game starts without the players who aren't ready yet, who count
-       as away from then, or ends with the reason ``"not_joined"`` if none
-       of them has opened the game page (see `The ready step`_).
+       as away from then, or, if fewer than ``min_players`` are ready, ends
+       without starting, with the reason ``"too_few_ready"`` (see `The
+       ready step`_).
    * - ``duration``
      - ``None``
      - The game ends with the reason ``"finished"``.
@@ -1216,12 +1232,16 @@ game whose ``is_over`` ended it can give a reason of its own, such as
 ``"deal"``, with :meth:`~psynet.live_game.LiveGame.end_reason`, which
 PsyNet calls once ``is_over`` returns ``True``; the reason then isn't
 ``"finished"``.
-Dallinger's `outcome <dallinger-outcome_>`_ lists the other reasons, such as
-``"not_joined"``. If the game's code raised an error, ``reason`` is
-``"failed"``, and ``outcome`` is the outcome of the state just before the
-error. :mod:`psynet.live_game` has constants for the common reasons:
-:data:`~psynet.live_game.FINISHED`, :data:`~psynet.live_game.TIMEOUT`,
-:data:`~psynet.live_game.PLAYERS_LEFT` and
+PsyNet ends a game with ``"players_left"`` once too few players are left
+(see `Joining and leaving`_), and with ``"too_few_ready"`` if too few were
+ready for it to start (see `The ready step`_). That game never started, so
+``outcome`` gets a state that no message, ``tick`` or ``on_start`` has
+changed, which it must handle too. If the game's code
+raised an error, ``reason`` is ``"failed"``, and ``outcome`` is the outcome
+of the state just before the error. :mod:`psynet.live_game` has constants
+for the common reasons: :data:`~psynet.live_game.FINISHED`,
+:data:`~psynet.live_game.TIMEOUT`, :data:`~psynet.live_game.PLAYERS_LEFT`,
+:data:`~psynet.live_game.TOO_FEW_READY` and
 :data:`~psynet.live_game.FAILED`.
 
 For a reward earned during the game, such as for each coin a player collects,
@@ -1524,6 +1544,9 @@ in the state or a view. The parts a game can use are:
   come back. One of the game's first players who hasn't opened it yet is in
   it once the game starts without them, and a player added while the game
   runs is from when they're added, in both cases until their page opens.
+- ``too_few_ready``, ``True`` once the game has ended without starting
+  because too few players were ready (see `The ready step`_), so that
+  ``view`` can tell, as ``outcome`` can from its ``reason``
 - ``accepts_players``, ``False`` once the game's ``accepts_players`` has
   returned ``False``, and ``too_late``, the numbers of the players added
   after that, who don't play (see :ref:`live-games-joining`)
@@ -1536,6 +1559,5 @@ on Dallinger's clock rather than the game's. Use ``now`` and the page's
 
 .. _dallinger-realtime-games: https://dallinger.readthedocs.io/latest/realtime_games.html
 .. _dallinger-realtime-api: https://dallinger.readthedocs.io/latest/realtime_games.html#api-reference
-.. _dallinger-outcome: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.outcome
 .. _dallinger-save-message: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.save_message
 .. _dallinger-bot: https://dallinger.readthedocs.io/latest/realtime_games.html#dallinger.realtime.RealtimeGame.bot

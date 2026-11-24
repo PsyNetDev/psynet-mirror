@@ -35,6 +35,7 @@ from psynet.live_game import (
     NOT_STARTED_MESSAGE,
     PLAYERS_LEFT,
     TIMEOUT,
+    TOO_FEW_READY,
     TOO_LATE,
     LiveGame,
     LiveGameFailed,
@@ -668,6 +669,7 @@ def _psynet(**fields):
         "ready": [],
         "away": [],
         "players_left": False,
+        "too_few_ready": False,
         "duration": None,
         "started_at": None,
         "ends_at": None,
@@ -1803,6 +1805,7 @@ def relay(registry):
     class Relay(LiveGame):
         # A game for one, as the test plays it.
         away_timeout = None
+        min_players = 1
         name = "relay"
         messages = [Tap]
         ready_timeout = 10
@@ -2095,23 +2098,6 @@ def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
     assert game.is_over() and game.end_reason() == PLAYERS_LEFT
 
 
-def test_a_player_who_never_opens_the_game_page_is_away_from_the_start():
-    class Pair(_Game):
-        name = "pair_with_no_show"
-        away_timeout = 30
-
-    game = LocalGame(Pair, players=2, start=False)
-    game.join(0)
-    game.send(0, READY)
-    game.tick(Pair.ready_timeout)
-
-    game.tick(29)
-    assert not game.is_over()
-    game.tick(30)
-    assert game.is_over() and game.end_reason() == PLAYERS_LEFT
-    assert game.game.absences(game.state) == [None, "no_show"]
-
-
 @pytest.mark.parametrize("limit", [None, 30])
 def test_a_no_show_counts_with_the_leavers_towards_min_players(limit):
     class Trio(_Game):
@@ -2197,11 +2183,12 @@ def test_a_local_game_gives_the_game_s_reasons_or_the_defaults_and_refuses_an_em
     assert (game.end_reason(), game.done_reason(1)) == ("finished", "done")
 
 
-def test_a_game_s_join_timeout_is_its_ready_timeout(registry):
+def test_psynet_turns_off_a_game_s_join_timeout(registry):
     class Quick(LiveGame):
         ready_timeout = 20
 
-    assert Quick.join_timeout == 20
+    # The ready step ends a game that nobody opened.
+    assert Quick.join_timeout is None
     with pytest.raises(TypeError, match="Set its ready_timeout instead"):
 
         class Slow(LiveGame):
@@ -2344,32 +2331,66 @@ def test_a_deadline_due_by_the_ready_timeout_runs_when_the_game_starts(relay):
     assert json.loads(ended.saved)["state"]["ticks"] == [0]
 
 
-def test_a_no_show_s_away_deadline_runs_unless_their_ready_message_comes(relay):
+@pytest.mark.parametrize("rate", [0, 4])
+@pytest.mark.parametrize("opened", [["1"], []])
+def test_a_game_too_few_players_are_ready_for_ends_at_the_ready_timeout(
+    relay, rate, opened
+):
     class Pair(type(relay)):
-        name = "pair_waiting_for_a_no_show"
+        name = "pair_too_few_ready"
+        min_players = 2
+        away_timeout = 30
+        tick_rate = rate
+
+    game = Pair()
+    entries = [
+        entry
+        for player in opened
+        for entry in [
+            _session_entry("join", 0, player),
+            _session_entry("message", 1, player, READY),
+        ]
+    ]
+    waiting = run_pass(game, new_session(game, ["1", "2"]), entries, 2, CLOCK)
+    ended = run_pass(game, waiting.saved, [], Pair.ready_timeout, CLOCK)
+
+    assert waiting.ended is None
+    assert ended.ended["reason"] == TOO_FEW_READY
+    state = json.loads(ended.saved)["state"]
+    # The game never started, so its on_start, which sets a deadline, and its
+    # tick didn't run.
+    assert "deadline" not in state and state["ticks"] == []
+    assert game.absences(state) == [None if opened else "no_show", "no_show"]
+
+
+def test_a_no_show_s_away_deadline_runs_unless_their_ready_message_comes(relay):
+    class Trio(type(relay)):
+        name = "trio_waiting_for_a_no_show"
         min_players = 2
         away_timeout = 30
 
         def next_deadline(self, state):
             return None
 
-    game = Pair()
+    game = Trio()
     entries = [
-        _session_entry("join", 0, "1"),
-        _session_entry("message", 1, "1", READY),
+        *(_session_entry("join", 0, player) for player in ["1", "3"]),
+        *(_session_entry("message", 1, player, READY) for player in ["1", "3"]),
         # Player 2's page opens just before the start, and sends its ready
         # message just after.
         _session_entry("join", 9, "2"),
     ]
-    started = run_pass(game, new_session(game, ["1", "2"]), entries, 10, CLOCK)
+    started = run_pass(game, new_session(game, ["1", "2", "3"]), entries, 10, CLOCK)
+    # Once player 3 leaves, the game can't lose player 2 too.
+    left = run_pass(game, started.saved, [_session_entry("leave", 10, "3")], 10, CLOCK)
     ready = [_session_entry("message", 11, "2", READY)]
-    arrived = run_pass(game, started.saved, ready, 12, CLOCK)
-    ended = run_pass(game, started.saved, [], 40, CLOCK)
+    arrived = run_pass(game, left.saved, ready, 12, CLOCK)
+    ended = run_pass(game, left.saved, [], 40, CLOCK)
 
-    assert started.next_due == 40
+    assert left.next_due == 40
     entry = json.loads(arrived.saved)["state"]["psynet"]
-    assert (entry["away"], entry["away_since"]) == ([], [None, None])
-    assert arrived.next_due == 10 + Pair.timeout
+    assert (entry["away"], entry["away_since"]) == ([2], [None, None, 10])
+    assert arrived.next_due == 10 + Trio.timeout
     assert ended.ended["reason"] == PLAYERS_LEFT
 
 
@@ -2500,8 +2521,8 @@ def test_a_handled_deadline_doesn_t_hide_the_game_s_duration(relay):
 def test_a_game_that_has_ticked_ends_with_psynet_s_reason_when_a_finished_player_leaves_too_few(
     relay,
 ):
-    class Pair(type(relay)):
-        name = "pair_with_ends"
+    class Trio(type(relay)):
+        name = "trio_with_ends"
         min_players = 2
         away_timeout = 30
         duration = 60
@@ -2518,16 +2539,15 @@ def test_a_game_that_has_ticked_ends_with_psynet_s_reason_when_a_finished_player
         def end_reason(self, state):
             return "not_psynet_s"
 
-    game = Pair()
+    game = Trio()
     entries = [
-        _session_entry("join", 0, "1"),
-        _session_entry("join", 0, "2"),
-        _session_entry("message", 1, "1", READY),
+        *(_session_entry("join", 0, player) for player in ["1", "2", "3"]),
+        *(_session_entry("message", 1, player, READY) for player in ["1", "2"]),
     ]
 
     # The game starts at its ready_timeout, which Dallinger counts as a tick.
-    started = run_pass(game, new_session(game, ["1", "2"]), entries, 10, CLOCK)
-    tapped = [_session_entry("message", 15, "1", TAP)]
+    started = run_pass(game, new_session(game, ["1", "2", "3"]), entries, 10, CLOCK)
+    tapped = [_session_entry("message", 15, player, TAP) for player in ["1", "2"]]
     ended = run_pass(game, started.saved, tapped, 16, CLOCK)
 
     assert json.loads(started.saved)["state"]["psynet"]["started_at"] == 10

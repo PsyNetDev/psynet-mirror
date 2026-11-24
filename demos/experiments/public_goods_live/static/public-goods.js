@@ -51,7 +51,8 @@ export function activate({root, vars, psynet}) {
     }
     // Before the round starts, every player who isn't ready yet is a no-show,
     // and so is this player for a moment after, until their page is ready.
-    let noShows = live.started
+    // A round that too few players opened ends without starting.
+    let noShows = live.started || live.ended
       ? view.no_shows.filter((player) => player !== live.player)
       : [];
     rows.replaceChildren(
@@ -67,10 +68,12 @@ export function activate({root, vars, psynet}) {
       )
     );
     instructions.hidden = live.ended;
-    if (view.too_few) {
+    // PsyNet ended a round that too few players opened without starting it,
+    // and the page's no-game notice says so to the players who opened it.
+    if (view.psynet.too_few_ready) {
       pot.textContent = "No pot this round.";
       earn.textContent = view.payoffs[live.player]
-        ? `Too few players opened the game, so you keep your ${rules.endowment} tokens.`
+        ? `You keep your ${rules.endowment} tokens.`
         : "Too few players opened the game.";
       return;
     }
@@ -93,7 +96,8 @@ export function activate({root, vars, psynet}) {
   // The rows show what's happening, so the status says nothing while the
   // round is played.
   live.showStatus(status, null, {
-    ended: (view) => (view.too_few ? "The round can't be played." : "Time's up."),
+    ended: (view, reason) =>
+      reason === "too_few_ready" ? "The round can't be played." : "Time's up.",
   });
   live.showRejections(rejection);
   slider.addEventListener("input", () => {

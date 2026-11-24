@@ -15,6 +15,7 @@ from .psynet_entry import (
     FINISHED,
     PLAYERS_LEFT,
     TIMEOUT,
+    TOO_FEW_READY,
     TOO_LATE,
     PlayerReady,
     _player,
@@ -206,9 +207,11 @@ def _skips_too_late_outcome(self, game_code, state, reason):
 
 
 def _psynet_end_reason(self, state):
-    """Return why PsyNet ends the game, once its time is up or too few
-    players are left, or None."""
+    """Return why PsyNet ends the game, once too few players were ready, its
+    time is up or too few players are left, or None."""
     entry = _psynet_entry(state)
+    if entry["too_few_ready"]:
+        return TOO_FEW_READY
     if entry["time_up"]:
         return FINISHED if self.duration is not None else TIMEOUT
     if entry["players_left"]:

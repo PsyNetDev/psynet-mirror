@@ -9,7 +9,7 @@ import pytest
 from dallinger.realtime import Reject
 
 from psynet.experiment import get_experiment, import_local_experiment
-from psynet.live_game import PLAYERS_LEFT, PlayerReady
+from psynet.live_game import PLAYERS_LEFT, TOO_FEW_READY, PlayerReady
 from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
 from psynet.sync import SimpleSyncGroup, leave_group
@@ -113,27 +113,25 @@ class TestBargainingLive:
         game.send(0, PlayerReady())
         game.tick(demo.Bargain.ready_timeout)
 
-        assert game.is_over() and game.end_reason() == demo.NO_SHOW
+        assert game.is_over() and game.end_reason() == TOO_FEW_READY
         assert [game.view(player)["no_show"] for player in (0, 1)] == [
             "partner",
             "you",
         ]
-        assert self._feedback(demo, game.answer(0)) == (
+        assert game.answer(0, TOO_FEW_READY)["partner_arrived"] is False
+        assert self._feedback(demo, game.answer(0), TOO_FEW_READY) == (
             "Your partner didn't arrive, so there was no game this round."
         )
         assert game.game.absences(game.state) == [None, "no_show"]
 
-    @pytest.mark.parametrize("reason", ["no_show", "not_joined"])
-    def test_players_who_both_miss_the_game_are_both_no_shows(self, demo, reason):
+    def test_players_who_both_miss_the_game_are_both_no_shows(self, demo):
         game = LocalGame(demo.Bargain, players=2, settings={"stake": 10}, start=False)
-        if reason == demo.NO_SHOW:
-            # They opened the game, then left before it started.
-            game.tick(demo.Bargain.ready_timeout)
-            assert game.is_over() and game.end_reason() == demo.NO_SHOW
+        game.tick(demo.Bargain.ready_timeout)
 
+        assert game.is_over() and game.end_reason() == TOO_FEW_READY
         for player in (0, 1):
             assert game.view(player)["no_show"] == "you"
-        assert game.outcome(reason)["no_shows"] == [0, 1]
+        assert game.outcome(TOO_FEW_READY)["no_shows"] == [0, 1]
 
     @pytest.mark.parametrize("reloading", [False, True])
     def test_a_partner_away_for_the_away_timeout_left_the_game(

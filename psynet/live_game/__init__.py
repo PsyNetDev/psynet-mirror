@@ -21,6 +21,7 @@ from .psynet_entry import (
     NOT_STARTED_MESSAGE,
     PLAYERS_LEFT,
     TIMEOUT,
+    TOO_FEW_READY,
     TOO_LATE,
     PlayerReady,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "Reject",
     "SavedMessage",
     "TIMEOUT",
+    "TOO_FEW_READY",
     "TOO_LATE",
     "live_game_classes",
 ]

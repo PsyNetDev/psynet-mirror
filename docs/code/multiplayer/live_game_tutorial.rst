@@ -112,11 +112,13 @@ The game is the class ``RockPaperScissors``:
 other game in the experiment. ``messages`` lists the kinds of message that a
 page can send, which the next section describes. ``min_players`` and
 ``max_players`` say that the game is for exactly two players. A game page
-opens within seconds, so ``ready_timeout`` starts the game 20 seconds after
-the pair reaches it, even if a player hasn't opened the page. If a player
-closes the game page, or never opens it, and doesn't come back within 30
-seconds, which allows for a reload, ``away_timeout`` ends the game, so their
-partner isn't left waiting. ``timeout`` ends it after five minutes even if
+opens within seconds, so if a player hasn't opened it 20 seconds after the
+pair reaches it, the ``ready_timeout``, they aren't coming: the game can't
+start with fewer than ``min_players``, so PsyNet ends it at once, unplayed,
+with the reason ``"too_few_ready"``. If a player closes the game page during
+the game and doesn't come back within 30 seconds, which allows for a
+reload, ``away_timeout`` ends the game, so their partner isn't left
+waiting. ``timeout`` ends it after five minutes even if
 both players stop choosing. :ref:`live-games-time-limits` lists all of a game's time limits.
 
 ``initial_state`` returns the state at the start of the game. It receives the
@@ -523,10 +525,10 @@ the game paid, as recorded on the trial, to ``show_result``:
    :pyobject: show_result
    :dedent:
 
-A game can start and end without a throw being played, when a player is
-away from the game page for its ``away_timeout`` before the first throw, or
-the game reaches its ``timeout`` first, so ``show_result`` checks for that
-first. A trial
+A game can end without a throw being played, when a player never opens the
+game page, so it never starts, when a player is away from the game page for
+its ``away_timeout`` before the first throw, or when the game reaches its
+``timeout`` first, so ``show_result`` checks for that first. A trial
 whose game never started has no answer, and ``gives_feedback`` skips its
 feedback.
 

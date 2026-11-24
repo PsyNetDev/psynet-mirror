@@ -23,14 +23,13 @@ what its game paid.
 ## When a partner leaves
 
 - A partner who never opens the game page, for example because they closed
-  their page just as the pair formed: the game starts without them after
-  `READY_SECONDS`, 20 seconds (the game's `ready_timeout`), and the other
-  player's page says that their partner isn't on the game page. If the
-  partner doesn't open it within 30 seconds, the game's `away_timeout`, the
-  game ends.
+  their page just as the pair formed: a game for two can't start without
+  them, so it ends unplayed after `READY_SECONDS`, 20 seconds (the game's
+  `ready_timeout`), with PsyNet's end reason `"too_few_ready"`. The other
+  player's page says that the game can't be played without their partner.
 - A partner who closes the game page during a game: the other player's page
-  says so. If the partner doesn't come back within 30 seconds, the game
-  ends. Both players are paid for the throws they won, including the
+  says so. If the partner doesn't come back within 30 seconds, the game's
+  `away_timeout`, the game ends. Both players are paid for the throws they won, including the
   partner who never comes back.
 - In both cases, the other player sees their result and then, after the
   first game, waits for the partner at the start of the second game, as in
