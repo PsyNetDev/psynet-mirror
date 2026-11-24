@@ -115,59 +115,64 @@ Passing configuration to JavaScript
 -----------------------------------
 
 Custom prompts and controls can provide page-scoped JavaScript configuration
-by implementing ``get_js_vars()``:
+by implementing ``get_page_config()``:
 
 .. code-block:: python
 
     class ColorText(Control):
-        def get_js_vars(self):
+        def get_page_config(self):
             return {"color_text_config": {"maximum_length": 200}}
 
-Read these values through ``psynet.var``:
+Read these values through ``psynet.pageConfig``. They configure the page and
+stay the same while it is shown; per-trial data on a page that shows several
+trials goes in ``contents`` instead (see
+:doc:`/code/trials/keeping_a_task_on_one_page`). Before PsyNet 15 this was
+called ``js_vars``, ``get_js_vars()`` and ``psynet.var``; those names still
+work, with a deprecation warning, until PsyNet 16.
 
 .. code-block:: javascript
 
-    const maximumLength = psynet.var.color_text_config.maximum_length;
+    const maximumLength = psynet.pageConfig.color_text_config.maximum_length;
 
-PsyNet calls ``get_js_vars()`` once, when the page is built. A page written
+PsyNet calls ``get_page_config()`` once, when the page is built. A page written
 directly in the experiment's timeline is built when the experiment loads, so
 every participant gets the same values. For a value that depends on the
 participant who sees the page, such as something they entered on an earlier
-page, implement ``get_participant_js_vars(experiment, participant)``, instead of
-``get_js_vars()`` or alongside it. PsyNet calls it each time the page is shown
+page, implement ``get_participant_page_config(experiment, participant)``, instead of
+``get_page_config()`` or alongside it. PsyNet calls it each time the page is shown
 to a participant, including when they reload it, and adds what it returns to
-``psynet.var``:
+``psynet.pageConfig``:
 
 .. code-block:: python
 
     class ColorText(Control):
-        def get_participant_js_vars(self, experiment, participant):
+        def get_participant_page_config(self, experiment, participant):
             # The text this participant entered last time, stored in
             # participant.var.color_text, or None the first time.
             return {"color_text_previous": participant.var.get("color_text", None)}
 
 .. code-block:: javascript
 
-    const previous = psynet.var.color_text_previous;
+    const previous = psynet.pageConfig.color_text_previous;
     if (previous !== null) {
         root.querySelector("#color-text").value = previous;
     }
 
 A page that a :class:`~psynet.timeline.PageMaker` builds for each participant
 can pass what it needs to the control's constructor instead, and return it
-from ``get_js_vars()``.
+from ``get_page_config()``.
 
-Each key can come from only one place: the page's ``js_vars`` or one of its
+Each key can come from only one place: the page's ``page_config`` or one of its
 components, such as its prompt or control. If two of them use the same key,
 PsyNet raises an error. For a
-key from ``get_js_vars()`` it does so when the page is built, but for a key
-from ``get_participant_js_vars()`` only when the page is shown, so a test has to
+key from ``get_page_config()`` it does so when the page is built, but for a key
+from ``get_participant_page_config()`` only when the page is shown, so a test has to
 reach the page to catch it.
 
 Sharing JavaScript functions between components
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``js_vars`` should contain data, not functions. To provide a function that
+``page_config`` should contain data, not functions. To provide a function that
 another component can call, for example a prompt function called by its
 control, attach it to the page-scoped ``psynet.page`` namespace:
 
@@ -205,7 +210,9 @@ so it distinguishes loading code from activating page behavior:
   URLs from ``get_js_page_modules()``.
 
 The activation context contains ``root`` (the page's ``#main-body`` element),
-``trial``, ``vars`` (the current ``psynet.var``), ``page``, and ``psynet``.
+``trial``, ``config`` (the current ``psynet.pageConfig``), ``page``, and
+``psynet``. ``vars`` is a deprecated name of ``config``. Page code receives
+``config`` as its last argument, after ``psynet``.
 Page code is wrapped in an asynchronous activation function with the same
 context. Page code and module ``activate()`` functions may return asynchronous
 cleanup. Most do not need one: PsyNet removes the page DOM, stops trial-owned
@@ -218,7 +225,7 @@ For example, a short component hook can return activation code directly:
     def get_js_page_code(self):
         return "root.querySelector('#answer').focus();"
 
-Each page-code entry has its own local scope. Use ``vars`` or ``psynet.page`` to
+Each page-code entry has its own local scope. Use ``config`` or ``psynet.page`` to
 communicate with other behavior rather than relying on local declarations from
 another snippet. Page code is compiled in the browser; components with
 substantial, reusable, or imported behavior should use a page module instead.
@@ -356,8 +363,8 @@ Supply page-local CSS and JavaScript through explicit page arguments:
 
 Custom prompts and controls supply the same assets from Python through
 ``get_css()``, ``get_css_links()``, ``get_js_dependencies()``,
-``get_js_page_code()``, ``get_js_page_modules()``, ``get_js_vars()`` and
-``get_participant_js_vars()``.
+``get_js_page_code()``, ``get_js_page_modules()``, ``get_page_config()`` and
+``get_participant_page_config()``.
 
 These rules exist because PsyNet swaps pages in place by default, without
 reloading the browser document; :doc:`/developer/page_lifecycle` describes

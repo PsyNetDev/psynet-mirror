@@ -1,8 +1,8 @@
-export async function activate({root, vars, psynet}) {
-    let roomId = vars.chatroom_room_id;
-    const globalChannel = vars.chatroom_global_channel;
-    const label = vars.chatroom_room_label;
-    const showHistory = vars.chatroom_show_history;
+export async function activate({root, config, psynet}) {
+    let roomId = config.chatroom_room_id;
+    const globalChannel = config.chatroom_global_channel;
+    const label = config.chatroom_room_label;
+    const showHistory = config.chatroom_show_history;
     const participantId = String(dallinger.identity.participantId);
     let chatSocket = null;
     let leftChat = false;

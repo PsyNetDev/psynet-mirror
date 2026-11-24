@@ -311,7 +311,7 @@ def test_live_pages_redraw_the_group_when_someone_joins(
 
     def token(**options):
         prompt = GroupPrompt(group=group, participant=first, **options)
-        return prompt.get_js_vars()["group_prompt"]["redraw_token"]
+        return prompt.get_page_config()["group_prompt"]["redraw_token"]
 
     named, anonymous = token(names="shown"), token(names="anonymous")
 

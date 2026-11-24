@@ -510,7 +510,7 @@ class Exp(psynet.experiment.Experiment):
                 ),
                 js_page_modules=["/static/shared-canvas.js"],
                 css_links=["/static/shared-canvas.css"],
-                js_vars={"canvas_rules": RULES},
+                page_config={"canvas_rules": RULES},
                 time_estimate=60,
             ),
         ),

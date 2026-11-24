@@ -3,7 +3,7 @@ LiveGamePage, a ModularPage with that control.
 
 The control has the page load ``live-game.js``. Its page code creates
 ``psynet.liveGame`` and leaves the game when the participant leaves
-the page. ``get_participant_js_vars`` gives the script the game's id and
+the page. ``get_participant_page_config`` gives the script the game's id and
 channel each time the page renders. ``check_ready_for_response`` refuses the
 page's response until the game's result is saved, and ``validate`` then
 sets the answer to what the game's ``answer`` returns for the participant.
@@ -184,7 +184,7 @@ class LiveGameControl(NullControl):
     def get_js_page_code(self):
         return ["return PsyNetLiveGame.activatePage(psynet);"]
 
-    def get_participant_js_vars(self, experiment, participant):
+    def get_participant_page_config(self, experiment, participant):
         _check_reached_game(participant, self._play_id())
         session_id = _live_game_id(participant, self._play_id())
         _p = get_translator(context=True)
@@ -319,7 +319,7 @@ class LiveGamePage(ModularPage):
 
     **kwargs
         Any other parameter of :class:`~psynet.modular_page.ModularPage`,
-        such as ``js_page_modules``, ``css_links``, ``js_vars`` and
+        such as ``js_page_modules``, ``css_links``, ``page_config`` and
         ``time_estimate``.
     """
 

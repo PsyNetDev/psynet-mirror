@@ -94,7 +94,7 @@ def _same_layout(trial, page, following, following_page, experiment, participant
     """Whether ``following``'s page has the same layout as ``trial``'s, warning if not.
 
     The browser shows a trial in advance inside the current page's HTML,
-    JavaScript and ``js_vars``, so a trial whose page differs in any of
+    JavaScript and ``page_config``, so a trial whose page differs in any of
     these waits for the server instead.
     """
     if not has_app_context() and None in (trial.layout_key, following.layout_key):
@@ -108,7 +108,7 @@ def _same_layout(trial, page, following, following_page, experiment, participant
         return False
     logger.warning(
         "Trial maker %r: the page of the trial at position %i has different "
-        "HTML, JavaScript or js_vars from the one at position %i, so it can't be shown in advance and waits for the server. "
+        "HTML, JavaScript or page_config from the one at position %i, so it can't be shown in advance and waits for the server. "
         "Put what changes between trials in the page's contents.",
         following.trial_maker_id,
         following.position,
@@ -601,7 +601,7 @@ class StaticTrialMaker(ChainTrialMaker):
         ]
         assert not compared or any(a and a == b for a, b in compared), (
             f"Trial maker {self.id!r} prepares trials in advance, but each "
-            "trial's page had different HTML, JavaScript or js_vars from the "
+            "trial's page had different HTML, JavaScript or page_config from the "
             "previous one's, so none could be shown in advance. Put what changes "
             "between trials in the page's contents, which its page modules' "
             "update() receives; the server log names the trials. A picture in the "

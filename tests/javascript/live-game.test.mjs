@@ -203,7 +203,7 @@ describe("psynet.liveGame", () => {
   it("is created by the control's page code, once for the pages a document shows", () => {
     const shown = [];
     const psynet = {
-      var: { liveGame: { liveGameId: null, noGameMessage: "No game." } },
+      pageConfig: { liveGame: { liveGameId: null, noGameMessage: "No game." } },
       showStatusNotice: (id, text) => shown.push([id, text]),
     };
     // The page's game area, which PsyNet hides without a game.
@@ -219,7 +219,7 @@ describe("psynet.liveGame", () => {
     leave();
     assert.deepEqual(shown.at(-1), ["psynet-no-game-notice", null]);
 
-    psynet.var = { liveGame: session };
+    psynet.pageConfig = { liveGame: session };
     context.PsyNetLiveGame.activatePage(psynet);
     assert.equal(psynet.liveGame, created);
     assert.equal(created.hasGame, true);

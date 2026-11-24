@@ -3,7 +3,7 @@
 // trial's time_taken runs from the frame that shows the arrows to the key
 // press or tap, using the timestamps the browser gives both.
 export function activate({psynet, root}) {
-    const {timings} = psynet.var.flanker;
+    const {timings} = psynet.pageConfig.flanker;
     const stimulus = root.querySelector("#flanker-stimulus");
     const buttons = root.querySelectorAll("button[data-response]");
     const keys = {KeyF: "left", KeyJ: "right"};

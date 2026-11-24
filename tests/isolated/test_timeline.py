@@ -186,7 +186,7 @@ def test_only_pages_built_from_declared_components_are_swapped_in():
 
 def test_layout_key_covers_main_body_and_js_vars():
     def key(body, **js_vars):
-        page = Page(time_estimate=1, template_str="", js_vars=js_vars)
+        page = Page(time_estimate=1, template_str="", page_config=js_vars)
         return page.layout_key(f'<div id="main-body">{body}</div>', None, None)
 
     assert key("task", timing=1) == key("task", timing=1)
@@ -1365,13 +1365,13 @@ def test_named_participant_colours_match_javascript():
 
 
 def test_js_vars_window_collisions_warn_at_construction():
-    with pytest.warns(UserWarning, match=r"js_vars keys collide.*'status'"):
+    with pytest.warns(UserWarning, match=r"page_config keys collide.*'status'"):
         page = Page(
             template_fragment_str="<p>ok</p>",
-            js_vars={"status": "in-progress", "color": "blue"},
+            page_config={"status": "in-progress", "color": "blue"},
         )
 
-    assert page.js_vars["status"] == "in-progress"
+    assert page.page_config["status"] == "in-progress"
 
 
 def test_js_vars_without_window_collisions_do_not_warn():
@@ -1379,7 +1379,7 @@ def test_js_vars_without_window_collisions_do_not_warn():
         warnings.simplefilter("error", UserWarning)
         Page(
             template_fragment_str="<p>ok</p>",
-            js_vars={"color": "blue", "trial_index": 1},
+            page_config={"color": "blue", "trial_index": 1},
         )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FutureWarning)

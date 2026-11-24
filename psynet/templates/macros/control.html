@@ -1296,7 +1296,7 @@
         });
 
         let supportedPrompts = ["audio", "video"];
-        if (!supportedPrompts.includes(psynet.var.modular_page_components.prompt)) {
+        if (!supportedPrompts.includes(psynet.pageConfig.modular_page_components.prompt)) {
             $("#btn-record-play-prompt").hide();
             $("#btn-record-play-all").hide();
         }
@@ -1447,11 +1447,11 @@
         // the recording as unavailable and fails the trial instead.
         let legacyCaptureFailed = false;
         psynet.page.control.reportLegacyCaptureFailure = async function (blob) {
-            if (legacyCaptureFailed || psynet.var.asynchronousUploadSources || blob?.size > 0) return;
+            if (legacyCaptureFailed || psynet.pageState.asynchronousUploadSources || blob?.size > 0) return;
             legacyCaptureFailed = true;
             await psynet.handleTimelineTransitionFailure(
                 new Error("The recording could not be captured."),
-                psynet.var.recordingLabels?.capture_failed ||
+                psynet.pageConfig.recordingLabels?.capture_failed ||
                     "Your recording could not be captured. Please make sure your browser can access your camera or screen, then reload the page."
             );
         };
@@ -1480,7 +1480,7 @@
             psynet.trial.onEvent("trialConstruct", async () => {
                 try {
                     const capture = await psynet.getRecordingCapture();
-                    cameraStream = await capture.devices.acquireAnswer("camera", audioSettings, psynet.var.recordingLabels);
+                    cameraStream = await capture.devices.acquireAnswer("camera", audioSettings, psynet.pageConfig.recordingLabels);
                 } catch (error) {
                     psynet.log.warn(`Camera recording unavailable: ${error.message}`);
                 }
@@ -1495,8 +1495,8 @@
                     const capture = await psynet.getRecordingCapture();
                     // Only asynchronous uploads are size-limited; legacy uploads never were.
                     videoRecorder = new capture.RecordingClip(cameraStream, {
-                        maxBytes: psynet.var.asynchronousUploadSources
-                            ? psynet.var.asynchronousUploadMaxBytes : Infinity,
+                        maxBytes: psynet.pageState.asynchronousUploadSources
+                            ? psynet.pageConfig.asynchronousUploadMaxBytes : Infinity,
                     });
                     videoRecorder.stream = cameraStream;
                 }
@@ -1602,12 +1602,12 @@
             psynet.trial.onEvent("trialConstruct", async () => {
                 try {
                     const capture = await psynet.getRecordingCapture();
-                    const labels = psynet.var.recordingLabels;
+                    const labels = psynet.pageConfig.recordingLabels;
                     // The legacy path cannot submit without the recording.
                     screenStream = await capture.devices.acquireAnswer(
                         "screen",
                         false,
-                        psynet.var.asynchronousUploadSources
+                        psynet.pageState.asynchronousUploadSources
                             ? labels
                             : {...labels, answer: labels.answer_required, skip: null}
                     );
@@ -1620,8 +1620,8 @@
                 if (!recorderState.replayMode) {
                     const capture = await psynet.getRecordingCapture();
                     screenRecorder = new capture.RecordingClip(screenStream, {
-                        maxBytes: psynet.var.asynchronousUploadSources
-                            ? psynet.var.asynchronousUploadMaxBytes : Infinity,
+                        maxBytes: psynet.pageState.asynchronousUploadSources
+                            ? psynet.pageConfig.asynchronousUploadMaxBytes : Infinity,
                     });
                     screenRecorder.stream = screenStream;
                 }

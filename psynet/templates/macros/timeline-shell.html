@@ -5,7 +5,8 @@
     {# Shared bootstrap payload for both full-page loads and inplace fragment swaps. #}
     <script id="psynet-template-data" type="application/json">
         {{ {
-            "jsVars": js_vars,
+            "pageConfig": page_config,
+            "pageState": page_state,
             "legacyJsLinks": legacy_js_links,
             "legacyScripts": legacy_scripts,
             "jsDependencies": js_dependencies,
@@ -25,7 +26,7 @@
                 "participantOpenedDevtools": "/participant_opened_devtools/" ~ unique_id
             },
             "flags": {
-                "dynamicallyUpdateProgressBarAndReward": js_vars["dynamicallyUpdateProgressBarAndReward"],
+                "dynamicallyUpdateProgressBarAndReward": page_state["dynamicallyUpdateProgressBarAndReward"],
                 "checkParticipantOpenedDevtools": config.check_participant_opened_devtools,
                 "lucidRecruitment": experiment.with_lucid_recruitment(),
                 "inplaceTimelineTransitions": inplace_timeline_transitions,

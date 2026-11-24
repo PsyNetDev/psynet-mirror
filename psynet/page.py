@@ -21,6 +21,7 @@ from .timeline import (
     Page,
     PageMaker,
     _normalize_js_page_code,
+    _page_config_argument,
     conditional,
     get_template,
     join,
@@ -684,9 +685,12 @@ class JsPsychPage(Page):
         A list of links to CSS stylesheets to include. Typically this would include the standard
         jsPsych stylesheet.
 
+    page_config :
+        An optional dictionary of settings to pass to the front-end. These can then be accessed
+        in the timeline template, writing for example ``psynet.pageConfig["my_variable"]``.
+
     js_vars :
-        An optional dictionary of variables to pass to the front-end. These can then be accessed
-        in the timeline template, writing for example ``psynet.var["my_variable"]``.
+        Deprecated name of ``page_config``.
     """
 
     requires_full_page_reload = True
@@ -698,6 +702,7 @@ class JsPsychPage(Page):
         time_estimate: float,
         js_dependencies: Union[str, List[str]],
         css_links: Union[str, List[str]],
+        page_config: Optional[dict] = None,
         js_vars: Optional[dict] = None,
         **kwargs,
     ):
@@ -706,18 +711,18 @@ class JsPsychPage(Page):
             js_dependencies = [js_dependencies]
         if isinstance(css_links, str):
             css_links = [css_links]
-        js_vars = {} if js_vars is None else dict(js_vars)
-        if "jspsych_timeline_module" in js_vars:
+        page_config = dict(_page_config_argument(page_config, js_vars))
+        if "jspsych_timeline_module" in page_config:
             raise ValueError(
                 "jspsych_timeline_module is reserved for JsPsychPage internals."
             )
-        js_vars["jspsych_timeline_module"] = timeline
+        page_config["jspsych_timeline_module"] = timeline
 
         super().__init__(
             time_estimate=time_estimate,
             template_str=get_template("jspsych-page.html"),
             label=label,
-            js_vars=js_vars,
+            page_config=page_config,
             js_dependencies=js_dependencies,
             js_page_modules=["/static/scripts/jspsych-page.js"],
             css_links=css_links,
@@ -736,7 +741,7 @@ class ExecuteFrontEndJS(InfoPage):
         super().__init__(
             content=self._spinner(),
             time_estimate=0.0,
-            js_vars={"execute_front_end_js": js},
+            page_config={"execute_front_end_js": js},
             js_page_modules=["/static/scripts/execute-front-end-js.js"],
             show_next_button=False,
         )

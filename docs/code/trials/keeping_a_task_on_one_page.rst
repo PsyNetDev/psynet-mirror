@@ -228,12 +228,12 @@ lost and its clock starts again.
 
 For this to work:
 
-- Every trial page must have the same HTML, JavaScript and ``js_vars``.
-  ``js_vars`` configure the page, such as a task's timings, and stay as
-  they are for all the trials it shows. What changes between trials goes in
+- Every trial page must have the same HTML, JavaScript and ``page_config``.
+  ``page_config`` configures the page, such as a task's timings, and stays
+  the same for all the trials it shows. What changes between trials goes in
   ``contents``, which each ``update()`` receives. PsyNet renders each
   trial's page once to compare them; a trial whose HTML, JavaScript or
-  ``js_vars`` differ isn't shown in advance, but waits for the server, and
+  ``page_config`` differs isn't shown in advance, but waits for the server, and
   PsyNet logs a warning. If no trial at all could be shown in advance,
   bot tests such as ``psynet test local`` fail. A prompt that puts the stimulus in its HTML,
   such as ``ImagePrompt``, makes every trial's HTML differ, so pass the

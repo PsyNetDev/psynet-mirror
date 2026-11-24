@@ -47,9 +47,9 @@ function byWho(fish) {
   return [...entries.filter(([who]) => who === "you"), ...entries.filter(([who]) => who !== "you")];
 }
 
-export function activate({root, vars, psynet}) {
+export function activate({root, config, psynet}) {
   let live = psynet.liveGame;
-  let rules = vars.fishing_rules;
+  let rules = config.fishing_rules;
   let status = root.querySelector("#fish-status");
   if (!live.hasGame) {
     // PsyNet says why in a notice, and shows the Next button. Without a

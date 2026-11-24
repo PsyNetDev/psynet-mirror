@@ -140,7 +140,7 @@ def contribution_page(round_number):
         ),
         player_left_message="A player has left the game.",
         js_page_modules=["/static/public-goods.js"],
-        js_vars={"public_goods_rules": RULES},
+        page_config={"public_goods_rules": RULES},
         css_links=["/static/public-goods.css"],
         time_estimate=ROUND_SECONDS,
     )

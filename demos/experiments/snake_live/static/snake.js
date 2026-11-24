@@ -41,10 +41,10 @@ function draw(context, rules, view, me) {
   });
 }
 
-export function activate({ root, vars, psynet }) {
+export function activate({ root, config, psynet }) {
   let status = root.querySelector("#snake-status");
   let live = psynet.liveGame;
-  let rules = vars.snake_rules;
+  let rules = config.snake_rules;
   let context = root.querySelector("#snake-board").getContext("2d");
   let timer = root.querySelector("#snake-timer");
   let scores = root.querySelector("#snake-scores");

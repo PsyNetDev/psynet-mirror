@@ -18,9 +18,9 @@ function tokenRow(name, tokens, endowment, you) {
   return row;
 }
 
-export function activate({root, vars, psynet}) {
+export function activate({root, config, psynet}) {
   let live = psynet.liveGame;
-  let rules = vars.public_goods_rules;
+  let rules = config.public_goods_rules;
   let status = root.querySelector("#pg-status");
   let timeLeft = root.querySelector("#pg-time-left");
   let slider = root.querySelector("#pg-tokens");

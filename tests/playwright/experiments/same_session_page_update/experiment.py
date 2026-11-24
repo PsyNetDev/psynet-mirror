@@ -15,7 +15,7 @@ class Exp(psynet.experiment.Experiment):
             Markup("<p id='same-session-marker'>First same-session page</p>"),
             time_estimate=1,
             session_id=SESSION_ID,
-            js_vars={
+            page_config={
                 "same_session_unity": {
                     "attributes": {
                         "session_id": SESSION_ID,

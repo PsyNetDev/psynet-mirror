@@ -604,7 +604,7 @@ and views needn't carry it:
 ``info`` is ``null`` without a ``player_info``, and an anonymous page gets
 only the participant's own, so the page can show their own choice, but not
 the others'. Settings that are the same for every player, such as a
-game's rules, go in the page's ``js_vars`` instead.
+game's rules, go in the page's ``page_config`` instead.
 
 PsyNet translates its own texts on the page, such as the notices and the
 status line's defaults, and the labels above. Text that the game puts in its

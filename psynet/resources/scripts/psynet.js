@@ -12,7 +12,7 @@
   const psynetTemplateData = JSON.parse(templateDataElement.textContent);
   window.psynetTemplateData = psynetTemplateData;
 
-  // `psynet.var` is the canonical page-scoped JavaScript variable namespace.
+  // `psynet.pageConfig` holds the page's configuration (`page_config`).
   // Legacy globals remain available through configurable accessors while
   // experiments migrate, allowing accesses to warn or fail with useful errors.
   const LEGACY_JS_VAR_GLOBAL_MODES = new Set(["warn", "error", "off"]);
@@ -33,7 +33,7 @@
   let legacyJsVarGlobalError = function (key) {
     return new ReferenceError(
       `Legacy global js_vars access "${key}" is disabled. ` +
-        `Use psynet.var[${JSON.stringify(key)}] instead.`,
+        `Use psynet.pageConfig[${JSON.stringify(key)}] instead.`,
     );
   };
 
@@ -44,7 +44,7 @@
     warnedLegacyJsVarGlobalKeys.add(key);
     console.warn(
       `Legacy global js_vars access "${key}" is deprecated. ` +
-        `Use psynet.var[${JSON.stringify(key)}] instead.`,
+        `Use psynet.pageConfig[${JSON.stringify(key)}] instead.`,
     );
   };
 
@@ -61,7 +61,7 @@
         console.warn(
           `PsyNet could not restore window.${key} because another script ` +
             "made it non-configurable. The legacy global will remain in place; " +
-            `use psynet.var[${JSON.stringify(key)}] for page-scoped data.`,
+            `use psynet.pageConfig[${JSON.stringify(key)}] for page-scoped data.`,
         );
       }
       return false;
@@ -115,7 +115,7 @@
 
       // The accessor was replaced or removed while we still tracked it. Drop
       // the stale map entry, clear any foreign redefine, and fall through to a
-      // fresh install so `psynet.var` and the legacy mirror stay in sync.
+      // fresh install so `psynet.pageConfig` and the legacy mirror stay in sync.
       legacyJsVarGlobalStates.delete(key);
       if (currentDescriptor) {
         if (!clearLegacyJsVarGlobalProperty(key)) {
@@ -129,14 +129,14 @@
     }
 
     // Legacy compatibility must never shadow browser, framework, or third-party
-    // state. Authors can always access the page value through `psynet.var`.
+    // state. Authors can always access the page value through `psynet.pageConfig`.
     if (key in window) {
       if (!warnedLegacyJsVarGlobalCollisionKeys.has(key)) {
         warnedLegacyJsVarGlobalCollisionKeys.add(key);
         console.warn(
           `PsyNet did not install the legacy js_vars accessor for "${key}" ` +
             `because window.${key} already exists. ` +
-            `Use psynet.var[${JSON.stringify(key)}] instead.`,
+            `Use psynet.pageConfig[${JSON.stringify(key)}] instead.`,
         );
       }
       return;
@@ -163,7 +163,7 @@
       }
       warnLegacyJsVarGlobalAccess(key);
       // Preserve the historical behavior: assigning the global changes its
-      // mirrored value without mutating the canonical `psynet.var` object.
+      // mirrored value without mutating the canonical `psynet.pageConfig`.
       state.value = nextValue;
     };
 
@@ -177,7 +177,8 @@
   };
 
   let syncJsVars = function () {
-    let jsVars = psynetTemplateData.jsVars || {};
+    let jsVars = psynetTemplateData.pageConfig || {};
+    let pageUuid = psynetTemplateData.pageState?.pageUuid;
     let mode = getLegacyJsVarGlobalMode();
 
     legacyJsVarGlobalStates.forEach((_, key) => {
@@ -186,10 +187,10 @@
       }
     });
 
-    if ("pageUuid" in jsVars) {
+    if (pageUuid !== undefined) {
       // `window.pageUuid` remains an intentional framework lifecycle property,
       // rather than a deprecated author js_vars mirror.
-      window.pageUuid = jsVars.pageUuid;
+      window.pageUuid = pageUuid;
     }
 
     if (mode !== "off") {
@@ -226,8 +227,10 @@
       },
       utils: {},
       comments: [],
-      var: psynetTemplateData.jsVars,
-      submissionPageUuid: psynetTemplateData.jsVars.pageUuid,
+      pageConfig: psynetTemplateData.pageConfig || {},
+      // PsyNet's own state for the page the server confirmed.
+      pageState: psynetTemplateData.pageState || {},
+      submissionPageUuid: psynetTemplateData.pageState?.pageUuid,
       // When the current page left the server, in Date.now() milliseconds; the
       // first response byte on a full load, otherwise when /response answered.
       pageReceivedAt: psynetNavigationResponseStart(),
@@ -236,6 +239,32 @@
       layoutKey: psynetTemplateData.page?.attributes?.layout_key ?? null,
     };
     psynet.SUBMISSION_HANDLED = Symbol("psynet.SUBMISSION_HANDLED");
+
+    // Deprecated alias of psynet.pageConfig. It also still reads PsyNet's
+    // own page state, with a warning, as both used to share it.
+    let warnedPageStateKeys = new Set();
+    let deprecatedVarAlias = function () {
+      return new Proxy(psynet.pageConfig, {
+        get(config, key, receiver) {
+          let state = psynet.pageState;
+          if (typeof key === "string" && !(key in config) && key in state) {
+            if (!warnedPageStateKeys.has(key)) {
+              warnedPageStateKeys.add(key);
+              console.warn(
+                `psynet.var.${key} is PsyNet's internal page state, which ` +
+                  "may change without notice.",
+              );
+            }
+            return state[key];
+          }
+          return Reflect.get(config, key, receiver);
+        },
+      });
+    };
+    Object.defineProperty(psynet, "var", {
+      enumerable: true,
+      get: deprecatedVarAlias,
+    });
 
     // Named CSS colours (red, green, blue, ...) resolve to theme tokens so
     // trial progress, event captions, and the audio meter follow the
@@ -352,8 +381,9 @@
       });
       Object.assign(psynetTemplateData, refreshedTemplateData);
       window.psynetTemplateData = psynetTemplateData;
-      psynet.var = psynetTemplateData.jsVars || {};
-      psynet.submissionPageUuid = psynet.var.pageUuid;
+      psynet.pageConfig = psynetTemplateData.pageConfig || {};
+      psynet.pageState = psynetTemplateData.pageState || {};
+      psynet.submissionPageUuid = psynet.pageState.pageUuid;
       psynet.page = {
         ...(psynetTemplateData.page || {}),
         prompt: {},
@@ -626,6 +656,8 @@
       return {
         root,
         trial: psynet.trial,
+        config: psynet.pageConfig,
+        // Deprecated name of config.
         vars: psynet.var,
         page: psynet.page,
         psynet,
@@ -663,6 +695,7 @@
             "vars",
             "page",
             "psynet",
+            "config",
             `"use strict";\n${code}`,
           );
           let cleanup = await activate(
@@ -671,6 +704,7 @@
             context.vars,
             context.page,
             context.psynet,
+            context.config,
           );
           let source = `js_page_code[${index}]`;
           psynet.validatePageCleanup(cleanup, source);
@@ -4226,7 +4260,7 @@
         if (
           psynet.nextRenderedPage() &&
           !uploads &&
-          !psynet.var.asynchronousUploadSources?.length
+          !psynet.pageState.asynchronousUploadSources?.length
         ) {
           return await psynet.answerWithRenderedPage(
             rawAnswer === undefined ? staged.rawAnswer : rawAnswer,
@@ -4533,12 +4567,12 @@
         psynet.submissionPageUuid = response.page.attributes.page_uuid;
         psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);
         psynet.waiting.start(response.page.attributes?.waiting);
-        psynet.var.pageUuid = response.page.attributes.page_uuid;
-        window.pageUuid = psynet.var.pageUuid;
+        psynet.pageState.pageUuid = response.page.attributes.page_uuid;
+        window.pageUuid = psynet.pageState.pageUuid;
         psynet.pageLoadTime = new Date();
-        psynet.var.backgroundRecording = response.page.attributes.background_recording;
+        psynet.pageState.backgroundRecording = response.page.attributes.background_recording;
         await psynet.prepareBackgroundRecording();
-        psynet.var.recordingCaptureSources = psynet.var.backgroundRecording?.sources || [];
+        psynet.pageState.recordingCaptureSources = psynet.pageState.backgroundRecording?.sources || [];
         await psynet.releaseUnusedRecordingStreams();
         await psynet.trial.registerEvent("pageUpdated");
         psynet.nextPagePending = false;
@@ -4961,7 +4995,7 @@
     // the camera light and screen-sharing banner turn off between recordings.
     psynet.releaseUnusedRecordingStreams = async function () {
       if (!recordingCapture) return;
-      const captured = new Set(psynet.var.recordingCaptureSources || []);
+      const captured = new Set(psynet.pageState.recordingCaptureSources || []);
       try {
         const {devices} = await recordingCapture;
         for (const source of [...devices.streams.keys()]) {
@@ -4975,7 +5009,7 @@
     // while rebuilding the page. Holds keep the page, so they do it here.
     psynet.endPageRecording = async function (captureSources) {
       await backgroundRecorder?.discard();
-      psynet.var.recordingCaptureSources = captureSources;
+      psynet.pageState.recordingCaptureSources = captureSources;
       await psynet.releaseUnusedRecordingStreams();
     };
     let recordingUploadQueue;
@@ -5022,7 +5056,7 @@
     // (the queue default, two maximum-size recordings) must not depend on which
     // control happens to create it first.
     async function getRecordingQueue() {
-      recordingUploadMessage = (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.uploading || recordingUploadMessage;
+      recordingUploadMessage = (psynet.pageConfig.recordingLabels || psynet.pageState.backgroundRecording?.labels)?.uploading || recordingUploadMessage;
       if (!recordingUploadQueue) {
         const {MediaUploadQueue} = await recordingModule("/static/scripts/media-upload.js");
         recordingUploadQueue = new MediaUploadQueue();
@@ -5032,7 +5066,7 @@
     psynet.prepareBackgroundRecording = async function () {
       await backgroundRecorder?.discard();
       backgroundUnavailable = false;
-      const config = psynet.var.backgroundRecording;
+      const config = psynet.pageState.backgroundRecording;
       if (!config) return;
       try {
         await getRecordingQueue();
@@ -5066,7 +5100,7 @@
         `Recording submission outcome unknown (HTTP ${request.status}); keeping it for a resend.`,
       );
       let message =
-        (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.unconfirmed ||
+        (psynet.pageConfig.recordingLabels || psynet.pageState.backgroundRecording?.labels)?.unconfirmed ||
         "We could not confirm that your answer was received. Please check your connection and press Next again.";
       if (options.background) {
         // Showing the trial again lets the participant answer, which resends.
@@ -5107,8 +5141,8 @@
       // them, as the page's settings may already be the next trial's.
       const withoutRecordings =
         options.timelineHoldResume || (options.background && !options.withRecordings);
-      const background = withoutRecordings ? null : psynet.var.backgroundRecording;
-      const sources = withoutRecordings ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
+      const background = withoutRecordings ? null : psynet.pageState.backgroundRecording;
+      const sources = withoutRecordings ? null : (background ? background.sources : psynet.pageState.asynchronousUploadSources);
       const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;
       let json;
       if (resend) {
@@ -5150,7 +5184,7 @@
           }
           let unavailable;
           try {
-            const maxBytes = psynet.var.asynchronousUploadMaxBytes;
+            const maxBytes = psynet.pageConfig.asynchronousUploadMaxBytes;
             await getRecordingQueue();
             await waitForRecordingBacklog(capturedRecordings, maxBytes);
             const prepared = recordingUploadQueue.prepare(capturedRecordings, maxBytes);

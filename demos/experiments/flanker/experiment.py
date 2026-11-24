@@ -67,7 +67,7 @@ class FlankerTrial(StaticTrial):
                     self.definition["target"], self.definition["congruent"]
                 )
             },
-            js_vars={"flanker": {"timings": TIMINGS}},
+            page_config={"flanker": {"timings": TIMINGS}},
             js_page_modules=["/static/flanker.js"],
             css=[
                 ".flanker-stimulus { height: 6rem; display: flex; "

@@ -380,7 +380,7 @@ class Exp(psynet.experiment.Experiment):
                 ),
                 js_page_modules=["/static/snake.js"],
                 css_links=["/static/snake.css"],
-                js_vars={"snake_rules": RULES},
+                page_config={"snake_rules": RULES},
                 time_estimate=60,
             ),
         ),

@@ -243,7 +243,7 @@ Page bootstrap data
 -------------------
 
 ``#psynet-template-data`` is the server-to-browser contract for the active
-page. It includes page metadata, ``js_vars``, event definitions, media requests,
+page. It includes page metadata, ``page_config``, event definitions, media requests,
 managed JavaScript resources, routes, feature flags, and localized strings.
 
 On an in-place transition, ``psynet.refreshTemplateData()`` updates the
@@ -357,8 +357,9 @@ Page modules
 named ``activate(context)`` export. Modules are imported and cached normally,
 while ``activate()`` runs for every hosting page.
 
-The activation context contains ``root``, ``trial``, ``vars``, ``page``, and
-``psynet``. ``activate()`` may return an asynchronous cleanup function, or
+The activation context contains ``root``, ``trial``, ``config`` (the page's
+``page_config``), ``page``, and ``psynet``, plus ``vars``, a deprecated name
+of ``config``. ``activate()`` may return an asynchronous cleanup function, or
 an object ``{update, cleanup}``. PsyNet calls
 ``update({contents, upcomingContents, response})`` after the page is ready; see
 :doc:`/code/trials/keeping_a_task_on_one_page`. Answers given through
@@ -672,8 +673,8 @@ contributes everything the page needs through the component hooks:
   no-game notice, opens the page's game socket at ``timelinePageReady`` if
   the page's own JavaScript hasn't already, and returns the cleanup that
   closes it;
-* ``get_participant_js_vars`` adds the game's id and channel to the page's
-  ``js_vars`` each time the page renders. It raises an error for a participant
+* ``get_participant_page_config`` adds the game's id and channel to the page's
+  ``page_config`` each time the page renders. It raises an error for a participant
   who hasn't reached the barrier of the ``PlayLiveGame`` the page belongs to.
 
 The socket's scope is the participant's ``websocketScope``, a ``.``,
@@ -704,8 +705,8 @@ Adding new frontend components
 For new Prompt and Control components:
 
 * keep templates focused on markup;
-* use ``get_js_vars()`` for serialized page configuration;
-* use ``get_participant_js_vars(experiment, participant)`` for configuration that
+* use ``get_page_config()`` for serialized page configuration;
+* use ``get_participant_page_config(experiment, participant)`` for configuration that
   depends on the participant, read each time the page renders;
 * use ``get_js_dependencies()`` for classic load-once libraries;
 * use ``get_js_page_code()`` for short inline activation snippets;

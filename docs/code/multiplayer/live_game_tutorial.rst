@@ -680,7 +680,7 @@ copy these into the JavaScript, the demo keeps them in one place:
    :dedent:
 
 The game page passes it to the JavaScript with
-``js_vars={"snake_rules": RULES}``, and ``activate`` reads it from ``vars``.
+``page_config={"snake_rules": RULES}``, and ``activate`` reads it from ``config``.
 ``live`` is short for ``psynet.liveGame``:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/static/snake.js

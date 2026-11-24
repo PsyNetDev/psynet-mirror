@@ -212,7 +212,7 @@ def test_components_contribute_javascript_assets_and_variables_to_page():
         def get_js_page_code(self):
             return ["window.promptReady = true;"]
 
-        def get_js_vars(self):
+        def get_page_config(self):
             return {"prompt_config": {"colour": "blue"}}
 
     class ScriptedControl(Control):
@@ -224,14 +224,14 @@ def test_components_contribute_javascript_assets_and_variables_to_page():
         def get_js_page_code(self):
             return ["window.controlReady = true;"]
 
-        def get_js_vars(self):
+        def get_page_config(self):
             return {"control_config": {"maximum": 10}}
 
     page = ModularPage(
         "test",
         ScriptedPrompt("Hi!"),
         ScriptedControl(),
-        js_vars={"page_config": {"enabled": True}},
+        page_config={"own_config": {"enabled": True}},
     )
 
     assert page.js_page_modules == [
@@ -242,9 +242,30 @@ def test_components_contribute_javascript_assets_and_variables_to_page():
         "window.promptReady = true;",
         "window.controlReady = true;",
     ]
-    assert page.js_vars["prompt_config"] == {"colour": "blue"}
-    assert page.js_vars["control_config"] == {"maximum": 10}
-    assert page.js_vars["page_config"] == {"enabled": True}
+    assert page.page_config["prompt_config"] == {"colour": "blue"}
+    assert page.page_config["control_config"] == {"maximum": 10}
+    assert page.page_config["own_config"] == {"enabled": True}
+
+
+def test_js_vars_names_still_work_with_a_deprecation_warning():
+    class OldPrompt(Prompt):
+        def get_js_vars(self):
+            return {"prompt_config": 1}
+
+    with pytest.warns(DeprecationWarning) as caught:
+        page = ModularPage("test", OldPrompt("Hi!"), js_vars={"own_config": 2})
+
+    assert {str(w.message) for w in caught} >= {
+        "OldPrompt.get_js_vars has been renamed to get_page_config.",
+        "js_vars has been renamed to page_config.",
+    }
+    assert page.page_config == {
+        **page.page_config,
+        "prompt_config": 1,
+        "own_config": 2,
+    }
+    with pytest.warns(DeprecationWarning, match="Page.js_vars"):
+        assert page.js_vars is page.page_config
 
 
 def test_components_contribute_managed_javascript_lifecycle_resources():
@@ -309,13 +330,13 @@ def test_modular_page_accepts_tuple_javascript_resources():
 
 def test_duplicate_component_js_vars_raise():
     class CollidingPrompt(Prompt):
-        def get_js_vars(self):
+        def get_page_config(self):
             return {"shared_config": "prompt"}
 
     class CollidingControl(Control):
         macro = "control"
 
-        def get_js_vars(self):
+        def get_page_config(self):
             return {"shared_config": "control"}
 
     with pytest.raises(
@@ -327,17 +348,17 @@ def test_duplicate_component_js_vars_raise():
 
 def test_page_js_vars_cannot_override_component_js_vars():
     class ConfiguredPrompt(Prompt):
-        def get_js_vars(self):
+        def get_page_config(self):
             return {"shared_config": "prompt"}
 
     with pytest.raises(
         ValueError,
-        match="shared_config.*prompt ConfiguredPrompt.*ModularPage js_vars",
+        match="shared_config.*prompt ConfiguredPrompt.*ModularPage page_config",
     ):
         ModularPage(
             "test",
             ConfiguredPrompt("Hi!"),
-            js_vars={"shared_config": "page"},
+            page_config={"shared_config": "page"},
         )
 
 
@@ -358,7 +379,7 @@ def test_chatroom_contributes_managed_resources_not_inline_markup():
         "show_history": True,
         "you_label": "You",
         "you_in_list_label": "{NAME} (you)",
-    }.items() <= page.js_vars["chatroom_config"].items()
+    }.items() <= page.page_config["chatroom_config"].items()
     assert page.js_page_modules == [
         "/static/packages/psynet/scripts/chatroom-widget.js"
     ]
@@ -386,7 +407,7 @@ def test_omitted_chatroom_does_not_contribute_managed_resources():
     )
 
     assert not any("#chatroom-widget" in str(c) for c in page.css)
-    assert "chatroom_config" not in page.js_vars
+    assert "chatroom_config" not in page.page_config
     assert (
         "/static/packages/psynet/scripts/chatroom-widget.js" not in page.js_page_modules
     )
@@ -401,8 +422,8 @@ def test_omitted_prompt_does_not_contribute_managed_resources():
 
     assert page.js_dependencies == []
     assert page.js_page_modules == []
-    assert "music_notation_prompt" not in page.js_vars
-    assert page.js_vars["modular_page_components"]["prompt"] is None
+    assert "music_notation_prompt" not in page.page_config
+    assert page.page_config["modular_page_components"]["prompt"] is None
 
 
 def test_omitted_prompt_skips_prompt_spa_markup_codes():
@@ -427,7 +448,7 @@ def test_music_notation_prompt_uses_managed_javascript():
     assert page.js_page_modules == [
         "/static/packages/psynet/scripts/music-notation-prompt.js"
     ]
-    assert page.js_vars["music_notation_prompt"] == {"content": "C D E F"}
+    assert page.page_config["music_notation_prompt"] == {"content": "C D E F"}
 
 
 def test_only_survey_js_pages_load_survey_js():

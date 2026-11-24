@@ -6,6 +6,12 @@ where needed, an upgrade guide. The full list of changes in every release is in
 the `changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_.
 
 .. toctree::
+   :caption: PsyNet 15
+   :maxdepth: 1
+
+   psynet_15
+
+.. toctree::
    :caption: PsyNet 14
    :maxdepth: 1
 

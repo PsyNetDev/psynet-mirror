@@ -64,7 +64,7 @@ def test_pages_are_pre_rendered_once_before_they_are_compared(monkeypatch):
 
     def pre_render(self):
         pre_rendered.append(self)
-        self.js_vars = {**self.js_vars, "pre_rendered": True}
+        self.page_config = {**self.page_config, "pre_rendered": True}
 
     monkeypatch.setattr(ModularPage, "pre_render", pre_render)
     page = trial.show_trial(None, participant)

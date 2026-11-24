@@ -63,7 +63,7 @@ test("same-session timeline update preserves page fragment and emits pageUpdated
     expect(updatePayload.attributes.page_uuid).not.toBe(initialState.pageUuid);
     const currentIdentity = await experimentPage.evaluate(() => ({
       global: window.pageUuid,
-      submission: window.psynet.var.pageUuid,
+      submission: window.psynet.pageState.pageUuid,
     }));
     expect(currentIdentity).toEqual({
       global: updatePayload.attributes.page_uuid,

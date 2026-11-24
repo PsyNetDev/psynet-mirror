@@ -40,6 +40,7 @@ from .timeline import (
     MediaSpec,
     Page,
     Trigger,
+    _page_config_argument,
     is_list_of,
 )
 from .utils import (
@@ -56,8 +57,8 @@ from .utils import (
 logger = get_logger()
 
 
-def _merge_js_var_sources(*sources):
-    """Merge JavaScript variable sources, rejecting duplicate keys."""
+def _merge_page_config_sources(*sources):
+    """Merge page configuration sources, rejecting duplicate keys."""
     merged = {}
     owners = {}
 
@@ -68,7 +69,7 @@ def _merge_js_var_sources(*sources):
         for key, value in values.items():
             if key in owners:
                 raise ValueError(
-                    f"Duplicate JavaScript variable {key!r}: "
+                    f"Duplicate page configuration key {key!r}: "
                     f"contributed by {owners[key]} and {source_name}."
                 )
 
@@ -204,14 +205,6 @@ class Prompt(JavaScriptContributor):
 
     def update_events(self, events):
         pass
-
-    def get_js_vars(self):
-        """Page-local JavaScript variables this component contributes.
-
-        Keys must be unique across all page components and explicit
-        :class:`ModularPage` ``js_vars``.
-        """
-        return {}
 
     def _collect_spa_markup_contract_codes(self):
         if self.text_html is None:
@@ -811,13 +804,6 @@ class Control(JavaScriptContributor):
 
     @property
     def metadata(self):
-        return {}
-
-    def get_js_vars(self):
-        """Page-local JavaScript variables this control contributes.
-
-        See :meth:`Prompt.get_js_vars`.
-        """
         return {}
 
     @property
@@ -2158,9 +2144,12 @@ class ModularPage(Page):
         :class:`~psynet.modular_page.Control`
         objects instead.
 
+    page_config
+        Optional dictionary of settings for the page's JavaScript, read as
+        ``psynet.pageConfig``. They stay fixed while the page is shown.
+
     js_vars
-        Optional dictionary of page-scoped values exposed to JavaScript through
-        ``psynet.var``.
+        Deprecated name of ``page_config``.
 
     start_trial_automatically
         If ``True`` (default), the trial starts automatically, e.g. by the playing
@@ -2223,6 +2212,7 @@ class ModularPage(Page):
         time_estimate: Optional[float] = None,
         media: Optional[MediaSpec] = None,
         events: Optional[dict] = None,
+        page_config: Optional[dict] = None,
         js_vars: Optional[dict] = None,
         start_trial_automatically: bool = True,
         buttons: Optional[List] = None,
@@ -2238,8 +2228,7 @@ class ModularPage(Page):
         if media is None:
             media = MediaSpec()
 
-        if js_vars is None:
-            js_vars = {}
+        page_config = _page_config_argument(page_config, js_vars)
 
         if buttons is None:
             buttons = []
@@ -2308,16 +2297,16 @@ class ModularPage(Page):
                 active_roles["chatroom"].macro if "chatroom" in active_roles else None
             ),
         }
-        js_var_sources = [
+        config_sources = [
             (
                 f"{role} {type(component).__name__}",
-                component.get_js_vars(),
+                component.get_page_config(),
             )
             for role, component in components
         ]
-        js_var_sources.extend(
+        config_sources.extend(
             [
-                ("ModularPage js_vars", js_vars),
+                ("ModularPage page_config", page_config),
                 (
                     "PsyNet internals",
                     {"modular_page_components": modular_page_components},
@@ -2337,7 +2326,7 @@ class ModularPage(Page):
             },
             media=all_media,
             events=events,
-            js_vars=_merge_js_var_sources(*js_var_sources),
+            page_config=_merge_page_config_sources(*config_sources),
             start_trial_automatically=start_trial_automatically,
             validate=validate,
             framework_owned_template=True,
@@ -2346,13 +2335,16 @@ class ModularPage(Page):
         )
         self.control._check_page(self)
 
-    def _js_vars_for(self, experiment, participant):
-        return _merge_js_var_sources(
-            ("the page's js_vars or a component's get_js_vars", self.js_vars),
+    def _page_config_for(self, experiment, participant):
+        return _merge_page_config_sources(
+            (
+                "the page's page_config or a component's get_page_config",
+                self.page_config,
+            ),
             *(
                 (
                     f"{role} {type(component).__name__}",
-                    component.get_participant_js_vars(experiment, participant),
+                    component.get_participant_page_config(experiment, participant),
                 )
                 for role, component in self._iter_layout_components()
             ),
@@ -2480,13 +2472,15 @@ class ModularPage(Page):
         )
 
     def _shows_the_same_to_everyone(self):
-        # A chat shows the group's messages, and participant JavaScript
-        # variables can show anything stored for the participant.
+        # A chat shows the group's messages, and participant page
+        # configuration can show anything stored for the participant.
         return (
             super()._shows_the_same_to_everyone()
             and self.chatroom is None
             and all(
-                type(component).get_participant_js_vars
+                type(component).get_participant_page_config
+                is JavaScriptContributor.get_participant_page_config
+                and type(component).get_participant_js_vars
                 is JavaScriptContributor.get_participant_js_vars
                 for _, component in self._iter_layout_components()
             )
@@ -4113,13 +4107,12 @@ class RecordControl(Control):
                 summary[key] = None
         return summary
 
-    def get_js_vars(self):
-        """Provide defaults; rendering resolves the experiment storage backend."""
+    def get_page_config(self):
+        """Provide the upload labels and size limit; the page state says
+        which sources upload asynchronously, as that depends on the
+        experiment's storage backend."""
         return {
             "recordingLabels": _recording_labels(),
-            "asynchronousUploadSources": self.recording_sources
-            if self._async_upload_enabled()
-            else None,
             "asynchronousUploadMaxBytes": self._recording_max_bytes(),
         }
 
@@ -5192,7 +5185,7 @@ class MusicNotationPrompt(Prompt):
         """Activate score rendering for each hosting page."""
         return [package_static_url("psynet", "scripts/music-notation-prompt.js")]
 
-    def get_js_vars(self):
+    def get_page_config(self):
         """Provide the ABC notation consumed by the page module."""
         return {"music_notation_prompt": {"content": self.content}}
 

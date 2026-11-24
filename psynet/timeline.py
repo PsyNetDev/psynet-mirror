@@ -120,9 +120,23 @@ def _normalize_js_page_code(code, argument_name="js_page_code"):
     return normalized
 
 
-# Common Window names that legacy ``window.<js_vars key>`` access would
+def _page_config_argument(page_config, js_vars):
+    """Return ``page_config``, accepting the deprecated ``js_vars`` instead."""
+    if js_vars is not None:
+        warnings.warn(
+            "js_vars has been renamed to page_config.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        if page_config is not None:
+            raise ValueError("Pass page_config or js_vars, not both.")
+        page_config = js_vars
+    return {} if page_config is None else page_config
+
+
+# Common Window names that legacy ``window.<page_config key>`` access would
 # silently read instead of the page value. Not exhaustive; authors should
-# still prefer ``psynet.var``.
+# still prefer ``psynet.pageConfig``.
 _JS_VAR_WINDOW_COLLISION_KEYS = frozenset(
     {
         "alert",
@@ -155,18 +169,20 @@ _JS_VAR_WINDOW_COLLISION_KEYS = frozenset(
 )
 
 
-def _warn_js_var_window_collisions(js_vars):
-    """Warn when js_vars keys would not get a legacy window accessor."""
-    if not js_vars:
+def _warn_js_var_window_collisions(page_config):
+    """Warn when page_config keys would not get a legacy window accessor."""
+    if not page_config:
         return
-    collisions = sorted(key for key in js_vars if key in _JS_VAR_WINDOW_COLLISION_KEYS)
+    collisions = sorted(
+        key for key in page_config if key in _JS_VAR_WINDOW_COLLISION_KEYS
+    )
     if not collisions:
         return
     names = ", ".join(repr(key) for key in collisions)
     warnings.warn(
-        "js_vars keys collide with existing window properties "
+        "page_config keys collide with existing window properties "
         f"({names}). Legacy window.<key> reads will not see the page "
-        "value; use psynet.var instead. Common collisions include "
+        "value; use psynet.pageConfig instead. Common collisions include "
         "name, status, event, and history.",
         UserWarning,
         stacklevel=3,
@@ -1342,10 +1358,14 @@ class Page(Elt):
     label:
         Internal label to give the page, used for example in results saving.
 
+    page_config:
+        Dictionary of settings for the page's JavaScript, read as
+        ``psynet.pageConfig``. They stay fixed while the page is shown. Legacy
+        access through matching ``window`` properties is deprecated and
+        controlled by ``legacy_js_var_globals``.
+
     js_vars:
-        Dictionary of page-scoped values exposed to JavaScript through
-        ``psynet.var``. Legacy access through matching ``window`` properties is
-        deprecated and controlled by ``legacy_js_var_globals``.
+        Deprecated name of ``page_config``.
 
     js_links:
         Deprecated list of classic JavaScript files executed as linked classic
@@ -1579,6 +1599,7 @@ class Page(Elt):
         template_fragment_str: Optional[str] = None,
         template_arg: Optional[Dict] = None,
         label: str = "untitled",
+        page_config: Optional[Dict] = None,
         js_vars: Optional[Dict] = None,
         js_links: Optional[Sequence[str]] = None,
         js_dependencies: Optional[Sequence[str]] = None,
@@ -1637,8 +1658,7 @@ class Page(Elt):
 
         if template_arg is None:
             template_arg = {}
-        if js_vars is None:
-            js_vars = {}
+        page_config = _page_config_argument(page_config, js_vars)
         if contents is None:
             contents = {}
         if css_links is None:
@@ -1702,8 +1722,8 @@ class Page(Elt):
         self._spa_template_contract_warning_shown = False
         self.template_arg = template_arg
         self.label = label
-        self.js_vars = js_vars
-        _warn_js_var_window_collisions(js_vars)
+        self.page_config = page_config
+        _warn_js_var_window_collisions(page_config)
         self.legacy_js_links = legacy_js_links
         self.legacy_scripts = legacy_scripts
         self.js_dependencies = _normalize_javascript_urls(
@@ -2405,9 +2425,19 @@ class Page(Elt):
             or get_config().get("show_early_exit_button", False)
         )
 
-    def _js_vars_for(self, experiment, participant):
-        """The page's ``js_vars`` when it renders for ``participant``."""
-        return self.js_vars
+    @property
+    def js_vars(self):
+        """Deprecated name of ``page_config``."""
+        warnings.warn(
+            "Page.js_vars has been renamed to page_config.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.page_config
+
+    def _page_config_for(self, experiment, participant):
+        """The page's ``page_config`` when it renders for ``participant``."""
+        return self.page_config
 
     def render(self, experiment, participant, partial_mode=False):
         from .utils import get_config
@@ -2432,7 +2462,7 @@ class Page(Elt):
         from .background_recording import _browser_config
         from .modular_page import RecordControl
 
-        internal_js_vars = {
+        page_state = {
             "backgroundRecording": _browser_config(self, experiment, participant),
             "uniqueId": participant.unique_id,
             "pageUuid": self._browser_page_uuid(participant),
@@ -2442,14 +2472,14 @@ class Page(Elt):
         seconds_left = self._time_limit_seconds_left(participant)
         if seconds_left is not None:
             _p = get_translator(context=True)
-            internal_js_vars["timeLimit"] = {
+            page_state["timeLimit"] = {
                 "secondsLeft": seconds_left,
                 "text": _p("time_limit", "{SECONDS} s left"),
                 "currentAnswer": self.time_limit_answer is CURRENT_ANSWER,
             }
         control = getattr(self, "control", None)
         if isinstance(control, RecordControl):
-            internal_js_vars["asynchronousUploadSources"] = (
+            page_state["asynchronousUploadSources"] = (
                 control.recording_sources
                 if control._uses_async_upload(experiment)
                 else None
@@ -2461,7 +2491,7 @@ class Page(Elt):
         self._check_spa_template_contract(
             inplace_timeline_transitions=config.get("inplace_timeline_transitions"),
         )
-        js_vars = {**self._js_vars_for(experiment, participant), **internal_js_vars}
+        page_config = self._page_config_for(experiment, participant)
         inplace_timeline_transitions = config.get("inplace_timeline_transitions")
         show_early_exit_button = self.early_exit_available(experiment, participant)
         if show_early_exit_button:
@@ -2482,7 +2512,8 @@ class Page(Elt):
 
         all_template_args = {
             **self.template_arg,
-            "js_vars": js_vars,
+            "page_config": page_config,
+            "page_state": page_state,
             "page": self,
             "initial_download_progress": self.initial_download_progress,
             "time_reward": "%.2f" % participant.time_reward,
@@ -2959,7 +2990,7 @@ class Page(Elt):
         return next((reason for reason, found in reasons.items() if found), None)
 
     def layout_key(self, fragment_html, experiment, participant):
-        """Identify the page's ``#main-body``, JavaScript, ``js_vars``, media and events in a partial render.
+        """Identify the page's ``#main-body``, JavaScript, ``page_config``, media and events in a partial render.
 
         A predicted trial page is only reused for the next trial if the two
         keys match, so that the page modules' ``update`` can show it.
@@ -2975,7 +3006,7 @@ class Page(Elt):
                 self.js_page_code,
                 self.legacy_js_links,
                 self.legacy_scripts,
-                self._js_vars_for(experiment, participant),
+                self._page_config_for(experiment, participant),
                 self.media.data,
                 self.events,
             ],
