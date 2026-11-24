@@ -10,10 +10,11 @@
 // in its metadata. The server records the page's time_limit_answer, or with
 // CURRENT_ANSWER (config.currentAnswer) the answer the page's controls hold.
 // If the server's deadline is still some way off, it returns the seconds
-// left and the countdown resumes.
+// left and the countdown resumes. The settings arrive in
+// psynet.pageState.timeLimit, not in the page's config.
 
-export function activate({root, config: pageConfig, psynet}) {
-    var config = pageConfig["timeLimit"];
+export function activate({root, psynet}) {
+    var config = psynet.pageState && psynet.pageState.timeLimit;
     if (!config) return undefined;
     // secondsLeft was measured when the server drew the page, before the
     // page's scripts loaded.

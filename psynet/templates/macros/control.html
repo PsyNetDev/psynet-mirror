@@ -71,6 +71,9 @@
                     return;
                 }
                 psynet.addPageEventListener(button, "click", function() {
+                    if (!psynet.canGoBack()) {
+                        return;
+                    }
                     psynet.captureSubmissionControlState();
                     psynet.showSubmissionSpinner(button);
                     psynet.goBack();

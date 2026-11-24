@@ -2347,3 +2347,13 @@ def test_page_level_early_exit_setting_overrides_the_recruiter_and_config():
     experiment.recruiter_class.show_early_exit_button = False
     shown = InfoPage("Hello", time_estimate=1, show_early_exit_button=True)
     assert shown.early_exit_available(experiment, participant) is True
+
+
+def test_pages_not_rendered_in_advance_keep_the_back_button():
+    timeline = Timeline(
+        InfoPage("A", time_estimate=1),
+        InfoPage("B", time_estimate=1, render_in_advance=False),
+        InfoPage("C", time_estimate=1),
+    )
+    assert timeline._can_go_back("main", 1)
+    assert timeline._can_go_back("main", 2)
