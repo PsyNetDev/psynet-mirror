@@ -4778,8 +4778,8 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         still-waiting overlay check does not lock the row); ``GET /timeline``
         uses it only after ``_skip_ready_hold_on_get`` takes blocking
         ``FOR UPDATE``. A hold consumed immediately after skipping a released
-        wait is marked silent so the overlay stays a spinner until partners
-        catch up.
+        wait is marked silent so the overlay stays a spinner for the first
+        ``CATCH_UP_SPINNER_SECONDS``.
 
         ``page`` must be ``get_current_elt`` read after taking that row lock.
         Hold checks find their record through ``participant.page_uuid``, and

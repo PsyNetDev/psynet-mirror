@@ -7,6 +7,7 @@ import pytest
 
 from psynet.experiment import get_experiment
 from psynet.pytest_psynet import path_to_demo_experiment
+from psynet.timeline import CodeBlock
 
 pytestmark = pytest.mark.parametrize(
     "experiment_directory",
@@ -28,18 +29,30 @@ def test_a_player_left_alone_ends_rather_than_sitting_out(
     monkeypatch.setattr(
         demo.pairing, "rounds_sat_out", lambda participant: demo.MAX_SIT_OUTS
     )
-    cohort = SimpleNamespace(n_active_participants=cohort_size)
+    groups = {}
+    cohort = SimpleNamespace(
+        n_active_participants=cohort_size,
+        remove_participant=lambda participant, reason: groups.clear(),
+    )
+    groups[demo.COHORT] = cohort
     player = SimpleNamespace(
         in_sync_group=lambda group_type: False,
         sync_group_removal_reason=lambda group_type: None,
-        active_sync_groups={demo.COHORT: cohort},
+        active_sync_groups=groups,
         var=SimpleNamespace(),
     )
     assert demo.round_status(player) == round_status
-    assert demo.game_over_reason(player) == game_over_reason
-    # The game-over page is chosen after the player leaves the cohort.
-    demo.save_game_over_reason(player)
-    player.active_sync_groups.clear()
+    # Run the timeline's steps that save the reason and leave the cohort, in
+    # their order: leaving first would make every player look alone.
+    steps = [
+        elt
+        for elt in get_experiment().timeline.elts["main"]
+        if isinstance(elt, CodeBlock)
+        and elt.function.__name__ in ("save_game_over_reason", "_leave")
+    ]
+    assert len(steps) == 2
+    for step in steps:
+        step.function(player)
     assert player.var.game_over_reason == game_over_reason
 
 

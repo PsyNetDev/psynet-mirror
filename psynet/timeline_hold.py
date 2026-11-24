@@ -12,8 +12,8 @@ The poller uses a fresh session per visit, so wake deferral is stored in a
 context variable rather than ``session.info``.
 A hold consumed immediately after skipping a released wait is marked
 ``silent`` on the durable record so catch-up overlays stay a spinner for the
-first ``CATCH_UP_SPINNER_SECONDS`` of that visit. ``GET /timeline`` and ``POST /response`` skip ready holds under a
-participant row lock, but they do not share that lock protocol. The page
+first ``CATCH_UP_SPINNER_SECONDS`` of that visit. ``GET /timeline`` and
+``POST /response`` skip ready holds under a participant row lock, but they do not share that lock protocol. The page
 lifecycle developer docs describe the resume protocol.
 """
 

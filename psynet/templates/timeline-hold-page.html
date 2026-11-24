@@ -1,8 +1,10 @@
 {% extends "timeline-page.html" %}
 
 {% block main_body %}
-    {# Rendered only when a hold is reloaded. There is no page to keep, so the
-       empty card is hidden and the waiting indicator stands alone. #}
+    {# Rendered on a full load of a hold without a waiting screen, such as
+       after a reload. There is no page to keep, so the empty card is hidden
+       and the waiting indicator stands alone. Browsers without :has() show
+       the empty card, as before. #}
     <style>
         #main-body:has(> .psynet-hold-without-page) {
             visibility: hidden;

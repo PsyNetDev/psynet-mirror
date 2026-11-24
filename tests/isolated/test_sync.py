@@ -19,6 +19,7 @@ from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 import psynet.bot
+from psynet import timeline_hold
 from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.barrier_spec import (
     BarrierSpecError,
@@ -123,6 +124,12 @@ from timeline_hold_helpers import (  # noqa: E402
     _working_participants,
     new_participant,
 )
+
+
+@pytest.fixture(autouse=True)
+def _catch_up_holds_stay_silent(monkeypatch):
+    """Keep catch-up holds silent however slowly a test runs."""
+    monkeypatch.setattr(timeline_hold, "CATCH_UP_SPINNER_SECONDS", 3600)
 
 
 def get_random_id():
@@ -4550,7 +4557,7 @@ def test_last_arrival_catchup_hold_stays_silent(
     in_experiment_directory, db_session, monkeypatch
 ):
     """A catch-up hold is a bare spinner until it lasts CATCH_UP_SPINNER_SECONDS."""
-    from psynet.timeline_hold import CATCH_UP_SPINNER_SECONDS, compose_hold_overlay_html
+    from psynet.timeline_hold import compose_hold_overlay_html
 
     exp = get_experiment()
     original_timeline = exp.timeline
@@ -4610,8 +4617,7 @@ def test_last_arrival_catchup_hold_stays_silent(
         last_page = exp.timeline.get_current_elt(exp, last)
         assert last_page.overlay_html(last) == compose_hold_overlay_html("", None)
         assert _arrival_hold_messages(publications, last_id) == []
-        last_hold.started_at -= timedelta(seconds=CATCH_UP_SPINNER_SECONDS + 1)
-        db.session.commit()
+        monkeypatch.setattr(timeline_hold, "CATCH_UP_SPINNER_SECONDS", 0)
         resumed = _process_response(
             exp, last, last_hold_uuid, timeline_hold_resume=True
         )
