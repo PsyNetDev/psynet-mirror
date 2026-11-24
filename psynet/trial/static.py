@@ -315,7 +315,12 @@ class StaticTrialMaker(ChainTrialMaker):
         the trials are taken; read a trial's own block from ``trial.block``.
         Nodes are selected (``custom_node_filter``, ``select_node`` and the
         node order) when the trials are created, before any is answered, so
-        selection can't adapt to the participant's answers.
+        selection can't adapt to the participant's answers. Likewise, the
+        next trials' pages are built, with ``show_trial``, before the earlier
+        trials are answered: if a trial's page shows something that earlier
+        answers change, the browser replaces the page shown in advance with
+        the server's once the server replies, so the participant briefly sees
+        the old version.
         Can't be combined with
         ``sync_group_type``, ``check_performance_every_trial``,
         ``n_repeat_trials`` or ``recruit_mode="n_trials"``.
