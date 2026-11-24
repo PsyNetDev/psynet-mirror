@@ -195,7 +195,7 @@ describe("approved response into a waiting screen", () => {
       isSameSessionPageUpdate: () => false,
       requiresFullPageReloadTransition: () => false,
       adoptRenderedReply: () => false,
-      predictedFragment: () => null,
+      keptPageFragment: () => null,
       resetAnswers() {},
       changePage: (change) => change(),
       pageState: {},

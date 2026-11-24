@@ -975,40 +975,36 @@
       return { sent: true };
     };
 
-    // Whether the reply is the page shown after the oldest queued answer,
-    // with the contents that were shown for it.
-    psynet.isPredictedReply = function (response) {
+    // Whether the reply shows the page expected after the oldest queued
+    // answer: the page shown after it, with the contents shown for it, or,
+    // if nothing was shown after it, any page but a hold.
+    psynet.isExpectedReply = function (response) {
       let entry = psynet.answers.queue[0];
+      let page = response.page;
+      if (entry === undefined || page?.attributes?.timeline_hold) {
+        return false;
+      }
       return (
-        entry?.nextPageUuid !== undefined &&
-        response.page?.attributes?.page_uuid === entry.nextPageUuid &&
-        JSON.stringify(response.page?.contents) === entry.nextContents &&
-        !response.page?.attributes?.timeline_hold
+        entry.nextPageUuid === undefined ||
+        (page.attributes?.page_uuid === entry.nextPageUuid &&
+          JSON.stringify(page.contents) === entry.nextContents)
       );
     };
 
-    // Whether the reply to a JSPage's only queued answer shows another
-    // JSPage, which keeps the page on screen if their layouts match.
-    let isNextJSPageReply = function (response) {
-      let queue = psynet.answers.queue;
-      return (
-        psynet.page?.attributes?.shows_trials_itself === true &&
-        response.page?.attributes?.shows_trials_itself === true &&
-        !response.page?.attributes?.timeline_hold &&
-        queue.length === 1 &&
-        queue[0].nextPageUuid === undefined
-      );
-    };
-
-    // Return the reply's fragment if page modules can show it in place.
-    psynet.predictedFragment = function (response) {
+    // Return the reply's fragment if the JSPage on screen shows it through
+    // update(), which needs the reply to be the expected page and a JSPage
+    // with the same layout.
+    psynet.keptPageFragment = function (response) {
       let layoutKey = response.timeline_fragment?.layout_key;
-      let predicted = psynet.isPredictedReply(response);
-      if (!predicted && !isNextJSPageReply(response)) {
+      if (
+        !psynet.page?.attributes?.shows_trials_itself ||
+        !response.page?.attributes?.shows_trials_itself ||
+        !psynet.isExpectedReply(response)
+      ) {
         return null;
       }
       if (!layoutKey || layoutKey !== psynet.layoutKey) {
-        if (predicted) {
+        if (psynet.answers.queue[0].nextPageUuid !== undefined) {
           psynet.log.warn(
             "The next trial's page has different HTML from this one, so PsyNet " +
               "couldn't show it in advance. Put what changes between trials in " +
@@ -1020,8 +1016,8 @@
       return psynet.prepareTimelineFragment(response.timeline_fragment);
     };
 
-    // Swap in everything but #main-body, whose trial the page modules show.
-    psynet.adoptPredictedPage = function (fragment) {
+    // Swap in everything but #main-body, whose trial the JSPage module shows.
+    psynet.keepPage = function (fragment) {
       psynet.answers.queue.shift();
       fragment.replacements = fragment.replacements.filter(
         ({ currentElement }) => currentElement.id !== "main-body",
@@ -1111,7 +1107,7 @@
     // it was rendered then.
     psynet.adoptRenderedReply = function (response) {
       let entry = psynet.answers.queue[0];
-      if (entry?.pageUuid === undefined || !psynet.isPredictedReply(response)) {
+      if (entry?.pageUuid === undefined || !psynet.isExpectedReply(response)) {
         return false;
       }
       if (entry.nextLayoutKey !== response.timeline_fragment?.layout_key) {
@@ -4521,9 +4517,9 @@
       if (psynet.adoptRenderedReply(response)) {
         return true;
       }
-      let predicted = psynet.predictedFragment(response);
-      if (predicted) {
-        psynet.adoptPredictedPage(predicted);
+      let kept = psynet.keptPageFragment(response);
+      if (kept) {
+        psynet.keepPage(kept);
         return true;
       }
       // Any other reply ends the prediction, dropping the later answers.
