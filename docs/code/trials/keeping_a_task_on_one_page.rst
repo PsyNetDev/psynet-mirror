@@ -12,8 +12,18 @@ gives it and answers it. When one trial's page has the same HTML, module and
 ``page_config`` as the last, the page stays on screen and only the data
 changes. This works with any trial maker, including
 adaptive ones such as staircases, where each answer decides what comes next.
-Each answer waits for the server to send the next trial, unless the trials
-are fixed in advance (see `Showing the next trial without waiting`_).
+
+Between ordinary pages, PsyNet usually doesn't reload the browser tab
+either, but it does replace the page's content and start its JavaScript
+afresh. A ``JSPage``
+goes further: its content and module stay as they are, and the module is
+only given the next trial's data.
+
+After each answer, the module waits for the server to send the next trial,
+unless the trials are fixed in advance (see
+`Showing the next trial without waiting`_). Meanwhile the page stays as the
+module left it, so hide the stimulus on answering if it shouldn't stay
+visible.
 
 :download:`The adaptive brightness demo <../../../demos/features/staircase_on_one_page/experiment.py>`
 is a complete example. It runs a staircase with PsyNet's
@@ -38,14 +48,17 @@ trial to trial in the page's ``contents``::
 
 The HTML can be a string or a ``dominate`` tag. Configuration that is the
 same for every trial, such as the task's timings, goes in ``page_config``.
+Both ``contents`` and ``page_config`` must be JSON-serialisable, as they are
+sent to the browser.
 
 When the participant answers, PsyNet completes the trial and the trial maker
 chooses the next one, as on any trial page. Because the next trial's page has
-the same HTML, the page stays on screen and the module shows the next
-trial.
+the same HTML, module and ``page_config``, the page stays on screen and the
+module shows the next trial. If any of the three differs, for example on a
+break page or after the last trial, PsyNet replaces the page as usual.
 
-The page module
----------------
+The module
+----------
 
 The module answers on a key press instead of a Next button. Its
 ``activate`` function sets up what stays the same from trial to trial, such as
@@ -53,7 +66,9 @@ listeners, and returns an object with two functions:
 
 - ``update`` shows one trial. It receives the trial's ``contents`` and a
   ``response`` handle for answering it.
-- ``cleanup`` removes what ``activate`` set up.
+- ``cleanup`` removes what ``activate`` set up outside the page, such as
+  listeners on ``document``, which would otherwise keep running on the
+  pages that follow.
 
 .. code-block:: javascript
 
@@ -63,6 +78,7 @@ listeners, and returns an object with two functions:
             if (response === null) return;
             // On the left arrow key:
             response.answer("left");
+            response = null;  // ignore further presses until the next trial
         }
         document.addEventListener("keydown", keydown);
         return {
@@ -75,33 +91,35 @@ listeners, and returns an object with two functions:
         };
     }
 
-PsyNet calls ``activate``, and then ``update`` once the page accepts answers.
-Keep anything specific to one trial in ``update``, and don't assume
-``activate`` runs again before each trial. PsyNet doesn't wait for an
-asynchronous ``update`` to finish before calling it again, for example after a
-rejected answer, so an ``update`` that awaits an image should check afterwards
-that it is still the latest call. A ``JSPage`` whose module doesn't return
-``update`` fails with an error.
-
-The module keeps running from trial to trial: PsyNet runs ``activate`` once,
-``update`` for each trial, and ``cleanup`` when the participant moves on to a
-page with different HTML, module or ``page_config``, such as a break. This is
+The module keeps running from trial to trial. PsyNet calls ``activate`` once,
+when the first trial appears; ``update`` for each trial, including the
+first; and ``cleanup`` once, when the participant leaves the page. This is
 the same whether the next trial comes from the server or was prepared in
-advance (see below). State kept in the module, such as a running score,
-carries over, and so does whatever stays on the page: focus on the last
-button clicked, a sound still playing, a pressed-looking button. Reset these
-in ``update`` or when answering.
+advance (see below). A ``JSPage`` whose module doesn't return ``update``
+fails with an error.
+
+So put anything specific to one trial in ``update``. State kept in the
+module, such as a running score, carries over from trial to trial, and so
+does whatever stays on the page: focus on the last button clicked, a sound
+still playing, a pressed-looking button. Reset these in ``update`` or when
+answering.
+
+PsyNet doesn't wait for an asynchronous ``update`` to finish before calling
+it again, for example when an answer is rejected and the same trial is shown
+again. An ``update`` that awaits something, such as an image loading, should
+therefore check afterwards that it is still the latest call.
 
 The next trial's ``update`` can follow an answer at once, so play any
-feedback on the answer before answering, and pass the time of the input as
-``at`` so that the feedback doesn't count towards ``time_taken``:
+feedback on the answer before answering. Pass the time of the input as
+``at``, so that the feedback doesn't count towards ``time_taken``:
 
 .. code-block:: javascript
 
     async function choose(choice, event) {
-        accepting = false;
+        const handle = response;
+        response = null;  // ignore further input until the next update
         await showFeedback(choice);  // for example a card leaving the screen
-        response.answer(choice, {at: event.timeStamp});
+        handle.answer(choice, {at: event.timeStamp});
     }
 
 The ``response`` handle has three methods:
@@ -130,8 +148,9 @@ The ``response`` handle has three methods:
     trial is no longer shown. PsyNet sends the
     answer in the background, so the page should stop accepting input until
     ``update`` is called with the next trial. If the server rejects the
-    answer, PsyNet shows its error message and calls ``update`` again with the
-    same trial.
+    answer, for example because the page's ``validate`` returns an error,
+    PsyNet shows the error message and calls ``update`` again with the same
+    trial.
 
 To measure reaction times, start the clock in a ``requestAnimationFrame``
 callback with the time it receives, after putting the stimulus on the page,
@@ -219,26 +238,24 @@ after a trial with feedback or with pages from
 trials. With a feedback
 page after every trial, it never runs ahead, and the participant waits for
 the server twice per trial. To give feedback straight away, show it from the
-module instead, which needs the correct answer in ``contents``. Answers
-are sent as soon as they are given, so only the answers waiting behind a slow
-reply can be lost. While answers are waiting, the browser asks the
-participant before the page reloads or closes. If they leave anyway, those
-answers are lost, and when they come back they continue from
-the first trial the server hasn't saved; anything entered for that trial is
-lost and its clock starts again.
+module instead, which needs the correct answer in ``contents``.
+
+Answers are sent one at a time, as soon as each earlier one is saved, so
+they only pile up in the browser while the server is slow to reply. While
+any are waiting, the browser asks the participant to confirm before the page
+reloads or closes. If they leave anyway, the waiting answers are lost, and
+when they come back they continue from the first trial the server hasn't
+saved, with its clock started again.
 
 For this to work:
 
 - Every trial page must be a ``JSPage`` with the same HTML, module and
-  ``page_config``. ``page_config`` configures the page, such as a task's
-  timings, and stays the same for all the trials it shows. What changes
-  between trials goes in ``contents``, which each ``update()`` receives.
-  PsyNet renders each trial's page once to compare them; a trial whose HTML,
-  JavaScript or ``page_config`` differs isn't shown in advance, but waits for
-  the server, and PsyNet logs a warning. If no trial at all could be shown in
-  advance, bot tests such as ``psynet test local`` fail. A stimulus written
-  into the HTML makes every trial's HTML differ, so pass it in ``contents``
-  instead.
+  ``page_config``, as above. PsyNet renders each upcoming trial's page once
+  to compare them; a trial whose page differs isn't shown in advance, but
+  waits for the server, and PsyNet logs a warning. If no trial at all could
+  be shown in advance, bot tests such as ``psynet test local`` fail. A
+  stimulus written into the HTML makes every trial's HTML differ, so pass it
+  in ``contents`` instead.
 - ``show_trial`` and ``show_after_trial`` must not change anything or
   choose at random, because PsyNet also calls them for upcoming trials,
   before they are answered.
@@ -249,7 +266,11 @@ For this to work:
   can't adapt to the participant's answers.
 - Pages with a ``time_limit``, background recording, ``media`` or a full page
   reload work, but aren't shown in advance, because PsyNet sets these up for
-  each page. Their files are still downloaded early.
+  each page; their files are still downloaded early. Each such trial waits
+  for the server. Pages with a ``time_limit``, background recording or a
+  full page reload also replace the last one, so their module starts afresh
+  for each trial; pages with ``media`` stay on screen if their media are the
+  same as the last trial's.
 - The browser doesn't run ahead after a trial whose class overrides
   :meth:`~psynet.trial.main.Trial.show_feedback`, even if it sometimes
   returns ``None``, as whether it does depends on the answer.
