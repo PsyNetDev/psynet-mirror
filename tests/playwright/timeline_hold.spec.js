@@ -112,6 +112,16 @@ async function startBackgroundHold(page, { trackLucidUnload = false } = {}) {
 
 async function probeTimelineHoldClientBehavior(page) {
   await installTimelineHoldReleaseProbe(page);
+  // Submissions run one at a time, so a hold check already started (for
+  // example when the hold's websocket connected) would run before the probe's.
+  await page.waitForFunction(
+    () =>
+      psynet.timelineHold &&
+      !psynet.timelineHold.resumeInFlight &&
+      !psynet.pageState.submitting,
+    null,
+    { timeout: 15000 }
+  );
   const overlay = await evaluateOnLivePage(page, () => {
     const controller = psynet.timelineHold;
     if (!controller) {
@@ -258,6 +268,7 @@ async function probeTimelineHoldClientBehavior(page) {
             xhr.status = 200;
             xhr.response = JSON.stringify({
               submission: "approved",
+              holdClientProbe: true,
               page: { contents: "", attributes: {} }
             });
           }
@@ -275,8 +286,10 @@ async function probeTimelineHoldClientBehavior(page) {
     const originalApproved = psynet.handleApprovedResponse;
     const originalAlert = psynet.alert;
     let approved = 0;
-    psynet.handleApprovedResponse = async () => {
-      approved += 1;
+    psynet.handleApprovedResponse = async (response) => {
+      if (response.holdClientProbe) {
+        approved += 1;
+      }
       return true;
     };
     psynet.alert = (text) => {
