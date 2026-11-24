@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from psynet.experiment import import_local_experiment
-from psynet.live_game import Reject
+from psynet.live_game import TOO_FEW_READY, Reject
 from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
 
@@ -131,7 +131,7 @@ class TestRockPaperScissorsLive:
         assert reward(game.outcome(reason), reason, 0) == 0
         assert reward(game.outcome(reason), reason, 1) == pytest.approx(0.1)
 
-    def test_a_partner_who_never_opens_the_game_ends_it(self, demo):
+    def test_a_partner_who_never_opens_the_game_ends_it_at_once(self, demo):
         game_class = demo.RockPaperScissors
         game = LocalGame(
             game_class,
@@ -141,11 +141,13 @@ class TestRockPaperScissorsLive:
         )
         game.send(0, {"type": "psynet_ready", "message": {}})
         game.tick(game_class.ready_timeout)
-        game.tick(game_class.away_timeout)
 
-        assert game.is_over() and game.end_reason() == "players_left"
+        assert game.is_over() and game.end_reason() == TOO_FEW_READY
         assert game.game.absences(game.state) == [None, "no_show"]
-        assert game.answer(0, "players_left")["throws"] == []
+        answer = game.answer(0, TOO_FEW_READY)
+        assert str(demo.show_result(answer, 0).content) == (
+            "The game ended before any throws were played."
+        )
 
     @pytest.mark.parametrize(
         "case, player, summary, score",
@@ -176,11 +178,6 @@ class TestRockPaperScissorsLive:
         assert f"<h2>{summary}</h2>" in feedback
         assert score in feedback
         assert "Your bonus for this game is $0.20." in feedback
-
-    def test_the_feedback_page_says_when_no_throw_was_played(self, demo, new_game):
-        answer = new_game().answer(0, "not_joined")
-        page = demo.show_result(answer, 0.2)
-        assert str(page.content) == "The game ended before any throws were played."
 
     def test_a_trial_without_an_answer_shows_no_feedback(self, demo, finished):
         gives_feedback = demo.RockPaperScissorsTrial.gives_feedback

@@ -36,13 +36,13 @@ as they finish, so failing those left below its quorum could fail the last
 players still playing. When fewer than two remain, the rounds end for the
 last player instead.
 
-The game's `end_reason` says how each round ended: `"deal"`, `"no_show"`
-when a player didn't open the game (`"not_joined"` when neither did),
-PsyNet's `"players_left"` when a player left it, or `"finished"` when the
-time ran out. The feedback page uses it to tell the player what happened,
-and the export's `player_round` table has it in its `end_reason` column, so
-there `"finished"` means a round that ran out of time without a deal:
-it's PsyNet's reason for a game whose time is up. The `arrived` and
+The game's `end_reason` says how each round ended: `"deal"`, or one of
+PsyNet's reasons: `"too_few_ready"` when a player didn't open the game in
+time, so it never started, `"players_left"` when a player left it, or
+`"finished"` when the time ran out. The feedback page uses it to tell the
+player what happened, and the export's `player_round` table has it in its
+`end_reason` column, so there `"finished"` means a round that ran out of
+time without a deal: it's PsyNet's reason for a game whose time is up. The `arrived` and
 `partner_arrived` columns say who didn't arrive. The game's columns come
 from its outcome, so a player who closed their page still has them; they
 are `None` only for a player who had no game, because their partner didn't
