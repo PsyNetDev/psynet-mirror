@@ -24,6 +24,7 @@ from psynet.bot import (
     BotDriver,
     advance_past_wait_pages,
     bots_by_sync_group,
+    make_late_now,
     run_bots_to_completion,
 )
 from psynet.group_prompt import GroupPrompt
@@ -41,7 +42,6 @@ from psynet.timeline import (
     Module,
     PageMaker,
     Timeline,
-    conditional,
     for_loop,
     join,
 )
@@ -72,37 +72,24 @@ def get_timeline():
             GROUP,
             initial_group_size=GROUP_SIZE,
             quorum=2,
-            below_quorum="continue_without_group",
+            # Two members carry on the story; a member left alone is failed,
+            # as is one for whom no group forms (max_wait_action defaults to
+            # "fail").
+            below_quorum="fail",
             max_wait_time=GROUPER_WAIT,
-            max_wait_action="continue_without_group",
             waiting_message="Waiting for your group of three to form…",
         ),
-        CodeBlock(remember_group),
         Module(
             "story",
             for_loop(
                 label="turns",
                 iterate_over=range(N_TURNS),
-                logic=lambda turn: conditional(
-                    "in_group",
-                    in_group,
-                    StoryTurn.cue(turn_definition, round=turn),
-                ),
+                logic=lambda turn: StoryTurn.cue(turn_definition, round=turn),
                 time_estimate_per_iteration=StoryTurn.time_estimate,
             ),
         ),
         PageMaker(final_page, time_estimate=10),
     )
-
-
-def in_group(participant: Participant) -> bool:
-    return participant.in_sync_group(GROUP)
-
-
-def remember_group(participant: Participant):
-    """Store the participant's group ID, or ``None``, for the last page and export."""
-    group = participant.active_sync_groups.get(GROUP)
-    participant.var.story_group_id = group.id if group else None
 
 
 def choose_writer(group, turn: int) -> int:
@@ -161,7 +148,7 @@ class StoryTurn(Trial):
             waiting_message="Waiting for this turn to finish…",
             waiting_screen=waiting_for_writer,
             late_after=LATE_AFTER,
-            late_action="leave_group",
+            late_action="fail",
         )
         if not self.is_writer:
             return barrier
@@ -193,28 +180,20 @@ class StoryTurn(Trial):
         )
 
     def save_sentence(self, participant):
-        """Store the writer's sentence on the turn's round, if the turn is still theirs.
-
-        A writer removed from the group, for example as late, stores nothing,
-        because the others have finished the turn without them. The sentence
-        is ``None`` if they ran out of time.
-        """
-        # A writer whose group dissolved while they wrote is the last one
-        # left, so their sentence still ends the story.
-        if in_group(participant) or self.sync_group_outcome == "group_dissolved":
-            self.group_round.var.sentence = participant.answer
+        """Store the writer's sentence on the turn's round; ``None`` if they ran out of time."""
+        self.group_round.var.sentence = participant.answer
 
     def on_finalized(self):
         """Store ``None`` as the sentence if the turn ended without one.
 
-        That happens when the writer was late or left.
+        That happens when the writer was failed, for example for being late.
         """
         super().on_finalized()
         if not self.group_round.var.has("sentence"):
             self.group_round.var.sentence = None
 
     def show_feedback(self, experiment, participant):
-        if self.time_limit_reached and self.sync_group_outcome == "stayed":
+        if self.time_limit_reached:
             # Moves on by itself, so a writer who has stepped away still
             # reaches the next turn in time and isn't removed as late.
             return InfoPage(
@@ -242,33 +221,13 @@ def waiting_for_writer(participant, trial):
     )
 
 
-# The ways a member can leave the group before the story's end.
-ENDED_EARLY_TEXTS = {
-    "late": "You were away for too long, so your group went on without you.",
-    "group_dissolved": "Too few members of your group stayed, so the story ended early.",
-    "removed_by_experimenter": "You were removed from your group.",
-}
-
-
 def final_page(participant: Participant):
-    group_id = participant.var.story_group_id
-    if group_id is None:
-        return InfoPage(
-            "We couldn't find two other people to write with you. "
-            "Thank you for waiting.",
-            time_estimate=5,
-        )
-    turns = group_turns(group_id)
-    finished = len(turns) == N_TURNS and all(t.var.has("sentence") for t in turns)
-    if finished or in_group(participant):
-        intro = "Here is the story your group wrote:"
-    else:
-        reason = participant.sync_group_removal_reason(GROUP)
-        intro = f"{ENDED_EARLY_TEXTS[reason]} Here is the story so far:"
+    # Members who leave the group are failed, so only members see this page.
+    group_id = participant.latest_sync_group(GROUP).id
     story = story_text(group_id) or "(Nobody wrote a sentence.)"
     return ModularPage(
         "rate",
-        f"{intro} {story} How much do you like the story?",
+        f"Here is the story your group wrote: {story} How much do you like the story?",
         PushButtonControl(choices=[1, 2, 3, 4, 5], arrange_vertically=False),
         time_estimate=10,
         save_answer="rating",
@@ -328,8 +287,9 @@ class Exp(psynet.experiment.Experiment):
             "player": [
                 {
                     "participant_id": p.id,
-                    # None if no group formed for the player.
-                    "group_id": p.var.get("story_group_id"),
+                    # None if no group formed for the player, who was then
+                    # failed.
+                    "group_id": getattr(p.latest_sync_group(GROUP), "id", None),
                     # Why the player left their group, or found none; None if
                     # they stayed.
                     "removal_reason": p.sync_group_removal_reason(GROUP),
@@ -344,7 +304,7 @@ class Exp(psynet.experiment.Experiment):
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
         members = _seated(bots)
-        for turn in range(N_TURNS):
+        for turn in range(N_TURNS - 1):
             writer = members[turn % GROUP_SIZE]
             assert writer.current_page_label == "write", writer.current_page_text
             if turn == 4:
@@ -359,21 +319,30 @@ class Exp(psynet.experiment.Experiment):
                 waiting = members[2].current_page_text
                 assert "The story so far: Sentence 0." in waiting, waiting
 
-        story = "Sentence 0. Sentence 1. Sentence 2. Sentence 3. Sentence 5."
-        for bot in members:
+        # The last writer goes quiet and is failed; the other two rate the story.
+        quiet, playing = members[2], members[:2]
+        quiet.allow_failure()
+        make_late_now(playing, TURN_BARRIER)  # instead of waiting LATE_AFTER
+        assert quiet.failed
+
+        story = "Sentence 0. Sentence 1. Sentence 2. Sentence 3."
+        for bot in playing:
             assert bot.current_page_label == "rate", bot.current_page_text
             assert f"your group wrote: {story} How" in bot.current_page_text
-        run_bots_to_completion(members)
+        run_bots_to_completion(playing)
 
         sentences = [f"Sentence {turn}." for turn in range(N_TURNS)]
-        sentences[4] = None
+        sentences[4] = sentences[5] = None
+        outcomes = ["stayed"] * (N_TURNS - 1) + ["late"]
         data = self.get_basic_data()
         assert [
             (row["writer_id"], row["sentence"], row["writer_outcome"])
             for row in data["turn"]
         ] == [
-            (members[turn % GROUP_SIZE].id, sentences[turn], "stayed")
+            (members[turn % GROUP_SIZE].id, sentences[turn], outcomes[turn])
             for turn in range(N_TURNS)
         ]
         assert all(row["finished"] for row in data["turn"])
-        assert [row["removal_reason"] for row in data["player"]] == [None] * 3
+        assert {
+            row["participant_id"]: row["removal_reason"] for row in data["player"]
+        } == {bot.id: "late" if bot is quiet else None for bot in members}

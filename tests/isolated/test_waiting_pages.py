@@ -8,13 +8,20 @@ import pytest
 from dallinger import db
 from flask import Flask
 from markupsafe import Markup
+from sqlalchemy import text
 
+from psynet.bot import Bot
 from psynet.experiment import Experiment, get_experiment
 from psynet.modular_page import ModularPage
 from psynet.page import WaitPage
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.sync import GroupBarrier, SimpleGrouper, waiting_status_payload
+from psynet.sync import (
+    GroupBarrier,
+    SimpleGrouper,
+    check_barriers,
+    waiting_status_payload,
+)
 from psynet.timeline import (
     CodeBlock,
     PageMaker,
@@ -228,6 +235,69 @@ def test_a_release_fails_the_unanswered_filler_trials_it_ends(
         interrupted = Response.query.filter_by(question="filler_trial").one()
         assert interrupted.trial.failed
         assert interrupted.trial.response == interrupted
+    finally:
+        exp.timeline = original
+
+
+def _bot_status(bot_id, release_poll=False):
+    """Return ``GET /participant_status`` for ``bot_id`` as JSON."""
+    app = Flask(__name__)
+    app.config["LOGIN_DISABLED"] = True
+    query = "?release_poll=1" if release_poll else ""
+    db.session.expire_all()
+    with app.test_request_context(f"/participant_status/{bot_id}{query}"):
+        return Experiment.route_participant_status(bot_id).get_json()
+
+
+@in_consents_experiment
+def test_a_waiter_busy_at_the_last_arrival_awaits_the_release(
+    in_experiment_directory, db_session, monkeypatch
+):
+    """A bot on a waiting page stops answering it while the barrier is ready to release them.
+
+    The last arrival can't lock a waiter who is mid-request, so the release
+    waits for a barrier sweep, which needs that waiter to stay idle. Its
+    release polls don't build the page's bot response.
+    """
+    monkeypatch.setattr(
+        Bot, "wait_until_experiment_launch_is_complete", lambda self: None
+    )
+    monkeypatch.setattr(Bot, "_advance_to_first_page", lambda self: None)
+    exp = get_experiment()
+    original = exp.timeline
+    bot_responses = []
+    filler = ModularPage(
+        "filler",
+        "A filler question",
+        time_estimate=5,
+        bot_response=lambda: bot_responses.append("ok") or "ok",
+    )
+    _use_timeline(exp, filler)
+    try:
+        first = Bot()
+        (last,) = _working_participants(exp, 1)
+        first.status = "working"
+        db.session.commit()
+        first_id, last_id = first.id, last.id
+        _json_timeline(exp, first)
+
+        assert not _bot_status(first_id, release_poll=True)["page"]["awaiting_release"]
+        with db.engine.connect() as conn, conn.begin():
+            conn.execute(
+                text("SELECT id FROM participant WHERE id = :id FOR UPDATE"),
+                {"id": first_id},
+            )
+            _json_timeline(exp, Participant.query.get(last_id))
+        assert _bot_status(first_id)["page"]["awaiting_release"]
+        assert len(bot_responses) == 2
+        for _ in range(3):
+            status = _bot_status(first_id, release_poll=True)
+            assert status["page"] == {"awaiting_release": True}
+        assert len(bot_responses) == 2
+        check_barriers()
+        status = _bot_status(first_id, release_poll=True)
+        assert not status["page"]["awaiting_release"]
+        assert status["page"]["bot_response"]["answer"] == "ok"
     finally:
         exp.timeline = original
 

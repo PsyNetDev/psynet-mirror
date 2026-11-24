@@ -35,13 +35,11 @@ what its game paid.
   game: the other player waits for them at the start of the game, for as
   long as the partner's 30-second result page, 10 seconds for a late answer
   to arrive and then `LATE_AFTER`, 20 seconds. The partner is
-  then late and leaves the pair, which breaks it up. The player who waited
-  goes on to a game page with no game to play, and their trial has no
-  answer and pays nothing. A page after the games tells them there are no
-  more, with their bonus.
-- The partner who was away, if they come back after that, is no longer in a
-  pair either. The loop of games stops for them, and the page after the games
-  tells them so.
+  then late and failed (`late_action="fail"`). The pair can't play a game
+  for two without them, so the player who waited is failed too
+  (`below_quorum="fail"`).
+- Failing isn't a penalty: it ends a session that can no longer
+  contribute, and both players keep what they earned in the first game.
 
 `psynet test` plays both games with two bots.
 

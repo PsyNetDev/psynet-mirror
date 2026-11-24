@@ -6,11 +6,22 @@ sees the others' contributions as they change, and can change their own
 until the round's time is up. The pot is then multiplied by 1.5 and shared
 between the members.
 
-It is the live counterpart of `public_goods`, with the same team set-up: a
-team carries on with two members if one leaves, and a member who doesn't
-come back for the next round is taken out of the team.
+It is the live counterpart of `public_goods`, with the same team set-up:
+
+- A member who doesn't come back for the next round within `LATE_AFTER`
+  seconds of reading the results is failed (`late_action="fail"`). The
+  other two carry on, sharing the pot between them.
+- When only one member remains, they are failed too (`below_quorum="fail"`),
+  because a public goods game needs others to play with. So is a
+  participant for whom no team forms within `GROUPING_WAIT` (the grouper's
+  default `max_wait_action="fail"`).
+- Failing isn't a penalty: it ends a session that can no longer
+  contribute, and failed participants are paid for the rounds they
+  completed.
 
 ## Usage
 
 Run `psynet debug local` and open the participant link in three browser
-windows. `psynet test local` plays three rounds with bots.
+windows. `psynet test local` plays the first round with three bots, then
+has one go quiet, so it is failed, while the other two play the last two
+rounds.

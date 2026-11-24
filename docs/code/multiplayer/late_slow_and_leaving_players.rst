@@ -95,6 +95,105 @@ and ``submitted`` isn't one (see :ref:`groups_below_quorum`).
 Checked by ``test_case_a_member_leaves_mid_round`` in
 ``tests/isolated/test_trial_cue_groups.py``, for both group sizes.
 
+.. _late-remaining-players:
+
+What the remaining players see when someone times out
+-----------------------------------------------------
+
+The recommended setup fails a player who times out at a group barrier
+(``late_after`` with ``late_action="fail"``). Failing removes them from all
+their groups and sends them to the end of the experiment. It isn't a
+penalty: their contribution is no longer useful, so their session ends
+promptly, and they are paid for what they completed. Their partners carry
+on where the design allows:
+
+- In a pair formed by a :class:`~psynet.sync.Regrouper` inside a cohort
+  (``within=``), the pair never dissolves. The round's barrier releases the
+  remaining player alone, ``on_release`` gets the leaver in ``left``, and the
+  round loop takes the remaining player back to the regrouper, which pairs
+  them again at the next split. The trial needs no conditional logic, as
+  in the ``ultimatum_pairing`` demo.
+- A fixed group carries on while it keeps its ``quorum``. Below it, the
+  grouper's ``below_quorum="fail"`` fails the remaining members, unless the
+  design can genuinely carry on without the group (see
+  :ref:`groups_below_quorum`).
+
+The rule for every page: after any group barrier, a partner may be gone, so
+a page that uses their input must handle that. Two places need care.
+
+**A barrier between the regrouper and the trial.** Better, don't put one
+there. The regrouper only pairs players who are waiting at it, so a pair it
+has just formed is complete, and the trial's own barrier handles anyone
+who leaves during the round. If you need one, for example a ``ready``
+barrier, skip the trial for a player whose partner has gone, with a
+``conditional`` that checks that the group still has all its members:
+
+.. code-block:: python
+
+    def pair_is_complete(participant):
+        pair = participant.active_sync_groups.get("pair")
+        return pair is not None and pair.n_active_participants == 2
+
+    join(
+        pairing,  # Regrouper("pair", within="cohort", ...)
+        GroupBarrier(id_="ready", group_type="pair",
+                     late_after=30, late_action="fail"),
+        conditional(
+            "pair_complete",
+            pair_is_complete,
+            OfferTrial.cue(),
+            InfoPage("Your partner left, so you sit this round out.",
+                     time_estimate=5),
+        ),
+    )
+
+**A barrier inside a turn-taking trial.** A responder waits at an
+``"offer_made"`` barrier for the proposer's offer. If the proposer is failed
+as late, the barrier releases the responder without an offer, so the page
+after it must handle the offer being missing. A
+:class:`~psynet.timeline.PageMaker` builds the page once the responder has
+passed the barrier:
+
+.. code-block:: python
+
+    class OfferTrial(Trial):
+        sync_group_type = "pair"
+
+        def show_trial(self, experiment, participant):
+            offer_made = GroupBarrier(id_="offer_made", group_type="pair",
+                                      late_after=30, late_action="fail")
+            if self.sync_group_role == "proposer":
+                return join(self.offer_page(), CodeBlock(self.save_offer),
+                            offer_made)
+            return join(offer_made, PageMaker(self.reply_page, time_estimate=10))
+
+        def save_offer(self, participant):
+            self.group_round.var.offer = participant.answer
+
+        def reply_page(self, participant):
+            offer = self.group_round.var.get("offer")
+            if offer is None:
+                return InfoPage("Your partner left before making an offer.",
+                                time_estimate=5)
+            return ModularPage(
+                "reply",
+                f"Your partner offers {offer} coins. Do you accept?",
+                PushButtonControl(["Accept", "Reject"]),
+                time_estimate=10,
+            )
+
+Here the pair comes from a regrouper; in a fixed pair whose grouper has
+``below_quorum="fail"``, the responder would be failed with the proposer
+instead.
+
+``late_action="leave_group"``, which lets the late player carry on without
+the group, is an advanced option for designs where that is meaningful;
+:ref:`sync-leaving-a-group` explains it, including why whether a late
+player appears in a round then depends on timing.
+
+The regrouper case is checked by the ``ultimatum_pairing`` demo's bot test,
+in which a player closes their page partway through a round.
+
 A slow reader between runs
 --------------------------
 

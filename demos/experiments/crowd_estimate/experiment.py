@@ -10,10 +10,10 @@ Each question is one cued ``EstimateTrial`` per player, in the group's round
 of that number (``round=question``). The group's trials for a question share
 a ``SyncGroupRound``, which holds the group's estimates and median; each player's estimate
 and revised estimate are their trial's answer, and ``trial.var.in_median``
-says whether the estimate counted towards the median. A player without a
-group, because none formed, their group ended or they were removed for being
-late, gets ungrouped trials, which ask only for the estimate. See
-``README.md`` for how the demo handles dropouts and time-outs.
+says whether the estimate counted towards the median. A player who is late
+is failed, and so are the players of a group that never forms or falls
+below three, because nobody plays alone. See ``README.md`` for how the demo
+handles dropouts and time-outs.
 
 The timeouts are short so that the bot test runs quickly; ``README.md``
 suggests values for a real deployment.
@@ -27,6 +27,7 @@ from psynet.bot import (
     BotDriver,
     advance_past_wait_pages,
     bots_by_sync_group,
+    make_late_now,
     run_bots_to_completion,
 )
 from psynet.group_prompt import GroupPrompt
@@ -38,7 +39,6 @@ from psynet.timeline import (
     Module,
     PageMaker,
     Timeline,
-    conditional,
     for_loop,
     join,
 )
@@ -58,8 +58,6 @@ QUESTIONS = [
     "How far is it from London to Rome, in kilometres, as the crow flies?",
 ]
 
-SOLO_TEXT = "You'll answer the questions on your own."
-
 
 def get_timeline():
     return Timeline(
@@ -73,28 +71,26 @@ def get_timeline():
             # Latecomers join until the game starts (stop_top_ups at game_starts).
             use_admission_points=False,
             top_up_wait=TOP_UP_WAIT,
-            below_quorum="continue_without_group",
+            # A median needs three estimates, so nobody plays on in a smaller
+            # group, and nobody plays alone if no group forms in the lobby
+            # (max_wait_action defaults to "fail").
+            below_quorum="fail",
             max_wait_time=LOBBY_WAIT,
-            max_wait_action="continue_without_group",
             waiting_message="Waiting for other players to join…",
         ),
-        join(
-            InfoPage(
-                "You're in a group of up to four players. For each question, "
-                "give an estimate, see your group's estimates, and then give "
-                "a revised estimate.",
-                time_estimate=10,
-            ),
-            GroupBarrier(
-                id_="game_starts",
-                group_type=GROUP,
-                late_after=LATE_AFTER,
-                late_action="leave_group",
-                stop_top_ups=True,
-            ),
-            stop_if=left_group,
+        InfoPage(
+            "You're in a group of up to four players. For each question, "
+            "give an estimate, see your group's estimates, and then give "
+            "a revised estimate.",
+            time_estimate=10,
         ),
-        conditional("solo", left_group, InfoPage(SOLO_TEXT, time_estimate=5)),
+        GroupBarrier(
+            id_="game_starts",
+            group_type=GROUP,
+            late_after=LATE_AFTER,
+            late_action="fail",
+            stop_top_ups=True,
+        ),
         Module(
             "game",
             for_loop(
@@ -109,41 +105,22 @@ def get_timeline():
     )
 
 
-def left_group(participant):
-    return not participant.in_sync_group(GROUP)
-
-
-# Why a player who left the group before it shared its median can't revise.
-# Being late shows a notice on the page; a dissolving group's
-# notice says that too few members remained.
-LEFT_BEFORE_MEDIAN_TEXTS = {
-    "late": "Your estimate didn't reach your group in time",
-    "group_dissolved": "Your group ended before you saw its median",
-    "removed_by_experimenter": "You were removed from your group before you saw its median",
-}
-
-
 class EstimateTrial(Trial):
     sync_group_type = GROUP
-    # A player without a group answers on their own.
-    sync_group_optional = True
-    # An estimate and a revised estimate; alone, only the estimate.
+    # An estimate and a revised estimate.
     time_estimate = 2 * ANSWER_SECONDS
     # The trial's answer holds both the estimate and the revised estimate.
     accumulate_answers = True
 
     def show_trial(self, experiment, participant):
-        estimate = join(self.estimate_page(), CodeBlock(self.save_estimate_timed_out))
-        if self.sync_group is None:
-            # Alone, the estimate is the whole trial.
-            return estimate
         return join(
-            estimate,
+            self.estimate_page(),
+            CodeBlock(self.save_estimate_timed_out),
             GroupBarrier(
                 id_="estimates",
                 group_type=GROUP,
                 late_after=LATE_AFTER,
-                late_action="leave_group",
+                late_action="fail",
                 on_release=self.score_round,
             ),
             # show_trial runs when the trial starts, so the page that shows the
@@ -156,13 +133,9 @@ class EstimateTrial(Trial):
         return QUESTIONS[self.definition["question"]]
 
     def estimate_page(self):
-        prompt = self.question
-        if self.sync_group is None:
-            # Also tells a member removed from the group partway through.
-            prompt = f"You're answering on your own. {prompt}"
         return ModularPage(
             "estimate",
-            prompt,
+            self.question,
             NumberControl(),
             time_limit=ANSWER_SECONDS,
             time_estimate=ANSWER_SECONDS,
@@ -223,11 +196,9 @@ class EstimateTrial(Trial):
     def _no_revision_reason(self):
         """Return why the player has nothing to revise, or ``None`` if they can revise.
 
-        The player's own outcome comes first, because a member who left the
-        group passes the barrier without waiting, before the group is scored.
+        Only players still in the group see this page: a late player is
+        failed, and so are the members of a group that ends.
         """
-        if self.sync_group_outcome != "stayed":
-            return LEFT_BEFORE_MEDIAN_TEXTS[self.sync_group_outcome]
         if self.group_round.var.get("median") is None:
             return "Too few estimates arrived for a group median"
         if self.var.estimate_timed_out:
@@ -255,22 +226,21 @@ class Exp(psynet.experiment.Experiment):
         return {
             "player_round": [
                 {
-                    # None for an answer given alone.
                     "crowd_id": t.sync_group_id,
                     "question": t.definition["question"],
                     "participant_id": t.participant_id,
                     "trial_id": t.id,
                     # "stayed" if the player was in the group when the
                     # median was shared, otherwise why they left before
-                    # that, such as "late" or "group_dissolved"; None alone.
+                    # that, such as "late" for a player failed for being late.
                     "outcome": t.sync_group_outcome,
                     # None if the player ran out of time or left first.
                     "estimate": t.answer.get("estimate"),
-                    # Whether the estimate's time limit ran out, alone or in
-                    # a group; None if the player left before answering it.
+                    # Whether the estimate's time limit ran out; None if the
+                    # player left before answering it.
                     "estimate_timed_out": t.var.get("estimate_timed_out"),
                     # Whether the estimate counted towards the group's median;
-                    # None for an answer given alone or a group without one.
+                    # None for a group without one.
                     "in_median": t.var.get("in_median"),
                     "revised": t.answer.get("revised"),
                 }
@@ -305,28 +275,36 @@ class Exp(psynet.experiment.Experiment):
             bot.take_page()
         advance_past_wait_pages(bots)
 
-        medians = [250, 1450]
-        for estimates, median in zip(
-            [[100, 200, 300, 600.5], [1000, 1400, 1500, 1600]], medians
-        ):
-            for bot, estimate in zip(bots, estimates):
-                bot.take_page(response=estimate)
-            advance_past_wait_pages(bots)
-            for bot in bots:
-                text = bot.current_page_text
-                assert f"median of your group's 4 estimates is {median}." in text, text
-                bot.take_page(response=median)
-        run_bots_to_completion(bots)
-        assert not any(bot.failed for bot in bots)
+        for bot, estimate in zip(bots, [100, 200, 300, 600.5]):
+            bot.take_page(response=estimate)
+        advance_past_wait_pages(bots)
+        for bot in bots:
+            text = bot.current_page_text
+            assert "median of your group's 4 estimates is 250." in text, text
+            bot.take_page(response=250)
+
+        # The fourth player goes quiet on the second question, so the barrier
+        # fails them as late, and the other three share a median without them.
+        quiet, players = bots[3], bots[:3]
+        quiet.allow_failure()
+        for bot, estimate in zip(players, [1000, 1400, 1500]):
+            bot.take_page(response=estimate)
+        make_late_now(players, "estimates")
+        assert quiet.failed
+        for bot in players:
+            text = bot.current_page_text
+            assert "median of your group's 3 estimates is 1400." in text, text
+            bot.take_page(response=1400)
+        run_bots_to_completion(players)
+        assert not any(bot.failed for bot in players)
 
         data = self.get_basic_data()
-        assert [c["median"] for c in data["crowd_round"]] == medians, data
+        assert [c["median"] for c in data["crowd_round"]] == [250, 1400], data
         rows = data["player_round"]
         assert len(rows) == 8, rows
+        late = [(r["participant_id"], r["question"], r["outcome"]) for r in rows]
+        assert [r for r in late if r[2] != "stayed"] == [(quiet.id, 1, "late")], late
         for r in rows:
-            assert (r["outcome"], r["estimate_timed_out"], r["in_median"]) == (
-                "stayed",
-                False,
-                True,
-            ), r
-            assert r["revised"] == medians[r["question"]], r
+            if r["outcome"] == "stayed":
+                assert (r["estimate_timed_out"], r["in_median"]) == (False, True), r
+                assert r["revised"] == [250, 1400][r["question"]], r

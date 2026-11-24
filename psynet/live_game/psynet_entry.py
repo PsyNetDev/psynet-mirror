@@ -26,6 +26,7 @@ seconds since the game started, which these wrappers convert to. The entry's
 import contextvars
 
 from dallinger.realtime import Reject
+from dallinger.realtime.game import FAILED, FINISHED  # noqa: F401 (re-exported)
 
 from .messages import LiveMessage, _parse_message
 from .record import _game_time
@@ -71,7 +72,7 @@ class PlayerReady(LiveMessage):
 
 # Documented in docs/reference/api/live_game.rst, since Sphinx doesn't
 # read a comment on a re-exported constant.
-NOT_STARTED = "The game hasn't started yet."
+NOT_STARTED_MESSAGE = "The game hasn't started yet."
 
 _TIME_UP = "The game's time is up."
 
@@ -123,7 +124,7 @@ def _apply_once_started(self, method, outermost, state, player_id, message, now,
             _record_event(entry, now)
         return None
     if entry["started_at"] is None:
-        raise Reject(NOT_STARTED)
+        raise Reject(NOT_STARTED_MESSAGE)
     game_now = _game_time(entry["started_at"], now) if outermost else now
     end = _game_end(entry)
     if end is not None and game_now >= end:
