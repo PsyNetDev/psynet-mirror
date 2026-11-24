@@ -40,9 +40,6 @@ what its game paid.
   (`below_quorum="fail"`).
 - Failing isn't a penalty: it ends a session that can no longer
   contribute, and both players keep what they earned in the first game.
-- A player the experimenter removes on the dashboard plays no more games,
-  and a page after the games tells them they were removed, with their
-  bonus.
 
 `psynet test` plays both games with two bots.
 

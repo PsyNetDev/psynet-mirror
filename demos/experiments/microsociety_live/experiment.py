@@ -412,8 +412,8 @@ def _answer(lake):
 
 def lake_is_open(participant: Participant) -> bool:
     """Return whether the participant's society is fishing on its lake now."""
-    society = participant.active_sync_groups.get("society")
-    return society is not None and "fishing" in society.running_live_games
+    society = participant.active_sync_groups["society"]
+    return "fishing" in society.running_live_games
 
 
 def history_page(participant: Participant):

@@ -134,9 +134,6 @@ def get_timeline():
                     "so the game ended early for you.",
                     time_estimate=5,
                 ),
-                "removed_by_experimenter": InfoPage(
-                    "You were removed from the game.", time_estimate=5
-                ),
                 "not_admitted": InfoPage(
                     "Your group's game closed to new players before the next "
                     "round, so there is no game for you.",
@@ -189,11 +186,9 @@ def game_over_reason(participant):
         return "played_all_rounds"
     if pairing.rounds_sat_out(participant) >= MAX_SIT_OUTS:
         return "sat_out_too_often"
-    # The experimenter can remove a player from the cohort on the dashboard,
-    # and a latecomer is turned away if the cohort closes before pairing them.
-    reason = participant.sync_group_removal_reason(COHORT)
-    if reason in ("removed_by_experimenter", "not_admitted"):
-        return reason
+    # A latecomer is turned away if the cohort closes before pairing them.
+    if participant.sync_group_removal_reason(COHORT) == "not_admitted":
+        return "not_admitted"
     cohort = cohort_of(participant)
     if cohort is None or cohort.n_active_participants < 2:
         return "too_few_players"
@@ -251,7 +246,6 @@ pairing = PairingRegrouper(
 )
 
 OUTCOME_TEXTS = {
-    "removed_by_experimenter": "You were removed from your pair, so you got no coins this round.",
     "own_time_out": "You ran out of time, so nobody was paid.",
     "partner_away": "Your partner was away for too long, so nobody was paid.",
     "partner_left": "Your partner left, so nobody was paid.",
@@ -354,9 +348,6 @@ class OfferTrial(Trial):
 
     def outcome(self):
         """Return the key in ``OUTCOME_TEXTS`` that describes the round for this player."""
-        # From the dashboard; the round may not have been scored yet.
-        if self.sync_group_outcome == "removed_by_experimenter":
-            return "removed_by_experimenter"
         if self.group_round.var.result == "timed_out" and self.answer is None:
             return "own_time_out"
         return self.group_round.var.result
@@ -434,9 +425,8 @@ class Exp(psynet.experiment.Experiment):
                     # decision is then the answer so far.
                     "complete": t.complete,
                     # "stayed" if the player was in the group when the round
-                    # was scored; otherwise "late" if they were failed
-                    # before that for being away, or "removed_by_experimenter" if the
-                    # experimenter removed them on the dashboard.
+                    # was scored; otherwise why they were failed before
+                    # that, such as "late" for being away.
                     "outcome": t.sync_group_outcome,
                     # None if the player was away and never sent a decision.
                     "decision": t.answer,

@@ -292,11 +292,7 @@ def food_text(n):
 
 
 def show_result(participant):
-    # None if the group started no game, which only happens to a player the
-    # experimenter removed from the group before it.
     answer = participant.live_games["snake"].answer
-    if answer is None:
-        return InfoPage("Your group couldn't play the game.", time_estimate=5)
     food = answer["score"]
     crashes = answer["crashes"]
     if not answer["finished"]:

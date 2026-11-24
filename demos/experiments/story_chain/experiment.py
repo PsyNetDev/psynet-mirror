@@ -86,17 +86,10 @@ def get_timeline():
                 iterate_over=range(N_TURNS),
                 logic=lambda turn: StoryTurn.cue(turn_definition, round=turn),
                 time_estimate_per_iteration=StoryTurn.time_estimate,
-                # Only the experimenter's removal on the dashboard leaves a
-                # member without a group and still playing.
-                stop_if=lambda participant: not in_group(participant),
             ),
         ),
         PageMaker(final_page, time_estimate=10),
     )
-
-
-def in_group(participant: Participant) -> bool:
-    return participant.in_sync_group(GROUP)
 
 
 def choose_writer(group, turn: int) -> int:
@@ -187,27 +180,20 @@ class StoryTurn(Trial):
         )
 
     def save_sentence(self, participant):
-        """Store the writer's sentence on the turn's round, if the turn is still theirs.
-
-        A writer the experimenter removed from the group stores nothing,
-        because the others have finished the turn without them. The sentence
-        is ``None`` if they ran out of time.
-        """
-        if in_group(participant):
-            self.group_round.var.sentence = participant.answer
+        """Store the writer's sentence on the turn's round; ``None`` if they ran out of time."""
+        self.group_round.var.sentence = participant.answer
 
     def on_finalized(self):
         """Store ``None`` as the sentence if the turn ended without one.
 
-        That happens when the writer was failed, for example for being late,
-        or was removed from the group.
+        That happens when the writer was failed, for example for being late.
         """
         super().on_finalized()
         if not self.group_round.var.has("sentence"):
             self.group_round.var.sentence = None
 
     def show_feedback(self, experiment, participant):
-        if self.time_limit_reached and self.sync_group_outcome == "stayed":
+        if self.time_limit_reached:
             # Moves on by itself, so a writer who has stepped away still
             # reaches the next turn in time and isn't removed as late.
             return InfoPage(
@@ -236,19 +222,12 @@ def waiting_for_writer(participant, trial):
 
 
 def final_page(participant: Participant):
+    # Members who leave the group are failed, so only members see this page.
     group_id = participant.latest_sync_group(GROUP).id
-    turns = group_turns(group_id)
-    finished = len(turns) == N_TURNS and all(t.var.has("sentence") for t in turns)
-    if finished or in_group(participant):
-        intro = "Here is the story your group wrote:"
-    else:
-        # The experimenter removed them on the dashboard; members who leave
-        # otherwise are failed and don't see this page.
-        intro = "You were removed from your group. Here is the story so far:"
     story = story_text(group_id) or "(Nobody wrote a sentence.)"
     return ModularPage(
         "rate",
-        f"{intro} {story} How much do you like the story?",
+        f"Here is the story your group wrote: {story} How much do you like the story?",
         PushButtonControl(choices=[1, 2, 3, 4, 5], arrange_vertically=False),
         time_estimate=10,
         save_answer="rating",

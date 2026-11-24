@@ -200,9 +200,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   members of a group that falls below its quorum, because nobody can give
   a group median alone. A cue by a player without a group raises, unless
   the trial class sets `sync_group_optional = True` (advanced).
-- Where players can be left without a group and still playing, such as
-  after an experimenter's removal on the dashboard, or a newcomer turned
-  away (`"not_admitted"`), branch on `participant.in_sync_group(group_type)`
+- Where players can be left without a group and still playing, such as a
+  newcomer turned away (`"not_admitted"`), branch on `participant.in_sync_group(group_type)`
   wherever the timeline needs a group: stop a rounds loop with it in the
   `while_loop` condition or a `for_loop`'s `stop_if`. With the advanced
   `"continue_without_group"` setups, give a synchronized trial maker a solo
@@ -230,12 +229,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `not participant.in_sync_group("pair")`; `stop_if` never cuts a started
   iteration short. Follow the
   loop with a `conditional` on the same function for what a member who
-  left does instead, such as a page that explains why.
-  `public_goods` stops its `round=i` loop with `stop_if` for a player the
-  experimenter removed, in a team game that plays on with fewer members,
-  down to its quorum, and then fails the last member
-  (`below_quorum="fail"`). A started cued trial runs to its end, where
-  `score_answer` reads its `sync_group_outcome`.
+  left does instead, such as a page that explains why. A game that fails
+  every member who leaves, such as `public_goods`, a team game that plays
+  on with fewer members down to its quorum and then fails the last member
+  (`below_quorum="fail"`), needs neither.
 - In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;
   a player failed for being late goes to the end of the experiment. The
@@ -416,7 +413,7 @@ with a group. List the cases and your decisions in the experiment's README.
 | Is left in a group below quorum | reason `"group_dissolved"`, from the grouper's `below_quorum` | Make enough members drop out or late |
 | Returns the study | reason `"left_experiment"` | `bot.drop_out()` |
 | Is failed by the experiment | reason `"left_experiment"` | `bot.allow_failure()`, then `bot.fail("reason")` |
-| Is removed on the dashboard | reason `"removed_by_experimenter"` | `group.remove_participant(participant, reason="removed_by_experimenter")` |
+| Is failed on the dashboard's Sync groups tab | reason `"left_experiment"`; failure tag `"manual_failure"` | `bot.allow_failure()`, then `bot.fail("manual_failure")` |
 | Arrives when no group can form (grouper `max_wait_action="continue_without_group"`; the default fails them) | reason `"no_group_formed"` | Send fewer bots than a group needs, even a short one with `quorum` or `start_short_after`, and wait out the grouper's `max_wait_time` |
 | Sits a round out at a `Regrouper` | not in a group; `regrouper.sat_out(participant)` | An odd number of bots with `left_over="sit_out"` |
 | Joins but is never admitted (`use_admission_points=True`) | reason `"not_admitted"`, from `newcomer_max_wait`, top-ups stopping or the group ending | Send a bot in while the group plays, then end the group or stop its top-ups |
@@ -427,29 +424,15 @@ releases the group. A failed player's final page already explains why
 PsyNet ended their session, for example "You took too long to reach the
 next step, so we ended your session."
 
-Pay by `self.sync_group_outcome` in `score_answer`, tell the others who
-left from `on_release`'s `left` argument, and give the players who are left
-without a group and still playing a page that explains why the game ended,
-as in `public_goods`. With `late_action="fail"` and `below_quorum="fail"`,
-that is a player the experimenter removes on the dashboard, which can happen
-in any game:
-
-```python
-def removed_from_team(participant):
-    return not participant.in_sync_group("team")
-
-def removed_page(participant):
-    return InfoPage(
-        f"You were removed from the game. "
-        f"Your bonus is ${participant.performance_reward:.2f}.",
-        time_estimate=5,
-    )
-```
-
-With the advanced `"leave_group"` or `"continue_without_group"` options,
-map every reason your game can meet (such as `"late"` or
-`"group_dissolved"`) to its own text, and test that a player who comes back
-after being removed sees it.
+Tell the others who left from `on_release`'s `left` argument, as in
+`public_goods`. With `late_action="fail"` and `below_quorum="fail"`, every
+member who leaves is failed, including one the experimenter fails on the
+dashboard, so `score_answer` runs only for players who finished the round
+and no page needs to handle a player without a group. With the advanced
+`"leave_group"` or `"continue_without_group"` options, pay by
+`self.sync_group_outcome` in `score_answer`, map every reason your game
+can meet (such as `"late"` or `"group_dissolved"`) to its own text, and
+test that a player who comes back after being removed sees it.
 
 Read `references/test-dropouts.md` for a worked dropout test with a quitter and a
 silent member, and for how long to wait out timeouts in bot tests.
