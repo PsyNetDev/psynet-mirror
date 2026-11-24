@@ -123,7 +123,8 @@ def test_a_page_can_refuse_a_response_for_now_before_reading_it(monkeypatch):
                 "retry_after": 2,
             },
         ),
-        # Nor is one from a page the server has moved past: the page reloads.
+        # Nor is one from a page the server has moved past: the browser shows
+        # its message, or reloads if the answer was sent in the background.
         (
             {"message": "Stale.", "stale_page": True},
             {
