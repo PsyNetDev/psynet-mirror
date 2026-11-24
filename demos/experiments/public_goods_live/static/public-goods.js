@@ -57,11 +57,17 @@ export function activate({root, vars, psynet}) {
         )
       )
     );
-    let total = contributions.reduce((a, b) => a + b, 0);
-    let share = (rules.multiplier * total) / (contributions.length - noShows.length);
+    // As the game's outcome counts them: no-shows have no part in the pot.
+    let total = contributions
+      .filter((tokens, player) => !noShows.includes(player))
+      .reduce((a, b) => a + b, 0);
+    let nPlayers = contributions.length - noShows.length;
+    let share = nPlayers > 0 ? (rules.multiplier * total) / nPlayers : 0;
     pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
     let shareText = +share.toFixed(2);
-    let earned = +(rules.endowment - mine + share).toFixed(2);
+    let earned = noShows.includes(live.player)
+      ? 0
+      : +(rules.endowment - mine + share).toFixed(2);
     instructions.hidden = live.ended;
     earn.textContent = live.ended
       ? `Each player gets ${shareText} tokens from the pot, and you earn ${earned} tokens.`

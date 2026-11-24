@@ -65,8 +65,9 @@ class PlayerReady(LiveMessage):
         """Mark the player ready, and start the game once every player
         is."""
         entry = _psynet_entry(state)
-        if player not in entry["ready"]:
-            entry["ready"].append(player)
+        if player in entry["ready"]:
+            return
+        entry["ready"].append(player)
         if entry["started_at"] is not None and player in entry["away"]:
             # The game started without them, which made them away, but only
             # an open page sends it.

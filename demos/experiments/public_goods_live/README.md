@@ -16,7 +16,13 @@ It is the live counterpart of `public_goods`, with the same team set-up:
   page as the round began. The round starts without them, and the others'
   pages show them as not here. Unless they arrive in time to play, they
   don't share the pot, aren't paid for the round, and are failed once the
-  round ends (`absent_action="fail"`).
+  round ends (`absent_action="fail"`). The export's `arrived` column is
+  `False` for them.
+- A member who closes the game page during a round, or never opens it, is
+  gone once they have been away for `AWAY_SECONDS`, 10 seconds (the game's
+  `away_timeout`). If fewer than two members are left, the round ends early
+  with nothing in the pot, rather than being played alone, and each member
+  who played it keeps their 10 tokens.
 - When only one member remains, they are failed too (`below_quorum="fail"`),
   because a public goods game needs others to play with. So is a
   participant for whom no team forms within `GROUPING_WAIT` (the grouper's

@@ -2321,6 +2321,35 @@ def test_a_deadline_due_by_the_ready_timeout_runs_when_the_game_starts(relay):
     assert json.loads(ended.saved)["state"]["ticks"] == [0]
 
 
+def test_a_no_show_s_away_deadline_runs_unless_their_ready_message_comes(relay):
+    class Pair(type(relay)):
+        name = "pair_waiting_for_a_no_show"
+        min_players = 2
+        away_timeout = 30
+
+        def next_deadline(self, state):
+            return None
+
+    game = Pair()
+    entries = [
+        _session_entry("join", 0, "1"),
+        _session_entry("message", 1, "1", READY),
+        # Player 2's page opens just before the start, and sends its ready
+        # message just after.
+        _session_entry("join", 9, "2"),
+    ]
+    started = run_pass(game, new_session(game, ["1", "2"]), entries, 10, CLOCK)
+    ready = [_session_entry("message", 11, "2", READY)]
+    arrived = run_pass(game, started.saved, ready, 12, CLOCK)
+    ended = run_pass(game, started.saved, [], 40, CLOCK)
+
+    assert started.next_due == 40
+    entry = json.loads(arrived.saved)["state"]["psynet"]
+    assert (entry["away"], entry["away_since"]) == ([], [None, None])
+    assert arrived.next_due == 10 + Pair.timeout
+    assert ended.ended["reason"] == PLAYERS_LEFT
+
+
 def test_a_game_s_state_can_be_passed_by_keyword(relay):
     state = relay.initial_state(["1"])
     start_game(relay, state)
