@@ -187,8 +187,10 @@ This is the preferred approach for agents when verifying CI status or logs.
 CI minutes are limited. A merge request targeting `master` runs the full
 pipeline on every push, so push work in progress with
 `git push -o ci.skip`, which starts no pipeline, and rely on local tests
-until the branch is ready. Then push normally, or run a pipeline for the
-branch, once before asking for review or merging.
+until the branch is ready. Opening the merge request still starts one, so
+cancel it (`POST .../pipelines/<pipeline_id>/cancel`) unless you want that
+run. Then push normally, or run a pipeline for the branch, once before
+asking for review or merging.
 
 Merge requests stacked on another branch (target branch neither `master` nor
 a `release-` branch) run only the fast checks; the pytest, Playwright, `docs`
