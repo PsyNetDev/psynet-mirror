@@ -4500,6 +4500,52 @@ def test_last_arrival_post_does_not_skip_partner_cursors(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_reloaded_hold_hides_the_empty_page_but_not_the_indicator(
+    in_experiment_directory, db_session, deployment_info, monkeypatch
+):
+    """A full render of a hold has no page to keep, so it hides the empty card."""
+    from importlib import resources
+
+    from dallinger.experiment_server.experiment_server import app
+    from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
+
+    # Deployments copy PsyNet's templates next to Dallinger's; tests don't.
+    layout = (
+        "<html>{% block head %}{% endblock %}{% block body %}{% endblock %}"
+        "{% block scripts %}{% endblock %}</html>"
+    )
+    loader = ChoiceLoader(
+        [
+            FileSystemLoader(str(resources.files("psynet") / "templates")),
+            DictLoader({"base/layout.html": layout}),
+            app.jinja_loader,
+        ]
+    )
+    monkeypatch.setattr(app, "jinja_loader", loader)
+    monkeypatch.setattr(app.jinja_env, "loader", loader)
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = _stacked_partner_timeline(f"reload_{uuid.uuid4().hex[:8]}")
+    try:
+        (participant,) = _working_participants(exp, 1)
+        with app.test_request_context(
+            f"/timeline?unique_id={participant.unique_id}",
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        ):
+            html = Experiment._route_timeline(exp, participant, mode=None)
+        html = html if isinstance(html, str) else html.get_data(as_text=True)
+        indicator = html.index('id="psynet-timeline-hold-indicator"')
+        main_body = html.index('id="main-body"')
+        assert "Waiting for your partner" in html[indicator:main_body]
+        assert "#main-body:has(> .psynet-hold-without-page)" in html
+        assert html.index('class="psynet-hold-without-page"') > main_body
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_last_arrival_catchup_hold_stays_silent(
     in_experiment_directory, db_session, monkeypatch
 ):
