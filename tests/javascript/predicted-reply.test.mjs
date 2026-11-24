@@ -239,3 +239,33 @@ describe("finalizePageReady", () => {
     assert.equal(updated, true);
   });
 });
+
+describe("showPageModuleTrial", () => {
+  const run = async (abort) => {
+    const failures = [];
+    const psynet = {
+      pageModuleGeneration: 1,
+      updateController: null,
+      handleTimelineTransitionFailure: (error) => failures.push(error.message),
+      async updatePageModules() {
+        const controller = new AbortController();
+        psynet.updateController = controller;
+        await null;
+        if (abort) controller.abort();
+        throw new Error("The sound couldn't load.");
+      },
+    };
+    new Function("psynet", extract(/psynet\.showPageModuleTrial = function[\s\S]*?\n    \};/))(psynet);
+    psynet.showPageModuleTrial(0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return failures;
+  };
+
+  it("asks the participant to reload when update() fails", async () => {
+    assert.deepEqual(await run(false), ["The sound couldn't load."]);
+  });
+
+  it("ignores an update() that a newer one replaced", async () => {
+    assert.deepEqual(await run(true), []);
+  });
+});
