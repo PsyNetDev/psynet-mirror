@@ -264,13 +264,13 @@ For this to work:
 - The trial maker picks all the trials' nodes when the participant reaches
   it, before any is answered, so ``custom_node_filter`` and ``select_node``
   can't adapt to the participant's answers.
-- Pages with a ``time_limit``, background recording, ``media`` or a full page
-  reload work, but aren't shown in advance, because PsyNet sets these up for
-  each page; their files are still downloaded early. Each such trial waits
-  for the server. Pages with a ``time_limit``, background recording or a
-  full page reload also replace the last one, so their module starts afresh
-  for each trial; pages with ``media`` stay on screen if their media are the
-  same as the last trial's.
+- Pages with a ``time_limit`` or background recording work, but PsyNet sets
+  these up for each page, so such a page isn't shown in advance and replaces
+  the last one: the module starts afresh for each trial.
+- A ``JSPage`` doesn't need the page's ``media``. Put the files' URLs in
+  ``contents`` and load them with ``psynet.media.loadAudio`` or
+  ``new Image()``, as above, so that the page can stay on screen and show
+  trials in advance.
 - The browser doesn't run ahead after a trial whose class overrides
   :meth:`~psynet.trial.main.Trial.show_feedback`, even if it sometimes
   returns ``None``, as whether it does depends on the answer.
