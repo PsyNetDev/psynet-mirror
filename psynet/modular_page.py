@@ -2479,19 +2479,19 @@ class ModularPage(Page):
             or self.control._may_reject_answers()
         )
 
-    def _shows_the_same_to_everyone(self):
-        # A chat shows the group's messages, and participant page
-        # configuration can show anything stored for the participant.
-        return (
-            super()._shows_the_same_to_everyone()
-            and self.chatroom is None
-            and all(
+    def _cannot_be_rendered_early_because(self):
+        reasons = {
+            "it shows a chat, whose messages may change": self.chatroom is not None,
+            "a component sets participant page configuration, which may change": any(
                 type(component).get_participant_page_config
-                is JavaScriptContributor.get_participant_page_config
-                and type(component).get_participant_js_vars
-                is JavaScriptContributor.get_participant_js_vars
+                is not JavaScriptContributor.get_participant_page_config
+                or type(component).get_participant_js_vars
+                is not JavaScriptContributor.get_participant_js_vars
                 for _, component in self._iter_layout_components()
-            )
+            ),
+        }
+        return super()._cannot_be_rendered_early_because() or next(
+            (reason for reason, found in reasons.items() if found), None
         )
 
     def _reject_impossible_answer(self, answer):
