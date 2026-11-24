@@ -52,8 +52,8 @@ RESULT_SECONDS = 30
 # Seconds a partner can keep the other waiting for the next game, besides the
 # result page, whose time limit the wait allows for.
 LATE_AFTER = 20
-# A page opens within seconds, so a game starts without a partner who hasn't
-# opened it this long after the pair reached it.
+# A page opens within seconds, so a partner who hasn't opened the game this
+# long after the pair reached it isn't coming, and the game ends unplayed.
 READY_SECONDS = 20
 
 
@@ -118,10 +118,12 @@ class RockPaperScissors(LiveGame):
     name = "rock_paper_scissors"
     messages = [Choose]
     min_players = max_players = 2
+    # A game for two can't start without both players, so PsyNet ends it at
+    # once, with the reason TOO_FEW_READY, if a partner hasn't opened it by
+    # then.
     ready_timeout = READY_SECONDS
-    # A player whose partner closes the page for good, or never opens it,
-    # isn't left waiting: the game ends 30 seconds later, which allows for a
-    # reload.
+    # A player whose partner closes the page for good isn't left waiting: the
+    # game ends 30 seconds later, which allows for a reload.
     away_timeout = 30
     # A game takes a minute or two, so this ends it within five minutes even
     # if both players stop choosing.
@@ -242,8 +244,8 @@ def rock_paper_scissors_page(game):
             id="rps-game",
         ),
         player_left_message=(
-            "Your partner isn't on the game page. If they don't open it "
-            f"within {RockPaperScissors.away_timeout} seconds, the game will end."
+            "Your partner has left the game. If they don't come back "
+            f"within {RockPaperScissors.away_timeout} seconds, it will end."
         ),
         no_game_message="This game can't be played without your partner.",
         waiting_status="Waiting for your partner to open the game",

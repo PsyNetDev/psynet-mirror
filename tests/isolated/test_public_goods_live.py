@@ -7,6 +7,7 @@ import pytest
 from dallinger.realtime import Reject
 
 from psynet.experiment import import_local_experiment
+from psynet.live_game import TOO_FEW_READY
 from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
 
@@ -97,10 +98,10 @@ class TestPublicGoodsLive:
     ):
         game = self._started_without(demo, [1, 2])
 
-        assert game.is_over() and game.end_reason() == demo.TOO_FEW
+        assert game.is_over() and game.end_reason() == TOO_FEW_READY
         assert game.view(0)["payoffs"] == [demo.SETTINGS["endowment"], 0, 0]
         assert self._export_row(demo, game, 0) == {
-            "end_reason": demo.TOO_FEW,
+            "end_reason": TOO_FEW_READY,
             "arrived": True,
             "contributed": 0,
             "pot": None,
@@ -108,6 +109,9 @@ class TestPublicGoodsLive:
             "share": None,
             "earned": demo.SETTINGS["endowment"],
         }
+        nobody = self._started_without(demo, [0, 1, 2])
+        assert nobody.end_reason() == TOO_FEW_READY
+        assert self._export_row(demo, nobody, 0)["pot"] is None
 
     def test_a_contribution_is_between_none_and_the_endowment(self, demo):
         game = LocalGame(demo.PublicGoods, players=3, settings=demo.SETTINGS)

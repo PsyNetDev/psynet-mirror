@@ -29,6 +29,7 @@ import psynet.experiment
 from psynet.bot import Bot
 from psynet.live_game import (
     PLAYERS_LEFT,
+    TOO_FEW_READY,
     LiveGame,
     LiveGamePage,
     LiveMessage,
@@ -59,10 +60,9 @@ COIN_VALUE = 0.05
 # Bots open with a proposal that gives their partner this many coins, and
 # accept any proposal that gives them at least as many.
 BOT_GIVES = 4
-# The game's own end reasons. PsyNet's, such as "finished" when the time runs
+# The game's own end reason. PsyNet's, such as "finished" when the time runs
 # out and PLAYERS_LEFT, come first.
 DEAL = "deal"
-NO_SHOW = "no_show"
 
 
 class Propose(LiveMessage):
@@ -105,8 +105,9 @@ class Bargain(LiveGame):
     min_players = max_players = 2
     duration = BARGAIN_SECONDS
     # A player who hasn't opened the game by then, for example because they
-    # closed their page as the pair formed, isn't coming, so the game starts
-    # and ends at once, without a deal.
+    # closed their page as the pair formed, isn't coming. A game for two
+    # can't start without them, so PsyNet ends it at once, without a deal,
+    # with the reason TOO_FEW_READY.
     ready_timeout = LATE_AFTER
     # A player away from the game for this long has left it, which ends it.
     away_timeout = LATE_AFTER
@@ -119,22 +120,16 @@ class Bargain(LiveGame):
             "n_proposals": 0,
             "deal": None,
             "deal_at": None,
-            # The players who hadn't opened the game when it started.
-            "no_shows": [],
         }
 
-    def on_start(self, state):
-        state["no_shows"] = self._absent(state, "no_show")
-
     def view(self, state, player):
-        # Read again, as in outcome, for the final view of a game that
-        # nobody opened. The page shows it only once the game has ended.
         return {
             "stake": state["stake"],
             "mine": state["offers"][player],
             "theirs": state["offers"][1 - player],
             "deal": None if state["deal"] is None else state["deal"][player],
-            # Who didn't arrive, if anyone: "you" or "partner".
+            # Who didn't arrive, if anyone: "you" or "partner". The page shows
+            # it only once the game, which then never started, has ended.
             "no_show": _you_or_partner(player, self._absent(state, "no_show")),
             # Who left the game for good, which ended it, if anyone. A player
             # whose page was only briefly away, as for a reload, hasn't.
@@ -150,18 +145,17 @@ class Bargain(LiveGame):
         ]
 
     def is_over(self, state):
-        return state["deal"] is not None or bool(state["no_shows"])
+        return state["deal"] is not None
 
     def end_reason(self, state):
-        return DEAL if state["deal"] is not None else NO_SHOW
+        return DEAL
 
     def outcome(self, state, reason):
         return {
             "deal": state["deal"],
             "deal_at": state["deal_at"],
             "n_proposals": state["n_proposals"],
-            # Read again here, since a game that nobody opened ends without
-            # starting.
+            # The players who didn't open the game in time.
             "no_shows": self._absent(state, "no_show"),
         }
 
@@ -203,9 +197,9 @@ def _player_round_row(trial):
         "participant_id": trial.participant_id,
         "trial_id": trial.id,
         "round": trial.position,
-        # How the game ended: DEAL, NO_SHOW, or PsyNet's PLAYERS_LEFT,
-        # "finished" when the time ran out or "not_joined" when neither
-        # player opened it. None without a game.
+        # How the game ended: DEAL, or PsyNet's TOO_FEW_READY when a player
+        # didn't open it in time, PLAYERS_LEFT, or "finished" when the time
+        # ran out. None without a game.
         "end_reason": game.end_reason,
         # For a game that a player didn't open in time, arrived and
         # partner_arrived say who didn't.
@@ -333,7 +327,7 @@ class BargainTrial(Trial):
         # A player who didn't arrive, or left the game, has been failed, so
         # only their partner sees this page.
         reason = self.live_game.end_reason
-        if self.answer is None or not self.answer["partner_arrived"]:
+        if self.answer is None or reason == TOO_FEW_READY:
             text = "Your partner didn't arrive, so there was no game this round."
         elif reason == DEAL:
             mine = self.coins()
