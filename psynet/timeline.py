@@ -1593,7 +1593,6 @@ class Page(Elt):
     # Likewise the progress it will show.
     _progress = None
     _rendered_in_advance = False
-    _full_page_layout_key = None
 
     def __init__(
         self,
@@ -1966,11 +1965,11 @@ class Page(Elt):
         """
         return _earliest_event_time(self.events, "submitEnable")
 
-    def __json__(self, participant):
-        return {
-            "attributes": self.attributes(participant),
-            "contents": self.contents,
-        }
+    def __json__(self, participant, layout_key=None):
+        attributes = self.attributes(participant)
+        if layout_key is not None:
+            attributes["layout_key"] = layout_key
+        return {"attributes": attributes, "contents": self.contents}
 
     def attributes(self, participant):
         """
@@ -2001,8 +2000,6 @@ class Page(Elt):
         }
         if self.upcoming_media:
             attributes["upcoming_media"] = self.upcoming_media
-        if self._full_page_layout_key is not None:
-            attributes["layout_key"] = self._full_page_layout_key
         arrival_updates = _arrival_updates_for(self, participant)
         if arrival_updates is not None:
             attributes["arrival_updates"] = arrival_updates
@@ -2464,12 +2461,16 @@ class Page(Elt):
             raise NotImplementedError(
                 f"{type(self).__name__} delegates rendering and must override render()."
             )
+        full_page_layout_key = None
         if not partial_mode and (
-            self.upcoming_pages is not None or self._shows_trials_itself()
+            self.upcoming_pages is not None
+            or (self._shows_trials_itself() and self._not_swappable_because() is None)
         ):
             # Fragments carry their key beside the HTML; a full page needs a
-            # partial render to compute the same key.
-            self._full_page_layout_key = self.layout_key(
+            # partial render to compute the same key. It is passed to the
+            # template rather than stored, as timeline pages are shared by all
+            # participants.
+            full_page_layout_key = self.layout_key(
                 self.render(experiment, participant, partial_mode=True),
                 experiment,
                 participant,
@@ -2535,6 +2536,7 @@ class Page(Elt):
             "page_config": page_config,
             "page_state": page_state,
             "page": self,
+            "full_page_layout_key": full_page_layout_key,
             "initial_download_progress": self.initial_download_progress,
             "time_reward": "%.2f" % participant.time_reward,
             "performance_reward": "%.2f" % participant.performance_reward,
@@ -2934,7 +2936,8 @@ class Page(Elt):
     def _previous_page_payload(self, experiment, participant):
         """The page before this one, rendered for the Back button with the page UUID it will have."""
         previous = experiment.timeline._page_to_go_back_to(participant, self)
-        if previous is None:
+        if previous is None or not previous.render_in_advance:
+            # Without a page rendered in advance, Back asks the server.
             return None
         # Timeline pages are shared by all participants.
         previous = copy.copy(previous)
@@ -2970,8 +2973,7 @@ class Page(Elt):
         with the page before them.
         """
         return (
-            self.render_in_advance
-            and self._not_swappable_because() is None
+            self._not_swappable_because() is None
             and type(self).consume is Page.consume
             and self.template_kind != "delegated"
         )

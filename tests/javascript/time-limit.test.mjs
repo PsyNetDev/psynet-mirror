@@ -5,6 +5,12 @@ import { activate } from "../../psynet/static/scripts/time-limit.js";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+// The server sends the settings in the page state (Page.time_limit).
+function start(root, timeLimit, psynet) {
+  psynet.pageState = { ...psynet.pageState, timeLimit };
+  return activate({ root, config: {}, psynet });
+}
+
 beforeEach(() => {
   globalThis.document = { dispatchEvent: () => true };
 });
@@ -21,12 +27,12 @@ it("counts down from when the page arrived, not from when the script ran", async
     nextPage: (rawAnswer, metadata) => submissions.push(metadata),
   };
 
-  const deactivate = activate({ root, config: { timeLimit: { secondsLeft: 10 } }, psynet });
+  const deactivate = start(root, { secondsLeft: 10 }, psynet);
   assert.equal(label.textContent, 7);
   deactivate();
 
   psynet.pageReceivedAt = Date.now() - 10000;
-  activate({ root, config: { timeLimit: { secondsLeft: 10 } }, psynet });
+  start(root, { secondsLeft: 10 }, psynet);
   assert.equal(label.textContent, 1);
   await flush();
   assert.deepEqual(submissions, [{ time_limit_reached: true }]);
@@ -53,12 +59,12 @@ it("announces the time-out and can submit the current answer", async () => {
   };
   const config = { timeLimit: { secondsLeft: 10, currentAnswer: true } };
 
-  activate({ root, config, psynet });
+  start(root, config.timeLimit, psynet);
   await flush();
   assert.deepEqual(submissions, [["partial", { time_limit_reached: true }]]);
 
   psynet.getRetrieveResponseHandler = () => () => ({ rawAnswer: "typed" });
-  activate({ root, config, psynet });
+  start(root, config.timeLimit, psynet);
   await flush();
   assert.equal(submissions[1][0], "typed");
 
@@ -70,7 +76,7 @@ it("announces the time-out and can submit the current answer", async () => {
     flagInHandler = psynet.timeLimitSubmitting;
     psynet.response.staged.rawAnswer = "staged";
   };
-  activate({ root, config, psynet });
+  start(root, config.timeLimit, psynet);
   await flush();
   assert.equal(submissions[2][0], "staged");
   assert.equal(flagInHandler, true);
@@ -93,7 +99,7 @@ it("resumes the countdown when the server's deadline is still to come", async ()
     },
   };
 
-  const deactivate = activate({ root, config: { timeLimit: { secondsLeft: 10 } }, psynet });
+  const deactivate = start(root, { secondsLeft: 10 }, psynet);
   await flush();
   assert.equal(calls, 1);
   assert.equal(label.textContent, 4);
@@ -113,7 +119,7 @@ it("hides its chip while the group release notice counts down", async () => {
   const psynet = { pageReady: true, pageState: {}, waiting: { released: false } };
 
   const config = { timeLimit: { secondsLeft: 10, text: "{SECONDS} s left" } };
-  const deactivate = activate({ root, config, psynet });
+  const deactivate = start(root, config.timeLimit, psynet);
   try {
     assert.equal(chip.hidden, false);
     psynet.waiting.released = true;
@@ -139,7 +145,7 @@ it("does not retry a submission the server refused with a message", async () => 
     },
   };
 
-  const deactivate = activate({ root, config: { timeLimit: { secondsLeft: 10 } }, psynet });
+  const deactivate = start(root, { secondsLeft: 10 }, psynet);
   await new Promise((resolve) => setTimeout(resolve, 1200));
   assert.equal(calls, 1);
   deactivate();
