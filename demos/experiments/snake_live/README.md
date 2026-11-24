@@ -17,6 +17,12 @@ snake moved first. A head that lands on another head crashes both snakes.
 Bots head for the nearest food, turning only onto empty squares. `psynet test`
 plays the game with bots.
 
+A player who hasn't opened the game page 60 seconds after the group formed
+is failed (`late_action="fail"`). The others play without them, as long as
+at least two are left; a player left alone is failed too
+(`below_quorum="fail"`). Failing isn't a penalty: it ends a session that
+can no longer contribute.
+
 ## How this differs from the other live game demos
 
 In the shared canvas demo, each page sends the keys its player is holding

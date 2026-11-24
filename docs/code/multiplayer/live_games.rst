@@ -172,14 +172,14 @@ game, and then shows the group the game page:
         SimpleGrouper(
             group_type="pair",
             initial_group_size=2,
-            below_quorum="continue_without_group",
+            below_quorum="fail",
         ),
         PlayLiveGame(
             group_type="pair",
             game_class=RockPaperScissors,
             settings={"throws": 5, "reward_per_win": 0.05},
             late_after=60,
-            late_action="leave_group",
+            late_action="fail",
             page=LiveGamePage(
                 "rock_paper_scissors",
                 tags.div(
@@ -222,19 +222,27 @@ grouper's groups no larger than the game allows.
 for its wait, and needs a limit on it. Use ``late_after`` unless the group
 takes newcomers:
 
-- ``late_after``, with ``late_action="leave_group"``, waits for the slowest
-  member, and removes them from the group if they keep the others waiting
-  that many seconds. The members who were on time then reach the game page
-  without a game. Give the pages before the game a ``time_limit``, such as
-  instructions or the last game's result: ``late_after`` counts only from 10
-  seconds after a page's time limit has run out, so it only has to cover the
-  untimed moments. The group's grouper needs a ``below_quorum``, such as
-  ``"continue_without_group"``, for the members left behind.
-- ``max_wait_time``, with ``max_wait_action="leave_group"``, is for a group
-  that takes newcomers, as in the ``microsociety_live`` demo. There PsyNet
-  can't tell a slow member from one who hasn't joined yet, so it can't use
-  ``late_after``. Instead each member waits ``max_wait_time`` seconds from
-  when they arrive, and then leaves the group themselves.
+- ``late_after``, with ``late_action="fail"``, waits for the slowest
+  member, and fails them if they keep the others waiting that many seconds.
+  Failing isn't a penalty: it ends a session that can no longer
+  contribute, and the player keeps what they have earned. The group's
+  grouper needs a ``below_quorum`` for the members who were on time. A
+  group that keeps its ``quorum`` plays the game without the late member,
+  and one that falls below it dissolves; with ``below_quorum="fail"`` its
+  remaining members are failed too, as in a game for two (see
+  :ref:`late-remaining-players`). Give the pages before the game a
+  ``time_limit``, such as instructions or the last game's result:
+  ``late_after`` counts only from 10 seconds after a page's time limit has
+  run out, so it only has to cover the untimed moments.
+  ``late_action="leave_group"``, which lets the late member carry on
+  without the group, is an advanced option (see
+  :ref:`sync-leaving-a-group`).
+- ``max_wait_time`` is for a group that takes newcomers, as in the
+  ``microsociety_live`` demo. There PsyNet can't tell a slow member from one
+  who hasn't joined yet, so it can't use ``late_after``. Instead each member
+  waits at most ``max_wait_time`` seconds from when they arrive, and is then
+  failed, or, with ``max_wait_action="leave_group"``, leaves the group and
+  carries on without it.
 
 Here and below, ``game_page()`` stands for a function of your own that
 returns a new game page like the one above. The tutorial's demo builds its
@@ -250,7 +258,7 @@ page in ``rock_paper_scissors_page(game)``, from the trial's definition
         settings={"throws": 5, "reward_per_win": 0.05},
         page=game_page(),
         late_after=20,  # counts from 10 s after the instructions' 90 s are up
-        late_action="leave_group",
+        late_action="fail",
     ),
 
 A ``PlayLiveGame`` without either raises an error, since a group barrier's
@@ -262,7 +270,8 @@ live games whose bots aren't run together (see `Bots and testing`_), and two
 Its ``on_release`` runs when the wait before the game ends, not when the
 game ends, once the group's game has been created. It gets the arguments a
 group barrier's ``on_release`` takes, and also ``live_game``, the new game's
-record (see `A game's record`_), whose ``status`` is ``"not_started"`` if the
+record (see `A game's record`_), whose ``status`` is
+:attr:`LiveGameStatus.NOT_STARTED <psynet.live_game.LiveGameStatus.NOT_STARTED>` if the
 group started no game. Use it for group bookkeeping at the
 start of a round, such as choosing who leaves after it. Work done once the
 game ends, such as scoring, goes in the trial, which gets the game's answer
@@ -284,7 +293,7 @@ since they get only the state:
         page=game_page(),
         settings={"throws": 3, "reward_per_win": 0.10},
         late_after=60,
-        late_action="leave_group",
+        late_action="fail",
     )
 
 
@@ -315,7 +324,7 @@ trial's ``show_trial``, and pass the trial's ``definition`` as the settings:
                 page=game_page(),
                 settings=self.definition,
                 late_after=60,
-                late_action="leave_group",
+                late_action="fail",
             )
 
 Every member of a group has to arrive with the same settings: a member
@@ -349,7 +358,9 @@ doesn't miss the start. A game page says its player is ready by itself a
 moment after it opens, and a bot is ready at once. The game starts once every
 player is ready, or at the game's ``ready_timeout``, 60 seconds after the
 wait ended unless the game sets it, and players who aren't ready then can
-still join and play. If none of the players has opened the game page by
+still join and play. Until they do, they count as away from the start, so
+the game's ``away_timeout`` ends a game that too few players opened (see
+`Joining and leaving`_). If none of the players has opened the game page by
 then, the game ends instead, with the reason ``"not_joined"``. A player
 whose page closes before the game starts isn't ready any more, until the
 page reconnects.
@@ -380,9 +391,11 @@ stay in their groups, so the group's next barrier, such as the pairing for
 the next round, waits for them until its own limit. The same goes for a
 player who leaves the game page for good.
 
-``absent_action="leave_group"`` removes them instead, when the game's
-result is saved, a few seconds after the game ends, even if they never come
-back. It removes two kinds of player:
+``absent_action="fail"`` fails them instead, when the game's result is
+saved, a few seconds after the game ends, even if they never come back. As
+with ``late_action="fail"``, failing isn't a penalty: it ends a session
+that can no longer contribute, and the player keeps what the game paid
+them. It fails two kinds of player:
 
 - a no-show: a player who isn't ready when the game ends, because they never
   opened the game page, or closed it before the game started and didn't come
@@ -390,16 +403,25 @@ back. It removes two kinds of player:
 - with the game's ``away_timeout``, a player who has been away from the game
   page for that long when the game ends. Their reason is ``"left_game"``.
   A player added by ``join_running_game`` once the game has started has no
-  ready step, so they count as ready, and leave only this way, away from
-  when they were added.
+  ready step, so they count as ready, and are failed only this way, away
+  from when they were added.
 
-They leave the ``PlayLiveGame``'s group, and the groups of the types in its
-``also_leave``, which also applies to ``late_action``. The groupers of those
-groups need ``below_quorum="continue_without_group"``. A later page can
-explain the end with
-:meth:`~psynet.participant.Participant.sync_group_removal_reason`. The
-``bargaining_live`` demo removes a partner who doesn't play from the cohort
-as well as the pair, so the next pairing goes on without them:
+The rule is the same for every game the ``PlayLiveGame`` starts, its last
+included: a player who leaves the last game for good is failed too. To
+leave them be, as nobody waits for them, give that ``PlayLiveGame`` no
+``absent_action``.
+
+Failing them takes them out of all their groups, the ``PlayLiveGame``'s with
+their reason, which
+:meth:`~psynet.participant.Participant.sync_group_removal_reason` returns,
+and the others as ``"left_experiment"``. Their failure tags are
+``"live_game:<id>"``, ``"fail_on_timeout"`` and their reason. Every
+player, the absent ones included, is paid from the game's outcome first.
+Each group then
+follows its ``below_quorum``, as it does when a member is late, so a
+grouper can have ``below_quorum="fail"``. The ``bargaining_live`` demo
+fails a partner who doesn't play, so the cohort's next pairing goes on
+without them:
 
 .. code-block:: python
 
@@ -408,20 +430,17 @@ as well as the pair, so the next pairing goes on without them:
         game_class=Bargain,
         page=bargaining_page(self.definition["stake"]),
         settings=self.definition,
-        late_after=30,
-        late_action="leave_group",
-        absent_action="leave_group",
-        also_leave=["cohort"],
+        late_after=LATE_AFTER,
+        late_action="fail",
+        absent_action="fail",
     )
 
-and its last page tells a returning player why the game ended for them:
-
-.. code-block:: python
-
-    def end_of_game(participant):
-        reason = participant.sync_group_removal_reason("cohort")
-        text = END_OF_GAME_TEXTS.get(reason, "That's the end of the game.")
-        return InfoPage(text, time_estimate=5)
+``absent_action="leave_group"`` is an advanced option, for designs where an
+absent player can meaningfully carry on without the group: it removes them
+from the ``PlayLiveGame``'s group, and the groups of the types in its
+``also_leave``, which also applies to ``late_action="leave_group"``, with
+their reason. The groupers of those groups need
+``below_quorum="continue_without_group"``.
 
 The game itself can tell who didn't play, and why, with or without
 ``absent_action``: :meth:`~psynet.live_game.LiveGame.absences` returns each
@@ -695,8 +714,9 @@ No game
 ~~~~~~~
 
 A participant can reach the page without one, for example when another
-member was late for the ``PlayLiveGame`` and their group broke up, or when
-their group ended before they reached it. PsyNet tells the participant with
+member was late for the ``PlayLiveGame`` and their group broke up with the advanced
+``below_quorum="continue_without_group"``, or when their group ended
+before they reached it. PsyNet tells the participant with
 a notice at the top of the page, "Your group couldn't start the game.",
 which the page's ``no_game_message`` changes or turns off, and hides the
 page's content. When the page already has a notice saying that the
@@ -814,11 +834,12 @@ game." Change it with the page's ``player_left_message``, such as
 show it your own way, set ``player_left_message=None`` and use
 ``onPlayersAway``, which gets the numbers of the players who are away,
 and an empty list once they're all back. Like the notice, it counts a
-player once they've been away for a few seconds, so a reload doesn't. One
-of the game's first players who hasn't opened the page yet hasn't left, but
-a player added while the game runs is away until their page opens. The
-notice only says what happened: a game that should end when a player
-leaves ends through its ``away_timeout``, ``on_leave`` or ``is_over``.
+player once they've been away for a few seconds, so a reload doesn't. A
+player who hasn't opened the page by the time the game starts counts as
+away from the start, until their page opens. So does a player added while
+the game runs. The notice only says what happened: a game that should end
+when a player leaves ends through its ``away_timeout``, ``on_leave`` or
+``is_over``.
 
 Reloading and dropped connections
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -856,14 +877,15 @@ the ``PlayLiveGame``'s, and the others are the game's:
    * - ``late_after`` or ``max_wait_time``, of the ``PlayLiveGame``
      - None: one is needed
      - The wait for the group's members ends. With ``late_after``, a member
-       still keeping the others waiting is late and leaves the group; with
-       ``max_wait_time``, a member who has waited that long leaves it (see
-       `PlayLiveGame`_).
+       still keeping the others waiting is late, and is failed or leaves
+       the group, as ``late_action`` says; with
+       ``max_wait_time``, a member who has waited that long is failed or
+       leaves the group, as ``max_wait_action`` says (see `PlayLiveGame`_).
    * - ``ready_timeout``
      - 60 seconds after the wait
-     - The game starts without the players who aren't ready yet, or ends
-       with the reason ``"not_joined"`` if none of them has opened the game
-       page (see `The ready step`_).
+     - The game starts without the players who aren't ready yet, who count
+       as away from then, or ends with the reason ``"not_joined"`` if none
+       of them has opened the game page (see `The ready step`_).
    * - ``duration``
      - ``None``
      - The game ends with the reason ``"finished"``.
@@ -873,7 +895,8 @@ the ``PlayLiveGame``'s, and the others are the game's:
        the reason ``"timeout"``.
    * - ``away_timeout``
      - 60 seconds
-     - A player who has been away that long is gone, and once fewer than
+     - A player who has been away that long, counted from the start for a
+       player who wasn't ready, is gone, and once fewer than
        ``min_players`` players aren't, the game ends with the reason
        ``"players_left"`` (see `Joining and leaving`_).
    * - ``time_limit``
@@ -960,18 +983,22 @@ who arrives while no game is running waits at the barrier as usual, and
 starts the next game with the others there. Newcomers join the group
 first, through a :class:`~psynet.sync.Grouper` with
 ``join_existing_groups=True``. Give it ``use_admission_points=False``, so
-that it admits them at once: a pending member waits at the barrier.
+that it admits them at once: a pending member waits at the barrier. In the
+demo, ``initial_group_size=1`` lets the first member found the group and
+start the game alone, at once, so nobody waits for anyone, and
+``max_groups=1`` keeps a single society, which the next participant
+founds anew once the last one has closed.
 
 .. code-block:: python
 
     SimpleGrouper(
         group_type="society",
-        initial_group_size=2,
+        initial_group_size=1,
         max_group_size=4,
         quorum=1,
         join_existing_groups=True,
         use_admission_points=False,
-        below_quorum="continue_without_group",
+        max_groups=1,
     ),
     PlayLiveGame(
         group_type="society",
@@ -979,7 +1006,6 @@ that it admits them at once: a pending member waits at the barrier.
         page=lake_page(),
         join_running_game=True,
         max_wait_time=60,
-        max_wait_action="leave_group",
     ),
 
 The game defines ``on_add(self, state, player, now)``, which makes room in
@@ -1202,7 +1228,10 @@ PsyNet calls once ``is_over`` returns ``True``; the reason then isn't
 Dallinger's `outcome <dallinger-outcome_>`_ lists the other reasons, such as
 ``"not_joined"``. If the game's code raised an error, ``reason`` is
 ``"failed"``, and ``outcome`` is the outcome of the state just before the
-error.
+error. :mod:`psynet.live_game` has constants for the common reasons:
+:data:`~psynet.live_game.FINISHED`, :data:`~psynet.live_game.TIMEOUT`,
+:data:`~psynet.live_game.PLAYERS_LEFT` and
+:data:`~psynet.live_game.FAILED`.
 
 For a reward earned during the game, such as for each coin a player collects,
 call ``game.add_performance_reward(player, amount)`` in a message's
@@ -1249,8 +1278,11 @@ its ``id_``, as ``participant.active_sync_groups`` is keyed by group type:
 
 .. code-block:: python
 
+    from psynet.live_game import LiveGameStatus
+
     game = participant.live_games["rock_paper_scissors"]
-    if game.finished:
+    if game.status == LiveGameStatus.ENDED:
+        game.end_reason  # why it ended
         game.answer  # this participant's answer
         game.outcome  # the whole game's outcome
         for saved in game.messages:
@@ -1259,17 +1291,18 @@ its ``id_``, as ``participant.active_sync_groups`` is keyed by group type:
 
 A record has:
 
-- ``status``: ``"not_started"`` if the participant's group started no game
-  there, for example because it broke up while it waited, ``"running"``
-  until the game's result is saved, then ``"ended"``, or ``"failed"`` if the
-  game's code raised an error or its record couldn't be saved, with the
-  error in ``error``;
-- ``finished``, whether the whole game's ``end_reason`` is ``"finished"``
-  (see `Rewards`_ for the reasons), rather than early, for example because
-  players left. It's ``False`` while the game runs, including for a player
-  who has left it early;
+- ``status``, a :class:`~psynet.live_game.LiveGameStatus`:
+  ``NOT_STARTED`` if the participant's group started no game there, for
+  example because it broke up while it waited, ``RUNNING`` until the game's
+  result is saved, then ``ENDED``, whatever the reason the game ended, or
+  ``FAILED`` if the game's code raised an error or its record couldn't be
+  saved, with the error in ``error``. It's the whole game's status, so it
+  stays ``RUNNING`` for a player who has left early (see ``left_early``
+  below). Each status is a string too, such as ``"ended"``;
 - ``outcome`` and ``end_reason``, the game's outcome and the ``reason`` it
-  ended, both ``None`` until it has ended;
+  ended, such as :data:`~psynet.live_game.FINISHED` or
+  :data:`~psynet.live_game.PLAYERS_LEFT` (see `Rewards`_ for the reasons),
+  both ``None`` until it has ended;
 - ``answer``, the participant's answer on the game page, ``None`` until
   their game has ended, and there for a participant who closed the page
   too (see `The answer`_), and ``player``, their player number;
@@ -1432,6 +1465,8 @@ bot's game at the end of the test through its record:
 
 .. code-block:: python
 
+    from psynet.live_game import FINISHED
+
     class Exp(psynet.experiment.Experiment):
         timeline = ...
 
@@ -1441,7 +1476,7 @@ bot's game at the end of the test through its record:
         def test_check_bot(self, bot, **kwargs):
             super().test_check_bot(bot, **kwargs)
             game = bot.live_games["rock_paper_scissors"]
-            assert game.finished, game.error
+            assert game.end_reason == FINISHED, game.error
             assert game.answer["mine"] is not None
 
 To test a game's rules in Python, without starting the experiment, play it
@@ -1495,8 +1530,9 @@ in the state or a view. The parts a game can use are:
   in views.
 - ``ready``, the numbers of the players who are ready
 - ``away``, the numbers of the players who have left the game page and not
-  come back. One of the game's first players who hasn't opened it yet isn't
-  in it, but a player added while the game runs is, until their page opens.
+  come back. One of the game's first players who hasn't opened it yet is in
+  it once the game starts without them, and a player added while the game
+  runs is from when they're added, in both cases until their page opens.
 - ``accepts_players``, ``False`` once the game's ``accepts_players`` has
   returned ``False``, and ``too_late``, the numbers of the players added
   after that, who don't play (see :ref:`live-games-joining`)
