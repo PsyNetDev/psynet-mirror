@@ -252,7 +252,8 @@ class StaticTrialMaker(ChainTrialMaker):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
         Defaults to ``False``.
         See :meth:`~psynet.trial.main.TrialMaker.performance_check`
         for implementing performance checks.
@@ -324,7 +325,7 @@ class StaticTrialMaker(ChainTrialMaker):
         replies, so the participant briefly sees the old version. Repeat
         trials are prepared once every main trial is answered. With
         ``check_performance_every_trial``, the next trials' files still
-        download early, but each trial waits for the server's check.
+        download early, but each checked trial waits for the server's check.
         Can't be combined with ``sync_group_type``.
         Defaults to ``False``.
 
@@ -654,7 +655,15 @@ class StaticTrialMaker(ChainTrialMaker):
         # Feedback and a performance check that may fail the participant
         # come between the trials.
         return not (
-            self.check_performance_every_trial
+            (
+                self.check_performance_every_trial
+                and call_function_with_context(
+                    self.should_check_performance_after,
+                    experiment=experiment,
+                    participant=participant,
+                    trial=trial,
+                )
+            )
             or trial.gives_feedback(experiment, participant)
         )
 
