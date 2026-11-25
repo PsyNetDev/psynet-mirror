@@ -36,6 +36,9 @@ def _make_vocab_test(tmp_path, real=("cat", "dog"), fake=("xzz", "qrv"), **kwarg
         {"n_items": 6},
         {"n_repeat_items": 5},
         {"use_keyboard": False, "use_buttons": False},
+        {"performance_threshold_per_trial": 1.5},
+        {"performance_check_type": "speed"},
+        {"performance_check_type": "consistency", "n_repeat_items": 0},
     ],
 )
 def test_invalid_settings_raise_value_errors(tmp_path, settings):

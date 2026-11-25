@@ -1,3 +1,22 @@
+"""Vocabulary tests (WikiVocab, BibleVocab) for screening participants by language.
+
+A test shows real and made-up words one at a time; the participant says which are real.
+Each word shown is its own :class:`VocabTrial`, so exports give one row per word, with
+its answer, response time, ``position`` and ``node_id`` (repeats share a node).
+
+Words come in forms: ``n_items`` words, half real and half fake, then
+``n_repeat_items`` of them again. :meth:`VocabTest.word_order` plans every form on
+block entry, so a trial's form follows from its ``position``. Screening checks each
+form once its last word is answered (:meth:`VocabTest.should_check_performance_after`)
+and again at the end, and every form begun so far must pass.
+
+Every word uses the same :class:`~psynet.page.JSPage`, with only its ``contents``
+changing, so with trials prepared in advance the page stays on screen and
+``psynet/resources/scripts/vocabtest.js`` shows the next word without asking the
+server. Keep anything that changes between words in ``contents``; changing the
+page's HTML or ``page_config`` per word makes each word wait for the server.
+"""
+
 import csv
 import os
 import random
@@ -383,18 +402,22 @@ class VocabTest(StaticTrialMaker):
         self.locale = locale
         self.label = label
 
-        assert (
-            performance_threshold_per_trial is None
-            or 0 <= performance_threshold_per_trial <= 1
-        )
+        if performance_threshold_per_trial is not None and not (
+            0 <= performance_threshold_per_trial <= 1
+        ):
+            raise ValueError("performance_threshold_per_trial must be between 0 and 1.")
         self.performance_threshold_per_trial = performance_threshold_per_trial
 
-        assert performance_check_type in ["accuracy", "consistency"]
+        if performance_check_type not in ("accuracy", "consistency"):
+            raise ValueError(
+                "performance_check_type must be 'accuracy' or 'consistency'."
+            )
         self.performance_check_type = performance_check_type
         if performance_check_type == "consistency":
-            assert n_repeat_items > 0, (
-                "The number of repeated items must be greater than 0."
-            )
+            if n_repeat_items <= 0:
+                raise ValueError(
+                    "A consistency check needs at least one repeated item."
+                )
         with open(csv_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             if reader.fieldnames != ["stimulus", "correct_answer"]:
@@ -625,7 +648,26 @@ class VocabTest(StaticTrialMaker):
         return use_arabic_script, image_width, image_height, font_size
 
     def score_form(self, trials, stop):
-        """Score the form that ends just before position ``stop``."""
+        """Score the form that ends just before position ``stop``.
+
+        Override this to change how a form is scored.
+
+        Parameters
+        ----------
+        trials : list of VocabTrial
+            The participant's trials in this test.
+        stop : int
+            The position after the form's last word, a multiple of
+            :attr:`form_size`.
+
+        Returns
+        -------
+        float
+            The share of real-or-fake answers that are correct, or for
+            ``performance_check_type="consistency"`` the share of repeats
+            answered as the first time. A form with a word that wasn't
+            answered scores 0.
+        """
         form = sorted(
             (t for t in trials if stop - self.form_size <= t.position < stop),
             key=lambda t: t.position,

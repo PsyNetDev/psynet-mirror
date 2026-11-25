@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import { activate } from "../../psynet/resources/scripts/vocabtest.js";
 
-function vocabPage(decode) {
+function vocabPage(decode, lag = 0) {
   const listeners = {};
   globalThis.document = {
     addEventListener: (type, fn) => (listeners[type] = fn),
@@ -23,14 +23,14 @@ function vocabPage(decode) {
     removeEventListener() {},
   };
   const psynet = {
-    pageConfig: { vocab: { keyboard: true, trueKey: "KeyA", falseKey: "KeyL", lag: 0, hideAfter: 1000 } },
+    pageConfig: { vocab: { keyboard: true, trueKey: "KeyA", falseKey: "KeyL", lag, hideAfter: 1000 } },
     log: { warn() {} },
   };
   const answers = [];
   const handle = { answer: (choice) => answers.push(choice), startClock() {} };
   const page = activate({ root, psynet });
-  const show = (signal = new AbortController().signal) =>
-    page.update({ contents: { image: "/word.png" }, upcomingContents: [], response: handle, signal });
+  const show = (signal = new AbortController().signal, contents = { image: "/word.png" }) =>
+    page.update({ contents, upcomingContents: [], response: handle, signal });
   const press = (code, extra = {}) => listeners.keydown({ code, target: {}, ...extra });
   return { page, target, answers, show, press };
 }
@@ -43,6 +43,20 @@ describe("vocabulary test page", () => {
     assert.equal(target.shown, null);
     press("KeyA");
     assert.deepEqual(answers, []);
+    page.cleanup();
+  });
+
+  it("doesn't show the next word if its update is abandoned during the lag", async () => {
+    const { page, target, answers, show, press } = vocabPage(async () => {}, 50);
+    await show();
+    press("KeyA");
+    const controller = new AbortController();
+    const next = show(controller.signal, { stimulus: "cat" });
+    controller.abort();
+    await next;
+    assert.equal(target.textContent, undefined);
+    press("KeyA");
+    assert.deepEqual(answers, ["real"]);
     page.cleanup();
   });
 
