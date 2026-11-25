@@ -60,6 +60,7 @@ from .utils import (
     render_string_with_translations,
     serialise,
     unserialise_datetime,
+    warn_from_caller,
 )
 
 if TYPE_CHECKING:
@@ -124,11 +125,7 @@ def _normalize_js_page_code(code, argument_name="js_page_code"):
 def _page_config_argument(page_config, js_vars):
     """Return ``page_config``, accepting the deprecated ``js_vars`` instead."""
     if js_vars is not None:
-        warnings.warn(
-            "js_vars has been renamed to page_config.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
+        warn_from_caller("js_vars has been renamed to page_config.", FutureWarning)
         if page_config is not None:
             raise ValueError("Pass page_config or js_vars, not both.")
         page_config = js_vars
@@ -1575,8 +1572,8 @@ class Page(Elt):
         Whether the page has a Back button where the participant can go back
         to the page before it (default ``True``). PsyNet shows it only on
         :class:`~psynet.modular_page.ModularPage` pages with a Next button,
-        directly after a page that collects no answer, such as
-        :class:`~psynet.page.InfoPage`, and that the browser could show
+        directly after a page that collects no answer and has a Next button,
+        such as :class:`~psynet.page.InfoPage`, and that the browser could show
         without waiting for the server. So it never returns to a question, a trial page, or past a
         code block, a conditional or a page whose ``on_complete`` is
         overridden.
@@ -2468,20 +2465,12 @@ class Page(Elt):
     @property
     def js_vars(self):
         """Deprecated name of ``page_config``."""
-        warnings.warn(
-            "Page.js_vars has been renamed to page_config.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        warn_from_caller("Page.js_vars has been renamed to page_config.", FutureWarning)
         return self.page_config
 
     @js_vars.setter
     def js_vars(self, value):
-        warnings.warn(
-            "Page.js_vars has been renamed to page_config.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        warn_from_caller("Page.js_vars has been renamed to page_config.", FutureWarning)
         self.page_config = value
 
     def _page_config_for(self, experiment, participant):
@@ -2959,9 +2948,7 @@ class Page(Elt):
                 page._progress = progress
                 html = page.render(experiment, participant, partial_mode=True)
                 layout_key = page.layout_key(html, experiment, participant)
-                if answered._module_shows_the_next_trials() and (
-                    page._module_shows_the_next_trials()
-                ):
+                if answered._show_in_advance() and page._show_in_advance():
                     if own_layout_key is None:
                         own_layout_key = self.layout_key(
                             self.render(experiment, participant, partial_mode=True),
@@ -3043,6 +3030,8 @@ class Page(Elt):
         """
         reasons = {
             "it holds the timeline": self.is_timeline_hold,
+            # It may change what the next page shows, or move the participant elsewhere.
+            "it overrides on_complete": type(self).on_complete is not Page.on_complete,
             **self._needs_the_server_because(),
             "the server may turn its answers down (validate or "
             "check_ready_for_response)": self._may_reject_answers(),

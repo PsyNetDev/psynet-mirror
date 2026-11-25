@@ -1,14 +1,10 @@
 """Shared hooks for components that contribute page JavaScript and CSS."""
 
-import warnings
-
 
 def _warn_renamed(cls, old, new):
-    warnings.warn(
-        f"{cls.__name__}.{old} has been renamed to {new}.",
-        DeprecationWarning,
-        stacklevel=3,
-    )
+    from .utils import warn_from_caller
+
+    warn_from_caller(f"{cls.__name__}.{old} has been renamed to {new}.", FutureWarning)
 
 
 _RENAMED_HOOKS = [
@@ -27,22 +23,36 @@ def _bridge(cls, name, target, warn):
 
     bridged.__name__ = target
     bridged.__doc__ = getattr(cls, name).__doc__
+    bridged._bridges_renamed_hook = True
     return bridged
+
+
+def _defined_by(klass, name):
+    """Whether ``klass`` itself defines the hook ``name``, rather than a bridge to it."""
+    attribute = klass.__dict__.get(name)
+    return attribute is not None and not getattr(
+        attribute, "_bridges_renamed_hook", False
+    )
 
 
 class JavaScriptContributor:
     """Default empty hooks for managed page JavaScript and CSS contributions."""
 
     def __init_subclass__(cls, **kwargs):
-        # The page_config hooks replaced the js_vars hooks in PsyNet 15. A class
-        # that overrides only the old name gets the new one, with a warning,
-        # and a class that defines only the new name answers super() calls to
-        # the old one from subclasses that haven't been updated.
+        # The page_config hooks replaced the js_vars hooks in PsyNet 15. If the
+        # old name comes first in the MRO, for example from a mixin, the new
+        # name calls it, with a warning. A class that defines only the new name
+        # answers super() calls to the old one from subclasses that haven't
+        # been updated.
         super().__init_subclass__(**kwargs)
         for old, new in _RENAMED_HOOKS:
-            if old in cls.__dict__ and new not in cls.__dict__:
-                setattr(cls, new, _bridge(cls, old, new, warn=True))
-            elif new in cls.__dict__ and old not in cls.__dict__:
+            for klass in cls.__mro__:
+                if klass is JavaScriptContributor or _defined_by(klass, new):
+                    break
+                if _defined_by(klass, old):
+                    setattr(cls, new, _bridge(klass, old, new, warn=True))
+                    break
+            if _defined_by(cls, new) and old not in cls.__dict__:
                 setattr(cls, old, _bridge(cls, new, old, warn=False))
 
     def get_js_dependencies(self):

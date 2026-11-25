@@ -252,7 +252,7 @@ def test_js_vars_names_still_work_with_a_deprecation_warning():
         def get_js_vars(self):
             return {"prompt_config": 1}
 
-    with pytest.warns(DeprecationWarning) as caught:
+    with pytest.warns(FutureWarning) as caught:
         page = ModularPage("test", OldPrompt("Hi!"), js_vars={"own_config": 2})
 
     assert {str(w.message) for w in caught} >= {
@@ -264,7 +264,9 @@ def test_js_vars_names_still_work_with_a_deprecation_warning():
         "prompt_config": 1,
         "own_config": 2,
     }
-    with pytest.warns(DeprecationWarning, match="Page.js_vars"):
+    # Shown by default, pointing at the experiment's code.
+    assert {w.filename for w in caught} == {__file__}
+    with pytest.warns(FutureWarning, match="Page.js_vars"):
         assert page.js_vars is page.page_config
 
 
@@ -281,10 +283,20 @@ def test_get_js_vars_overrides_still_work_on_components_using_the_new_name():
         def get_page_config(self):
             return {**super().get_page_config(), "newer": 3}
 
-    with pytest.warns(DeprecationWarning, match="OldPrompt.get_js_vars"):
+    with pytest.warns(FutureWarning, match="OldPrompt.get_js_vars"):
         config = NewerPrompt("Hi!").get_page_config()
 
     assert config == {"built_in": 1, "old": 2, "newer": 3}
+
+    class OldMixin:
+        def get_js_vars(self):
+            return {**super().get_js_vars(), "mixin": 4}
+
+    class MixedPrompt(OldMixin, BuiltInPrompt):
+        pass
+
+    with pytest.warns(FutureWarning, match="OldMixin.get_js_vars"):
+        assert MixedPrompt("Hi!").get_page_config() == {"built_in": 1, "mixin": 4}
 
 
 def test_components_contribute_managed_javascript_lifecycle_resources():

@@ -203,8 +203,8 @@ it, so its responses appear once for each visit. The `back_button demo
 <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/back_button>`__
 shows a run of instruction pages with Back buttons.
 
-A page shows a Back button only when it has a Next button, and it and the
-page before it are both :class:`~psynet.modular_page.ModularPage` pages
+A page shows a Back button only when it and the page before it both have a
+Next button, so that the participant can move on again, and are both :class:`~psynet.modular_page.ModularPage` pages
 directly next to each other in the timeline, which the browser could show
 without waiting for the server as described above. The earlier page must
 collect no answer, like :class:`~psynet.page.InfoPage`, so going back never

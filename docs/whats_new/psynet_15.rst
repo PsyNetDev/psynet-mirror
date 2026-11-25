@@ -67,9 +67,9 @@ Rename these in your experiment:
    * - ``vars`` in a page module's ``activate()``
      - ``config``
 
-The old names keep working until PsyNet 16, with a ``DeprecationWarning`` in
-Python and a console warning when ``psynet.var`` reads one of PsyNet's
-internal values. See :doc:`/code/pages/custom_front_ends`.
+The old names keep working until PsyNet 16, with a warning in Python that
+points at the line to change, and a console warning when ``psynet.var``
+reads one of PsyNet's internal values. See :doc:`/code/pages/custom_front_ends`.
 
 While renaming, check what you pass: a value that differs from trial to
 trial, such as a stimulus or a condition's parameter, belongs in the page's

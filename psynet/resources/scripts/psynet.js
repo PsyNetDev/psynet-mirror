@@ -638,6 +638,8 @@
     // one activation/cleanup lifecycle and run for every hosting page.
     psynet.activeJSPageBehaviors = [];
     psynet.pageModuleGeneration = 0;
+    // A sound stops its events (onEnd, looping, audioFinished) once this changes.
+    psynet.soundScope = {};
     psynet.AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
     psynet.loadJSDependencies = async function () {
@@ -827,6 +829,7 @@
       psynet.updateController?.abort();
       let controller = new AbortController();
       psynet.updateController = controller;
+      psynet.soundScope = {};
       let signal = controller.signal;
       let generation = psynet.pageModuleGeneration;
       for (let update of psynet.pageModuleUpdates) {
@@ -3623,9 +3626,11 @@
             };
 
             // A page change stops the trial. A JSPage kept for the next
-            // trial keeps it, but shows that trial through a new update().
+            // trial keeps it, but shows that trial through a new update(),
+            // and a page of the same session updates the page in place;
+            // both renew psynet.soundScope.
             const soundTrial = psynet.trial;
-            const soundUpdate = psynet.updateController;
+            const soundScope = psynet.soundScope;
             let stopTimer = null;
             let completionTimer = null;
             let stopCompletionTimer = null;
@@ -3664,7 +3669,7 @@
             let isSoundTrialActive = function () {
               return (
                 psynet.trial === soundTrial &&
-                psynet.updateController === soundUpdate &&
+                psynet.soundScope === soundScope &&
                 !soundTrial.stopping &&
                 !soundTrial.stopped
               );
@@ -4638,6 +4643,7 @@
       psynet.stopTimelineHold();
 
       if (psynet.isSameSessionPageUpdate(response)) {
+        psynet.soundScope = {};
         psynet.page = response.page;
         psynet.submissionPageUuid = response.page.attributes.page_uuid;
         psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);

@@ -250,6 +250,14 @@ def test_pages_say_why_they_cant_be_left_or_rendered_early():
         "the server may turn its answers down (validate or check_ready_for_response)"
     )
 
+    class Completes(InfoPage):
+        def on_complete(self, experiment, participant):
+            participant.var.done = True
+
+    assert Completes("C", time_estimate=1)._cannot_be_left_early_because() == (
+        "it overrides on_complete"
+    )
+
 
 def test_layout_key_covers_main_body_and_js_vars():
     def key(body, **js_vars):
