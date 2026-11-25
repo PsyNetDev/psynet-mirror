@@ -211,6 +211,11 @@ Trials
     A 1-up/1-down staircase written with ``Trial.cue`` and ``while_loop``,
     with the adaptive rule in a separate, testable module.
 
+`features/staircase_on_one_page <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/staircase_on_one_page>`__
+    A brightness staircase on ordinary trial pages that answer on a key press,
+    while a ``GeometricStaircaseTrialMaker`` chooses the next brightness
+    difference after each answer.
+
 Chains
 ------
 

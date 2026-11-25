@@ -256,7 +256,8 @@ PsyNet then:
 7. imports and activates ``js_page_modules``;
 8. initializes trial progress, media, controls, and ``trialConstruct`` behavior;
 9. marks the page ready and registers the ``pageReady`` trial event;
-10. prepares and starts the trial, then enables response and submission.
+10. stops dimming an in-place page and calls page modules' ``update``;
+11. prepares and starts the trial, then enables response and submission.
 
 Readiness and trial startup
 ---------------------------
@@ -323,7 +324,9 @@ named ``activate(context)`` export. Modules are imported and cached normally,
 while ``activate()`` runs for every hosting page.
 
 The activation context contains ``root``, ``trial``, ``vars``, ``page``, and
-``psynet``. ``activate()`` may return an asynchronous cleanup function.
+``psynet``. ``activate()`` may return an asynchronous cleanup function, or
+an object ``{update, cleanup}``. PsyNet calls ``update({contents, response})``
+after the page is ready; see :doc:`/code/trials/keeping_a_task_on_one_page`.
 
 Most page code and modules do not require cleanup because PsyNet already
 removes page DOM, stops trial-owned resources, and resets response state.

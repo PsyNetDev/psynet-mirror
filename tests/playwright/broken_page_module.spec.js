@@ -17,6 +17,10 @@ const CASES = [
   {
     name: "js_dependencies",
     dir: "tests/playwright/experiments/broken_page_dependency"
+  },
+  {
+    name: "invalid activate() result",
+    dir: "tests/playwright/experiments/bad_page_module_result"
   }
 ];
 

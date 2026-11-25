@@ -352,8 +352,11 @@ class Elt:
     expected_repetitions = None
     id = None
     created_within_page_maker = False
-    # Set on a trial's feedback page maker and everything it produces.
-    _trial_feedback = False
+    # Set on the page makers that run after a trial is finalized (feedback
+    # and show_after_trial) and everything they produce.
+    _after_trial = False
+    # Set on the show_after_trial page maker and everything it produces.
+    _between_trials = False
 
     def __init__(self):
         self.links = {}
@@ -1336,7 +1339,9 @@ class Page(Elt):
 
     js_page_modules:
         Optional JavaScript files activated for each page. Each file must export
-        an ``activate(context)`` function and may return a cleanup function.
+        an ``activate(context)`` function, which may return a cleanup function,
+        or ``{update, cleanup}`` to show a trial's ``contents`` (see
+        :doc:`/code/trials/keeping_a_task_on_one_page`).
 
     js_page_code:
         Optional inline JavaScript activation code, supplied as a string, list,
@@ -2048,7 +2053,7 @@ class Page(Elt):
         )
         db.session.add(resp)
 
-        resp._background_parent = participant.current_trial or participant
+        resp._recording_parent = _page_trial(self, participant) or participant
 
         timed_out = self._time_limit_reached(metadata, participant)
         if timed_out:
@@ -2074,7 +2079,7 @@ class Page(Elt):
                 metadata=metadata,
                 experiment=experiment,
                 participant=participant,
-                trial=participant.current_trial,
+                trial=_page_trial(self, participant),
                 response=resp,
             )
 
@@ -2116,14 +2121,14 @@ class Page(Elt):
     def _time_limit_counts(self, participant):
         """Whether this page's time limit updates the participant's and trial's timeout flags.
 
-        Untimed pages, pages shown while waiting at a barrier, and a trial's
-        feedback pages, such as a notice whose time limit only moves it on,
-        keep the flags from the last timed page.
+        Untimed pages, pages shown while waiting at a barrier, and the pages
+        after a trial, such as feedback or a break whose time limit only moves
+        it on, keep the flags from the last timed page.
         """
         return (
             self.time_limit is not None
             and participant.waiting_barrier_id is None
-            and not self._trial_feedback
+            and not self._after_trial
         )
 
     def _reject_impossible_answer(self, answer):
@@ -2918,7 +2923,8 @@ class PageMaker(Elt):
             experiment=experiment,
             participant=participant,
         )
-        res = join(res)
+        # The timeline needs an element to advance past.
+        res = join(res) or [NullElt()]
 
         for elt in res:
             if isinstance(elt, StartModule):
@@ -2942,8 +2948,10 @@ class PageMaker(Elt):
             elt.id = position + [i]
             elt.created_within_page_maker = True
             elt.links = {**self.links, **elt.links}
-            if self._trial_feedback:
-                elt._trial_feedback = True
+            if self._after_trial:
+                elt._after_trial = True
+            if self._between_trials:
+                elt._between_trials = True
         return res
 
     def impute_time_estimates(self, elts):
@@ -3359,6 +3367,15 @@ def estimate_duration(logic):
     # This join ensures that any modules are resolved into lists of Elts.
     elts = join(logic)
     return CreditEstimate(elts).get_max("time")
+
+
+def _page_trial(page, participant):
+    """Return the trial that ``page``'s recordings belong to, or ``None``.
+
+    Feedback pages keep the trial that just finished, but pages from
+    :meth:`~psynet.trial.main.TrialMaker.show_after_trial` don't.
+    """
+    return None if page._between_trials else participant.current_trial
 
 
 def _trial_owning_page(participant):

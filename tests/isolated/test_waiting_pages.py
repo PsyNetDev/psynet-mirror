@@ -186,6 +186,9 @@ def _start_filler_trial(experiment, participant):
 
 class _CountingTrialMaker:
     n_finalized = 0
+    sync_group_type = None
+    show_after_trial = TrialMaker.show_after_trial
+    _left_sync_group = TrialMaker._left_sync_group
 
     def with_namespace(self, name):
         return f"counting__{name}"
@@ -401,6 +404,7 @@ class _WaitingTrialMaker(_CountingTrialMaker):
     _wait_for_trial = TrialMaker._wait_for_trial
     _trial_loop = TrialMaker._trial_loop
     cue_trial = TrialMaker.cue_trial
+    time_estimate_after_trials = TrialMaker.time_estimate_after_trials
     trial_available = False
 
     def _try_to_prepare_trial_solo(self, experiment, participant):
