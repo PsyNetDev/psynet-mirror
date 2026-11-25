@@ -404,6 +404,7 @@ class _WaitingTrialMaker(_CountingTrialMaker):
     _wait_for_trial = TrialMaker._wait_for_trial
     _trial_loop = TrialMaker._trial_loop
     cue_trial = TrialMaker.cue_trial
+    time_estimate_after_trials = TrialMaker.time_estimate_after_trials
     trial_available = False
 
     def _try_to_prepare_trial_solo(self, experiment, participant):
