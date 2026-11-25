@@ -6,7 +6,10 @@ authors customize node eligibility with ``custom_node_filter`` and ranking with
 ``select_node``; network adaptation remains an implementation detail.
 """
 
+import logging
 from typing import Callable, List, Literal, Optional, Sequence, Union
+
+from flask import has_app_context
 
 from psynet.trial.chain import (
     Candidate,
@@ -18,7 +21,14 @@ from psynet.trial.chain import (
 )
 
 from ..sync import LateAction
-from ..utils import NoArgumentProvided, get_logger, is_method_overridden
+from ..timeline import Page, _log_waiting_for_the_server, join
+from ..utils import (
+    NoArgumentProvided,
+    call_function_with_context,
+    get_config,
+    get_logger,
+    is_method_overridden,
+)
 
 logger = get_logger()
 
@@ -67,6 +77,45 @@ class StaticTrial(ChainTrial):
 
     def show_trial(self, experiment, participant):
         raise NotImplementedError
+
+
+def _layout_key(trial, page, experiment, participant):
+    """Return the layout key of ``trial``'s ``page``, rendering it only once per trial.
+
+    A page without ``#main-body`` has the key ``""``, which matches nothing.
+    """
+    if trial.layout_key is None:
+        page._pre_render_once()
+        html = page.render(experiment, participant, partial_mode=True)
+        trial.layout_key = page.layout_key(html, experiment, participant) or ""
+    return trial.layout_key
+
+
+def _same_layout(trial, page, following, following_page, experiment, participant):
+    """Whether ``following``'s page has the same layout as ``trial``'s, warning if not.
+
+    The browser shows a trial in advance inside the current page's HTML,
+    JavaScript and ``page_config``, so a trial whose page differs in any of
+    these waits for the server instead.
+    """
+    if not has_app_context() and None in (trial.layout_key, following.layout_key):
+        # Pages can only be rendered in the experiment's app, as in a request.
+        return False
+    first_comparison = following.layout_key is None
+    key = _layout_key(trial, page, experiment, participant)
+    if key and key == _layout_key(following, following_page, experiment, participant):
+        return True
+    if not first_comparison:
+        return False
+    logger.warning(
+        "Trial maker %r: the page of the trial at position %i has different "
+        "HTML, JavaScript or page_config from the one at position %i, so it can't be shown in advance and waits for the server. "
+        "Put what changes between trials in the page's contents.",
+        following.trial_maker_id,
+        following.position,
+        trial.position,
+    )
+    return False
 
 
 class StaticTrialMaker(ChainTrialMaker):
@@ -246,6 +295,49 @@ class StaticTrialMaker(ChainTrialMaker):
         The message and time limits of the trial maker's own sync-group
         waits; see :class:`~psynet.trial.main.TrialMaker`.
 
+    prepare_trials_in_advance
+        If ``True``, create a participant's trials, in order, when they
+        reach the trial maker (as many as node selection allows then; the
+        rest once those are done), and send each trial page with the
+        contents of the next ``n_upcoming_trials`` trials. A
+        :class:`~psynet.page.JSPage` then shows the next trial as soon as
+        the participant answers, without waiting for the server; see
+        :doc:`/code/trials/keeping_a_task_on_one_page`. Other trial pages,
+        such as built-in prompts and controls, carry the next trials' pages
+        rendered in advance, which the browser swaps in as the participant
+        answers. Any trial page, such as one with an
+        :class:`~psynet.modular_page.AudioPrompt`, also lists the files of
+        the next trials' pages (their media and
+        :attr:`~psynet.timeline.Page.prefetch_urls`), which the browser
+        downloads while the participant works on the current trial; see
+        :ref:`showing_the_next_trials_without_waiting`. All of this needs
+        in-place timeline transitions, which are on by default. The response
+        timeout counts from when the server first sends each trial's page;
+        once one times out, the participant's trials waiting their turn
+        fail with it. As every block is prepared at once,
+        ``participant.module_state.block`` is the last block prepared while
+        the trials are taken; read a trial's own block from ``trial.block``.
+        Nodes are selected (``custom_node_filter``, ``select_node`` and the
+        node order) when the trials are created, before any is answered, so
+        selection can't adapt to the participant's answers. Likewise, the
+        next trials' pages are built, with ``show_trial``, before the earlier
+        trials are answered: if a trial's page shows something that earlier
+        answers change, the browser replaces the page shown in advance with
+        the server's once the server replies, so the participant briefly sees
+        the old version.
+        Can't be combined with
+        ``sync_group_type``, ``check_performance_every_trial``,
+        ``n_repeat_trials`` or ``recruit_mode="n_trials"``.
+        Defaults to ``False``.
+
+    n_upcoming_trials
+        With ``prepare_trials_in_advance``, how many of the next trials'
+        contents or rendered pages each trial page carries (default = 2). The
+        participant can be up to one more than this many answers ahead of the
+        server, and this many trials' files are downloaded early. Each extra
+        trial makes every trial request build one more page, so raise it only
+        if large files need longer to download.
+
     Attributes
     ----------
 
@@ -324,10 +416,27 @@ class StaticTrialMaker(ChainTrialMaker):
         sync_group_also_leave: Optional[Sequence[str]] = None,
         sync_group_waiting_message=None,
         sync_group_newcomer_max_wait: Optional[float] = None,
+        prepare_trials_in_advance: bool = False,
+        n_upcoming_trials: int = 2,
     ):
         _reject_removed_balance_argument(
             "balance_across_nodes", balance_across_nodes, "node_order"
         )
+        if prepare_trials_in_advance and (
+            sync_group_type
+            or check_performance_every_trial
+            or n_repeat_trials
+            or recruit_mode == "n_trials"
+        ):
+            raise ValueError(
+                "prepare_trials_in_advance=True can't be combined with "
+                "sync_group_type, check_performance_every_trial, "
+                "n_repeat_trials or recruit_mode='n_trials'."
+            )
+        self.prepare_trials_in_advance = prepare_trials_in_advance
+        if n_upcoming_trials < 1:
+            raise ValueError("n_upcoming_trials must be at least 1.")
+        self.n_upcoming_trials = n_upcoming_trials
 
         assert isinstance(expected_trials_per_participant, (int, float, str))
         if isinstance(expected_trials_per_participant, str):
@@ -437,6 +546,178 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_waiting_message=sync_group_waiting_message,
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
+
+    def prepare_trial(self, experiment, participant):
+        if not self.prepare_trials_in_advance:
+            return super().prepare_trial(experiment, participant)
+        trials = self.get_participant_trials(participant)
+        trial = next((t for t in trials if not t.complete and not t.failed), None)
+        if trial is not None:
+            return trial, "available"
+        # As without preparation, failed trials are replaced: they don't count
+        # towards the limit, and their nodes can be chosen again.
+        kept = [t for t in trials if not t.failed]
+        failed_networks = {t.network_id for t in trials if t.failed} - {
+            t.network_id for t in kept
+        }
+        state = participant.module_state
+        state.participated_networks = [
+            n for n in state.participated_networks if n not in failed_networks
+        ]
+        new_trials, status = self._prepare_trials(experiment, participant, len(kept))
+        if new_trials:
+            return new_trials[0], "available"
+        return None, status
+
+    def _prepare_trials(self, experiment, participant, n_existing):
+        """Create the participant's next trials in the order that they will take them.
+
+        Stops early if node selection has to wait, for example for a busy node;
+        :meth:`prepare_trial` prepares the rest once these trials are done.
+        Returns the new trials and the status that ended preparation.
+        """
+        trials = []
+        status = "exit"
+        while (
+            self.max_trials_per_participant is None
+            or n_existing + len(trials) < self.max_trials_per_participant
+        ):
+            trial, status = super().prepare_trial(experiment, participant)
+            if trial is None:
+                break
+            trials.append(trial)
+            # Selection skips nodes once their trials are finalized, which
+            # trials waiting their turn aren't yet.
+            participated = participant.module_state.participated_networks
+            if trial.network_id not in participated:
+                participated.append(trial.network_id)
+        if trials:
+            logger.info(
+                "Prepared %i trials for participant %i.", len(trials), participant.id
+            )
+        return trials, status
+
+    def _check_trials_shown_in_advance(self, participant):
+        """Fail a test if the participant's trial pages were compared but none matched.
+
+        Trials get a layout key once their pages are compared, so a pair of
+        consecutive trials with keys, but none with the same key, means no
+        trial could be shown in advance. A pair separated by a page between
+        trials, which isn't compared, can still pass the check.
+        """
+        keys = [
+            trial.layout_key
+            for trial in self.get_participant_trials(participant)
+            if not trial.failed
+        ]
+        compared = [
+            (a, b) for a, b in zip(keys, keys[1:]) if a is not None and b is not None
+        ]
+        assert not compared or any(a and a == b for a, b in compared), (
+            f"Trial maker {self.id!r} prepares trials in advance, but each "
+            "trial's page had different HTML, JavaScript or page_config from the "
+            "previous one's, so none could be shown in advance. Put what changes "
+            "between trials in the page's contents, which its JSPage module's "
+            "update() receives; the server log names the trials. A picture in the "
+            "page's HTML makes every trial's page different. Pages other than "
+            "JSPage are sent rendered instead and aren't checked."
+        )
+
+    @staticmethod
+    def _swappable(page):
+        """Whether a rendered copy of ``page`` can be swapped in, with its answer sent in the background."""
+        reason = page._cannot_be_left_early_because()
+        if reason is not None:
+            _log_waiting_for_the_server("after", page, reason, logging.INFO)
+            return False
+        reason = page._cannot_be_rendered_early_because()
+        if reason is not None:
+            _log_waiting_for_the_server("before showing", page, reason, logging.INFO)
+            return False
+        return True
+
+    def _upcoming(self, trial, page, experiment, participant):
+        # Without in-place transitions each reply reloads the page, which would
+        # drop the answers given ahead and the files downloaded early.
+        if not self.prepare_trials_in_advance or not get_config().get(
+            "inplace_timeline_transitions"
+        ):
+            return None, None
+        # A page that can be adopted as a predicted page gets a layout key,
+        # even if its own feedback stops it from showing later trials. Other
+        # pages get the rendered pages of the next trials, which the browser
+        # swaps in as each trial is answered.
+        page._pre_render_once()
+        adoptable = page._show_in_advance()
+        swappable = not adoptable and self._swappable(page)
+        shown = [] if adoptable or swappable else None
+        media = {}
+        ahead = shown is not None and not trial.gives_feedback(experiment, participant)
+        trial_class = self.trial_class
+        upcoming = (
+            trial_class.query.filter(
+                trial_class.participant_id == participant.id,
+                trial_class.trial_maker_id == self.id,
+                trial_class.id > trial.id,
+                trial_class.complete.isnot(True),
+                trial_class.failed.isnot(True),
+            )
+            .order_by(trial_class.id)
+            .limit(self.n_upcoming_trials)
+            .all()
+        )
+        previous = trial
+        for following in upcoming:
+            between = join(
+                call_function_with_context(
+                    self.show_after_trial,
+                    experiment=experiment,
+                    participant=participant,
+                    trial=previous,
+                )
+            )
+            previous = following
+            pages = join(
+                call_function_with_context(
+                    following.show_trial,
+                    experiment=experiment,
+                    participant=participant,
+                    trial_maker=self,
+                    trial=following,
+                )
+            )
+            for elt in between + pages:
+                if isinstance(elt, Page):
+                    # As before the page is shown, as it may set its contents.
+                    elt._pre_render_once()
+                    for media_type, urls in elt.prefetch_urls.items():
+                        known = media.setdefault(media_type, [])
+                        known.extend(url for url in urls if url not in known)
+            next_page = pages[0] if not between and len(pages) == 1 else None
+            ahead = (
+                ahead
+                and isinstance(next_page, Page)
+                and next_page.render_in_advance
+                and (
+                    next_page._show_in_advance()
+                    and _same_layout(
+                        trial, page, following, next_page, experiment, participant
+                    )
+                    if adoptable
+                    else self._swappable(next_page)
+                )
+            )
+            if ahead:
+                next_page._page_key = following._page_key
+                if next_page.time_estimate is None:
+                    # As the trial's page maker gives the page it shows.
+                    next_page.time_estimate = following._get_trial_time_estimate(self)
+                if swappable:
+                    next_page._rendered_in_advance = True
+                shown.append(next_page)
+                ahead = not following.gives_feedback(experiment, participant)
+        # A JSPage needs the list, even if empty, to show the page itself.
+        return (shown if adoptable else shown or None), media
 
     def _selection_hook_overrides(self):
         return [

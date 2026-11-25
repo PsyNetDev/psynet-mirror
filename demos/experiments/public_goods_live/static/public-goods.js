@@ -18,9 +18,8 @@ function tokenRow(name, tokens, endowment, you, absent) {
   return row;
 }
 
-export function activate({root, vars, psynet}) {
+export function activate({root, psynet}) {
   let live = psynet.liveGame;
-  let rules = vars.public_goods_rules;
   let status = root.querySelector("#pg-status");
   let timeLeft = root.querySelector("#pg-time-left");
   let slider = root.querySelector("#pg-tokens");
@@ -37,14 +36,15 @@ export function activate({root, vars, psynet}) {
       predicted.contributions[live.player] = message.tokens;
       if (predicted.pot !== null && !predicted.no_shows.includes(live.player)) {
         predicted.pot += change;
-        predicted.share = (rules.multiplier * predicted.pot) / predicted.n_players;
-        predicted.payoffs[live.player] = rules.endowment - message.tokens + predicted.share;
+        predicted.share = (predicted.multiplier * predicted.pot) / predicted.n_players;
+        predicted.payoffs[live.player] = predicted.endowment - message.tokens + predicted.share;
       }
     }
   });
 
   function render(view) {
-    let contributions = view.contributions;
+    // The settings come in the view, so the page shows what the server pays.
+    let {contributions, endowment, multiplier} = view;
     let mine = contributions[live.player];
     if (document.activeElement !== slider) {
       slider.value = mine;
@@ -64,7 +64,7 @@ export function activate({root, vars, psynet}) {
           // "You", or the player's pseudonym, as the group's other pages show them.
           live.players[player]?.label ?? `Player ${player + 1}`,
           tokens,
-          rules.endowment,
+          endowment,
           player === live.player,
           noShows.includes(player)
         )
@@ -76,16 +76,16 @@ export function activate({root, vars, psynet}) {
     if (view.psynet.too_few_ready) {
       pot.textContent = "No pot this round.";
       earn.textContent = view.payoffs[live.player]
-        ? `You keep your ${rules.endowment} tokens.`
+        ? `You keep your ${endowment} tokens.`
         : "Too few players opened the game.";
       return;
     }
     // The server's pot and payoffs, as the round's outcome counts them.
     let total = view.pot;
-    pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
+    pot.textContent = `Pot: ${total} tokens × ${multiplier} = ${+(multiplier * total).toFixed(2)}`;
     let shareText = +view.share.toFixed(2);
     let earned =
-      live.started || live.ended ? +view.payoffs[live.player].toFixed(2) : rules.endowment;
+      live.started || live.ended ? +view.payoffs[live.player].toFixed(2) : endowment;
     earn.textContent = live.ended
       ? `Each player gets ${shareText} tokens from the pot, and you earn ${earned} tokens.`
       : `If the round ended now, each player would get ${shareText} tokens ` +

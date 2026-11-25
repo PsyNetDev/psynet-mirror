@@ -260,22 +260,22 @@
 
 
     var test = new VocabTest({
-        items: psynet.var.items,
+        items: psynet.pageConfig.items,
         containerID: 'test',
-        displayTime: psynet.var.testConfig.displayTime,
-        trueKey: psynet.var.testConfig.trueKey,
-        trueKeyLabel: psynet.var.testConfig.trueKeyLabel,
-        falseKey: psynet.var.testConfig.falseKey,
-        falseKeyLabel: psynet.var.testConfig.falseKeyLabel,
-        trueLabelTemplate: psynet.var.testConfig.trueLabelTemplate,
-        falseLabelTemplate: psynet.var.testConfig.falseLabelTemplate,
-        pressKeyLabelTemplate: psynet.var.testConfig.pressKeyLabelTemplate,
-        lagBetweenTrials: psynet.var.testConfig.lagBetweenTrials,
-        showButtons: psynet.var.testConfig.showButtons,
-        useKeyboard: psynet.var.testConfig.useKeyboard,
-        maxWidth: psynet.var.testConfig.imageWidth,
-        maxHeigth: psynet.var.testConfig.imageHeight,
-        presentAsImage: psynet.var.testConfig.presentAsImage,
+        displayTime: psynet.pageConfig.testConfig.displayTime,
+        trueKey: psynet.pageConfig.testConfig.trueKey,
+        trueKeyLabel: psynet.pageConfig.testConfig.trueKeyLabel,
+        falseKey: psynet.pageConfig.testConfig.falseKey,
+        falseKeyLabel: psynet.pageConfig.testConfig.falseKeyLabel,
+        trueLabelTemplate: psynet.pageConfig.testConfig.trueLabelTemplate,
+        falseLabelTemplate: psynet.pageConfig.testConfig.falseLabelTemplate,
+        pressKeyLabelTemplate: psynet.pageConfig.testConfig.pressKeyLabelTemplate,
+        lagBetweenTrials: psynet.pageConfig.testConfig.lagBetweenTrials,
+        showButtons: psynet.pageConfig.testConfig.showButtons,
+        useKeyboard: psynet.pageConfig.testConfig.useKeyboard,
+        maxWidth: psynet.pageConfig.testConfig.imageWidth,
+        maxHeigth: psynet.pageConfig.testConfig.imageHeight,
+        presentAsImage: psynet.pageConfig.testConfig.presentAsImage,
 
         onEnd: function (test) {
             psynet.nextPage(test.history);

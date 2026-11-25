@@ -173,6 +173,8 @@ first asks whether the participant already exists, Dallinger answers 403
 with ``participant_not_found`` for someone new, and PsyNet then creates the
 participant.
 
+.. _detailed_log_messages:
+
 See PsyNet's detailed log messages
 ----------------------------------
 

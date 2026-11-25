@@ -262,7 +262,7 @@ class VocabPage(Page):
             time_estimate=time_estimate,
             template_str=get_template("vocabtest.html"),
             framework_owned_template=True,
-            js_vars={
+            page_config={
                 "items": items,
                 "testConfig": test_config,
             },

@@ -10,6 +10,10 @@ you can run with ``psynet debug local`` from the demo directory:
 Kinds of page
 -------------
 
+This page covers pages assembled from ready-made parts. To choose between
+them, a page you write yourself and a live game, see
+:ref:`choosing_a_kind_of_page`.
+
 An :class:`~psynet.page.InfoPage` shows text. Wrap HTML in
 ``markupsafe.Markup`` to format it:
 
@@ -91,8 +95,10 @@ A consent page usually opens the timeline. The built-in forms in
 :mod:`psynet.consent` name the institutions they were written for, so most
 studies need their own; see :doc:`/code/participants/consent`.
 
-Pages that go beyond prompts and controls are
-:doc:`custom front ends </code/pages/custom_front_ends>`.
+When the built-in prompts and controls don't fit, write your own
+(see :doc:`custom front ends </code/pages/custom_front_ends>`), or write the
+whole page as a :class:`~psynet.page.JSPage` (see
+:ref:`custom_front_ends_js_page`).
 
 What happens to a response
 --------------------------

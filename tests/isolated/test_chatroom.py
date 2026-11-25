@@ -436,7 +436,7 @@ class TestHandleMessage:
             ModularPage("chat", "Hi", chatroom=ChatRoom(room_id=room)).render(
                 experiment, hidden
             )
-        config = ChatRoom(room_id=room, names="anonymous").get_js_vars()
+        config = ChatRoom(room_id=room, names="anonymous").get_page_config()
         assert config["chatroom_config"]["names"] == "anonymous"
         assert config["chatroom_config"]["partner_label"] == "Your partner"
         assert config["chatroom_config"]["other_label"] == "Another player"

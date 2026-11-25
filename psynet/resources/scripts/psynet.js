@@ -12,7 +12,7 @@
   const psynetTemplateData = JSON.parse(templateDataElement.textContent);
   window.psynetTemplateData = psynetTemplateData;
 
-  // `psynet.var` is the canonical page-scoped JavaScript variable namespace.
+  // `psynet.pageConfig` holds the page's configuration (`page_config`).
   // Legacy globals remain available through configurable accessors while
   // experiments migrate, allowing accesses to warn or fail with useful errors.
   const LEGACY_JS_VAR_GLOBAL_MODES = new Set(["warn", "error", "off"]);
@@ -33,7 +33,7 @@
   let legacyJsVarGlobalError = function (key) {
     return new ReferenceError(
       `Legacy global js_vars access "${key}" is disabled. ` +
-        `Use psynet.var[${JSON.stringify(key)}] instead.`,
+        `Use psynet.pageConfig[${JSON.stringify(key)}] instead.`,
     );
   };
 
@@ -44,7 +44,7 @@
     warnedLegacyJsVarGlobalKeys.add(key);
     console.warn(
       `Legacy global js_vars access "${key}" is deprecated. ` +
-        `Use psynet.var[${JSON.stringify(key)}] instead.`,
+        `Use psynet.pageConfig[${JSON.stringify(key)}] instead.`,
     );
   };
 
@@ -61,7 +61,7 @@
         console.warn(
           `PsyNet could not restore window.${key} because another script ` +
             "made it non-configurable. The legacy global will remain in place; " +
-            `use psynet.var[${JSON.stringify(key)}] for page-scoped data.`,
+            `use psynet.pageConfig[${JSON.stringify(key)}] for page-scoped data.`,
         );
       }
       return false;
@@ -115,7 +115,7 @@
 
       // The accessor was replaced or removed while we still tracked it. Drop
       // the stale map entry, clear any foreign redefine, and fall through to a
-      // fresh install so `psynet.var` and the legacy mirror stay in sync.
+      // fresh install so `psynet.pageConfig` and the legacy mirror stay in sync.
       legacyJsVarGlobalStates.delete(key);
       if (currentDescriptor) {
         if (!clearLegacyJsVarGlobalProperty(key)) {
@@ -129,14 +129,14 @@
     }
 
     // Legacy compatibility must never shadow browser, framework, or third-party
-    // state. Authors can always access the page value through `psynet.var`.
+    // state. Authors can always access the page value through `psynet.pageConfig`.
     if (key in window) {
       if (!warnedLegacyJsVarGlobalCollisionKeys.has(key)) {
         warnedLegacyJsVarGlobalCollisionKeys.add(key);
         console.warn(
           `PsyNet did not install the legacy js_vars accessor for "${key}" ` +
             `because window.${key} already exists. ` +
-            `Use psynet.var[${JSON.stringify(key)}] instead.`,
+            `Use psynet.pageConfig[${JSON.stringify(key)}] instead.`,
         );
       }
       return;
@@ -163,7 +163,7 @@
       }
       warnLegacyJsVarGlobalAccess(key);
       // Preserve the historical behavior: assigning the global changes its
-      // mirrored value without mutating the canonical `psynet.var` object.
+      // mirrored value without mutating the canonical `psynet.pageConfig`.
       state.value = nextValue;
     };
 
@@ -177,7 +177,8 @@
   };
 
   let syncJsVars = function () {
-    let jsVars = psynetTemplateData.jsVars || {};
+    let jsVars = psynetTemplateData.pageConfig || {};
+    let pageUuid = psynetTemplateData.pageState?.pageUuid;
     let mode = getLegacyJsVarGlobalMode();
 
     legacyJsVarGlobalStates.forEach((_, key) => {
@@ -186,10 +187,10 @@
       }
     });
 
-    if ("pageUuid" in jsVars) {
+    if (pageUuid !== undefined) {
       // `window.pageUuid` remains an intentional framework lifecycle property,
       // rather than a deprecated author js_vars mirror.
-      window.pageUuid = jsVars.pageUuid;
+      window.pageUuid = pageUuid;
     }
 
     if (mode !== "off") {
@@ -226,13 +227,44 @@
       },
       utils: {},
       comments: [],
-      var: psynetTemplateData.jsVars,
-      submissionPageUuid: psynetTemplateData.jsVars.pageUuid,
+      pageConfig: psynetTemplateData.pageConfig || {},
+      // PsyNet's own state for the page the server confirmed.
+      pageState: { ...psynetTemplateData.pageState, submitting: false },
+      submissionPageUuid: psynetTemplateData.pageState?.pageUuid,
       // When the current page left the server, in Date.now() milliseconds; the
       // first response byte on a full load, otherwise when /response answered.
       pageReceivedAt: psynetNavigationResponseStart(),
+      // Identifies the shown page's #main-body for predicted trial pages.
+      // Fragments carry it next to their HTML, full pages in the attributes.
+      layoutKey: psynetTemplateData.page?.attributes?.layout_key ?? null,
     };
     psynet.SUBMISSION_HANDLED = Symbol("psynet.SUBMISSION_HANDLED");
+
+    // Deprecated alias of psynet.pageConfig. It also still reads PsyNet's
+    // own page state, with a warning, as both used to share it.
+    let warnedPageStateKeys = new Set();
+    let deprecatedVarAlias = function () {
+      return new Proxy(psynet.pageConfig, {
+        get(config, key, receiver) {
+          let state = psynet.pageState;
+          if (typeof key === "string" && !(key in config) && key in state) {
+            if (!warnedPageStateKeys.has(key)) {
+              warnedPageStateKeys.add(key);
+              console.warn(
+                `psynet.var.${key} is PsyNet's internal page state, which ` +
+                  "may change without notice.",
+              );
+            }
+            return state[key];
+          }
+          return Reflect.get(config, key, receiver);
+        },
+      });
+    };
+    Object.defineProperty(psynet, "var", {
+      enumerable: true,
+      get: deprecatedVarAlias,
+    });
 
     // Named CSS colours (red, green, blue, ...) resolve to theme tokens so
     // trial progress, event captions, and the audio meter follow the
@@ -349,8 +381,9 @@
       });
       Object.assign(psynetTemplateData, refreshedTemplateData);
       window.psynetTemplateData = psynetTemplateData;
-      psynet.var = psynetTemplateData.jsVars || {};
-      psynet.submissionPageUuid = psynet.var.pageUuid;
+      psynet.pageConfig = psynetTemplateData.pageConfig || {};
+      psynet.pageState = { ...psynetTemplateData.pageState, submitting: false };
+      psynet.submissionPageUuid = psynet.pageState.pageUuid;
       psynet.page = {
         ...(psynetTemplateData.page || {}),
         prompt: {},
@@ -541,9 +574,8 @@
       };
       psynet.setPageReady(false);
       psynet.pageLoaded = false;
-      psynet.responseClockStart = null;
       psynet.pageModuleUpdates = [];
-      psynet.nextPagePending = false;
+      psynet.clearSubmissionControlState();
       psynet.media.audioRequired = false;
       psynet.media.otherAudioContexts = [];
       // A sound dialog left open by the previous page belongs to it.
@@ -606,6 +638,8 @@
     // one activation/cleanup lifecycle and run for every hosting page.
     psynet.activeJSPageBehaviors = [];
     psynet.pageModuleGeneration = 0;
+    // A sound stops its events (looping, audioFinished) once this changes.
+    psynet.soundScope = {};
     psynet.AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
     psynet.loadJSDependencies = async function () {
@@ -623,6 +657,8 @@
       return {
         root,
         trial: psynet.trial,
+        config: psynet.pageConfig,
+        // Deprecated name of config.
         vars: psynet.var,
         page: psynet.page,
         psynet,
@@ -660,6 +696,7 @@
             "vars",
             "page",
             "psynet",
+            "config",
             `"use strict";\n${code}`,
           );
           let cleanup = await activate(
@@ -668,6 +705,7 @@
             context.vars,
             context.page,
             context.psynet,
+            context.config,
           );
           let source = `js_page_code[${index}]`;
           psynet.validatePageCleanup(cleanup, source);
@@ -710,13 +748,16 @@
                 `JS page module ${normalizedSrc} returned an update that is not a function.`,
               );
             }
-            psynet.pageModuleUpdates.push(() =>
-              update({
-                contents: psynet.page.contents,
-                response: psynet.createResponseHandle(),
-              }),
-            );
+            psynet.pageModuleUpdates.push(update);
           }
+        }
+        if (
+          psynetTemplateData.page?.attributes?.shows_trials_itself &&
+          !psynet.pageModuleUpdates.length
+        ) {
+          throw new Error(
+            "A JSPage's module must return {update}, which receives the page's contents and the response handle to answer with.",
+          );
         }
       } catch (error) {
         psynet.pageModuleUpdates = [];
@@ -726,26 +767,443 @@
       psynet.activeJSPageBehaviors = activated;
     };
 
+    // ---- Answers from page modules -----------------------------------------
+    // A page module's update() shows one trial and answers it through a
+    // response handle. Answers go to /response in the background, one at a
+    // time and in order. Pages of a trial maker that prepares its trials in
+    // advance list the next trials' pages in ``upcoming_pages``, so answering
+    // shows the next trial at once. A reply with the page shown after the
+    // oldest queued answer is adopted without rebuilding the page; any other reply
+    // drops the remaining answers and loads as usual. A rejected answer
+    // shows its trial again.
+    psynet.resetAnswers = function () {
+      // ``handle`` belongs to the trial on screen until it is answered.
+      // ``sending`` settles once the queue is sent or sending stops, as
+      // ``sendQueuedAnswers`` describes.
+      // ``showAgain`` is set when an answer is turned down or couldn't be
+      // sent yet, as opposed to the page failing or moving on.
+      psynet.answers = {
+        queue: [],
+        handle: null,
+        sending: null,
+        showAgain: false,
+      };
+    };
+    psynet.resetAnswers();
+
+    // Leaving would lose the answers not yet saved, so the browser asks
+    // first, as it does while recordings upload. psynet.allowUnload() lets
+    // only the next unload through, in case that navigation doesn't leave.
+    let answersMayBeLost = true;
+    window.addEventListener("beforeunload", (event) => {
+      if (!answersMayBeLost) {
+        answersMayBeLost = true;
+        return;
+      }
+      if (psynet.answers.queue.length) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
+
+    // The pages after the last page the server confirmed, as
+    // ``{page_uuid, contents}`` for page modules or ``{page_uuid, html,
+    // contents}`` for pages swapped in whole. Every approved reply replaces them.
+    psynet.upcomingPages = psynetTemplateData.upcomingPages ?? [];
+    // The page that Back shows, as ``{page_uuid, html}``, if it can go back.
+    psynet.previousPage = psynetTemplateData.previousPage ?? null;
+
+    // Contents from the last confirmed page onwards, up to the first page that
+    // is swapped in whole rather than shown by the page modules.
+    psynet.predictedContents = function () {
+      let pages = psynet.upcomingPages;
+      let end = pages.findIndex((page) => page.html !== undefined);
+      return [
+        psynet.page.contents,
+        ...(end < 0 ? pages : pages.slice(0, end)).map((page) => page.contents),
+      ];
+    };
+
+    // Show the trial ``offset`` trials after the last confirmed page.
+    // Each call's signal is aborted once a newer update() starts or the page
+    // is left, so that an update() still awaiting something can step aside.
+    psynet.updatePageModules = async function (offset) {
+      let [contents, ...upcomingContents] = psynet.predictedContents().slice(offset);
+      let response = psynet.createResponseHandle();
+      psynet.answers.handle = response;
+      if (psynet.updateController) {
+        // Not on the page's first update(), as sounds started with the page
+        // belong to its first trial.
+        psynet.updateController.abort();
+        psynet.soundScope = {};
+      }
+      let controller = new AbortController();
+      psynet.updateController = controller;
+      let signal = controller.signal;
+      let generation = psynet.pageModuleGeneration;
+      for (let update of psynet.pageModuleUpdates) {
+        // An earlier update() may have answered, or moved to another page.
+        if (
+          psynet.pageModuleGeneration !== generation ||
+          psynet.answers.handle !== response
+        ) {
+          break;
+        }
+        try {
+          await update({ contents, upcomingContents, response, signal });
+        } catch (error) {
+          // For example a fetch given the signal.
+          if (signal.aborted && error?.name === "AbortError") return;
+          throw error;
+        }
+      }
+    };
+
+    // Show a trial without waiting for update() to finish: it may await
+    // something until its signal is aborted, which happens only once the page
+    // changes, so waiting would hold up the page changes queued behind it.
+    // An update() that fails, for example as a sound couldn't load, leaves
+    // nothing to answer, so the participant is asked to reload; one that a
+    // newer trial or page replaced while it waited is ignored.
+    psynet.showPageModuleTrial = function (offset) {
+      let generation = psynet.pageModuleGeneration;
+      let shown = psynet.updatePageModules(offset);
+      let controller = psynet.updateController;
+      shown.catch((error) => {
+        if (controller?.signal.aborted || psynet.pageModuleGeneration !== generation) {
+          return;
+        }
+        psynet.handleTimelineTransitionFailure(error);
+      });
+    };
+
     // What a page module's update() receives as ``response``.
+    // Times are performance.now() timestamps, such as an event's timeStamp
+    // or a requestAnimationFrame time, so reaction times can be measured from
+    // the frame that shows a stimulus to the key press.
     psynet.createResponseHandle = function () {
-      // Late callbacks from an earlier page mustn't act on the next one.
-      const generation = psynet.pageModuleGeneration;
-      const current = () => psynet.pageModuleGeneration === generation;
-      return {
-        // time_taken then runs from this call rather than from page setup.
-        startClock() {
-          if (current()) psynet.responseClockStart = new Date();
+      let shownAt = performance.now();
+      let clockStart = null;
+      let marks = {};
+      let elapsed = (at) => (at - (clockStart ?? shownAt)) / 1000;
+      let handle = {
+        // time_taken then runs from this call rather than from update().
+        startClock(at = performance.now()) {
+          clockStart = at;
         },
-        answer(value) {
-          return current() ? psynet.nextPage(value) : Promise.resolve(false);
+        // Records how long after the clock started a step of the trial
+        // happened, such as a first choice before a confidence rating.
+        mark(name, { at = performance.now() } = {}) {
+          marks[name] = elapsed(at);
+        },
+        answer(value, { at = performance.now() } = {}) {
+          let answers = psynet.answers;
+          if (answers.handle !== handle) {
+            psynet.log.info("Ignored an answer to a trial that is no longer shown.");
+            return false;
+          }
+          answers.handle = null;
+          let metadata = {
+            time_taken: elapsed(at),
+            marks: { ...marks },
+            // Comments made since the last answer, as later trials share the page.
+            comments: psynet.comments.splice(0),
+            // The events of this trial only, as later trials share the page.
+            event_log: psynet.trial.eventLog.splice(0),
+          };
+          // As psynet.nextPage would, for example after a JSPage with media,
+          // whose next pages the server sends rendered.
+          if (
+            psynet.nextRenderedPage() &&
+            !psynet.pageState.asynchronousUploadSources?.length
+          ) {
+            psynet.answerWithRenderedPage(value, metadata);
+            return true;
+          }
+          // showNextPredictedTrial sets nextPageUuid if it shows a trial next.
+          // Recordings are only this page's while it shows nothing in advance.
+          answers.queue.push({
+            value,
+            metadata,
+            nextPageUuid: undefined,
+            withRecordings: !answers.queue.length && !psynet.upcomingPages.length,
+          });
+          // After the caller's own code, which may still tidy up this trial.
+          queueMicrotask(psynet.showNextPredictedTrial);
+          psynet.sendAnswers();
+          return true;
         },
       };
+      return handle;
+    };
+
+    // Once the shown trial is answered, show the next one if it is known.
+    psynet.showNextPredictedTrial = function () {
+      let offset = psynet.answers.queue.length;
+      if (
+        // Not while an answer that couldn't be sent waits to be shown again.
+        !psynet.answers.showAgain &&
+        !psynet.pageFailureShown &&
+        psynet.answers.handle === null &&
+        offset < psynet.predictedContents().length
+      ) {
+        // The page shown after the last answer, which its reply should be.
+        // Set here rather than on answering, as that trial may only become
+        // known from a later reply.
+        if (offset > 0) {
+          let next = psynet.upcomingPages[offset - 1];
+          let entry = psynet.answers.queue[offset - 1];
+          entry.nextPageUuid = next?.page_uuid;
+          entry.nextContents = JSON.stringify(next?.contents);
+        }
+        psynet.showPageModuleTrial(offset);
+      }
+    };
+
+    psynet.sendAnswers = async function () {
+      let answers = psynet.answers;
+      if (answers.sending) return;
+      let result = {};
+      answers.sending = queueSubmission(async () => {
+        let result = await sendQueuedAnswers(answers);
+        let retry = result.retry;
+        if (retry) {
+          // Show the rejected trial again, with the comments made on it. The
+          // server's page is that trial, so a rendered page is replaced by
+          // loading it. Within the queue, so that nothing queued after the
+          // answer, such as Back, goes ahead.
+          psynet.comments.unshift(...(retry.metadata.comments ?? []));
+          psynet.resetAnswers();
+          if (retry.pageUuid === undefined) {
+            psynet.showPageModuleTrial(0);
+          } else {
+            await psynet.loadNextTimelinePageWithReload();
+          }
+        }
+        return result;
+      });
+      try {
+        result = await answers.sending;
+      } finally {
+        answers.sending = null;
+      }
+      if (result.sent && psynet.answers === answers && answers.queue.length) {
+        // Queued while the last reply was being handled.
+        psynet.sendAnswers();
+      }
+    };
+
+    // Settle to ``{sent: true}`` once the queue is sent or replaced, to
+    // ``{retry: entry}`` for an answer turned down or not sent yet, which is
+    // shown again, or to ``{}`` if sending stopped, for example as the page
+    // failed.
+    let sendQueuedAnswers = async function (answers) {
+      while (psynet.answers === answers && answers.queue.length) {
+        let entry = answers.queue[0];
+        answers.showAgain = false;
+        let accepted = await psynet.nextPage(
+          entry.value,
+          entry.metadata,
+          undefined,
+          undefined,
+          {
+            background: true,
+            pageUuid: entry.pageUuid,
+            withRecordings: entry.withRecordings,
+            back: entry.back,
+          },
+        );
+        if (!accepted) {
+          let showAgain =
+            answers.showAgain &&
+            psynet.answers === answers &&
+            answers.queue[0] === entry;
+          return showAgain ? { retry: entry } : {};
+        }
+      }
+      return { sent: true };
+    };
+
+    // Whether the reply shows the page expected after the oldest queued
+    // answer: the page shown after it, with the contents shown for it, or,
+    // if nothing was shown after it, any page but a hold.
+    psynet.isExpectedReply = function (response) {
+      let entry = psynet.answers.queue[0];
+      let page = response.page;
+      if (entry === undefined || page?.attributes?.timeline_hold) {
+        return false;
+      }
+      return (
+        entry.nextPageUuid === undefined ||
+        (page.attributes?.page_uuid === entry.nextPageUuid &&
+          JSON.stringify(page.contents) === entry.nextContents)
+      );
+    };
+
+    // Warn if the reply is the page shown after the oldest queued answer, but
+    // with other contents than were shown for it.
+    psynet.warnIfContentsChanged = function (response) {
+      let entry = psynet.answers.queue[0];
+      if (
+        entry?.nextPageUuid !== undefined &&
+        response.page?.attributes?.page_uuid === entry.nextPageUuid &&
+        !response.page?.attributes?.timeline_hold &&
+        JSON.stringify(response.page?.contents) !== entry.nextContents
+      ) {
+        psynet.log.warn(
+          "The page shown in advance no longer matches the server's, so PsyNet " +
+            "loaded the server's. Its contents may depend on an earlier answer; " +
+            "build them from the trial's definition instead.",
+        );
+      }
+    };
+
+    // Return the reply's fragment if the JSPage on screen shows it through
+    // update(), which needs the reply to be the expected page and a JSPage
+    // with the same layout.
+    psynet.keptPageFragment = function (response) {
+      let layoutKey = response.timeline_fragment?.layout_key;
+      if (
+        !psynet.page?.attributes?.shows_trials_itself ||
+        !response.page?.attributes?.shows_trials_itself ||
+        !psynet.isExpectedReply(response)
+      ) {
+        return null;
+      }
+      if (!layoutKey || layoutKey !== psynet.layoutKey) {
+        if (psynet.answers.queue[0].nextPageUuid !== undefined) {
+          psynet.log.warn(
+            "The next trial's page has different HTML from this one, so PsyNet " +
+              "couldn't show it in advance. Put what changes between trials in " +
+              "the page's contents.",
+          );
+        }
+        return null;
+      }
+      return psynet.prepareTimelineFragment(response.timeline_fragment);
+    };
+
+    // Swap in everything but #main-body, whose trial the JSPage module shows.
+    psynet.keepPage = function (fragment) {
+      psynet.answers.queue.shift();
+      fragment.replacements = fragment.replacements.filter(
+        ({ currentElement }) => currentElement.id !== "main-body",
+      );
+      psynet.commitTimelineFragment(fragment);
+      let { prompt, control, response } = psynet.page;
+      psynet.refreshTemplateData();
+      Object.assign(psynet.page, { prompt, control, response });
+      psynet.ensureArrivalUpdates(psynet.page.attributes?.arrival_updates);
+      psynet.waiting.start(psynet.page.attributes?.waiting);
+      psynet.initEarlyExitButton();
+      initModal("comment-modal", "comment-button");
+      psynet.pageLoadTime = new Date();
+      if (psynetTemplateData.flags.lucidRecruitment) {
+        psynet.addBeforeUnloadEventListener();
+      }
+      psynet.media.prefetch(psynet.page.attributes?.upcoming_media);
+      psynet.showNextPredictedTrial();
+    };
+
+    // Pages without page modules are shown in advance differently: the
+    // server sends the rendered pages of the next trials, each with the page
+    // UUID it will have. Answering shows the next one as if the server had
+    // sent it, while the answer is sent in the background with the UUID of
+    // the page it was given on. A reply with the page already shown is
+    // adopted without touching the page.
+    psynet.nextRenderedPage = function () {
+      let page = psynet.upcomingPages[psynet.answers.queue.length];
+      return page?.html === undefined ? null : page;
+    };
+
+    psynet.answerWithRenderedPage = async function (rawAnswer, metadata) {
+      let page = psynet.nextRenderedPage();
+      psynet.pageState.submitting = true;
+      psynet.answers.queue.push({
+        value: rawAnswer,
+        metadata: {
+          time_taken: (new Date() - psynet.pageLoadTime) / 1000,
+          event_log: psynet.trial.eventLog.splice(0),
+          comments: psynet.comments.splice(0),
+          ...metadata,
+        },
+        pageUuid: psynet.submissionPageUuid,
+        nextPageUuid: page.page_uuid,
+        nextContents: JSON.stringify(page.contents),
+        nextLayoutKey: page.layout_key,
+      });
+      await psynet.swapInPage(page);
+      return true;
+    };
+
+    // Return a function that runs the tasks passed to it one at a time, in
+    // order. With nothing ahead, a task starts at once, so that its checks
+    // run before the caller goes on: an answer refused before it is sent is
+    // shown again rather than the next trial.
+    let serialQueue = function () {
+      let tail = Promise.resolve();
+      let pending = 0;
+      let enqueue = function (task) {
+        let start = pending ? tail.then(task) : (async () => task())();
+        pending += 1;
+        let run = start.finally(() => (pending -= 1));
+        // The caller handles a failure; later tasks go ahead regardless.
+        tail = run.catch(() => {});
+        return run;
+      };
+      enqueue.pending = () => pending;
+      return enqueue;
+    };
+
+    // Pages are changed one at a time, in the order asked for, so a reply's
+    // page or prefetch waits for a page being swapped in.
+    psynet.changePage = serialQueue();
+
+    // Swap in a page rendered in advance and send the queued answers.
+    psynet.swapInPage = async function (page) {
+      let swap = psynet.changePage(() => psynet.showTimelineFragment(page));
+      // Sent at once rather than after the page is ready, which may wait for
+      // its media.
+      psynet.sendAnswers();
+      try {
+        await swap;
+      } catch (error) {
+        await psynet.handleTimelineTransitionFailure(error);
+      }
+    };
+
+    // Return true if the reply shows the page swapped in after its answer, as
+    // it was rendered then.
+    psynet.adoptRenderedReply = function (response) {
+      let entry = psynet.answers.queue[0];
+      if (entry?.pageUuid === undefined || !psynet.isExpectedReply(response)) {
+        return false;
+      }
+      if (entry.nextLayoutKey !== response.timeline_fragment?.layout_key) {
+        psynet.log.warn(
+          "The page shown in advance no longer matches the server's, so PsyNet " +
+            "loaded the server's. Its HTML may depend on an earlier answer; " +
+            "pass render_in_advance=False to such a page.",
+        );
+        return false;
+      }
+      psynet.answers.queue.shift();
+      if (psynetTemplateData.flags.lucidRecruitment) {
+        psynet.addBeforeUnloadEventListener();
+      }
+      // The page being swapped in may still need files that the next pages
+      // don't, so they are only dropped once it has loaded them.
+      let upcomingMedia = response.page.attributes?.upcoming_media;
+      psynet.changePage(() => psynet.media.prefetch(upcomingMedia));
+      return true;
     };
 
     psynet.deactivatePageJavascript = async function (
       activations = psynet.activeJSPageBehaviors,
     ) {
       psynet.pageModuleGeneration += 1;
+      psynet.updateController?.abort();
+      psynet.updateController = null;
       if (activations === psynet.activeJSPageBehaviors) {
         psynet.activeJSPageBehaviors = [];
       }
@@ -1101,7 +1559,11 @@
             psynet.waiting.stop();
             return;
           }
-          if (status.released && !psynet.nextPagePending) {
+          if (
+            status.released &&
+            !psynet.pageState.submitting &&
+            !psynet.answers.sending
+          ) {
             // The release could have ended this page, so the participant has
             // moved past it, for example in another tab.
             psynet.waiting.stop();
@@ -1163,14 +1625,19 @@
       },
 
       interrupt() {
-        if (!psynet.waiting.config) return;
-        if (psynet.nextPagePending) {
-          // A submission in flight may still be rejected, for example by
-          // validation; try again once it has settled.
+        if (!psynet.waiting.config || psynet.timelineHold) return;
+        if (
+          psynet.pageState.submitting ||
+          psynet.answers.sending ||
+          !psynet.pageReady
+        ) {
+          // A submission in flight, including a JSPage's answer sent in the
+          // background, may still be rejected, for example by validation;
+          // try again once it has settled and the page is ready.
           psynet.waiting.graceTimer = setTimeout(psynet.waiting.interrupt, 500);
           return;
         }
-        psynet.nextPage(null, { interrupted: true }, {}, undefined, {
+        psynet.sendSubmission(null, { interrupted: true }, {}, undefined, {
           interrupted: true,
         });
       },
@@ -1450,7 +1917,7 @@
         psynet.scheduleTimelineHoldCheck(controller);
         return false;
       }
-      if (psynet.nextPagePending) {
+      if (psynet.pageState.submitting) {
         controller.resumeRequested = true;
         psynet.scheduleTimelineHoldCheck(controller);
         return false;
@@ -1461,7 +1928,7 @@
       controller.resumeRequested = false;
       clearTimeout(controller.safetyTimer);
       try {
-        return await psynet.nextPage(null, {}, {}, undefined, {
+        return await psynet.sendSubmission(null, {}, {}, undefined, {
           timelineHoldResume: true,
         });
       } finally {
@@ -1641,11 +2108,10 @@
       psynet.setTimelineTransitionBusy(false);
       // Page modules show the trial only once it can be answered.
       // Stop once the participant has moved on to another page, whose own
-      // finalizePageReady runs its updates.
+      // finalizePageReady shows its trial.
       if (psynet.pageModuleGeneration !== generation) return;
-      for (let update of (psynet.pageModuleUpdates || []).splice(0)) {
-        if (psynet.pageModuleGeneration !== generation) break;
-        await update();
+      if (psynet.pageModuleUpdates?.length) {
+        psynet.showPageModuleTrial(0);
       }
     };
 
@@ -1734,9 +2200,23 @@
       psynet.ensureStylesheetLinks(fragment.template.content);
       psynet.applyInlinePageStyles(fragment.template.content);
 
+      let shownProgress = document.getElementById("timeline-progress-bar")?.style.width;
       fragment.replacements.forEach(({ currentElement, nextElement }) => {
         currentElement.replaceWith(nextElement);
       });
+      // Slide the new progress bar from the old width rather than jump.
+      let progressBar = document.getElementById("timeline-progress-bar");
+      if (
+        progressBar &&
+        shownProgress &&
+        shownProgress !== progressBar.style.width &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        progressBar.animate(
+          [{ width: shownProgress }, { width: progressBar.style.width }],
+          { duration: 600, easing: "ease" },
+        );
+      }
 
       let root = document.getElementById("timeline-root");
       (fragment.optionalChanges || []).forEach(({ currentElement, nextElement }) => {
@@ -1753,6 +2233,7 @@
       if (fragment.payload.page_uuid !== undefined) {
         window.pageUuid = fragment.payload.page_uuid;
       }
+      psynet.layoutKey = fragment.payload.layout_key ?? null;
     };
 
     psynet.deactivateTimelineFragmentLifecycle = async function () {
@@ -1778,19 +2259,22 @@
       psynet.initLucidTermination();
       psynet.initEarlyExitButton();
       await psynet.initPage();
-      // Before page ready, so that a submission update() starts stays pending.
-      psynet.nextPagePending = false;
       await psynet.finalizePageReady();
       psynet.log.info("Timeline fragment activation complete.");
     };
 
     psynet.loadNextTimelinePageFromResponse = async function (payload) {
       psynet.log.info("Applying next timeline fragment directly from /response.");
-      psynet.setPageReady(false);
       psynet.setTimelineTransitionBusy(true);
       // Failure presentation belongs to the response boundary, which catches
       // errors from this function and invokes handleTimelineTransitionFailure
       // exactly once.
+      await psynet.showTimelineFragment(payload);
+    };
+
+    // Replace the page with a fragment, from a reply or rendered in advance.
+    psynet.showTimelineFragment = async function (payload) {
+      psynet.setPageReady(false);
       await psynet.deactivateTimelineFragmentLifecycle();
       let fragment = psynet.prepareTimelineFragment(payload);
       await psynet.preloadTimelineFragmentAssets(fragment);
@@ -1821,7 +2305,9 @@
       // The participant is told to reload; nextPage must not then tell them
       // to wait for the page to load (for example after an automatic submit).
       psynet.pageFailureShown = true;
-      psynet.nextPagePending = false;
+      psynet.pageState.submitting = false;
+      // Answers not yet sent are lost on reload, which needn't be confirmed.
+      psynet.resetAnswers();
       psynet.setTimelineTransitionBusy(false);
       psynet.response.disable();
       psynet.submit.disable();
@@ -2289,6 +2775,7 @@
       trial.onEvent("trialConstruct", async function () {
         await psynet.media.init();
         $(".wait-for-media-load").removeAttr("disabled");
+        psynet.media.prefetch(psynet.page.attributes?.upcoming_media);
       });
 
       trial.onEvent("trialPrepare", function () {
@@ -2484,8 +2971,13 @@
       );
     };
 
+    // Sounds that loadAudio has loaded or is loading, by id.
+    let audioLoads = new Map();
+
     psynet.media.invalidateActiveLoads = function () {
       psynet.media.loadGeneration += 1;
+      // Sounds loaded for an earlier page belong to that page.
+      audioLoads.clear();
       Array.from(psynet.media.activeRequests).forEach(function (request) {
         try {
           request.abort();
@@ -2827,8 +3319,12 @@
 
     async function unzipBatch(url) {
       console.log("Zip file: " + url);
-      let batchdata = fetch(url)
-        .then((response) => response.arrayBuffer())
+      let prefetched = await prefetchedData(url, "arraybuffer");
+      let batchdata = (
+        prefetched
+          ? Promise.resolve(prefetched)
+          : fetch(url).then((response) => response.arrayBuffer())
+      )
         .then((data) => JSZip.loadAsync(data))
         .then((zip) => {
           return zip.file("stim.batch").async("uint8array");
@@ -2899,23 +3395,98 @@
       throw Error(msg);
     }
 
-    async function createRequest(url, mediaType, callbackFunction, args) {
-      let request = new XMLHttpRequest();
-      request.open("GET", url, true);
-      let loadGeneration = args.loadGeneration;
+    // Pages of trial makers that prepare trials in advance list the next
+    // trials' files in ``upcoming_media``. Once the current page's media has
+    // loaded, they download here, so that the next pages load at once. Images
+    // load through <img> elements, which later <img> elements and requests
+    // for the same URL reuse; other files are kept as blobs until no upcoming
+    // page lists them. A full page load starts again with nothing.
+    psynet.media.prefetched = new Map();
+    psynet.media.prefetchedImages = new Map();
 
+    psynet.media.prefetch = function (urls) {
+      // Pages between trials, such as a break, keep the files for later trials.
+      if (!urls) return;
+      let files = new Set(
+        ["audio", "video", "html"].flatMap((type) => urls[type] || []),
+      );
+      let images = new Set(urls.image || []);
+      let keepOnly = function (cache, wanted) {
+        Array.from(cache.keys())
+          .filter((url) => !wanted.has(url))
+          .forEach((url) => cache.delete(url));
+      };
+      keepOnly(psynet.media.prefetched, files);
+      keepOnly(psynet.media.prefetchedImages, images);
+      let warn = function (url, error) {
+        psynet.log.warn("Couldn't download " + url + " early: " + error);
+      };
+      files.forEach(function (url) {
+        if (psynet.media.prefetched.has(url)) {
+          return;
+        }
+        let blob = fetch(url)
+          .then(function (response) {
+            if (!response.ok) {
+              throw Error("status " + response.status);
+            }
+            return response.blob();
+          })
+          .catch(function (error) {
+            warn(url, error);
+            return null;
+          });
+        psynet.media.prefetched.set(url, blob);
+      });
+      images.forEach(function (url) {
+        if (psynet.media.prefetchedImages.has(url)) {
+          return;
+        }
+        let image = new Image();
+        image.src = url;
+        image.decode().catch((error) => warn(url, error));
+        psynet.media.prefetchedImages.set(url, image);
+      });
+    };
+
+    // A downloaded copy of ``url``, or null to download it now.
+    let prefetchedData = async function (url, responseType) {
+      let blob = await psynet.media.prefetched.get(url);
+      if (!blob) {
+        return null;
+      }
+      return responseType === "blob" ? blob : blob.arrayBuffer();
+    };
+
+    async function createRequest(url, mediaType, callbackFunction, args) {
+      let loadGeneration = args.loadGeneration;
+      let responseType;
       if (mediaType == "audio" || mediaType == "html") {
-        request.responseType = "arraybuffer";
+        responseType = "arraybuffer";
       } else if (mediaType == "image" || mediaType == "video") {
-        request.responseType = "blob";
+        responseType = "blob";
       } else {
         throw Error("Unsupported media type: " + mediaType);
       }
 
       // Make sure all batches are processed as arraybuffers
       if (args["batchId"]) {
-        request.responseType = "arraybuffer";
+        responseType = "arraybuffer";
       }
+
+      let prefetched = await prefetchedData(url, responseType);
+      if (prefetched) {
+        if (!psynet.media.isCurrentLoadGeneration(loadGeneration)) {
+          return false;
+        }
+        psynet.media.downloadProgress.set(mediaType, args["fileId"], 100);
+        await callbackFunction(prefetched, args);
+        return true;
+      }
+
+      let request = new XMLHttpRequest();
+      request.open("GET", url, true);
+      request.responseType = responseType;
 
       request.onprogress = function (e) {
         if (!psynet.media.isCurrentLoadGeneration(loadGeneration)) {
@@ -3013,12 +3584,20 @@
       Object.keys(requests).forEach(log);
     };
 
-    let createAudioStimulus = function (data, stimulusId, loadGeneration) {
+    let createAudioStimulus = function (
+      data,
+      stimulusId,
+      loadGeneration,
+      isCurrent = () => true,
+    ) {
       psynet.log.debug("Decoding sound " + stimulusId + "...");
 
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
+        let failed = function (error) {
+          reject(Error("Couldn't decode sound " + stimulusId + ": " + error));
+        };
         psynet.media.audioContext.decodeAudioData(data, function (buffer) {
-          if (!psynet.media.isCurrentLoadGeneration(loadGeneration)) {
+          if (!psynet.media.isCurrentLoadGeneration(loadGeneration) || !isCurrent()) {
             resolve(false);
             return;
           }
@@ -3060,14 +3639,23 @@
               onEnd: null,
             };
 
+            // A page change stops the trial. A JSPage kept for the next
+            // trial keeps it, but shows that trial through a new update(),
+            // and a page of the same session updates the page in place;
+            // both renew psynet.soundScope.
             const soundTrial = psynet.trial;
-            const soundPageUuid = window.pageUuid;
+            const soundScope = psynet.soundScope;
             let stopTimer = null;
             let completionTimer = null;
             let stopCompletionTimer = null;
             let stopPromise = null;
             let resolveStopPromise = null;
             let completed = false;
+            let resolveFinished;
+            // Resolves once the sound has ended or been stopped.
+            sound.finished = new Promise((resolve) => {
+              resolveFinished = resolve;
+            });
 
             let clearSoundTimers = function () {
               if (stopTimer !== null) {
@@ -3095,7 +3683,7 @@
             let isSoundTrialActive = function () {
               return (
                 psynet.trial === soundTrial &&
-                window.pageUuid === soundPageUuid &&
+                psynet.soundScope === soundScope &&
                 !soundTrial.stopping &&
                 !soundTrial.stopped
               );
@@ -3124,6 +3712,7 @@
               completed = true;
               clearSoundTimers();
               settleStopPromise();
+              resolveFinished();
               psynet.log.debug("Finished sound with ID = " + sound.stimulusId);
               psynet.media.sounds = psynet.media.sounds.filter(
                 (s) => s !== sound,
@@ -3246,13 +3835,60 @@
           out.loaded = true;
 
           resolve(true);
-        });
+        }, failed);
       });
     };
 
     psynet.media.blobToArrayBuffer = async function (blob) {
       let buffer = await new Response(blob).arrayBuffer();
       return buffer;
+    };
+
+    // Loads a sound that isn't in the page's media, for example from a page
+    // module's update(), and resolves with psynet.audio[id]. Each URL is
+    // downloaded once, sharing the copies of upcoming pages' files. Rejects
+    // if the file can't be downloaded or decoded, so callers can retry.
+    psynet.media.loadAudio = function (url, id = url) {
+      let generation = psynet.media.loadGeneration;
+      let pending = audioLoads.get(id);
+      if (pending && pending.url === url && pending.generation === generation) {
+        return pending.load;
+      }
+      let entry = { generation, url };
+      // A later load with the same id replaces this one.
+      let isCurrent = () => audioLoads.get(id) === entry;
+      let superseded = () =>
+        new Error("Loading " + url + " as " + id + " was replaced by a later load.");
+      let load = (async function () {
+        let data = await prefetchedData(url, "arraybuffer");
+        if (!data) {
+          let response = await fetch(url);
+          if (!response.ok) {
+            reportRequestError(url, response.status);
+          }
+          data = await response.arrayBuffer();
+        }
+        if (!psynet.media.isCurrentLoadGeneration(generation)) {
+          throw new Error("The page changed while " + url + " was loading.");
+        }
+        if (!isCurrent()) throw superseded();
+        if (!psynet.media.data.audio) {
+          initMediaType("audio");
+        }
+        initStimulus(id, "audio");
+        psynet.media.initAudioContext();
+        if (!(await createAudioStimulus(data, id, generation, isCurrent))) {
+          if (!isCurrent()) throw superseded();
+          throw new Error("The page changed while " + url + " was loading.");
+        }
+        return psynet.audio[id];
+      })();
+      entry.load = load;
+      audioLoads.set(id, entry);
+      load.catch(() => {
+        if (audioLoads.get(id) === entry) audioLoads.delete(id);
+      });
+      return load;
     };
 
     // Used to add extra stimuli that aren't loaded as part of the initial media load
@@ -3639,8 +4275,6 @@
       });
     };
 
-    psynet.nextPagePending = false;
-
     psynet.submitResponse = async function (onRejection) {
       let response;
 
@@ -3689,6 +4323,12 @@
     };
 
     // ---- Response submission / handling ------------------------------------
+    // Every POST to /response goes through this queue, one at a time and in
+    // the order they were made. Each reply is handled, including the page it
+    // loads, before the next is sent, so answers given in advance are sent
+    // before whatever the participant does next.
+    let queueSubmission = serialQueue();
+
     psynet.nextPage = async function (
       rawAnswer,
       metadata,
@@ -3696,46 +4336,126 @@
       onRejection,
       options = {},
     ) {
-      if (!psynet.pageReady) {
+      if (!options.background && psynet.pageState.submitting) {
+        psynet.log.info("Blocked nextPage because a submission is pending.");
+        return false;
+      }
+      // A queued answer refused here was never sent, so its trial is shown
+      // again to be answered later, unless the page has failed. Answers to
+      // swapped-in pages name their own page, so the page now on screen
+      // needn't be ready.
+      if (!psynet.pageReady && options.pageUuid === undefined) {
         psynet.log.info("Blocked nextPage because pageReady is false.");
-        if (!psynet.pageFailureShown) {
-          psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        if (psynet.pageFailureShown) {
+          return false;
+        }
+        let alerted = psynet.alert(psynetTemplateData.strings.pageLoadNotReady);
+        if (options.background) {
+          psynet.answers.showAgain = true;
+          await alerted;
         }
         return false;
       }
-      if (psynet.timelineHold && !options.timelineHoldResume) {
+      if (psynet.timelineHold) {
         psynet.log.warn(
           "Blocked a page submission while the timeline is held.",
         );
         return false;
       }
-      if (psynet.nextPagePending) {
-        psynet.log.info("Blocked nextPage because nextPagePending is true.");
-        psynet.log.debug(
-          "Skipping nextPage request as nextPage is already pending.",
-        );
-        return false;
+      if (options.background) {
+        return await postSubmission(rawAnswer, metadata, blobs, onRejection, options);
       }
+      let staged = psynet.response.staged;
+      let uploads = Object.keys(blobs ?? staged.blobs ?? {}).length;
+      if (
+        psynet.nextRenderedPage() &&
+        !uploads &&
+        !psynet.pageState.asynchronousUploadSources?.length
+      ) {
+        return await psynet.answerWithRenderedPage(
+          rawAnswer === undefined ? staged.rawAnswer : rawAnswer,
+          metadata === undefined ? staged.metadata : metadata,
+        );
+      }
+      // The time taken and events end when the participant answered, though
+      // the answer may wait for earlier ones to be sent.
+      metadata = {
+        time_taken: (new Date() - psynet.pageLoadTime) / 1000,
+        event_log: [...psynet.trial.eventLog],
+        ...(metadata === undefined ? staged.metadata : metadata),
+      };
+      return await psynet.sendSubmission(
+        rawAnswer,
+        metadata,
+        blobs,
+        onRejection,
+        options,
+      );
+    };
+
+    // Queue a submission made on the page shown, unless one already is.
+    // Answers go through nextPage, which may show the next trial first; a
+    // barrier's release, a timeline hold's check and Back aren't answers and
+    // come here directly. By its turn, the submission is dropped if the page
+    // has changed or an answer given in advance was not sent.
+    psynet.sendSubmission = function (
+      rawAnswer,
+      metadata,
+      blobs,
+      onRejection,
+      options = {},
+    ) {
+      let page = psynet.pageState;
+      if (page.submitting) {
+        psynet.log.info("Blocked a submission because one is pending.");
+        return Promise.resolve(false);
+      }
+      page.submitting = true;
+      let generation = psynet.pageModuleGeneration;
+      let answers = psynet.answers;
+      let waiting = queueSubmission.pending() > 0 && !options.timelineHoldResume;
+      if (waiting) psynet.setTimelineTransitionBusy(true);
+      return queueSubmission(async () => {
+        if (waiting) psynet.setTimelineTransitionBusy(false);
+        let current =
+          psynet.pageModuleGeneration === generation &&
+          psynet.answers === answers &&
+          !psynet.pageFailureShown &&
+          (options.timelineHoldResume || !psynet.timelineHold);
+        let passed =
+          current &&
+          (await postSubmission(rawAnswer, metadata, blobs, onRejection, options));
+        if (!passed && psynet.pageState === page) page.submitting = false;
+        return passed;
+      });
+    };
+
+    // rawAnswer, metadata, and blobs default to psynet.response.staged if
+    // they are not provided explicitly. Returns true if the answer passes
+    // validation checks.
+    let postSubmission = async function (
+      rawAnswer,
+      metadata,
+      blobs,
+      onRejection,
+      options,
+    ) {
       psynet.log.info("Submitting response via nextPage.");
-      psynet.nextPagePending = true;
-      // rawAnswer, metadata, and blobs default to psynet.response.staged if they
-      // are not provided explicitly.
-      //
-      // Returns true if the answer passes validation checks.
       if (rawAnswer === undefined) {
         rawAnswer = psynet.response.staged.rawAnswer;
       }
       if (metadata === undefined) {
         metadata = psynet.response.staged.metadata;
       }
-      metadata.comments = psynet.comments;
+      if (metadata.comments === undefined) {
+        metadata.comments = psynet.comments;
+      }
       if (blobs === undefined) {
         blobs = psynet.response.staged.blobs;
       }
-      if (
-        psynetTemplateData.flags.lucidRecruitment &&
-        !options.timelineHoldResume
-      ) {
+      let lucid =
+        psynetTemplateData.flags.lucidRecruitment && !options.timelineHoldResume;
+      if (lucid) {
         psynet.removeBeforeUnloadEventListener();
       }
       let passedValidation = await submitGenericResponse(
@@ -3747,16 +4467,43 @@
         onRejection,
         options,
       );
-      if (!passedValidation) {
-        psynet.nextPagePending = false;
-        if (
-          psynetTemplateData.flags.lucidRecruitment &&
-          !options.timelineHoldResume
-        ) {
-          psynet.addBeforeUnloadEventListener();
-        }
+      if (!passedValidation && lucid) {
+        psynet.addBeforeUnloadEventListener();
       }
       return passedValidation;
+    };
+
+    // Show the page before this one again. If the server sent it with this
+    // page, it is shown at once and the server is told in the background, as
+    // for an answer; otherwise the server is asked once the answers given in
+    // advance are sent, so it goes back from the page shown.
+    psynet.canGoBack = function () {
+      return psynet.pageReady && !psynet.timelineHold && !psynet.pageState.submitting;
+    };
+
+    psynet.goBack = async function () {
+      let page = psynet.previousPage;
+      if (!psynet.canGoBack()) {
+        return false;
+      }
+      if (!page || psynet.answers.queue.length) {
+        return psynet.sendSubmission(null, {}, {}, undefined, { back: true });
+      }
+      psynet.pageState.submitting = true;
+      psynet.answers.queue.push({
+        back: true,
+        value: null,
+        metadata: {},
+        pageUuid: psynet.submissionPageUuid,
+        nextPageUuid: page.page_uuid,
+        nextContents: JSON.stringify(page.contents),
+        nextLayoutKey: page.layout_key,
+      });
+      // These belong to the page left; the reply brings the shown page's.
+      psynet.upcomingPages = [];
+      psynet.previousPage = null;
+      await psynet.swapInPage(page);
+      return true;
     };
 
     psynet.alert = function (text) {
@@ -3766,7 +4513,7 @@
         let alertText = $("#alert-message");
         alertText.text(text);
         alertModal.css("display", "block");
-        alertButton.click(async function () {
+        alertButton.one("click", function () {
           alertModal.css("display", "none");
           resolve();
         });
@@ -3803,6 +4550,7 @@
 
     psynet.loadNextTimelinePageWithReload = async function () {
       await psynet.drainRecordingUploads();
+      psynet.resetAnswers();
       if (psynetTemplateData.flags.lucidRecruitment) {
         psynet.removeBeforeUnloadEventListener();
       }
@@ -3861,7 +4609,24 @@
     psynet.handleApprovedResponse = async function (response) {
       psynet.log.debug("Response received successfully.");
       psynet.pageReceivedAt = Date.now();
+      psynet.upcomingPages = response.timeline_fragment?.upcoming_pages ?? [];
+      psynet.previousPage = response.timeline_fragment?.previous_page ?? null;
 
+      if (psynet.adoptRenderedReply(response)) {
+        return true;
+      }
+      let kept = psynet.keptPageFragment(response);
+      if (kept) {
+        psynet.keepPage(kept);
+        return true;
+      }
+      psynet.warnIfContentsChanged(response);
+      // Any other reply ends the prediction, dropping the later answers.
+      psynet.resetAnswers();
+      return psynet.changePage(() => showReply(response));
+    };
+
+    let showReply = async function (response) {
       if (response.page?.attributes?.requires_full_page_reload && !psynet.isSameSessionPageUpdate(response)) {
         psynet.stopTimelineHold();
         await psynet.loadNextTimelinePageWithReload();
@@ -3882,7 +4647,7 @@
         // Nothing records while the participant waits.
         await psynet.endPageRecording([]);
         psynet.updatePageForTimelineHold(response.page);
-        psynet.nextPagePending = false;
+        psynet.pageState.submitting = false;
         psynet.beginTimelineHold(hold);
         if (psynetTemplateData.flags.lucidRecruitment) {
           psynet.addBeforeUnloadEventListener();
@@ -3894,20 +4659,20 @@
       psynet.stopTimelineHold();
 
       if (psynet.isSameSessionPageUpdate(response)) {
+        psynet.soundScope = {};
         psynet.page = response.page;
         psynet.submissionPageUuid = response.page.attributes.page_uuid;
         psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);
         psynet.waiting.start(response.page.attributes?.waiting);
-        psynet.var.pageUuid = response.page.attributes.page_uuid;
-        window.pageUuid = psynet.var.pageUuid;
+        psynet.pageState.pageUuid = response.page.attributes.page_uuid;
+        window.pageUuid = psynet.pageState.pageUuid;
         psynet.pageLoadTime = new Date();
-        psynet.responseClockStart = null;
-        psynet.var.backgroundRecording = response.page.attributes.background_recording;
+        psynet.pageState.backgroundRecording = response.page.attributes.background_recording;
         await psynet.prepareBackgroundRecording();
-        psynet.var.recordingCaptureSources = psynet.var.backgroundRecording?.sources || [];
+        psynet.pageState.recordingCaptureSources = psynet.pageState.backgroundRecording?.sources || [];
         await psynet.releaseUnusedRecordingStreams();
         await psynet.trial.registerEvent("pageUpdated");
-        psynet.nextPagePending = false;
+        psynet.pageState.submitting = false;
         psynet.restoreSubmissionControlState();
         if (psynetTemplateData.flags.lucidRecruitment) {
           psynet.addBeforeUnloadEventListener();
@@ -3963,9 +4728,24 @@
       } else if (options.interrupted) {
         // This page is stale, e.g. another tab already moved on.
         await psynet.loadNextTimelinePageWithReload();
+      } else if (options.back) {
+        // The server's page can't go back, for example because another tab
+        // already moved on.
+        await psynet.loadNextTimelinePageWithReload();
+      } else if (options.background && response.stale_page) {
+        // The server has moved past this page, for example because the page
+        // was reloaded while an earlier answer was still being sent.
+        psynet.resetAnswers();
+        await psynet.loadNextTimelinePageWithReload();
       } else if (response.time_limit_seconds_left !== undefined) {
         // The time limit's countdown resubmits when the server's deadline arrives.
         psynet.restoreSubmissionControlState();
+      } else if (options.background) {
+        // The page's controls stay enabled for background answers, so the
+        // trial is shown again only once the participant has read the message.
+        psynet.answers.handle = null;
+        psynet.answers.showAgain = true;
+        await psynet.alert(response.message);
       } else {
         psynet.alert(response.message);
         psynet.restoreSubmissionControlState();
@@ -4205,6 +4985,12 @@
         return false;
       }
       psynet.log.warn("The experiment was busy: " + message);
+      if (options.background) {
+        psynet.answers.handle = null;
+        psynet.answers.showAgain = true;
+        await psynet.alert(message);
+        return false;
+      }
       psynet.alert(message);
       psynet.restoreSubmissionControlState();
       return false;
@@ -4265,9 +5051,7 @@
       var currentTime = new Date();
 
       var allMetadata = {
-        time_taken:
-          (currentTime - (psynet.responseClockStart ?? psynet.pageLoadTime)) /
-          1000,
+        time_taken: (currentTime - psynet.pageLoadTime) / 1000,
         platform: platform.toString(),
         download_speed_megabits_per_sec: psynet.estimateDownloadSpeed(),
         event_log: psynet.trial.eventLog,
@@ -4281,7 +5065,7 @@
 
       return JSON.stringify({
         participant_id: psynet.participantId,
-        page_uuid: psynet.submissionPageUuid,
+        page_uuid: options.pageUuid ?? psynet.submissionPageUuid,
         assignment_id: psynet.assignmentId,
         unique_id: psynet.uniqueId,
         raw_answer: rawAnswer,
@@ -4290,6 +5074,7 @@
           ?.requires_full_page_reload,
         timeline_hold_resume: Boolean(options.timelineHoldResume),
         interrupted: Boolean(options.interrupted),
+        back: Boolean(options.back),
       });
     };
 
@@ -4307,7 +5092,7 @@
     // the camera light and screen-sharing banner turn off between recordings.
     psynet.releaseUnusedRecordingStreams = async function () {
       if (!recordingCapture) return;
-      const captured = new Set(psynet.var.recordingCaptureSources || []);
+      const captured = new Set(psynet.pageState.recordingCaptureSources || []);
       try {
         const {devices} = await recordingCapture;
         for (const source of [...devices.streams.keys()]) {
@@ -4321,14 +5106,18 @@
     // while rebuilding the page. Holds keep the page, so they do it here.
     psynet.endPageRecording = async function (captureSources) {
       await backgroundRecorder?.discard();
-      psynet.var.recordingCaptureSources = captureSources;
+      psynet.pageState.recordingCaptureSources = captureSources;
       await psynet.releaseUnusedRecordingStreams();
     };
     let recordingUploadQueue;
     let recordingUploadMessage;
-    psynet.allowRecordingUnload = function () {
+    // Lets the participant leave while recordings or answers are still being
+    // sent, for example to exit the experiment.
+    psynet.allowUnload = function () {
       recordingUploadQueue?.allowUnload();
+      answersMayBeLost = false;
     };
+    psynet.allowRecordingUnload = psynet.allowUnload;
     psynet.drainRecordingUploads = async function () {
       if (!recordingUploadQueue?.pendingBytes) return;
       psynet.setTimelineTransitionBusy(true);
@@ -4364,7 +5153,7 @@
     // (the queue default, two maximum-size recordings) must not depend on which
     // control happens to create it first.
     async function getRecordingQueue() {
-      recordingUploadMessage = (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.uploading || recordingUploadMessage;
+      recordingUploadMessage = (psynet.pageConfig.recordingLabels || psynet.pageState.backgroundRecording?.labels)?.uploading || recordingUploadMessage;
       if (!recordingUploadQueue) {
         const {MediaUploadQueue} = await recordingModule("/static/scripts/media-upload.js");
         recordingUploadQueue = new MediaUploadQueue();
@@ -4374,7 +5163,7 @@
     psynet.prepareBackgroundRecording = async function () {
       await backgroundRecorder?.discard();
       backgroundUnavailable = false;
-      const config = psynet.var.backgroundRecording;
+      const config = psynet.pageState.backgroundRecording;
       if (!config) return;
       try {
         await getRecordingQueue();
@@ -4403,14 +5192,21 @@
     // The server may have accepted the answer, and an error page would lose its
     // recordings. Let the participant resend the same submission instead, so the
     // server can recover its original reply.
-    let offerRecordingResend = function (request) {
+    let offerRecordingResend = async function (request, options) {
       psynet.log.warn(
         `Recording submission outcome unknown (HTTP ${request.status}); keeping it for a resend.`,
       );
-      psynet.alert(
-        (psynet.var.recordingLabels || psynet.var.backgroundRecording?.labels)?.unconfirmed ||
-          "We could not confirm that your answer was received. Please check your connection and press Next again.",
-      );
+      let message =
+        (psynet.pageConfig.recordingLabels || psynet.pageState.backgroundRecording?.labels)?.unconfirmed ||
+        "We could not confirm that your answer was received. Please check your connection and press Next again.";
+      if (options.background) {
+        // Showing the trial again lets the participant answer, which resends.
+        psynet.answers.handle = null;
+        psynet.answers.showAgain = true;
+        await psynet.alert(message);
+        return;
+      }
+      psynet.alert(message);
       psynet.restoreSubmissionControlState();
     };
 
@@ -4428,15 +5224,22 @@
       //       - Note that 'json' is not a permitted name for an attribute
       //
       // Returns true if the answer passed validation checks, false otherwise.
-      if (!options.timelineHoldResume) {
-        psynet.captureSubmissionControlState();
+      // Predicted answers are sent while the participant answers the next trial.
+      if (!options.background) {
+        if (!options.timelineHoldResume) {
+          psynet.captureSubmissionControlState();
+        }
+        $(" .response, .submit ").prop("disabled", true);
       }
-      $(" .response, .submit ").prop("disabled", true);
 
       let capturedRecordings = {};
-      const submittedPageUuid = psynet.submissionPageUuid;
-      const background = options.timelineHoldResume ? null : psynet.var.backgroundRecording;
-      const sources = options.timelineHoldResume ? null : (background ? background.sources : psynet.var.asynchronousUploadSources);
+      const submittedPageUuid = options.pageUuid ?? psynet.submissionPageUuid;
+      // Answers sent in the background carry no recordings unless queued with
+      // them, as the page's settings may already be the next trial's.
+      const withoutRecordings =
+        options.timelineHoldResume || (options.background && !options.withRecordings);
+      const background = withoutRecordings ? null : psynet.pageState.backgroundRecording;
+      const sources = withoutRecordings ? null : (background ? background.sources : psynet.pageState.asynchronousUploadSources);
       const resend = Array.isArray(sources) ? recordingSubmissionToResend() : null;
       let json;
       if (resend) {
@@ -4478,7 +5281,7 @@
           }
           let unavailable;
           try {
-            const maxBytes = psynet.var.asynchronousUploadMaxBytes;
+            const maxBytes = psynet.pageConfig.asynchronousUploadMaxBytes;
             await getRecordingQueue();
             await waitForRecordingBacklog(capturedRecordings, maxBytes);
             const prepared = recordingUploadQueue.prepare(capturedRecordings, maxBytes);
@@ -4605,7 +5408,7 @@
               } else if (Array.isArray(sources) && [0, 502, 503, 504].includes(request.status)) {
                 // Only a transport failure leaves acceptance unknown; PsyNet's
                 // own error replies go to its error recovery as before.
-                offerRecordingResend(request);
+                await offerRecordingResend(request, options);
               } else {
                 psynet.log.debug("Something went wrong.");
                 onErrorResponse(request);
@@ -4618,7 +5421,7 @@
               } else if (Array.isArray(sources) && unconfirmedRecordingSubmission) {
                 // The reply could not be read, so acceptance is still unknown.
                 psynet.log.warn(error.stack || String(error));
-                offerRecordingResend(request);
+                await offerRecordingResend(request, options);
               } else if (psynetTemplateData.flags.inplaceTimelineTransitions) {
                 await psynet.handleTimelineTransitionFailure(error);
               } else {
@@ -4777,7 +5580,9 @@
   })();
 
   let updateProgressAndReward = function () {
-    if (psynet.uniqueId !== undefined) {
+    // Until queued answers reach the server, it reports the progress from
+    // before them, while a page shown in advance already has the new one.
+    if (psynet.uniqueId !== undefined && !psynet.answers?.queue.length) {
       $.ajax({
         url: "/timeline/progress_and_reward",
         cache: false,
@@ -4923,7 +5728,7 @@
       clearInterval(clockIntervalID);
       // Termination ends the session like early exit, so it abandons pending
       // uploads instead of holding the participant until their deadlines.
-      psynet.allowRecordingUnload();
+      psynet.allowUnload();
       return window.location.replace(
         "/terminate_participant?" +
           new URLSearchParams({ unique_id: psynetTemplateData.uniqueId, reason }),

@@ -58,7 +58,7 @@ test("adversarial lifecycle handles rejection retry and page listener cleanup", 
       .poll(
         () =>
           experimentPage.evaluate(() => ({
-            nextPagePending: window.psynet.nextPagePending,
+            submitting: window.psynet.pageState.submitting,
             stillOnRejectionPage: Boolean(
               document.getElementById("adversarial-rejection-page")
             )
@@ -66,7 +66,7 @@ test("adversarial lifecycle handles rejection retry and page listener cleanup", 
         { timeout: STEP_TIMEOUT_MS }
       )
       .toEqual({
-        nextPagePending: false,
+        submitting: false,
         stillOnRejectionPage: true
       });
     await experimentPage.locator("#alert-button").click();

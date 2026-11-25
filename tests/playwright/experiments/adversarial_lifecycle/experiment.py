@@ -35,7 +35,7 @@ class ListenerPage(Page):
                     Listener page {page_name}
                 </p>
             """,
-            js_vars={"adversarial_listener": {"page_name": page_name}},
+            page_config={"adversarial_listener": {"page_name": page_name}},
             js_page_modules=["/static/listener-page.js"],
             save_answer=False,
         )

@@ -145,7 +145,7 @@ def _play(id_="trial_game", page=None, **kwargs):
     """A PlayLiveGame of the pick-numbers game, as a trial's show_trial
     builds one for each participant."""
     if page is None:
-        page = LiveGamePage(id_, "Play.", time_estimate=5)
+        page = LiveGamePage(id_, "Play.", "/static/game.js", time_estimate=5)
     kwargs.setdefault("game_class", type(_pick_numbers()))
     if "late_after" not in kwargs:
         kwargs.setdefault("max_wait_time", 60)
@@ -157,6 +157,7 @@ def _page_of(game_barrier, page_kwargs=None, **control_kwargs):
     page = LiveGamePage(
         "game",
         "Play.",
+        "/static/game.js",
         time_estimate=5,
         **control_kwargs,
         **(page_kwargs or {}),
@@ -431,7 +432,7 @@ def test_an_game_barrier_s_settings_can_t_use_a_key_its_saved_form_reserves():
         _trial_game_barrier({"__type__": "fast"})
 
 
-def _rendered_js_vars(page, participant, monkeypatch):
+def _rendered_page_config(page, participant, monkeypatch):
     rendered = {}
 
     def capture(template_string, **template_args):
@@ -441,7 +442,7 @@ def _rendered_js_vars(page, participant, monkeypatch):
     monkeypatch.setattr("psynet.timeline.render_string_with_translations", capture)
     with Flask(__name__).test_request_context("/timeline"):
         page.render(get_experiment(), participant)
-    return rendered["js_vars"]
+    return rendered["page_config"]
 
 
 def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
@@ -453,12 +454,12 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         match=f"Participant {members[0].id} hasn't reached the PlayLiveGame "
         f"'{game_barrier.id}', whose game page",
     ):
-        _rendered_js_vars(page, members[0], monkeypatch)
+        _rendered_page_config(page, members[0], monkeypatch)
     # A bot that doesn't render its pages is stopped too.
     with pytest.raises(ValueError, match="hasn't reached the PlayLiveGame"):
         page.control.check_ready_for_response(get_experiment(), members[0])
     _reach(game_barrier, members[0])
-    assert _rendered_js_vars(page, members[0], monkeypatch)["liveGame"] == {
+    assert _rendered_page_config(page, members[0], monkeypatch)["liveGame"] == {
         "playId": game_barrier.id,
         "liveGameId": None,
         "gameChannel": None,
@@ -475,7 +476,7 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         _arrive(game_barrier, member)
 
     session_id = _game_id(members[1], game_barrier.id)
-    js_vars = _rendered_js_vars(page, members[1], monkeypatch)["liveGame"]
+    js_vars = _rendered_page_config(page, members[1], monkeypatch)["liveGame"]
     assert [player["you"] for player in js_vars.pop("players")] == [
         member.id == members[1].id for member in sorted(members, key=lambda m: m.id)
     ]
@@ -498,7 +499,7 @@ def test_a_live_game_page_can_leave_moving_on_to_its_javascript(pair, monkeypatc
     page = _page_of(game_barrier, auto_advance=False)
 
     _reach(game_barrier, members[0])
-    js_vars = _rendered_js_vars(page, members[0], monkeypatch)
+    js_vars = _rendered_page_config(page, members[0], monkeypatch)
 
     assert js_vars["liveGame"]["autoAdvance"] is False
 
@@ -508,7 +509,7 @@ def test_a_live_game_page_can_leave_moving_on_to_its_javascript(pair, monkeypatc
 )
 def test_a_live_game_page_refuses_a_show_result_for_it_can_t_honour(kwargs):
     with pytest.raises(ValueError, match="show_result_for"):
-        LiveGamePage("game", "Play.", time_estimate=5, **kwargs)
+        LiveGamePage("game", "Play.", "/static/game.js", time_estimate=5, **kwargs)
 
 
 @pytest.mark.parametrize("message", ["Your partner has left.", None])
@@ -519,7 +520,7 @@ def test_a_live_game_page_can_change_or_hide_its_player_left_notice(
     page = _page_of(game_barrier, player_left_message=message)
 
     _reach(game_barrier, members[0])
-    js_vars = _rendered_js_vars(page, members[0], monkeypatch)
+    js_vars = _rendered_page_config(page, members[0], monkeypatch)
 
     assert js_vars["liveGame"]["playerLeftMessage"] == message
 
@@ -532,7 +533,7 @@ def test_a_live_game_page_can_change_or_hide_its_no_game_notice(
     page = _page_of(game_barrier, no_game_message=message)
 
     _reach(game_barrier, members[0])
-    js_vars = _rendered_js_vars(page, members[0], monkeypatch)
+    js_vars = _rendered_page_config(page, members[0], monkeypatch)
 
     assert js_vars["liveGame"]["noGameMessage"] == message
 
@@ -548,7 +549,7 @@ def test_a_live_game_page_shows_no_second_notice_when_the_group_has_left(
         "page_uuid": members[0].page_uuid,
         "text": "Your partner is no longer in your group. Please continue.",
     }
-    js_vars = _rendered_js_vars(page, members[0], monkeypatch)
+    js_vars = _rendered_page_config(page, members[0], monkeypatch)
 
     assert js_vars["liveGame"]["noGameMessage"] is None
 
@@ -557,7 +558,7 @@ def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
     unnamed = PlayLiveGame(
         group_type="pair",
         game_class=type(_pick_numbers()),
-        page=LiveGamePage("game", "Play.", time_estimate=5),
+        page=LiveGamePage("game", "Play.", "/static/game.js", time_estimate=5),
         max_wait_time=60,
     )
     assert unnamed.barrier.id == "pick_numbers"
@@ -565,10 +566,10 @@ def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
         PlayLiveGame(
             group_type="pair",
             game_class=type(_pick_numbers()),
-            page=LiveGamePage("game", "Play.", time_estimate=5),
+            page=LiveGamePage("game", "Play.", "/static/game.js", time_estimate=5),
         )
 
-    page = LiveGamePage("game", "Play.", time_estimate=5)
+    page = LiveGamePage("game", "Play.", "/static/game.js", time_estimate=5)
     # The page follows the barrier.
     assert _play("first", page).resolve()[-1] is page
     with pytest.raises(
@@ -580,7 +581,9 @@ def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
 
 
 def test_a_live_game_page_marks_its_content_and_has_a_live_game_control():
-    page = LiveGamePage("game", tags.p("Play.", id="board"), time_estimate=5)
+    page = LiveGamePage(
+        "game", tags.p("Play.", id="board"), "/static/game.js", time_estimate=5
+    )
 
     assert isinstance(page.control, LiveGameControl)
     # PsyNet hides what's marked on a page without a game.
@@ -592,6 +595,7 @@ def test_a_live_game_page_passes_its_options_to_its_control():
     page = LiveGamePage(
         "game",
         "Play.",
+        "/static/game.js",
         names="anonymous",
         show_result_for=8,
         waiting_status="Waiting for your partner",
@@ -604,29 +608,31 @@ def test_a_live_game_page_passes_its_options_to_its_control():
     assert page.control.waiting_status == "Waiting for your partner"
     assert page.control.player_left_message is None
     with pytest.raises(ValueError, match="names must be one of"):
-        LiveGamePage("game", "Play.", names="hidden", time_estimate=5)
+        LiveGamePage(
+            "game", "Play.", "/static/game.js", names="hidden", time_estimate=5
+        )
 
 
 def test_a_live_game_page_has_to_belong_to_a_play_live_game(pair, monkeypatch):
     members, _ = pair
-    page = LiveGamePage("game", "Play.", time_estimate=5)
+    page = LiveGamePage("game", "Play.", "/static/game.js", time_estimate=5)
 
     with pytest.raises(TypeError, match="has to be the page of a PlayLiveGame"):
-        _rendered_js_vars(page, members[0], monkeypatch)
+        _rendered_page_config(page, members[0], monkeypatch)
 
 
 def test_a_page_variable_can_t_share_the_control_s_name(pair, monkeypatch):
     members, game_barrier = pair
-    page = _page_of(game_barrier, page_kwargs=dict(js_vars={"liveGame": "mine"}))
+    page = _page_of(game_barrier, page_kwargs=dict(page_config={"liveGame": "mine"}))
     _reach(game_barrier, members[0])
 
     with pytest.raises(
         ValueError,
-        match="Duplicate JavaScript variable 'liveGame': contributed by "
-        "the page's js_vars or a component's get_js_vars and control "
+        match="Duplicate page configuration key 'liveGame': contributed by "
+        "the page's page_config or a component's get_page_config and control "
         "LiveGameControl.",
     ):
-        _rendered_js_vars(page, members[0], monkeypatch)
+        _rendered_page_config(page, members[0], monkeypatch)
 
 
 def test_a_follower_who_reloads_finds_the_group_s_game(pair):
@@ -769,7 +775,7 @@ def test_a_game_page_shows_its_players_by_pseudonym(pair):
     # The page's variables carry them, and the route gives the same.
     control = _game_page().control
     assert control.play_id == game_barrier.id
-    js_vars = control.get_participant_js_vars(None, first)
+    js_vars = control.get_participant_page_config(None, first)
     assert js_vars["liveGame"]["players"] == players
     assert _players_payload(first.unique_id, game_barrier.id) == {"players": players}
     assert _players_payload("nobody", game_barrier.id) == {"players": []}
@@ -781,7 +787,9 @@ def test_an_anonymous_game_page_never_gets_the_players_pseudonyms(db_session):
 
     experiment = get_experiment()
     members, _ = _pair(db_session, [new_participant(experiment) for _ in range(2)])
-    page = LiveGamePage("anonymous", "Play.", names="anonymous", time_estimate=5)
+    page = LiveGamePage(
+        "anonymous", "Play.", "/static/game.js", names="anonymous", time_estimate=5
+    )
     barrier = _play("anonymous", page=page).barrier
     assert barrier.names == "anonymous"
     for member in members:
@@ -793,7 +801,9 @@ def test_an_anonymous_game_page_never_gets_the_players_pseudonyms(db_session):
         assert (player["name"], player["css_color"], player["emoji"]) == (None,) * 3
         assert members[1].pseudonym.name not in str(player)
     with pytest.raises(ValueError, match="names must be one of"):
-        LiveGamePage("anonymous", "Play.", names="hidden", time_estimate=5)
+        LiveGamePage(
+            "anonymous", "Play.", "/static/game.js", names="hidden", time_estimate=5
+        )
 
 
 @pytest.mark.parametrize("names", ["shown", "anonymous"])
@@ -807,6 +817,7 @@ def test_a_game_page_shows_each_player_s_info(db_session, names):
     page = LiveGamePage(
         "avatars",
         "Play.",
+        "/static/game.js",
         names=names,
         player_info=lambda participant: {"avatar": participant.var.avatar},
         time_estimate=5,
@@ -827,13 +838,21 @@ def test_a_game_page_shows_each_player_s_info(db_session, names):
         None if names == "anonymous" else {"avatar": f"avatar-{members[1].id}"}
     )
     assert _players_payload(members[0].unique_id, "avatars") == {"players": players}
-    bad = LiveGamePage("bad", "Play.", player_info=lambda p: {1, 2}, time_estimate=5)
+    bad = LiveGamePage(
+        "bad", "Play.", "/static/game.js", player_info=lambda p: {1, 2}, time_estimate=5
+    )
     with pytest.raises(TypeError, match="can't be saved as JSON"):
         _play("bad", page=bad).resolve()[0].consume(experiment, members[0])
     with pytest.raises(TypeError, match="must be a function"):
-        LiveGamePage("bad", "Play.", player_info={"avatar": 1}, time_estimate=5)
+        LiveGamePage(
+            "bad",
+            "Play.",
+            "/static/game.js",
+            player_info={"avatar": 1},
+            time_estimate=5,
+        )
     # A later visit with a page without player_info shows none.
-    plain = LiveGamePage("avatars", "Play.", time_estimate=5)
+    plain = LiveGamePage("avatars", "Play.", "/static/game.js", time_estimate=5)
     _play("avatars", page=plain).resolve()[0].consume(experiment, members[0])
     (you,) = [player for player in _players(members[0], "avatars") if player["you"]]
     assert you["info"] is None
@@ -3646,13 +3665,20 @@ class ValidatingPage(LiveGamePage):
 )
 def test_a_live_game_page_can_t_have_a_validate_of_its_own(page_type, kwargs):
     with pytest.raises(TypeError, match="has a validate function of its own"):
-        page_type("game", "Play", time_estimate=5, **kwargs)
+        page_type("game", "Play", "/static/game.js", time_estimate=5, **kwargs)
+
+
+def test_a_live_game_page_runs_one_module():
+    with pytest.raises(TypeError, match="one module, passed as module="):
+        LiveGamePage(
+            "game", "Play", "/static/game.js", js_page_modules=["/static/b.js"]
+        )
 
 
 def test_a_live_game_page_can_t_have_a_time_limit():
     # A page that runs out of time skips validate, which sets the answer.
     with pytest.raises(TypeError, match="can't have a time_limit"):
-        LiveGamePage("game", "Play", time_estimate=5, time_limit=30)
+        LiveGamePage("game", "Play", "/static/game.js", time_estimate=5, time_limit=30)
 
 
 class Shot(LiveMessage):
@@ -3878,7 +3904,7 @@ def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
     db_session.commit()
     with pytest.raises(TypeError, match="has no on_add method"):
         _play(join_running_game=True)
-    page = LiveGamePage("growing", "Play.", time_estimate=5)
+    page = LiveGamePage("growing", "Play.", "/static/game.js", time_estimate=5)
     barrier = _play(
         "growing", page, game_class=_growing_picks(), join_running_game=True
     ).barrier
@@ -3964,7 +3990,7 @@ def _open_group(db_session, n_members, n_founders=2):
 
 def test_a_game_that_stops_taking_players_closes_its_group_to_newcomers(db_session):
     group, members = _open_group(db_session, 4)
-    page = LiveGamePage("takes_three", "Play.", time_estimate=5)
+    page = LiveGamePage("takes_three", "Play.", "/static/game.js", time_estimate=5)
     barrier = _play(
         "takes_three",
         page,
@@ -4012,7 +4038,7 @@ def test_a_newcomer_to_a_game_that_ended_before_adding_them_came_too_late(
 
         monkeypatch.setattr(_growing_picks(), "is_over", is_over)
     group, members = _open_group(db_session, 3)
-    page = LiveGamePage("growing", "Play.", time_estimate=5)
+    page = LiveGamePage("growing", "Play.", "/static/game.js", time_estimate=5)
     barrier = _play(
         "growing", page, game_class=_growing_picks(), join_running_game=True
     ).barrier
@@ -4041,7 +4067,7 @@ def test_a_newcomer_to_a_game_that_ended_before_adding_them_came_too_late(
         if written:
             _write_records()
         newcomer = db.session.get(Participant, int(ids[2]))
-        js_vars = _rendered_js_vars(page, newcomer, monkeypatch)["liveGame"]
+        js_vars = _rendered_page_config(page, newcomer, monkeypatch)["liveGame"]
         late = newcomer.live_games["growing"]
         ready = functools.partial(
             page.control.check_ready_for_response, get_experiment(), newcomer
@@ -4175,7 +4201,7 @@ def test_a_newcomer_waits_at_the_barrier_once_the_running_game_is_full(
         group.add_participant(member)
     group.leader = members[0]
     db_session.commit()
-    page = LiveGamePage("growing", "Play.", time_estimate=5)
+    page = LiveGamePage("growing", "Play.", "/static/game.js", time_estimate=5)
     barrier = _play(
         "growing", page, game_class=_growing_picks(), join_running_game=True
     ).barrier

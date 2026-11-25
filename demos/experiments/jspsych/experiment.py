@@ -40,7 +40,7 @@ class Exp(psynet.experiment.Experiment):
             "reaction_time_task",
             timeline="/static/reaction-time-task.js",
             time_estimate=25,
-            js_vars={
+            page_config={
                 "trial_durations": [250, 500, 750, 1000, 1250, 1500, 1750, 2000],
                 "welcome_message": "Welcome to the experiment. Press any key to begin.",
             },
