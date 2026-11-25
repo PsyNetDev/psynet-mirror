@@ -657,7 +657,12 @@ class StaticTrialMaker(ChainTrialMaker):
         return not (
             (
                 self.check_performance_every_trial
-                and self.should_check_performance_after(trial)
+                and call_function_with_context(
+                    self.should_check_performance_after,
+                    experiment=experiment,
+                    participant=participant,
+                    trial=trial,
+                )
             )
             or trial.gives_feedback(experiment, participant)
         )

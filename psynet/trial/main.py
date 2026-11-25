@@ -3138,7 +3138,7 @@ class TrialMaker(Module):
         """
         participant.module_state.n_completed_trials += 1
 
-    def should_check_performance_after(self, trial):
+    def should_check_performance_after(self, experiment, participant, trial):
         """
         Whether to check the participant's performance after ``trial``.
 
@@ -3146,13 +3146,24 @@ class TrialMaker(Module):
         check less often, for example only at the end of each block. With
         ``prepare_trials_in_advance=True``, the browser can then show the
         next trial before the server has the answers to the trials that
-        aren't checked.
+        aren't checked. Like :meth:`show_after_trial`, the method may take
+        any subset of its parameters.
 
         Parameters
         ----------
 
+        experiment
+            An instantiation of :class:`psynet.experiment.Experiment`,
+            corresponding to the current experiment.
+
+        participant
+            An instantiation of :class:`psynet.participant.Participant`,
+            corresponding to the current participant.
+
         trial
-            The trial that the participant has just finished.
+            The trial that the participant has just finished, or, with
+            ``prepare_trials_in_advance=True``, one that hasn't been answered
+            yet.
 
         Returns
         -------
@@ -3241,8 +3252,11 @@ class TrialMaker(Module):
         assert type in ["trial", "end"]
 
         def eval_checks(experiment, participant):
-            if type == "trial" and not self.should_check_performance_after(
-                participant.current_trial
+            if type == "trial" and not call_function_with_context(
+                self.should_check_performance_after,
+                experiment=experiment,
+                participant=participant,
+                trial=participant.current_trial,
             ):
                 return True
             participant_trials = self._trials_to_check(participant)
