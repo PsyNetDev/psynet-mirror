@@ -174,14 +174,16 @@ class StaticTrialMaker(ChainTrialMaker):
         (e.g. large media assets) that are not available on the deployed server.
 
     expected_trials_per_participant
-        Expected number of trials that each participant will complete.
+        Expected number of trials that each participant will complete, not
+        counting repeat trials: the ``n_repeat_trials`` are added on top.
         This is used for timeline/progress estimation purposes.
         This can either be an integer, or the string ``"n_nodes"``,
         which will be read as referring to the number of nodes in ``nodes``.
 
     max_trials_per_participant
-        Maximum number of trials that each participant may complete (optional);
-        once this number is reached, the participant will move on
+        Maximum number of trials that each participant may complete (optional),
+        not counting repeat trials, which follow once it is reached.
+        Once this number is reached, the participant will move on
         to the next stage in the timeline.
         This can either be an integer, or the string ``"n_nodes"``,
         which will be read as referring to the number of nodes in ``nodes``.
@@ -467,7 +469,8 @@ class StaticTrialMaker(ChainTrialMaker):
                 raise ValueError(
                     f"expected_trials_per_participant ({expected_trials_per_participant}) "
                     f"may not exceed len(nodes) ({len(nodes)}) "
-                    "unless allow_repeated_nodes = True."
+                    "unless allow_repeated_nodes = True. Don't count repeat "
+                    "trials, which n_repeat_trials adds on top."
                 )
             # We used to set chains_per_experiment to len(nodes) here, but this is
             # problematic if the nodes are generated from a function, because that
