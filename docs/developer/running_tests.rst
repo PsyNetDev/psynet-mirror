@@ -454,8 +454,9 @@ Specs still stop their own servers with ``stopExperiment`` in a ``finally``
 block. A test that times out may never get there, so an automatic fixture in
 ``tests/playwright/fixtures.js`` also stops any server that
 ``startExperiment`` started and nothing stopped, before the next test needs
-the port. Specs must therefore import ``test`` from ``./fixtures``, not from
-``@playwright/test``, and must not share one server between tests.
+the port. Specs must therefore import ``test`` from
+``tests/playwright/fixtures.js``, not from ``@playwright/test``, and must not
+share one server between tests.
 
 Optional environment variables:
 

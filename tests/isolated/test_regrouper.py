@@ -226,9 +226,10 @@ def test_every_regrouper_subclass_with_custom_release_checks_on_arrival(
 
 @in_consents_experiment
 def test_waiter_timeline_get_splits_a_due_every_regrouper_pool(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
     """A waiter's ``GET /timeline`` (a reload or a bot's poll) splits at a due tick."""
+    _freeze_clocks(monkeypatch, start=time.time() // 45 * 45 + 10)
     exp = get_experiment()
     original = exp.timeline
     rooms = Regrouper("poll_room", group_size=2, every=45)

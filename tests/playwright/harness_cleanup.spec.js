@@ -13,6 +13,8 @@ test("a test leaves its server running", { tag: "@both" }, () => {
   const experiment = startExperiment(path.resolve("demos/experiments/survey_js"));
   experiment.urlPromise.catch(() => {});
   leftover = experiment.proc;
+  expect(leftover.exitCode).toBeNull();
+  expect(leftover.signalCode).toBeNull();
 });
 
 test("the leftover server is stopped before the next test", { tag: "@both" }, () => {
