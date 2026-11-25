@@ -3615,7 +3615,9 @@
       updateProgressAndReward();
 
       if (correctBrowser) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
+        // Yield once, so that tasks the page's scripts queued run before the
+        // trial starts.
+        await new Promise((resolve) => setTimeout(resolve, 0));
         await psynet.prepareBackgroundRecording();
         await psynet.trial.init();
       }

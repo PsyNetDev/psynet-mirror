@@ -114,6 +114,15 @@ def test_plan_length_warning_excludes_repeat_trials(caplog, expected, n_planned,
     assert ("planned" in caplog.text) == warns
 
 
+def test_repeat_trials_come_on_top_of_expected_trials_per_participant():
+    trial_maker = make_static_trial_maker(
+        nodes=[StaticNode(definition={"x": x}) for x in range(3)],
+        expected_trials_per_participant=3,
+        n_repeat_trials=2,
+    )
+    assert trial_maker.expected_trials_per_participant == 5
+
+
 @pytest.mark.parametrize("target_trials_per_node", [0, -1])
 def test_static_trial_maker_rejects_non_positive_target_trials_per_node(
     target_trials_per_node,
