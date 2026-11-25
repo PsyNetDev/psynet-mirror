@@ -294,9 +294,10 @@ class StaticTrialMaker(ChainTrialMaker):
         waits; see :class:`~psynet.trial.main.TrialMaker`.
 
     prepare_trials_in_advance
-        If ``True``, create all of a participant's trials, in order, when they
-        reach the trial maker, and send each trial page with the contents of
-        the next :attr:`n_upcoming_trials` trials. A
+        If ``True``, create a participant's trials, in order, when they
+        reach the trial maker (as many as node selection allows then; the
+        rest once those are done), and send each trial page with the
+        contents of the next ``n_upcoming_trials`` trials. A
         :class:`~psynet.page.JSPage` then shows the next trial as soon as
         the participant answers, without waiting for the server; see
         :doc:`/code/trials/keeping_a_task_on_one_page`. Other trial pages,
@@ -327,17 +328,16 @@ class StaticTrialMaker(ChainTrialMaker):
         ``n_repeat_trials`` or ``recruit_mode="n_trials"``.
         Defaults to ``False``.
 
-    Attributes
-    ----------
-
-    n_upcoming_trials : int
+    n_upcoming_trials
         With ``prepare_trials_in_advance``, how many of the next trials'
         contents or rendered pages each trial page carries (default = 2). The
-        participant can
-        be up to one more than this many answers ahead of the server, and
-        this many trials' files are downloaded early. Each extra trial makes
-        every trial request build one more page, so raise it only if large
-        files need longer to download.
+        participant can be up to one more than this many answers ahead of the
+        server, and this many trials' files are downloaded early. Each extra
+        trial makes every trial request build one more page, so raise it only
+        if large files need longer to download.
+
+    Attributes
+    ----------
 
     check_timeout_interval_sec : float
         How often to check for trials that have timed out, in seconds (default = 30).
@@ -415,6 +415,7 @@ class StaticTrialMaker(ChainTrialMaker):
         sync_group_waiting_message=None,
         sync_group_newcomer_max_wait: Optional[float] = None,
         prepare_trials_in_advance: bool = False,
+        n_upcoming_trials: int = 2,
     ):
         _reject_removed_balance_argument(
             "balance_across_nodes", balance_across_nodes, "node_order"
@@ -431,6 +432,9 @@ class StaticTrialMaker(ChainTrialMaker):
                 "n_repeat_trials or recruit_mode='n_trials'."
             )
         self.prepare_trials_in_advance = prepare_trials_in_advance
+        if n_upcoming_trials < 1:
+            raise ValueError("n_upcoming_trials must be at least 1.")
+        self.n_upcoming_trials = n_upcoming_trials
 
         assert isinstance(expected_trials_per_participant, (int, float, str))
         if isinstance(expected_trials_per_participant, str):
@@ -539,8 +543,6 @@ class StaticTrialMaker(ChainTrialMaker):
             sync_group_waiting_message=sync_group_waiting_message,
             sync_group_newcomer_max_wait=sync_group_newcomer_max_wait,
         )
-
-    n_upcoming_trials = 2
 
     def prepare_trial(self, experiment, participant):
         if not self.prepare_trials_in_advance:

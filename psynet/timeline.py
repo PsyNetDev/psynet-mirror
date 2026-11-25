@@ -3061,6 +3061,7 @@ class Page(Elt):
         if undeclared:
             return f"{', '.join(undeclared)} doesn't set can_swap_in_advance"
         reasons = {
+            "it holds the timeline": self.is_timeline_hold,
             **self._needs_the_server_because(),
             "it overrides consume": type(self).consume is not Page.consume,
             "it renders itself (delegated_render)": self.template_kind == "delegated",

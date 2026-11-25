@@ -266,6 +266,14 @@ def test_pages_say_why_they_cant_be_left_or_rendered_early():
         "it overrides on_complete"
     )
 
+    class Holds(InfoPage):
+        can_swap_in_advance = True
+        is_timeline_hold = True
+
+    assert Holds("D", time_estimate=1)._cannot_be_rendered_early_because() == (
+        "it holds the timeline"
+    )
+
 
 def test_layout_key_covers_main_body_and_js_vars():
     def key(body, **js_vars):

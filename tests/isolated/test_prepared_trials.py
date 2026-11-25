@@ -140,6 +140,25 @@ def test_prepared_trials_reject_options_they_cant_support(option):
         )
 
 
+def test_n_upcoming_trials_is_set_on_the_trial_maker():
+    class TrialMaker(StaticTrialMaker):
+        time_estimate_per_trial = 1
+
+    def trial_maker(n_upcoming_trials):
+        return TrialMaker(
+            id_="ratings",
+            trial_class=StaticTrial,
+            nodes=[StaticNode(definition={})],
+            expected_trials_per_participant=1,
+            prepare_trials_in_advance=True,
+            n_upcoming_trials=n_upcoming_trials,
+        )
+
+    assert trial_maker(3).n_upcoming_trials == 3
+    with pytest.raises(ValueError, match="n_upcoming_trials"):
+        trial_maker(0)
+
+
 @pytest.mark.parametrize("experiment_directory", [EXPERIMENT], indirect=True)
 @pytest.mark.usefixtures("launched_experiment")
 def test_a_trial_whose_page_has_a_different_layout_is_not_shown_in_advance(monkeypatch):

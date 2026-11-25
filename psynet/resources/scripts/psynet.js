@@ -792,10 +792,15 @@
     psynet.resetAnswers();
 
     // Leaving would lose the answers not yet saved, so the browser asks
-    // first, as it does while recordings upload.
+    // first, as it does while recordings upload. psynet.allowUnload() lets
+    // only the next unload through, in case that navigation doesn't leave.
     let answersMayBeLost = true;
     window.addEventListener("beforeunload", (event) => {
-      if (answersMayBeLost && psynet.answers.queue.length) {
+      if (!answersMayBeLost) {
+        answersMayBeLost = true;
+        return;
+      }
+      if (psynet.answers.queue.length) {
         event.preventDefault();
         event.returnValue = "";
       }
