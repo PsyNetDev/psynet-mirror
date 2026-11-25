@@ -533,8 +533,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     n_repeat_trials = Column(Integer)
     time_taken = Column(Float)
     time_limit_reached = Column(Boolean)
-    # The response timeout of trials prepared in advance counts from here.
-    response_started_at = Column(DateTime)
+    # When the participant reached the trial, or None if they never did; the
+    # response timeout of trials prepared in advance counts from here.
+    presented_at = Column(DateTime)
     # Pages shown in advance are compared by layout key, rendered once per trial.
     layout_key = Column(String)
     _initial_assets = deferred(Column(PythonDict))
@@ -1804,8 +1805,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             check_trial = getattr(barrier, "_check_trial", None)
             if check_trial is not None:
                 check_trial(self)
-        if self.response_started_at is None:
-            self.response_started_at = datetime.datetime.now()
+        if self.presented_at is None:
+            self.presented_at = datetime.datetime.now()
         if (
             len(logic) == 1
             and isinstance(logic[0], Page)
@@ -2907,7 +2908,7 @@ class TrialMaker(Module):
         )
         # Trials prepared in advance wait unseen until their turn.
         started = (
-            self.trial_class.response_started_at
+            self.trial_class.presented_at
             if self.prepare_trials_in_advance
             else self.trial_class.creation_time
         )
@@ -2931,20 +2932,25 @@ class TrialMaker(Module):
                 .all()
             )
 
-        trials_to_fail = lock(open_trials.filter(started < time_threshold))
-        if self.prepare_trials_in_advance and trials_to_fail:
+        timed_out = lock(open_trials.filter(started < time_threshold))
+        not_presented = []
+        if self.prepare_trials_in_advance and timed_out:
             # These participants have stopped, and their trials waiting their
             # turn would otherwise keep counting towards their nodes.
-            participant_ids = {trial.participant_id for trial in trials_to_fail}
-            trials_to_fail += lock(
+            participant_ids = {trial.participant_id for trial in timed_out}
+            not_presented = lock(
                 open_trials.filter(
-                    self.trial_class.response_started_at.is_(None),
+                    self.trial_class.presented_at.is_(None),
                     self.trial_class.participant_id.in_(participant_ids),
                 )
             )
-        logger.info("Found %i old trial(s) to fail.", len(trials_to_fail))
-        for trial in trials_to_fail:
+        logger.info(
+            "Found %i old trial(s) to fail.", len(timed_out) + len(not_presented)
+        )
+        for trial in timed_out:
             trial.fail(reason="response_timeout")
+        for trial in not_presented:
+            trial.fail(reason="not_presented")
 
     def init_participant(self, experiment, participant):
         """
