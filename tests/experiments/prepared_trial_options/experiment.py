@@ -27,7 +27,7 @@ class RatingTrialMaker(StaticTrialMaker):
         participant.var.checked = participant.var.get("checked", []) + [
             [trial.complete for trial in participant_trials]
         ]
-        return {"score": None, "passed": True}
+        return {"score": None, "passed": not participant.var.get("fail_checks", False)}
 
 
 class Exp(psynet.experiment.Experiment):

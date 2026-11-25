@@ -286,11 +286,13 @@ Also keep in mind:
   Playwright spec; see :doc:`/test/frontend`.
 
 Trials prepared in advance can't use sync groups. Repeat trials are prepared
-once every main trial is answered. With performance checks after every trial,
-the next trials' files still download early, but each trial waits for the
-server's check. With ``recruit_mode="n_trials"``, nodes can overshoot their
-target a little more than usual, as only answered trials count towards it and
-each participant holds up to ``n_upcoming_trials + 1`` unanswered trials.
+once every main trial is answered. With ``check_performance_every_trial``, the
+next trials' files still download early, but each checked trial waits for the
+server's check.
+:meth:`~psynet.trial.main.TrialMaker.should_check_performance_after` chooses
+which trials are checked, for example only the last of each block, so that the
+browser runs ahead over the others. The browser asks it before the trial is
+answered, so it should decide from fixed trial attributes such as ``position``.
 The browser only runs
 ahead with in-place timeline transitions, which are on by default. The response
 timeout of each trial counts from when the server first sends its page; once
