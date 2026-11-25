@@ -330,8 +330,9 @@ class StaticTrialMaker(ChainTrialMaker):
         Defaults to ``False``.
 
     n_upcoming_trials
-        With ``prepare_trials_in_advance``, how many of the next trials'
-        contents or rendered pages each trial page carries (default = 2). The
+        With ``prepare_trials_in_advance``, how many trials are kept created
+        ahead of the current one, and how many of their contents or rendered
+        pages each trial page carries (default = 2). The
         participant can be up to one more than this many answers ahead of the
         server, and this many trials' files are downloaded early. Each extra
         trial makes every trial request build one more page, so raise it only
