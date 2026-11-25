@@ -408,8 +408,9 @@ Groups
 
 `experiments/crowd_estimate <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/crowd_estimate>`__
     A wisdom-of-crowds estimation game in an open lobby: groups of up to
-    four may start short and take latecomers until the game starts, and
-    anyone left without a group answers alone. Each question is one cued
+    four may start short and take latecomers until the game starts, a
+    player who stops responding is failed, and the others carry on while
+    at least three remain. Each question is one cued
     trial per player, with the group's median on the node they share.
     :doc:`/code/multiplayer/synchronization`.
 
@@ -437,8 +438,8 @@ Groups
 
 `experiments/public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__
     A repeated public goods game in groups of three that carries on with two
-    when a member returns the study or stops responding, and tells the last
-    player, and anyone without a group, why the game ended. Each round is one
+    when a member returns the study or stops responding, who is failed, and
+    fails the last player left. Each round is one
     cued trial per player that pays its bonus, with the group's pot on the
     round they share. :doc:`/code/multiplayer/synchronization`.
 

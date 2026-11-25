@@ -47,7 +47,7 @@ have already failed. Otherwise, in this order, it:
 6. redirects the participant to ``unsuccessful_end``, unless they are already
    in an end branch or have completed the experiment.
 
-Three exceptions to this order remove the participant from groups before
+Four exceptions to this order remove the participant from groups before
 calling ``fail()``, so fail routines no longer see those groups in
 ``active_sync_groups``:
 
@@ -56,6 +56,10 @@ calling ``fail()``, so fail routines no longer see those groups in
 - a ``GroupBarrier``'s ``max_wait_action="fail"`` removes the waiter from all
   their groups (the barrier's as ``"waited_too_long"``, the others as
   ``"left_experiment"``);
+- a :class:`~psynet.live_game.PlayLiveGame`'s ``absent_action="fail"``
+  removes a player who didn't play its game from all their groups (the
+  PlayLiveGame's as ``"no_show"`` or ``"left_game"``, the others as
+  ``"left_experiment"``), once the game's result is saved;
 - a group dissolving with ``below_quorum="fail"`` removes them from that group
   (as ``"group_dissolved"``).
 

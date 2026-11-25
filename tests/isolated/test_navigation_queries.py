@@ -165,9 +165,9 @@ def test_locked_unique_id_request_query_keeps_relationships_unloaded(
 
 
 def _load_for_dashboard_sync_group_action(experiment, p):
-    from psynet.dashboard.sync_groups import _get_active_sync_group_participant_link
+    from psynet.dashboard.sync_groups import _get_active_sync_group_participant
 
-    return _get_active_sync_group_participant_link(p.id, p.sync_group_id)[0]
+    return _get_active_sync_group_participant(p.id, p.sync_group_id)
 
 
 @pytest.mark.parametrize(

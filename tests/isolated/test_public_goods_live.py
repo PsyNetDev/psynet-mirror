@@ -1,10 +1,13 @@
 """The public goods demo's rules: contributions and each player's
 payoff."""
 
+from types import SimpleNamespace
+
 import pytest
 from dallinger.realtime import Reject
 
 from psynet.experiment import import_local_experiment
+from psynet.live_game import TOO_FEW_READY
 from psynet.live_game.testing import LocalGame
 from psynet.pytest_psynet import path_to_demo_experiment
 
@@ -35,8 +38,83 @@ class TestPublicGoodsLive:
             demo.ENDOWMENT - 2 + share,
             demo.ENDOWMENT + share,
         ]
-        assert game.answer(2) == {"contributed": 0, "earned": demo.ENDOWMENT + share}
+        assert game.answer(2) == {
+            "arrived": True,
+            "contributed": 0,
+            "earned": demo.ENDOWMENT + share,
+        }
         assert game.view(0)["contributions"] == [10, 2, 0]
+
+    def _started_without(self, demo, no_shows):
+        """A round of three that starts without the players ``no_shows``."""
+        game = LocalGame(demo.PublicGoods, players=3, start=False)
+        for player in {0, 1, 2} - set(no_shows):
+            game.send(player, {"type": "psynet_ready", "message": {}})
+        game.tick(demo.PublicGoods.ready_timeout)
+        return game
+
+    def _export_row(self, demo, game, player):
+        """The player's export row for the round ``game`` played."""
+        reason = game.end_reason()
+        outcome = game.outcome(reason)
+        trial = SimpleNamespace(
+            sync_group_id=1,
+            participant_id=player + 1,
+            id=player + 1,
+            sync_group_round=0,
+            group_round=SimpleNamespace(live_game_outcome=outcome),
+            live_game=SimpleNamespace(
+                answer=game.answer(player, reason), end_reason=reason
+            ),
+        )
+        row = demo._player_round_row(trial)
+        keys = ["end_reason", "arrived", "contributed", "pot", "n_players"]
+        return {key: row[key] for key in keys + ["share", "earned"]}
+
+    def test_a_player_who_never_opens_the_game_page_is_left_out_of_the_pot(self, demo):
+        game = self._started_without(demo, [2])
+        game.send(0, demo.Contribute(tokens=4))
+        assert game.view(0)["no_shows"] == [2]
+        game.tick(demo.ROUND_SECONDS)
+        assert game.is_over() and game.end_reason() == "finished"
+
+        share = demo.MULTIPLIER * 4 / 2
+        # The page shows the pot and payoffs the server pays.
+        assert game.view(0)["payoffs"] == [
+            demo.ENDOWMENT - 4 + share,
+            demo.ENDOWMENT + share,
+            0,
+        ]
+        assert game.game.performance_reward(game.outcome(), "finished", 2) == 0
+        assert self._export_row(demo, game, 2) == {
+            "end_reason": "finished",
+            "arrived": False,
+            "contributed": None,
+            "pot": 4,
+            "n_players": 2,
+            "share": None,
+            "earned": 0,
+        }
+
+    def test_a_round_that_too_few_players_open_ends_at_the_start_without_a_pot(
+        self, demo
+    ):
+        game = self._started_without(demo, [1, 2])
+
+        assert game.is_over() and game.end_reason() == TOO_FEW_READY
+        assert game.view(0)["payoffs"] == [demo.ENDOWMENT, 0, 0]
+        assert self._export_row(demo, game, 0) == {
+            "end_reason": TOO_FEW_READY,
+            "arrived": True,
+            "contributed": 0,
+            "pot": None,
+            "n_players": 1,
+            "share": None,
+            "earned": demo.ENDOWMENT,
+        }
+        nobody = self._started_without(demo, [0, 1, 2])
+        assert nobody.end_reason() == TOO_FEW_READY
+        assert self._export_row(demo, nobody, 0)["pot"] is None
 
     def test_a_contribution_is_between_none_and_the_endowment(self, demo):
         game = LocalGame(demo.PublicGoods, players=3)

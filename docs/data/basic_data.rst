@@ -112,8 +112,7 @@ closed and in ``dissolved_at`` when the group dissolved during it
 the ``public_goods`` demo builds a table per player and round and
 one per team and round from them (see :ref:`rounds-one-trial-per-player`). The
 ``crowd_estimate`` demo does the same for a fixed group that plays one round
-per question; a player who answered on their own has a row with an empty
-``crowd_id``. Its ``outcome`` column, from ``trial.sync_group_outcome``, says
+per question. Its ``outcome`` column, from ``trial.sync_group_outcome``, says
 how the round ended for each player: ``"stayed"`` if they were in the group
 when the median was shared, or why they left before that;
 ``estimate_timed_out`` says whether their estimate's time limit ran out,

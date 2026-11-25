@@ -1,6 +1,6 @@
-function tokenRow(name, tokens, endowment, you) {
+function tokenRow(name, tokens, endowment, you, absent) {
   let row = document.createElement("div");
-  row.className = `pg-row${you ? " pg-row-you" : ""}`;
+  row.className = `pg-row${you ? " pg-row-you" : ""}${absent ? " pg-row-absent" : ""}`;
   let label = document.createElement("span");
   label.className = "pg-name";
   label.textContent = name;
@@ -13,7 +13,7 @@ function tokenRow(name, tokens, endowment, you) {
   }
   let count = document.createElement("span");
   count.className = "pg-count";
-  count.textContent = `${tokens} in the pot`;
+  count.textContent = absent ? "Not here" : `${tokens} in the pot`;
   row.append(label, slots, count);
   return row;
 }
@@ -33,7 +33,13 @@ export function activate({root, vars, psynet}) {
   live.enableWhilePlaying(slider);
   live.predict((predicted, type, message) => {
     if (type === "contribute") {
+      let change = message.tokens - predicted.contributions[live.player];
       predicted.contributions[live.player] = message.tokens;
+      if (predicted.pot !== null && !predicted.no_shows.includes(live.player)) {
+        predicted.pot += change;
+        predicted.share = (rules.multiplier * predicted.pot) / predicted.n_players;
+        predicted.payoffs[live.player] = rules.endowment - message.tokens + predicted.share;
+      }
     }
   });
 
@@ -43,6 +49,15 @@ export function activate({root, vars, psynet}) {
     if (document.activeElement !== slider) {
       slider.value = mine;
     }
+    // Before the round starts, every player who isn't ready yet is a no-show,
+    // and so is this player for a moment after, until their page is ready.
+    // A round that too few players opened ends without starting, maybe
+    // before this player's page was ready too.
+    let noShows = live.ended
+      ? view.no_shows
+      : live.started
+        ? view.no_shows.filter((player) => player !== live.player)
+        : [];
     rows.replaceChildren(
       ...contributions.map((tokens, player) =>
         tokenRow(
@@ -50,16 +65,27 @@ export function activate({root, vars, psynet}) {
           live.players[player]?.label ?? `Player ${player + 1}`,
           tokens,
           rules.endowment,
-          player === live.player
+          player === live.player,
+          noShows.includes(player)
         )
       )
     );
-    let total = contributions.reduce((a, b) => a + b, 0);
-    let share = (rules.multiplier * total) / contributions.length;
-    pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
-    let shareText = +share.toFixed(2);
-    let earned = +(rules.endowment - mine + share).toFixed(2);
     instructions.hidden = live.ended;
+    // PsyNet ended a round that too few players opened without starting it,
+    // and the page's no-game notice says so to the players who opened it.
+    if (view.psynet.too_few_ready) {
+      pot.textContent = "No pot this round.";
+      earn.textContent = view.payoffs[live.player]
+        ? `You keep your ${rules.endowment} tokens.`
+        : "Too few players opened the game.";
+      return;
+    }
+    // The server's pot and payoffs, as the round's outcome counts them.
+    let total = view.pot;
+    pot.textContent = `Pot: ${total} tokens × ${rules.multiplier} = ${+(rules.multiplier * total).toFixed(2)}`;
+    let shareText = +view.share.toFixed(2);
+    let earned =
+      live.started || live.ended ? +view.payoffs[live.player].toFixed(2) : rules.endowment;
     earn.textContent = live.ended
       ? `Each player gets ${shareText} tokens from the pot, and you earn ${earned} tokens.`
       : `If the round ended now, each player would get ${shareText} tokens ` +
@@ -72,7 +98,10 @@ export function activate({root, vars, psynet}) {
   live.onChange(render);
   // The rows show what's happening, so the status says nothing while the
   // round is played.
-  live.showStatus(status, null, { ended: "Time's up." });
+  live.showStatus(status, null, {
+    ended: (view, reason) =>
+      reason === "too_few_ready" ? "The round can't be played." : "Time's up.",
+  });
   live.showRejections(rejection);
   slider.addEventListener("input", () => {
     live.send("contribute", {tokens: Number(slider.value)});

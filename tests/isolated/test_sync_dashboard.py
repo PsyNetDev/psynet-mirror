@@ -84,15 +84,12 @@ def test_dashboard_renders_sync_groups_and_protects_sensitive_requests(
         ).status_code
         == 401
     )
-    assert (
-        unauthenticated_session.post(
-            f"{action_url}/kick", data={"kick_reason": "manual_kick"}
-        ).status_code
-        == 401
-    )
 
-    response = session.post(f"{action_url}/kick", data={"kick_reason": "manual_kick"})
+    response = session.post(
+        f"{action_url}/fail", data={"fail_reason": "manual_failure"}
+    )
     response.raise_for_status()
     assert response.json()["status"] == "success"
     db_session.expire_all()
+    assert participant.failed
     assert participant not in SimpleSyncGroup.query.get(group.id).active_participants

@@ -659,9 +659,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         :class:`~psynet.live_game.PlayLiveGame` that its ``show_trial``
         returned, as the participant's
         :class:`~psynet.live_game.LiveGameRecord`, with their ``answer``.
-        Its ``status`` is ``"not_started"`` if the group started no game in
-        the trial's round, and it's ``None`` for a trial that wasn't played
-        in a group's round.
+        Its ``status`` is
+        :attr:`LiveGameStatus.NOT_STARTED <psynet.live_game.LiveGameStatus.NOT_STARTED>`
+        if the group started no game in the trial's round, and it's ``None``
+        for a trial that wasn't played in a group's round.
         """
         from ..live_game.record import LiveGameRecord
 
