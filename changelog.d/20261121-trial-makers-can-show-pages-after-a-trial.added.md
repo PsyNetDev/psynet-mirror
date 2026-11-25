@@ -1,1 +1,1 @@
-Added `TrialMaker.show_after_trial(trial)`, which shows pages between trials, such as a break halfway through, without affecting either trial.
+Added `TrialMaker.show_after_trial(trial)`, which shows pages between trials, such as a break halfway through, without affecting either trial. Set the trial maker's `time_estimate_after_trials` to the total time these pages take, so that the experiment's duration estimate includes them.

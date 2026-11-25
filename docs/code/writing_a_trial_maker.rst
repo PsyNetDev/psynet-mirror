@@ -313,17 +313,25 @@ that just finished and returns pages to show next, or ``None``:
 .. code-block:: python
 
     class RatingTrialMaker(StaticTrialMaker):
+        time_estimate_after_trials = 60
+
         def show_after_trial(self, trial):
             if trial.position == 24:
-                return InfoPage("Take a break.", time_estimate=5)
+                return InfoPage("Take a break.", time_estimate=60)
 
 These pages run once the trial is finalized and its feedback shown, and before
 the next trial is prepared, so they don't affect either trial, and recordings
 made on them belong to the participant. They are skipped after a failed trial.
 The next trial can't be known yet, so check ``trial.position`` rather than showing a page
-after every trial, which would include the last one. Give the pages a
-``time_estimate`` to pay for them; it doesn't move the progress bar, because
-the experiment's duration estimate doesn't include them. In trial makers with
+after every trial, which would include the last one.
+
+Give each page a ``time_estimate``, which is the time credit the participant
+earns for it; a page without one raises an error. PsyNet can't tell in advance
+how many of these pages a participant will see, so set
+:attr:`~psynet.trial.main.TrialMaker.time_estimate_after_trials` to the total
+time you expect them to take. It is added to the experiment's duration
+estimate, and the progress bar moves on by it when the trial loop ends rather
+than during the pages themselves. In trial makers with
 sync groups, the rest of the group waits at the next barrier, and the break
 counts towards that barrier's ``late_after`` unless the page has a
 ``time_limit``.
