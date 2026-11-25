@@ -3216,7 +3216,7 @@ class TrialMaker(Module):
         assert type in ["trial", "end"]
 
         def eval_checks(experiment, participant):
-            participant_trials = self.get_participant_trials(participant)
+            participant_trials = self._trials_to_check(participant)
             results = self.performance_check(
                 experiment=experiment,
                 participant=participant,
@@ -3286,6 +3286,10 @@ class TrialMaker(Module):
             .all()
         )
         return [record[0] for record in records]
+
+    def _trials_to_check(self, participant):
+        """The participant's trials that :meth:`performance_check` receives."""
+        return self.get_participant_trials(participant)
 
     def get_participant_trials(self, participant):
         """

@@ -186,10 +186,10 @@ Only :class:`~psynet.trial.static.StaticTrialMaker` can do this. Adaptive
 trial makers, such as chains and staircases, choose each trial from the
 answers before it, so their pages always wait for the server.
 
-The trial maker then creates a participant's trials, in order, when they
-reach it (as many as node selection allows then, usually all of them), and
-each trial page also carries the ``contents`` of the next few trials
-(``StaticTrialMaker(n_upcoming_trials=...)``, 2 by default). The module needs no changes. When the participant answers,
+The trial maker then keeps the participant's next few trials
+(``StaticTrialMaker(n_upcoming_trials=...)``, 2 by default) created, in order,
+ahead of the one they are on, and each trial page also carries their
+``contents``. The module needs no changes. When the participant answers,
 PsyNet calls ``update`` with the next trial's ``contents`` at once, and sends
 the answers to the server in the background, one at a time and in order.
 ``update`` also receives ``upcomingContents``, the contents of the known
@@ -261,9 +261,9 @@ For this to work:
   before they are answered.
   Choose random values in
   :meth:`~psynet.trial.main.Trial.finalize_definition` instead.
-- The trial maker picks all the trials' nodes when the participant reaches
-  it, before any is answered, so ``custom_node_filter`` and ``select_node``
-  can't adapt to the participant's answers.
+- The trial maker picks each trial's node ``n_upcoming_trials`` answers
+  early, so ``custom_node_filter`` and ``select_node`` can't adapt to the
+  participant's last few answers.
 - Pages with a ``time_limit`` or background recording work, but PsyNet sets
   these up for each page, so such a page isn't shown in advance and replaces
   the last one: the module starts afresh for each trial.
@@ -285,8 +285,13 @@ Also keep in mind:
   so ``psynet test local`` doesn't test it. Test the module with a
   Playwright spec; see :doc:`/test/frontend`.
 
-Trials prepared in advance can't use sync groups, repeat trials, performance
-checks after every trial, or ``recruit_mode="n_trials"``. The browser only runs
+Trials prepared in advance can't use sync groups. Repeat trials are prepared
+once every main trial is answered. With performance checks after every trial,
+the next trials' files still download early, but each trial waits for the
+server's check. With ``recruit_mode="n_trials"``, nodes can overshoot their
+target a little more than usual, as only answered trials count towards it and
+each participant holds up to ``n_upcoming_trials + 1`` unanswered trials.
+The browser only runs
 ahead with in-place timeline transitions, which are on by default. The response
 timeout of each trial counts from when the server first sends its page; once
 one times out, the participant's trials waiting their turn fail with it.

@@ -28,9 +28,16 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
         "yellow star",
     ]
 
-    trials = Trial.query.filter_by(participant_id=bot.id).order_by(Trial.position)
-    trials = trials.all()
-    assert len(trials) == 8
+    def prepared():
+        return Trial.query.filter_by(participant_id=bot.id).order_by(Trial.id).all()
+
+    # The trial on screen and the two its page carries.
+    trials = prepared()
+    assert len(trials) == 3
+    bot.take_page()
+    assert len(prepared()) == 4
+    page = bot.get_current_page()
+    trials = [t for t in prepared() if not t.complete]
     participant = Participant.query.get(bot.id)
     trial_maker = trials[0].trial_maker
     # A time limit is set up for each page, so such pages aren't predicted.
@@ -119,16 +126,7 @@ def test_a_break_does_not_count_towards_the_next_trial():
     assert trial.complete and trial.time_taken == 2
 
 
-@pytest.mark.parametrize(
-    "option",
-    [
-        {"sync_group_type": "pairs"},
-        {"check_performance_every_trial": True},
-        {"n_repeat_trials": 1},
-        {"recruit_mode": "n_trials"},
-    ],
-)
-def test_prepared_trials_reject_options_they_cant_support(option):
+def test_prepared_trials_reject_sync_groups():
     with pytest.raises(ValueError, match="prepare_trials_in_advance"):
         StaticTrialMaker(
             id_="ratings",
@@ -136,7 +134,7 @@ def test_prepared_trials_reject_options_they_cant_support(option):
             nodes=[StaticNode(definition={})],
             expected_trials_per_participant=1,
             prepare_trials_in_advance=True,
-            **option,
+            sync_group_type="pairs",
         )
 
 
@@ -170,7 +168,7 @@ def test_a_trial_whose_page_has_a_different_layout_is_not_shown_in_advance(monke
     assert trials[0].layout_key is not None
     assert {trial.layout_key for trial in trials[:3]} == {trials[0].layout_key}
 
-    trials[3].layout_key = "another layout"
+    trials[2].layout_key = "another layout"
     db.session.commit()
     participant = Participant.query.get(bot.id)
     reply = bot.http_session.post(
@@ -188,7 +186,7 @@ def test_a_trial_whose_page_has_a_different_layout_is_not_shown_in_advance(monke
         },
     ).json()
     upcoming = reply["timeline_fragment"]["upcoming_pages"]
-    assert [page["contents"]["name"] for page in upcoming] == ["yellow star"]
+    assert upcoming == []
     # The browser compares the same key, computed from the page it receives.
     assert reply["timeline_fragment"]["layout_key"] == trials[1].layout_key
 

@@ -31,5 +31,7 @@ def test_failed_prepared_trials_are_replaced_up_to_the_limit(monkeypatch):
         t for t in trial_maker.get_participant_trials(participant) if not t.failed
     ]
     assert trial in replacements and len(replacements) == len(trials) - 1
-    # The failed trials' nodes are chosen again.
-    assert {t.node_id for t in replacements} < {t.node_id for t in trials}
+    # The failed trials' nodes can be chosen again.
+    assert set(participant.module_state.participated_networks) == {
+        t.network_id for t in replacements
+    }
