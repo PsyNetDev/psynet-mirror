@@ -267,7 +267,6 @@ def test_pages_say_why_they_cant_be_left_or_rendered_early():
     )
 
     class Holds(InfoPage):
-        can_swap_in_advance = True
         is_timeline_hold = True
 
     assert Holds("D", time_estimate=1)._cannot_be_rendered_early_because() == (
