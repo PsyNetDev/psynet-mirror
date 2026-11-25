@@ -4,7 +4,7 @@ from psynet.timeline import Timeline
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
 N_NODES = 5
-N_REPEAT_TRIALS = 2
+N_REPEAT_TRIALS = 4
 
 
 class RatingTrial(StaticTrial):
