@@ -33,7 +33,7 @@ export function activate({root, psynet}) {
             const img = imageFor(url);
             try {
                 await img.decode();
-                return img;
+                return signal.aborted ? null : img;
             } catch (error) {
                 images.delete(url);
                 if (signal.aborted) return null;

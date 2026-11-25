@@ -336,7 +336,7 @@ class VocabTest(StaticTrialMaker):
         https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values for a list of key codes.
     false_key_label : str
         The label for the incorrect answer. By default, the label is "L" (corresponding to the key code "KeyL").
-    trial_class : ChainTrial
+    trial_class : Type[VocabTrial]
         The class of the trial. By default, the trial class is VocabTrial.
     present_as_image: bool
         Whether to present the items as images or as text. If set to True, the items are presented as images. If set

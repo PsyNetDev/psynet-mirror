@@ -36,18 +36,32 @@ test("vocabulary words follow each other on one page", { tag: "@inplace-only" },
     await onPage("The test will start on the next page.");
     await next.click();
 
-    const word = participant.locator("#test-stimulus img");
-    await expect(word).toBeVisible({ timeout: STEP_TIMEOUT_MS });
-    // A full page load would drop this marker.
-    await participant.evaluate(() => (window.vocabSamePage = true));
-    let previous = await word.getAttribute("src");
-    for (const key of ["a", "l", "a"]) {
+    await expect(participant.locator("#test-stimulus img")).toBeVisible({
+      timeout: STEP_TIMEOUT_MS
+    });
+    // Each word hides after a second, so record the words as they are shown.
+    // A full page load would drop these globals.
+    await participant.evaluate(() => {
+      const target = document.querySelector("#test-stimulus");
+      window.vocabShown = [target.querySelector("img").src];
+      new MutationObserver(() => {
+        const img = target.querySelector("img");
+        if (img && img.src !== window.vocabShown.at(-1)) window.vocabShown.push(img.src);
+      }).observe(target, { childList: true });
+    });
+    const saved = [];
+    participant.on("response", (response) => {
+      if (response.url().endsWith("/response") && response.request().method() === "POST") {
+        saved.push(response.status());
+      }
+    });
+    const shown = () => participant.evaluate(() => window.vocabShown?.length);
+    for (const [index, key] of ["a", "l", "a"].entries()) {
       await participant.keyboard.press(key);
-      await expect(word).not.toHaveAttribute("src", previous);
-      await expect(word).toBeVisible();
-      previous = await word.getAttribute("src");
+      await expect.poll(shown, { timeout: STEP_TIMEOUT_MS }).toBe(index + 2);
     }
-    expect(await participant.evaluate(() => window.vocabSamePage)).toBe(true);
+    await expect.poll(() => saved.length, { timeout: STEP_TIMEOUT_MS }).toBe(3);
+    expect(saved).toEqual([200, 200, 200]);
     await assertNoBackendError(participant);
   });
 });

@@ -7,10 +7,12 @@ import requests
 from psynet.prescreen.vocabtest import VocabTest, VocabTrial
 
 
-def _make_vocab_test(tmp_path, **kwargs):
+def _make_vocab_test(tmp_path, real=("cat", "dog"), fake=("xzz", "qrv"), **kwargs):
     csv_path = tmp_path / "items.csv"
     csv_path.write_text(
-        "stimulus,correct_answer\ncat,correct\ndog,correct\nxzz,incorrect\nqrv,incorrect\n"
+        "stimulus,correct_answer\n"
+        + "".join(f"{word},correct\n" for word in real)
+        + "".join(f"{word},incorrect\n" for word in fake)
     )
     kwargs.setdefault("performance_threshold_per_trial", None)
     with pytest.warns(UserWarning, match="not presented as images"):
@@ -32,7 +34,6 @@ def words(maker, answers, offset=0):
             position=position,
             node_id=node_id,
             definition=node.definition,
-            module_state_id=7,
             complete=True,
             failed=False,
             answer=answer,
@@ -72,6 +73,35 @@ def test_each_form_is_checked_once_its_last_word_is_answered_and_at_the_end(tmp_
     # The check at the end also fails a form left unfinished, for example
     # because its last words timed out.
     assert not maker.performance_check(None, None, trials[:6])["passed"]
+    # Every form must pass, not only the latest.
+    first_fails = words(maker, ["fake"] * 4) + words(
+        maker, ["real", "real", "fake", "fake"], offset=4
+    )
+    assert maker.performance_check(None, None, first_fails) == {
+        "score": 1,
+        "passed": False,
+    }
+
+
+def test_forms_balance_real_and_fake_words_and_prefer_unseen_ones(tmp_path):
+    maker = _make_vocab_test(
+        tmp_path,
+        real=("cat", "dog", "owl"),
+        fake=("xzz", "qrv", "plk"),
+        n_trials=2,
+        n_repeat_items=1,
+    )
+    order = maker.word_order(maker.start_nodes, participant=None)
+    forms = [order[:5], order[5:]]
+    for form in forms:
+        originals, repeat = form[:4], form[4]
+        answers = [node.definition["correct_answer"] for node in originals]
+        assert sorted(answers) == ["correct"] * 2 + ["incorrect"] * 2
+        assert len(set(map(id, originals))) == 4 and repeat in originals
+    # Each word left out of the first form is in the second.
+    assert set(map(id, maker.start_nodes)) - set(map(id, forms[0])) <= set(
+        map(id, forms[1])
+    )
 
 
 def test_word_pages_share_their_html_and_hide_the_answer(tmp_path):
