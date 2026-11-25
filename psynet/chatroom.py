@@ -419,7 +419,7 @@ class ChatRoom(JavaScriptContributor):
             .read_text(encoding="utf-8")
         ]
 
-    def get_js_vars(self):
+    def get_page_config(self):
         """Page-local configuration contributed to the hosting page."""
         _p = get_translator(context=True)
         return {

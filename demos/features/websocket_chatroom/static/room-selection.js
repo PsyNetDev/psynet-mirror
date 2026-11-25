@@ -1,7 +1,7 @@
-export async function activate({root, vars, psynet}) {
-    const numberOfRooms = vars.num_chatrooms;
-    const maxOccupancy = vars.max_occupancy;
-    const globalChannel = vars.chatroom_global_channel;
+export async function activate({root, config, psynet}) {
+    const numberOfRooms = config.num_chatrooms;
+    const maxOccupancy = config.max_occupancy;
+    const globalChannel = config.chatroom_global_channel;
     const buttonContainer = root.querySelector("#room-buttons");
 
     function buildButtons(rooms) {

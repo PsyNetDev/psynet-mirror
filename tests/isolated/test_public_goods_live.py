@@ -24,30 +24,27 @@ class TestPublicGoodsLive:
         return import_local_experiment()["module"]
 
     def test_the_pot_is_multiplied_and_shared_equally(self, demo):
-        game = LocalGame(demo.PublicGoods, players=3)
+        settings = {"endowment": 10, "multiplier": 2}
+        game = LocalGame(demo.PublicGoods, players=3, settings=settings)
         for player, tokens in enumerate([10, 4, 0]):
             game.send(player, demo.Contribute(tokens=tokens))
         # A player can change their mind until the time is up.
         game.send(1, demo.Contribute(tokens=2), now=5)
 
         outcome = game.outcome()
-        share = demo.MULTIPLIER * 12 / 3
-        assert (outcome["pot"], outcome["share"]) == (12, share)
-        assert outcome["payoffs"] == [
-            demo.ENDOWMENT - 10 + share,
-            demo.ENDOWMENT - 2 + share,
-            demo.ENDOWMENT + share,
-        ]
-        assert game.answer(2) == {
-            "arrived": True,
-            "contributed": 0,
-            "earned": demo.ENDOWMENT + share,
-        }
-        assert game.view(0)["contributions"] == [10, 2, 0]
+        assert (outcome["pot"], outcome["share"]) == (12, 8)
+        assert outcome["payoffs"] == [8, 16, 18]
+        assert game.answer(2) == {"arrived": True, "contributed": 0, "earned": 18}
+        # The page shows the pot from the settings in the view.
+        view = game.view(0)
+        assert (view["endowment"], view["multiplier"]) == (10, 2)
+        assert view["contributions"] == [10, 2, 0]
 
     def _started_without(self, demo, no_shows):
         """A round of three that starts without the players ``no_shows``."""
-        game = LocalGame(demo.PublicGoods, players=3, start=False)
+        game = LocalGame(
+            demo.PublicGoods, players=3, settings=demo.SETTINGS, start=False
+        )
         for player in {0, 1, 2} - set(no_shows):
             game.send(player, {"type": "psynet_ready", "message": {}})
         game.tick(demo.PublicGoods.ready_timeout)
@@ -78,11 +75,11 @@ class TestPublicGoodsLive:
         game.tick(demo.ROUND_SECONDS)
         assert game.is_over() and game.end_reason() == "finished"
 
-        share = demo.MULTIPLIER * 4 / 2
+        share = demo.SETTINGS["multiplier"] * 4 / 2
         # The page shows the pot and payoffs the server pays.
         assert game.view(0)["payoffs"] == [
-            demo.ENDOWMENT - 4 + share,
-            demo.ENDOWMENT + share,
+            demo.SETTINGS["endowment"] - 4 + share,
+            demo.SETTINGS["endowment"] + share,
             0,
         ]
         assert game.game.performance_reward(game.outcome(), "finished", 2) == 0
@@ -102,7 +99,7 @@ class TestPublicGoodsLive:
         game = self._started_without(demo, [1, 2])
 
         assert game.is_over() and game.end_reason() == TOO_FEW_READY
-        assert game.view(0)["payoffs"] == [demo.ENDOWMENT, 0, 0]
+        assert game.view(0)["payoffs"] == [demo.SETTINGS["endowment"], 0, 0]
         assert self._export_row(demo, game, 0) == {
             "end_reason": TOO_FEW_READY,
             "arrived": True,
@@ -110,13 +107,13 @@ class TestPublicGoodsLive:
             "pot": None,
             "n_players": 1,
             "share": None,
-            "earned": demo.ENDOWMENT,
+            "earned": demo.SETTINGS["endowment"],
         }
         nobody = self._started_without(demo, [0, 1, 2])
         assert nobody.end_reason() == TOO_FEW_READY
         assert self._export_row(demo, nobody, 0)["pot"] is None
 
     def test_a_contribution_is_between_none_and_the_endowment(self, demo):
-        game = LocalGame(demo.PublicGoods, players=3)
+        game = LocalGame(demo.PublicGoods, players=3, settings=demo.SETTINGS)
         with pytest.raises(Reject, match="between 0 and"):
-            game.send(0, demo.Contribute(tokens=demo.ENDOWMENT + 1))
+            game.send(0, demo.Contribute(tokens=demo.SETTINGS["endowment"] + 1))

@@ -123,6 +123,17 @@ def test_a_page_can_refuse_a_response_for_now_before_reading_it(monkeypatch):
                 "retry_after": 2,
             },
         ),
+        # Nor is one from a page the server has moved past: the browser shows
+        # its message, or reloads if the answer was sent in the background.
+        (
+            {"message": "Stale.", "stale_page": True},
+            {
+                "status": "success",
+                "submission": "rejected",
+                "message": "Stale.",
+                "stale_page": True,
+            },
+        ),
     ],
 )
 def test_response_rejected_is_called_only_for_a_response_to_correct(payload, body):

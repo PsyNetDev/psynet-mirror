@@ -1,11 +1,13 @@
 """Live public goods game in groups of three that carries on when members leave.
 
-In each of ``N_ROUNDS`` rounds, every member has ``ENDOWMENT`` tokens and
+In each of ``N_ROUNDS`` rounds, every member has an endowment of tokens and
 chooses how many to put in the group pot. Unlike the ``public_goods`` demo,
 the choice is live: each member sees the others' contributions as they
 change, and can change their own until the round's ``ROUND_SECONDS`` are up.
-Then the pot is multiplied by ``MULTIPLIER`` and shared between the members
-who opened the round, and each token a member earns pays ``TOKEN_VALUE``.
+Then the pot is multiplied and shared between the members who opened the
+round, and each token a member earns pays ``TOKEN_VALUE``. The endowment and
+multiplier are the game's ``SETTINGS``: the game keeps them in its state and
+sends them to the page in its view, so the page shows what the server pays.
 
 Each round is one cued ``ContributionTrial`` per player, whose ``show_trial``
 starts a live game for the team and shows the game page. The trial's answer
@@ -41,8 +43,10 @@ from psynet.timeline import Module, PageMaker, Timeline, for_loop
 from psynet.trial.main import Trial
 
 N_ROUNDS = 3
-ENDOWMENT = 10
-MULTIPLIER = 1.5
+#: The game's settings. To vary them from round to round or between
+#: conditions, pass different settings to ``PlayLiveGame``, for example the
+#: trial's ``definition``.
+SETTINGS = {"endowment": 10, "multiplier": 1.5}
 TOKEN_VALUE = 0.02
 ROUND_SECONDS = 20
 RESULTS_SECONDS = 10
@@ -55,10 +59,6 @@ LATE_AFTER = 15
 READY_SECONDS = 15
 GROUPING_WAIT = 20
 
-#: What the game page needs to show the pot. The game page passes it to
-#: static/public-goods.js.
-RULES = {"endowment": ENDOWMENT, "multiplier": MULTIPLIER}
-
 
 class Contribute(LiveMessage):
     """Set how many tokens the player puts in the pot."""
@@ -67,8 +67,9 @@ class Contribute(LiveMessage):
     tokens: int
 
     def apply(self, game, state, player, now):
-        if not 0 <= self.tokens <= ENDOWMENT:
-            raise Reject(f"Put in between 0 and {ENDOWMENT} tokens.")
+        endowment = state["endowment"]
+        if not 0 <= self.tokens <= endowment:
+            raise Reject(f"Put in between 0 and {endowment} tokens.")
         state["contributions"][player] = self.tokens
 
 
@@ -84,9 +85,13 @@ class PublicGoods(LiveGame):
     # their part in it, and is failed as late at the next round's barrier.
     away_timeout = None
 
-    def initial_state(self, players):
-        # Each player's contribution, in player order.
-        return {"contributions": [0 for player in players]}
+    def initial_state(self, players, settings):
+        return {
+            "endowment": settings["endowment"],
+            "multiplier": settings["multiplier"],
+            # Each player's contribution, in player order.
+            "contributions": [0 for player in players],
+        }
 
     def view(self, state, player):
         # Contributions are public, so every player sees them all, with the
@@ -94,6 +99,8 @@ class PublicGoods(LiveGame):
         # numeric contributions replace _result's, which has None for
         # no-shows, because the page shows a number for every row.
         return {
+            "endowment": state["endowment"],
+            "multiplier": state["multiplier"],
             "no_shows": self._no_shows(state),
             **self._result(state),
             "contributions": state["contributions"],
@@ -124,14 +131,14 @@ class PublicGoods(LiveGame):
             pot = share = None
         else:
             pot = sum(played)
-            share = MULTIPLIER * pot / len(played) if played else 0
+            share = state["multiplier"] * pot / len(played) if played else 0
         return {
             "contributions": contributions,
             "pot": pot,
             "n_players": len(played),
             "share": share,
             "payoffs": [
-                0 if tokens is None else ENDOWMENT - tokens + (share or 0)
+                0 if tokens is None else state["endowment"] - tokens + (share or 0)
                 for tokens in contributions
             ],
         }
@@ -161,7 +168,7 @@ def bot_contribution(player):
     return player % 3 * 5
 
 
-def contribution_page(round_number):
+def contribution_page(round_number, settings):
     return LiveGamePage(
         "contribution",
         tags.div(
@@ -172,7 +179,7 @@ def contribution_page(round_number):
                 cls="pg-header",
             ),
             tags.p(
-                f"Drag the slider to choose how many of your {ENDOWMENT} "
+                f"Drag the slider to choose how many of your {settings['endowment']} "
                 "tokens to put in the group pot. You can change your mind "
                 "until the time is up.",
                 id="pg-instructions",
@@ -182,7 +189,7 @@ def contribution_page(round_number):
                 type="range",
                 id="pg-tokens",
                 min=0,
-                max=ENDOWMENT,
+                max=settings["endowment"],
                 value=0,
                 aria_label="Your contribution",
             ),
@@ -197,8 +204,7 @@ def contribution_page(round_number):
         player_left_message="A player isn't on the game page.",
         # Also shown when too few players opened the round.
         no_game_message="This round can't be played without at least two players.",
-        js_page_modules=["/static/public-goods.js"],
-        js_vars={"public_goods_rules": RULES},
+        module="/static/public-goods.js",
         css_links=["/static/public-goods.css"],
         time_estimate=ROUND_SECONDS,
     )
@@ -213,7 +219,8 @@ class ContributionTrial(Trial):
         return PlayLiveGame(
             group_type="team",
             game_class=PublicGoods,
-            page=contribution_page(self.sync_group_round),
+            page=contribution_page(self.sync_group_round, SETTINGS),
+            settings=SETTINGS,
             waiting_message="Waiting for the other players…",
             # A player who closes their page is failed, and the others carry
             # on without them.
@@ -283,9 +290,9 @@ def get_timeline():
     return Timeline(
         InfoPage(
             f"You will play {N_ROUNDS} rounds of a game with two other players. "
-            f"Each round you get {ENDOWMENT} tokens and choose how many to put in "
+            f"Each round you get {SETTINGS['endowment']} tokens and choose how many to put in "
             f"a group pot, seeing the others' choices as they make them. The pot "
-            f"is multiplied by {MULTIPLIER} and shared equally between the "
+            f"is multiplied by {SETTINGS['multiplier']} and shared equally between the "
             f"players. Each token you earn pays ${TOKEN_VALUE:.2f}.",
             time_estimate=15,
         ),

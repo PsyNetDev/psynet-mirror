@@ -94,7 +94,7 @@
    * shows one after another each open one.
    *
    * @param {function} liveGame - Returns the page's ``liveGame`` variable,
-   *   from ``LiveGameControl.get_participant_js_vars``, or nothing on a page
+   *   from ``LiveGameControl.get_participant_page_config``, or nothing on a page
    *   that isn't a ``LiveGamePage``
    * @param {Object} page - The page's hooks: ``websocketScope()``,
    *   ``ready()``, ``nextPage()``, ``setNextButtonHidden(hidden)``,
@@ -1054,7 +1054,7 @@
   // ``psynet.liveGame`` as it loads.
   function activatePage(psynet) {
     if (!psynet.liveGame) {
-      psynet.liveGame = createLiveGame(() => psynet.var.liveGame, {
+      psynet.liveGame = createLiveGame(() => psynet.pageConfig.liveGame, {
         websocketScope: () => window.psynetTemplateData.websocketScope,
         ready: () => psynet.pageReady,
         nextPage: () => psynet.nextPage(),

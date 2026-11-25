@@ -189,7 +189,7 @@ game, and then shows the group the game page:
                     tags.button("Paper", type="button", id="paper"),
                     tags.button("Scissors", type="button", id="scissors"),
                 ),
-                js_page_modules=["/static/rock-paper-scissors.js"],
+                module="/static/rock-paper-scissors.js",
                 time_estimate=30,
             ),
         ),
@@ -277,6 +277,8 @@ start of a round, such as choosing who leaves after it. Work done once the
 game ends, such as scoring, goes in the trial, which gets the game's answer
 (see `The answer`_), or in a later group barrier's ``on_release``.
 
+.. _live-games-settings:
+
 To play one game under different conditions, such as with a different
 number of throws, pass ``PlayLiveGame`` ``settings``: a dict, or any other
 value that can be saved as JSON. The game's ``initial_state`` gets it as a
@@ -298,6 +300,10 @@ since they get only the state:
     class RockPaperScissors(LiveGame):
         def initial_state(self, players, settings):
             return {"n_throws": settings["throws"], "choices": [None, None], ...}
+
+If the page shows a setting, or works something out from it, send it in
+``view`` rather than passing a copy in ``page_config``, so that the page always
+uses the game's value.
 
 To vary the settings from trial to trial, return a ``PlayLiveGame`` from a
 trial's ``show_trial``, and pass the trial's ``definition`` as the settings:
@@ -477,10 +483,11 @@ The game page
 -------------
 
 The game page is the :class:`~psynet.live_game.LiveGamePage` given to the
-``PlayLiveGame``, as in the example under `PlayLiveGame`_. It shows its
-content, and its options, such as the texts below, change how it plays the
-game. The page's JavaScript goes in a
-file in the experiment's ``static`` folder, listed in the page's ``js_page_modules``. It exports an ``activate``
+``PlayLiveGame``, as in the example under `PlayLiveGame`_. Like a
+:class:`~psynet.page.JSPage`, it is your own HTML and one JavaScript module,
+and its options, such as the texts below, change how it plays the game. The
+module is a file in the experiment's ``static`` folder, passed as the page's
+``module``. It exports an ``activate``
 function, which PsyNet runs each time the page opens
 (:doc:`/code/pages/custom_front_ends` explains page modules).
 A sketch of one, ``static/my-game.js``, for the ``Choose`` message under
@@ -634,8 +641,11 @@ and views needn't carry it:
 
 ``info`` is ``null`` without a ``player_info``, and an anonymous page gets
 only the participant's own, so the page can show their own choice, but not
-the others'. Settings that are the same for every player, such as a
-game's rules, go in the page's ``js_vars`` instead.
+the others'. Configuration that is the same for every player and every
+round, such as the board's size, goes in the page's ``page_config``. Anything
+that can differ between rounds or groups goes in the game's
+:ref:`settings <live-games-settings>` and reach the page in the views, as in
+the ``public_goods_live`` demo, so that the page shows what the server uses.
 
 PsyNet translates its own texts on the page, such as the notices and the
 status line's defaults, and the labels above. Text that the game puts in its
@@ -722,7 +732,7 @@ member was late for the ``PlayLiveGame`` and their group broke up with the advan
 before they reached it. PsyNet tells the participant with
 a notice at the top of the page, "Your group couldn't start the game.",
 which the page's ``no_game_message`` changes or turns off, and hides the
-page's content. When the page already has a notice saying that the
+page's HTML. When the page already has a notice saying that the
 participant's group left them, such as "Your partner is no longer in your
 group.", PsyNet doesn't add a second one. The page's
 ``psynet.liveGame`` methods then do nothing: ``send`` returns ``undefined``,

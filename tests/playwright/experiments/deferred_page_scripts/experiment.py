@@ -82,6 +82,8 @@ class Exp(psynet.experiment.Experiment):
                 """
             ),
             time_estimate=1,
+            # The transition specs fake the server's reply to the first page.
+            render_in_advance=False,
             js_dependencies=MANAGED_JAVASCRIPT["js_dependencies"],
             js_page_code="""
                 window.__pageCodeLifecycle = window.__pageCodeLifecycle || [];

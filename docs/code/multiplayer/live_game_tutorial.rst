@@ -254,14 +254,14 @@ in `Playing it as trials`_ below passes in:
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :pyobject: rock_paper_scissors_page
 
-Its content holds the page's elements, each with an ``id`` so that the
+Its HTML holds the page's elements, each with an ``id`` so that the
 JavaScript can find it. PsyNet hides it on a page without a game. The other
 options change the page's texts: ``waiting_status`` is what the page says
 until both pages have opened,
 ``player_left_message`` the notice while the partner is away, and
 ``no_game_message`` the notice on a page without a game, which a player
 also sees when their partner never opens the game page.
-``js_page_modules`` lists the page's JavaScript.
+``module`` is the page's JavaScript, as on a :class:`~psynet.page.JSPage`.
 
 The JavaScript is in ``static/rock-paper-scissors.js``. It exports an
 ``activate`` function, which PsyNet runs when the page opens
@@ -411,7 +411,7 @@ then shows each player their score:
             page=LiveGamePage(
                 "rock_paper_scissors",
                 tags.div(...),  # the elements shown above
-                js_page_modules=["/static/rock-paper-scissors.js"],
+                module="/static/rock-paper-scissors.js",
                 time_estimate=60,
             ),
             late_after=20,
@@ -689,12 +689,18 @@ copy these into the JavaScript, the demo keeps them in one place:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/experiment.py
    :start-at: #: What the game page needs to draw the board.
-   :end-at: RULES = {
+   :end-at: BOARD = {
    :dedent:
 
 The game page passes it to the JavaScript with
-``js_vars={"snake_rules": RULES}``, and ``activate`` reads it from ``vars``.
-``live`` is short for ``psynet.liveGame``:
+``page_config={"snake_board": BOARD}``, and ``activate`` reads it from ``config``.
+``page_config`` suits configuration that stays the same for the whole
+experiment. A value that can differ between rounds, such as a condition's payoff,
+goes in the game's :ref:`settings <live-games-settings>`: the game keeps it in
+its state and sends it in its views, so the page shows what the server uses.
+The ``public_goods_live`` demo does this.
+
+In the page's JavaScript, ``live`` is short for ``psynet.liveGame``:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/static/snake.js
    :language: javascript
@@ -712,7 +718,7 @@ Each view shows the whole board, so the page draws each view as it arrives:
 
 The view lists the snakes in player order, and ``live.player`` is this
 player's number, so their snake is ``view.snakes[live.player]``, and its
-color is ``rules.colors[live.player]``.
+color is ``board.colors[live.player]``.
 
 The page sends a turn when the player presses an arrow key, or W, A, S or D.
 It sends nothing before the game starts, after it ends or while the snake is

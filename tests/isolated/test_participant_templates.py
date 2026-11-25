@@ -936,9 +936,9 @@ def test_footer_exit_uses_an_in_page_confirmation():
     )
     assert 'from "macros/early_exit.html" import early_exit_modal' in timeline
     assert "early_exit_modal(" in timeline
-    # Page.early_exit_available decides whether Leave is on offer, so the
-    # modal is only rendered alongside an offer the server will honour.
-    assert "{% if early_exit_offer_id %}" in timeline
+    # Page.early_exit_available decides whether Leave is on offer; the
+    # browser asks for the offer once the participant clicks Leave.
+    assert "{% if show_early_exit_button %}" in timeline
     assert "{% if show_early_exit_button %}" in shell
     assert 'id="early-exit-modal"' in early_exit_macro
     assert 'id="early-exit-cancel"' in early_exit_macro
@@ -1043,7 +1043,7 @@ def test_arrival_notice_socket_fetches_current_notice_on_open():
     )
     fetch = js[
         js.index("psynet.fetchArrivalNotice = function") : js.index(
-            "psynet.ensureArrivalUpdates"
+            "psynet.ensureArrivalUpdates = function"
         )
     ]
     assert "psynet.fetchArrivalNotice = function" in js

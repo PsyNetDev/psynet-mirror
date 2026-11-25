@@ -16,6 +16,7 @@ from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -68,6 +69,7 @@ from ..timeline import (
     DatabaseCheck,
     Module,
     ModuleState,
+    Page,
     PageMaker,
     ParticipantFailRoutine,
     PreDeployRoutine,
@@ -531,6 +533,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     n_repeat_trials = Column(Integer)
     time_taken = Column(Float)
     time_limit_reached = Column(Boolean)
+    # The response timeout of trials prepared in advance counts from here.
+    response_started_at = Column(DateTime)
+    # Pages shown in advance are compared by layout key, rendered once per trial.
+    layout_key = Column(String)
     _initial_assets = deferred(Column(PythonDict))
 
     time_credit_before_trial = Column(Float)
@@ -652,6 +658,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @property
     def var(self):
         return VarStore(self)
+
+    @property
+    def _page_key(self):
+        """What the page UUID of the trial's page says it is."""
+        return f"trial{self.id}"
 
     @property
     def live_game(self):
@@ -992,6 +1003,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Returns a :class:`~psynet.timeline.Page` object,
         or alternatively a list of such objects,
         that solicits an answer from the participant.
+
+        A trial maker that prepares its trials in advance also calls this
+        method for upcoming trials, before the participant reaches them, to
+        show them without waiting for the server. It must then depend only on
+        the trial and its node, not on other trials' answers or scores, and
+        must not change anything.
 
         Parameters
         ----------
@@ -1787,6 +1804,20 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             check_trial = getattr(barrier, "_check_trial", None)
             if check_trial is not None:
                 check_trial(self)
+        if self.response_started_at is None:
+            self.response_started_at = datetime.datetime.now()
+        if (
+            len(logic) == 1
+            and isinstance(logic[0], Page)
+            and self.trial_maker is not None
+        ):
+            page = logic[0]
+            if self.id is None:
+                db.session.flush([self])
+            page._page_key = self._page_key
+            page.upcoming_pages, page.upcoming_media = self.trial_maker._upcoming(
+                self, page, experiment, participant
+            )
         return logic
 
     @classmethod
@@ -2873,16 +2904,43 @@ class TrialMaker(Module):
         time_threshold = datetime.datetime.now() - datetime.timedelta(
             seconds=self.response_timeout_sec
         )
-        trials_to_fail = (
-            self.trial_class.query.filter_by(complete=False, failed=False)
-            .filter(self.trial_class.creation_time < time_threshold)
-            .order_by(self.trial_class.id)
+        # Trials prepared in advance wait unseen until their turn.
+        started = (
+            self.trial_class.response_started_at
+            if self.prepare_trials_in_advance
+            else self.trial_class.creation_time
+        )
+        open_trials = self.trial_class.query.filter_by(
+            complete=False, failed=False
+        ).filter(
+            # Custom prepare_trial code can create trials without a trial maker.
+            or_(
+                self.trial_class.trial_maker_id == self.id,
+                self.trial_class.trial_maker_id.is_(None),
+            )
+        )
+
+        def lock(query):
             # A locked trial belongs to an in-flight request that may complete
             # it; the next check retries it if not.
-            .with_for_update(of=self.trial_class, skip_locked=True)
-            .populate_existing()
-            .all()
-        )
+            return (
+                query.order_by(self.trial_class.id)
+                .with_for_update(of=self.trial_class, skip_locked=True)
+                .populate_existing()
+                .all()
+            )
+
+        trials_to_fail = lock(open_trials.filter(started < time_threshold))
+        if self.prepare_trials_in_advance and trials_to_fail:
+            # These participants have stopped, and their trials waiting their
+            # turn would otherwise keep counting towards their nodes.
+            participant_ids = {trial.participant_id for trial in trials_to_fail}
+            trials_to_fail += lock(
+                open_trials.filter(
+                    self.trial_class.response_started_at.is_(None),
+                    self.trial_class.participant_id.in_(participant_ids),
+                )
+            )
         logger.info("Found %i old trial(s) to fail.", len(trials_to_fail))
         for trial in trials_to_fail:
             trial.fail(reason="response_timeout")
@@ -3026,14 +3084,31 @@ class TrialMaker(Module):
             corresponding to the current participant.
 
         trial
-            The :class:`~psynet.trial.main.Trial` that just finished.
+            The :class:`~psynet.trial.main.Trial` that just finished, or one
+            that hasn't been answered yet (see below).
 
         Returns
         -------
 
         Timeline logic, such as a page or a list of pages, or ``None``.
+        A trial maker that prepares its trials in advance also calls this
+        method for the current and upcoming trials before they are answered,
+        to find where the next trials stop being predictable. It must then
+        not change anything, nor rely on ``trial.answer`` or ``trial.score``,
+        which are still ``None``.
         """
         return None
+
+    prepare_trials_in_advance = False
+
+    def _upcoming(self, trial, page, experiment, participant):
+        """Return what is known about the pages of the trials after ``trial``.
+
+        Returns the pages of the trials that the browser can show in advance
+        and the URLs of the next trials' files by media type; each is ``None``
+        if unknown.
+        """
+        return None, None
 
     def finalize_trial(self, answer, trial, experiment, participant):
         """

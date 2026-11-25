@@ -57,7 +57,15 @@ reliable guide to relative sizes.
 Do not measure reaction time unless the user asks for it. When it is
 required:
 
-- Use the pattern in "Measuring reaction time" in
+- For a run of fast trials (flanker, Stroop, lexical decision, visual
+  search), follow `demos/experiments/flanker` and
+  `code/trials/keeping_a_task_on_one_page`: a `StaticTrialMaker` with
+  `prepare_trials_in_advance=True` and a page module that starts the response
+  clock from the `requestAnimationFrame` time of the stimulus frame and
+  answers with the key press's `event.timeStamp`. The trial's `time_taken`
+  is then the reaction time.
+- For occasional timed responses on ordinary pages, use the pattern in
+  "Measuring reaction time" in
   `code/pages/event_management`: a `GraphicPrompt` that gates the response
   until the stimulus frame, `KeyboardPushButtonControl`, and a
   `format_answer` that computes the latency from the event log. Store the

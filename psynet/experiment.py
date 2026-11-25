@@ -15,7 +15,7 @@ import traceback
 import uuid
 import zipfile
 from collections import Counter, OrderedDict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from functools import cache, partial
 from importlib import resources
@@ -164,6 +164,7 @@ from .timeline import (
     DatabaseCheck,
     FailedValidation,
     ModuleState,
+    Page,
     ParticipantFailRoutine,
     PreDeployRoutine,
     RecruitmentCriterion,
@@ -175,7 +176,7 @@ from .timeline import (
     _is_timeline_hold,
     _timeline_step_name,
     _trial_owning_page,
-    new_page_uuid,
+    make_page_uuid,
 )
 from .translation.check import check_translations
 from .translation.translate import create_pot
@@ -2070,7 +2071,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 n_bots=self.test_n_bots,
                 time_factor=self.test_time_factor,
                 stagger_interval_s=self.test_parallel_stagger_interval_s,
-                check_bots=self.test_check_bots,
+                check_bots=self._check_bots,
             )
         else:
             raise ValueError(f"Invalid test mode: {self.test_mode}")
@@ -2198,7 +2199,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         # rather than the BotDriver instances.
         with transaction():
             bots = Bot.query.all()
-            self.test_check_bots(bots)
+            self._check_bots(bots)
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
         """
@@ -2232,6 +2233,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             bot = BotDriver()
 
         bot.take_experiment(render_pages, time_factor)
+
+    def _check_bots(self, bots: List[Bot]):
+        """Run the experiment's bot checks, then PsyNet's own, which can't be overridden."""
+        self.test_check_bots(bots)
+        for trial_maker in self.timeline.trial_makers.values():
+            if getattr(trial_maker, "prepare_trials_in_advance", False):
+                for bot in bots:
+                    trial_maker._check_trials_shown_in_advance(bot)
 
     def test_check_bots(self, bots: List[Bot]):
         for b in bots:
@@ -4275,6 +4284,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         _p = get_translator(context=True)
         return {
             "submission": "rejected",
+            "stale_page": True,
             "message": _p(
                 "timeline_problem",
                 "Synchronization problem detected. "
@@ -4295,11 +4305,17 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         *,
         timeline_hold_resume=False,
         interrupted=False,
+        back=False,
     ):
         """Advance the participant after one ``/response`` write.
 
         Parameters
         ----------
+        back : bool
+            Set by the Back button: instead of answering the page, the
+            participant goes back to the page before it (see
+            ``show_back_button`` on :class:`~psynet.timeline.Page`).
+            Keyword-only.
         interrupted : bool
             Set by a barrier's waiting page that ends because the participant
             was released (see ``release_grace`` on
@@ -4426,6 +4442,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         page=page,
                     )
                 return ResponseResult(payload=self._stale_page_payload())
+            if back:
+                if self.timeline._page_to_go_back_to(participant, event) is None:
+                    return ResponseResult(payload=self._stale_page_payload())
+                page = self.timeline.go_back(self, participant)
+                return ResponseResult(
+                    payload=self._approved_payload(participant, page), page=page
+                )
             if _is_timeline_hold(event):
                 should_resume = event.prepare_resume_if_ready(self, participant)
                 event.account_wait(participant, settle=should_resume)
@@ -4554,6 +4577,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                         event, response, participant, self, page_uuid
                     )
                 event._accept_response(response, self, participant)
+            self.timeline._record_back_restore_point(participant, event)
             participant.inc_time_credit(event.time_estimate)
             participant.inc_progress(event.time_estimate)
 
@@ -6626,7 +6650,10 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         committed = plan.mark_committed()
         participant.exit_plan = committed.to_dict()
         if Experiment._skips_error_recovery_ui(recruiter, committed):
-            participant.page_uuid = new_page_uuid()
+            participant.page_count += 1
+            participant.page_uuid = make_page_uuid(
+                participant, participant.page_count, "skipped"
+            )
         return committed
 
     @staticmethod
@@ -6693,6 +6720,63 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             error_text=error_text,
             external_submit_url=external_submit_url,
             locale=get_locale() if locale is None else locale,
+        )
+
+    @experiment_route("/prepare_early_exit_plan/<assignment_id>", methods=["POST"])
+    @classmethod
+    @with_transaction
+    def route_prepare_early_exit_plan(cls, assignment_id):
+        """Prepare the Leave offer for the page on screen and return its confirmation.
+
+        The browser asks once the participant clicks Leave, rather than each
+        page carrying an offer from when it was rendered, as pages can be
+        rendered before the server serves them. The page UUID can't be
+        guessed without the participant's ``unique_id``, so only the
+        participant's browser receives the offer.
+        """
+        try:
+            participant = cls.get_participant_from_assignment_id(
+                assignment_id, for_update=True
+            )
+        except (
+            ValueError,
+            sqlalchemy.orm.exc.NoResultFound,
+            sqlalchemy.orm.exc.MultipleResultsFound,
+        ):
+            return error_response(
+                error_text="No participant matches this assignment.",
+                status=404,
+                simple=True,
+            )
+        payload = request.get_json(silent=True) or {}
+        page_uuid = payload.get("page_uuid") if isinstance(payload, dict) else None
+        stored = exit_domain._stored_exit_plan(participant)
+        if (
+            not isinstance(page_uuid, str)
+            or not participant.page_uuid
+            or not hmac.compare_digest(
+                page_uuid.encode(), participant.page_uuid.encode()
+            )
+            or participant.failed
+            # An error-recovery offer or a committed exit must not be replaced.
+            or (
+                stored is not None
+                and (
+                    stored.context is exit_domain.ExitContext.ERROR_RECOVERY
+                    or stored.status is exit_domain.ExitPlanStatus.COMMITTED
+                )
+            )
+        ):
+            return cls._stale_early_exit_response()
+        experiment = get_experiment()
+        page = experiment.timeline.get_current_elt(experiment, participant)
+        if not isinstance(page, Page) or not page.early_exit_available(
+            experiment, participant
+        ):
+            return cls._stale_early_exit_response()
+        plan = experiment.prepare_voluntary_exit_plan(participant)
+        return success_response(
+            offer_id=plan.plan_id, confirmation=asdict(plan.confirmation)
         )
 
     @experiment_route("/execute_early_exit_plan/<assignment_id>", methods=["POST"])
@@ -7087,8 +7171,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             if not isinstance(participant, Bot):
                 participant.client_ip_address = cls.get_client_ip_address()
             page = cls.get_current_page(experiment, participant)
-            if page.early_exit_available(experiment, participant):
-                experiment.prepare_voluntary_exit_plan(participant)
             participant_id = participant.id
             unique_id = participant.unique_id
             db.session.commit()
@@ -7464,8 +7546,13 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
     @staticmethod
     def _pre_render(page, participant):
         """Run ``pre_render`` for the page and, on a timeline hold, its waiting screen."""
-        with forbid_commits(f"{type(page).__name__}.pre_render"):
-            page.pre_render()
+        if getattr(page, "_pre_rendered", False):
+            # Already pre-rendered for this request, to compare it with the
+            # trials prepared in advance.
+            page._pre_rendered = False
+        else:
+            with forbid_commits(f"{type(page).__name__}.pre_render"):
+                page.pre_render()
         if _is_timeline_hold(page):
             page.waiting_screen_page(participant)
 
@@ -7475,9 +7562,6 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         if page is None:
             return page
         cls._pre_render(page, participant)
-        available = getattr(page, "early_exit_available", None)
-        if callable(available) and available(experiment, participant):
-            experiment.prepare_voluntary_exit_plan(participant)
         return page
 
     @staticmethod
@@ -7820,13 +7904,25 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         Render a prepared page as the internal inplace fragment payload.
 
         ``pre_render()`` must already have run in the committed write phase.
-        Leave-button plans are also stored in that write phase so this helper
-        can stay read-only.
         """
-        return {
-            "html": page.render(experiment, participant, partial_mode=True),
-            "page_uuid": participant.page_uuid,
-        }
+        html = page.render(experiment, participant, partial_mode=True)
+        payload = {"html": html, "page_uuid": participant.page_uuid}
+        upcoming = page._upcoming_pages_payload(experiment, participant)
+        if (
+            upcoming is not None
+            or page._cannot_be_rendered_early_because() is None
+            or page._module_shows_the_next_trials()
+        ):
+            # Tells the browser whether its page modules can show this page, or
+            # whether a page it swapped in, rendered earlier, still shows what
+            # the server shows now.
+            payload["layout_key"] = page.layout_key(html, experiment, participant)
+        if upcoming is not None:
+            payload["upcoming_pages"] = upcoming
+        previous = page._previous_page_payload(experiment, participant)
+        if previous is not None:
+            payload["previous_page"] = previous
+        return payload
 
     @experiment_route("/timeline/arrival_notice", methods=["GET"])
     @classmethod
@@ -8070,15 +8166,14 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 json_data, "timeline_hold_resume", use_default=True, default=False
             )
         )
-        interrupted = bool(
-            get_arg_from_dict(json_data, "interrupted", use_default=True, default=False)
-        )
         client_ip_address = cls.get_client_ip_address()
-        # ``interrupted`` is only passed when true, so process_response
-        # overrides written before that keyword existed keep working.
-        flags = {}
-        if interrupted:
-            flags["interrupted"] = True
+        # These are only passed when true, so process_response overrides
+        # written before the keywords existed keep working.
+        flags = {
+            flag: True
+            for flag in ("interrupted", "back")
+            if get_arg_from_dict(json_data, flag, use_default=True, default=False)
+        }
 
         try:
             result = exp.process_response(
@@ -8206,27 +8301,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
                 )
             clock.close("render")
             if fragment is None:
-                _p = get_translator(context=True)
+                payload = exp._stale_page_payload()
                 submission = "rejected"
-                return finish(
-                    exp.response_rejected(
-                        message=_p(
-                            "timeline_problem",
-                            "Synchronization problem detected. "
-                            "Are you running the same experiment in multiple browser tabs? "
-                            "Please close all other tabs and refresh the page.",
-                        )
-                    )
-                )
-            payload["timeline_fragment"] = fragment
-            return finish(success_response(**payload))
+            else:
+                payload["timeline_fragment"] = fragment
+                return finish(success_response(**payload))
 
         clock.close("render")
         if payload.get("submission") == "rejected":
-            if "retry_after" in payload:
+            if "retry_after" in payload or payload.get("stale_page"):
                 # Not the participant's to correct, so response_rejected
-                # isn't told: the page resends the response by itself.
-                logger.info("The response was refused for now: %r.", payload["message"])
+                # isn't told: the page resends the response or reloads.
+                logger.info("The response was refused: %r.", payload["message"])
                 return finish(success_response(**payload))
             return finish(exp.response_rejected(payload["message"]))
         return finish(success_response(**payload))

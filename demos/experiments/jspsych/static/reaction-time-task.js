@@ -1,4 +1,4 @@
-export function buildTimeline({jsPsych, vars}) {
+export function buildTimeline({jsPsych, config}) {
     const timeline = [];
 
     const preload = {
@@ -9,7 +9,7 @@ export function buildTimeline({jsPsych, vars}) {
 
     const welcome = {
         type: jsPsychHtmlKeyboardResponse,
-        stimulus: vars["welcome_message"]
+        stimulus: config["welcome_message"]
     };
     timeline.push(welcome);
 
@@ -44,7 +44,7 @@ export function buildTimeline({jsPsych, vars}) {
         choices: "NO_KEYS",
         trial_duration: function () {
             return jsPsych.randomization.sampleWithoutReplacement(
-                vars["trial_durations"],
+                config["trial_durations"],
                 1
             )[0];
         },

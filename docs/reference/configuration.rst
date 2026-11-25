@@ -205,14 +205,14 @@ General
         This feature may be revised in the future.
 
 ``legacy_js_var_globals`` *str* |psynet-icon|
-    Controls deprecated access to page ``js_vars`` through matching ``window``
+    Controls deprecated access to the page's ``page_config`` through matching ``window``
     properties. ``warn`` preserves access and reports each key once in the
     browser console, ``error`` raises an informative ``ReferenceError``, and
     ``off`` installs no compatibility properties. Accessors are never
     installed for names that already exist on ``window`` (for example
     ``name``, ``status``, ``event``, ``history``); those page values remain
-    available on ``psynet.var``, and page construction warns for common
-    collisions. New code should read ``psynet.var`` directly. Default:
+    available on ``psynet.pageConfig``, and page construction warns for common
+    collisions. New code should read ``psynet.pageConfig`` directly. Default:
     ``warn``.
 
 ``logfile`` *str* |dlgr-icon|
