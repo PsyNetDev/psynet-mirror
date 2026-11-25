@@ -79,6 +79,7 @@ from ..timeline import (
     join,
     switch,
     while_loop,
+    with_fixed_progress,
 )
 from ..timeline_hold import _reject_countdown
 from ..utils import (
@@ -146,6 +147,14 @@ class AssetParentMixin:
             asset.deposit()
 
         self.assets[local_key] = asset
+
+
+class _AfterTrialPageMaker(PageMaker):
+    """Runs :meth:`TrialMaker.show_after_trial`, whose pages must each give a ``time_estimate``."""
+
+    def impute_time_estimates(self, elts):
+        # The page maker's own estimate is 0, which would silently pay nothing.
+        pass
 
 
 @register_table
@@ -1733,7 +1742,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                     trial=trial,
                 )
 
-            after_trial = PageMaker(
+            after_trial = _AfterTrialPageMaker(
                 show_after_trial, time_estimate=0, label="show_after_trial"
             )
             after_trial._after_trial = True
@@ -2249,6 +2258,14 @@ class TrialMaker(Module):
     introduction
         An optional event or list of elts to execute prior to beginning the trial loop.
 
+    time_estimate_after_trials : float
+        The total time, in seconds, that each participant is expected to spend
+        on the pages from :meth:`~psynet.trial.main.TrialMaker.show_after_trial`,
+        such as breaks (default = 0). It is added once to the experiment's
+        duration estimate, and the progress bar moves on by it when the
+        trial loop ends. The time credit a participant earns still comes
+        from the pages' own ``time_estimate``.
+
     give_end_feedback_passed : bool
         If ``True``, then participants who pass the final performance check
         are given feedback. This feedback can be customised by overriding
@@ -2472,6 +2489,8 @@ class TrialMaker(Module):
     performance_threshold = 0.0
 
     time_estimate_per_trial = None
+
+    time_estimate_after_trials = 0
 
     introduction = None
 
@@ -3047,7 +3066,9 @@ class TrialMaker(Module):
         recordings made on them belong to the participant. They are skipped
         after a failed trial. PsyNet can't tell yet whether another trial
         follows, so check ``trial.position`` to avoid a break after the last
-        trial. Give each page a ``time_estimate``. Like
+        trial. Give each page a ``time_estimate``, and set
+        :attr:`time_estimate_after_trials` to the total time the pages are
+        expected to take, so that the duration estimate includes them. Like
         :meth:`~psynet.trial.main.Trial.show_trial`, the method may take any
         subset of its parameters.
 
@@ -3410,6 +3431,9 @@ class TrialMaker(Module):
                 expected_repetitions=self.expected_trials_per_participant,
                 fix_time_credit=False,
             ),
+            # The show_after_trial pages don't move the progress bar, as
+            # PsyNet can't tell how often they appear.
+            with_fixed_progress([], self.time_estimate_after_trials),
         )
 
     def _wait_for_trial(self):

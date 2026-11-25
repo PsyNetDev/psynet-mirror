@@ -20,6 +20,8 @@ class RatingTrial(StaticTrial):
 
 
 class RatingTrialMaker(StaticTrialMaker):
+    time_estimate_after_trials = 3
+
     def show_after_trial(self, participant, trial):
         if trial.position != BREAK_AFTER:
             return None
