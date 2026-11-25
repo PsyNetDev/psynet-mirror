@@ -3146,8 +3146,12 @@ class TrialMaker(Module):
         check less often, for example only at the end of each block. With
         ``prepare_trials_in_advance=True``, the browser can then show the
         next trial before the server has the answers to the trials that
-        aren't checked. Like :meth:`show_after_trial`, the method may take
-        any subset of its parameters.
+        aren't checked. The browser asks before ``trial`` is answered, so
+        decide from what is fixed when the trial is created, such as its
+        ``position``, ``block`` or ``definition``, not from answers or the
+        participant's progress, and don't change anything. Like
+        :meth:`show_after_trial`, the method may take any subset of its
+        parameters.
 
         Parameters
         ----------
@@ -3172,6 +3176,15 @@ class TrialMaker(Module):
             ``True`` by default.
         """
         return True
+
+    def _checks_performance_after(self, trial, experiment, participant):
+        """Whether the participant's performance is checked after ``trial``."""
+        return self.check_performance_every_trial and call_function_with_context(
+            self.should_check_performance_after,
+            experiment=experiment,
+            participant=participant,
+            trial=trial,
+        )
 
     def performance_check(self, experiment, participant, participant_trials):
         """
@@ -3252,11 +3265,8 @@ class TrialMaker(Module):
         assert type in ["trial", "end"]
 
         def eval_checks(experiment, participant):
-            if type == "trial" and not call_function_with_context(
-                self.should_check_performance_after,
-                experiment=experiment,
-                participant=participant,
-                trial=participant.current_trial,
+            if type == "trial" and not self._checks_performance_after(
+                participant.current_trial, experiment, participant
             ):
                 return True
             participant_trials = self._trials_to_check(participant)
