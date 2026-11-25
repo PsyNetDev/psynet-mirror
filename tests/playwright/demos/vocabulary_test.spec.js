@@ -43,11 +43,13 @@ test("vocabulary words follow each other on one page", { tag: "@inplace-only" },
     // A full page load would drop these globals.
     await participant.evaluate(() => {
       const target = document.querySelector("#test-stimulus");
-      window.vocabShown = [target.querySelector("img").src];
-      new MutationObserver(() => {
+      window.vocabShown = [];
+      const record = () => {
         const img = target.querySelector("img");
         if (img && img.src !== window.vocabShown.at(-1)) window.vocabShown.push(img.src);
-      }).observe(target, { childList: true });
+      };
+      record();
+      new MutationObserver(record).observe(target, { childList: true });
     });
     const saved = [];
     participant.on("response", (response) => {
@@ -56,9 +58,11 @@ test("vocabulary words follow each other on one page", { tag: "@inplace-only" },
       }
     });
     const shown = () => participant.evaluate(() => window.vocabShown?.length);
+    // The first word may already be hidden, so count from what was recorded.
+    const first = await shown();
     for (const [index, key] of ["a", "l", "a"].entries()) {
       await participant.keyboard.press(key);
-      await expect.poll(shown, { timeout: STEP_TIMEOUT_MS }).toBe(index + 2);
+      await expect.poll(shown, { timeout: STEP_TIMEOUT_MS }).toBe(first + index + 1);
     }
     await expect.poll(() => saved.length, { timeout: STEP_TIMEOUT_MS }).toBe(3);
     expect(saved).toEqual([200, 200, 200]);

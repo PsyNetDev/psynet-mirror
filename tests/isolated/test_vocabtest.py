@@ -91,6 +91,8 @@ def test_forms_balance_real_and_fake_words_and_prefer_unseen_ones(tmp_path):
         n_trials=2,
         n_repeat_items=1,
     )
+    for node_id, node in enumerate(maker.start_nodes, 1):
+        node.id = node_id
     order = maker.word_order(maker.start_nodes, participant=None)
     forms = [order[:5], order[5:]]
     for form in forms:
