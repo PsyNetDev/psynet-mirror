@@ -79,6 +79,31 @@
   text-align: right;
 }
 
+#pg-tokens {
+  width: 100%;
+  margin: 0.5rem 0 1rem;
+}
+
+.pg-summary {
+  padding: 1rem;
+  border-radius: 1rem;
+  background: var(--psynet-surface-sunken);
+}
+
+.pg-pot {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.pg-earn {
+  margin: 0.25rem 0 0;
+}
+
+.pg-rejection {
+  min-height: 1.5em;
+  color: var(--psynet-danger);
+}
+
 /* Phones: each row has the name and count on one line and the tokens
    below them, and everything is tighter, so the round fits the screen. */
 @media (max-width: 36rem) {
@@ -131,29 +156,4 @@
   .pg-rejection {
     margin-bottom: 0;
   }
-}
-
-#pg-tokens {
-  width: 100%;
-  margin: 0.5rem 0 1rem;
-}
-
-.pg-summary {
-  padding: 1rem;
-  border-radius: 1rem;
-  background: var(--psynet-surface-sunken);
-}
-
-.pg-pot {
-  font-size: 1.2rem;
-  font-weight: 700;
-}
-
-.pg-earn {
-  margin: 0.25rem 0 0;
-}
-
-.pg-rejection {
-  min-height: 1.5em;
-  color: var(--psynet-danger);
 }

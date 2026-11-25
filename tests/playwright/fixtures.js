@@ -19,6 +19,16 @@ function formatPageError(entry) {
 }
 
 const test = base.test.extend({
+  // A test that times out never reaches its own stopExperiment, and the
+  // server it leaves on the debug port would fail every later test. Declared
+  // first, so it is torn down last, after the test's pages have closed.
+  stopLeftoverExperiments: [
+    async ({}, use) => {
+      await use();
+      await stopRunningExperiments();
+    },
+    { auto: true }
+  ],
   failOnPageErrors: [
     async ({ context, page }, use) => {
       const errors = [];
@@ -54,15 +64,6 @@ const test = base.test.extend({
             errors.map(formatPageError).join("\n\n---\n\n")
         );
       }
-    },
-    { auto: true }
-  ],
-  // A test that times out never reaches its own stopExperiment, and the
-  // server it leaves on the debug port would fail every later test.
-  stopLeftoverExperiments: [
-    async ({}, use) => {
-      await use();
-      await stopRunningExperiments();
     },
     { auto: true }
   ]
