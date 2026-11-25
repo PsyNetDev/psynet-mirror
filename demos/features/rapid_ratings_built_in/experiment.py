@@ -39,6 +39,8 @@ class RatingTrial(StaticTrial):
 
 
 class RatingTrialMaker(StaticTrialMaker):
+    time_estimate_after_trials = 5
+
     def show_after_trial(self, trial):
         if trial.position == BREAK_AFTER:
             return InfoPage("Halfway there. Take a short break.", time_estimate=5)

@@ -83,6 +83,8 @@ class FlankerTrial(StaticTrial):
 
 
 class FlankerTrialMaker(StaticTrialMaker):
+    time_estimate_after_trials = 10
+
     def show_after_trial(self, trial):
         if trial.position == N_TRIALS // 2 - 1:
             return InfoPage(
