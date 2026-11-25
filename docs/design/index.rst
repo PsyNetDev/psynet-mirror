@@ -8,6 +8,7 @@ Designing experiments
    pages
    trials
    chains
+   presenting_trials
    stimuli
    participants
    groups

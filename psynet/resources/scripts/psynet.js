@@ -541,6 +541,8 @@
       };
       psynet.setPageReady(false);
       psynet.pageLoaded = false;
+      psynet.responseClockStart = null;
+      psynet.pageModuleUpdates = [];
       psynet.nextPagePending = false;
       psynet.media.audioRequired = false;
       psynet.media.otherAudioContexts = [];
@@ -603,6 +605,7 @@
     // Dependencies load once per document. Page code and page modules share
     // one activation/cleanup lifecycle and run for every hosting page.
     psynet.activeJSPageBehaviors = [];
+    psynet.pageModuleGeneration = 0;
     psynet.AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
     psynet.loadJSDependencies = async function () {
@@ -636,6 +639,7 @@
 
     psynet.activatePageJavascript = async function () {
       let activated = [];
+      psynet.pageModuleUpdates = [];
       let context = psynet.getPageActivationContext();
       try {
         for (let src of psynetTemplateData.legacyJsLinks || []) {
@@ -678,19 +682,70 @@
             );
           }
           let cleanup = await module.activate(context);
+          let update;
+          let unknown = [];
+          // Only a plain object is a result; a DOM node, say, would otherwise
+          // pass as one without a cleanup.
+          if (
+            cleanup !== null &&
+            typeof cleanup === "object" &&
+            Object.getPrototypeOf(cleanup) === Object.prototype
+          ) {
+            unknown = Object.keys(cleanup).filter(
+              (key) => !["cleanup", "update"].includes(key),
+            );
+            ({ cleanup, update } = cleanup);
+          }
           psynet.validatePageCleanup(cleanup, `JS page module ${normalizedSrc}`);
           activated.push({ source: normalizedSrc, cleanup });
+          if (unknown.length) {
+            throw new Error(
+              `JS page module ${normalizedSrc} returned unknown keys ` +
+                `${unknown.join(", ")}; expected only cleanup and update.`,
+            );
+          }
+          if (update !== undefined) {
+            if (typeof update !== "function") {
+              throw new Error(
+                `JS page module ${normalizedSrc} returned an update that is not a function.`,
+              );
+            }
+            psynet.pageModuleUpdates.push(() =>
+              update({
+                contents: psynet.page.contents,
+                response: psynet.createResponseHandle(),
+              }),
+            );
+          }
         }
       } catch (error) {
+        psynet.pageModuleUpdates = [];
         await psynet.deactivatePageJavascript(activated);
         throw error;
       }
       psynet.activeJSPageBehaviors = activated;
     };
 
+    // What a page module's update() receives as ``response``.
+    psynet.createResponseHandle = function () {
+      // Late callbacks from an earlier page mustn't act on the next one.
+      const generation = psynet.pageModuleGeneration;
+      const current = () => psynet.pageModuleGeneration === generation;
+      return {
+        // time_taken then runs from this call rather than from page setup.
+        startClock() {
+          if (current()) psynet.responseClockStart = new Date();
+        },
+        answer(value) {
+          return current() ? psynet.nextPage(value) : Promise.resolve(false);
+        },
+      };
+    };
+
     psynet.deactivatePageJavascript = async function (
       activations = psynet.activeJSPageBehaviors,
     ) {
+      psynet.pageModuleGeneration += 1;
       if (activations === psynet.activeJSPageBehaviors) {
         psynet.activeJSPageBehaviors = [];
       }
@@ -1572,6 +1627,7 @@
     };
 
     psynet.finalizePageReady = async function () {
+      const generation = psynet.pageModuleGeneration;
       await new Promise((resolve) => setTimeout(resolve, 0));
       psynet.setPageReady(true);
       await psynet.trial.registerEvent("pageReady");
@@ -1581,6 +1637,16 @@
       }
       psynet.ensureArrivalUpdates(psynet.page.attributes?.arrival_updates);
       psynet.waiting.start(psynet.page.attributes?.waiting);
+      // An in-place page stays dimmed until here, not while update() awaits.
+      psynet.setTimelineTransitionBusy(false);
+      // Page modules show the trial only once it can be answered.
+      // Stop once the participant has moved on to another page, whose own
+      // finalizePageReady runs its updates.
+      if (psynet.pageModuleGeneration !== generation) return;
+      for (let update of (psynet.pageModuleUpdates || []).splice(0)) {
+        if (psynet.pageModuleGeneration !== generation) break;
+        await update();
+      }
     };
 
     psynet.prepareTimelineFragment = function (payload) {
@@ -1712,9 +1778,9 @@
       psynet.initLucidTermination();
       psynet.initEarlyExitButton();
       await psynet.initPage();
-      await psynet.finalizePageReady();
+      // Before page ready, so that a submission update() starts stays pending.
       psynet.nextPagePending = false;
-      psynet.setTimelineTransitionBusy(false);
+      await psynet.finalizePageReady();
       psynet.log.info("Timeline fragment activation complete.");
     };
 
@@ -3835,6 +3901,7 @@
         psynet.var.pageUuid = response.page.attributes.page_uuid;
         window.pageUuid = psynet.var.pageUuid;
         psynet.pageLoadTime = new Date();
+        psynet.responseClockStart = null;
         psynet.var.backgroundRecording = response.page.attributes.background_recording;
         await psynet.prepareBackgroundRecording();
         psynet.var.recordingCaptureSources = psynet.var.backgroundRecording?.sources || [];
@@ -4198,7 +4265,9 @@
       var currentTime = new Date();
 
       var allMetadata = {
-        time_taken: (currentTime - psynet.pageLoadTime) / 1000,
+        time_taken:
+          (currentTime - (psynet.responseClockStart ?? psynet.pageLoadTime)) /
+          1000,
         platform: platform.toString(),
         download_speed_megabits_per_sec: psynet.estimateDownloadSpeed(),
         event_log: psynet.trial.eventLog,

@@ -42,6 +42,7 @@ has written, checking it, and changing it yourself.
    :maxdepth: 1
 
    writing_a_trial_maker
+   trials/keeping_a_task_on_one_page
    writing_a_chain_experiment
    trials/create_and_rate
    trials/participant_and_trial_failure

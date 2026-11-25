@@ -32,6 +32,14 @@ The :class:`~psynet.trial.static.StaticTrialMaker` goes in the timeline:
 .. literalinclude:: ../../demos/pipelines/simple_rating/experiment.py
    :pyobject: get_timeline
 
+To collect several responses in one trial, return several pages from
+``show_trial()`` with ``join(...)``, give each page its own label, and set
+``accumulate_answers = True`` on the trial class. The trial's answer is then
+a dictionary with one entry per page label, as in
+:download:`the two-rating example <../../demos/features/accumulate_answers/experiment.py>`.
+To present several trials on one page instead, see
+:doc:`/code/trials/keeping_a_task_on_one_page`.
+
 What the trial adds
 -------------------
 
@@ -294,6 +302,39 @@ PsyNet logs a warning. There are three ways to keep it fast:
 ``node.definition``, which PsyNet stores in encoded form. Store anything you
 filter or rank on in its own column. Chain trial makers have the same
 hooks under the names ``filter_chains_query`` and ``chain_priority``.
+
+Pages between trials
+--------------------
+
+To show a page between trials, such as a break halfway through, override
+:meth:`~psynet.trial.main.TrialMaker.show_after_trial`. It receives the trial
+that just finished and returns pages to show next, or ``None``:
+
+.. code-block:: python
+
+    class RatingTrialMaker(StaticTrialMaker):
+        time_estimate_after_trials = 60
+
+        def show_after_trial(self, trial):
+            if trial.position == 24:
+                return InfoPage("Take a break.", time_estimate=60)
+
+These pages run once the trial is finalized and its feedback shown, and before
+the next trial is prepared, so they don't affect either trial, and recordings
+made on them belong to the participant. They are skipped after a failed trial.
+The next trial can't be known yet, so check ``trial.position`` rather than showing a page
+after every trial, which would include the last one.
+
+Give each page a ``time_estimate``, which is the time credit the participant
+earns for it; a page without one raises an error. PsyNet can't tell in advance
+how many of these pages a participant will see, so set
+:attr:`~psynet.trial.main.TrialMaker.time_estimate_after_trials` to the total
+time you expect them to take. It is added to the experiment's duration
+estimate, and the progress bar moves on by it when the trial loop ends rather
+than during the pages themselves. In trial makers with
+sync groups, the rest of the group waits at the next barrier, and the break
+counts towards that barrier's ``late_after`` unless the page has a
+``time_limit``.
 
 .. _trial_after_the_response:
 

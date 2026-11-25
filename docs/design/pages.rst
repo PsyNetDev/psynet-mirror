@@ -5,8 +5,9 @@ Pages
 
 A **page** is one screen of the experiment. The participant sees it, responds
 or clicks to continue, and PsyNet records the response and moves on to the
-next element of the :doc:`timeline <timeline>`. In a trial maker, each trial
-shows one or more pages built from its node; see :doc:`trials`.
+next element of the :doc:`timeline <timeline>`. A :doc:`trial <trials>` usually
+shows one page, but it can show several, and several trials can share one
+page; see :doc:`presenting_trials`.
 
 Kinds of page
 -------------
