@@ -3704,7 +3704,8 @@ class NetworkTrialMaker(TrialMaker):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
 
     fail_trials_on_premature_exit
         See :class:`~psynet.trial.main.TrialMaker`.
