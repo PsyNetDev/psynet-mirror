@@ -113,3 +113,77 @@
   min-height: 1.5em;
   color: var(--psynet-danger);
 }
+
+/* Phones: the cards stack, so they are tighter, with each button beside
+   its text, and the game fits the screen even with 20 coins and a deal. */
+@media (max-width: 36rem) {
+  .bargain-header {
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .bargain-clock {
+    flex-basis: 100%;
+  }
+
+  .bargain-key {
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
+  }
+
+  .bargain-cards {
+    gap: 0.75rem;
+  }
+
+  .bargain-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.4rem 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .bargain-card > * {
+    grid-column: 1 / -1;
+  }
+
+  .bargain-card h3 {
+    font-size: 1rem;
+  }
+
+  .bargain-note {
+    font-size: 0.9rem;
+  }
+
+  .bargain-card > label,
+  #bargain-theirs {
+    grid-column: 1;
+  }
+
+  .bargain-card > .btn {
+    grid-column: 2;
+    padding: 0.25rem 1rem;
+  }
+
+  .bargain-card > label,
+  #bargain-propose {
+    grid-row: 3;
+  }
+
+  .bargain-coin {
+    width: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.7rem;
+  }
+
+  .bargain-deal {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    font-size: 1rem;
+  }
+
+  .bargain-rejection {
+    margin-bottom: 0;
+  }
+}

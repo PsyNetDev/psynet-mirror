@@ -1,4 +1,12 @@
 const base = require("@playwright/test");
+const { stopRunningExperiments } = require("./psynetHarness");
+
+// Browsers report this when a ResizeObserver callback changes layout again
+// within the same frame. The notifications are delivered in the next frame,
+// so nothing is lost; SurveyJS triggers it on narrow mobile viewports.
+const BENIGN_PAGE_ERRORS = [
+  "ResizeObserver loop completed with undelivered notifications."
+];
 
 function formatPageError(entry) {
   return [
@@ -22,9 +30,13 @@ const test = base.test.extend({
         }
         trackedPages.add(candidate);
         candidate.on("pageerror", (error) => {
+          const message = error.message || String(error);
+          if (BENIGN_PAGE_ERRORS.includes(message)) {
+            return;
+          }
           errors.push({
             url: candidate.url(),
-            message: error.message || String(error),
+            message,
             stack: error.stack || ""
           });
         });
@@ -42,6 +54,15 @@ const test = base.test.extend({
             errors.map(formatPageError).join("\n\n---\n\n")
         );
       }
+    },
+    { auto: true }
+  ],
+  // A test that times out never reaches its own stopExperiment, and the
+  // server it leaves on the debug port would fail every later test.
+  stopLeftoverExperiments: [
+    async ({}, use) => {
+      await use();
+      await stopRunningExperiments();
     },
     { auto: true }
   ]

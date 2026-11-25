@@ -9,6 +9,9 @@ const URL_IN_TEXT_RE = /https?:\/\/[^\s"'<>]+/g;
 
 const PSYNET_ERROR_SELECTORS = ["#error-text"];
 let latestBackendLogPath = null;
+// Servers started by startExperiment and not yet stopped. A test that times
+// out never reaches its own stopExperiment, so a fixture stops these.
+const runningExperiments = new Set();
 const DEBUG_PORT = Number(
   process.env.PSYNET_DEBUG_PORT || process.env.base_port || 5000
 );
@@ -214,6 +217,7 @@ function startExperiment(experimentDir, options = {}) {
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
+  runningExperiments.add(proc);
 
   const outputLines = [];
   let resolveUrl;
@@ -337,6 +341,14 @@ async function stopExperiment(proc) {
   if (await isPortInUse(DEBUG_PORT)) {
     killProcessTree(proc, "SIGKILL");
     await waitForPortToBeFree(DEBUG_PORT, 10000);
+  }
+  runningExperiments.delete(proc);
+}
+
+/** Stop every server that startExperiment started and nothing has stopped yet. */
+async function stopRunningExperiments() {
+  for (const proc of [...runningExperiments]) {
+    await stopExperiment(proc);
   }
 }
 
@@ -1784,6 +1796,7 @@ module.exports = {
   startParticipantsTogether,
   startResponseSubmitTracker,
   stopExperiment,
+  stopRunningExperiments,
   waitForResponseSubmitIncrement,
   waitForMainBodyContains,
   waitForPromptContains,

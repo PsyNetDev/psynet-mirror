@@ -71,8 +71,11 @@ test(
       const enableButton = experimentPage.locator("#resume-button");
       await expect(enableButton).toBeVisible({ timeout: STEP_TIMEOUT_MS });
 
-      // A click the browser still refuses brings the dialog back.
+      // A click the browser still refuses brings the dialog back. The click
+      // hides it at once, so wait for it to return, or enableAudio could let
+      // audio start before PsyNet re-checks and the dialog never comes back.
       await enableButton.click();
+      await expect(enableButton).toBeHidden();
       await expect(enableButton).toBeVisible({ timeout: STEP_TIMEOUT_MS });
       await enableAudio(experimentPage);
 
