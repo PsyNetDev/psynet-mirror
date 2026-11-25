@@ -3177,7 +3177,7 @@ class TrialMaker(Module):
         """
         return True
 
-    def _checks_performance_after(self, trial, experiment, participant):
+    def _checks_performance_after(self, experiment, participant, trial):
         """Whether the participant's performance is checked after ``trial``."""
         return self.check_performance_every_trial and call_function_with_context(
             self.should_check_performance_after,
@@ -3266,7 +3266,7 @@ class TrialMaker(Module):
 
         def eval_checks(experiment, participant):
             if type == "trial" and not self._checks_performance_after(
-                participant.current_trial, experiment, participant
+                experiment, participant, participant.current_trial
             ):
                 return True
             participant_trials = self._trials_to_check(participant)

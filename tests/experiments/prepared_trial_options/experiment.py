@@ -20,7 +20,8 @@ class RatingTrial(StaticTrial):
 
 
 class RatingTrialMaker(StaticTrialMaker):
-    def should_check_performance_after(self, trial):
+    def should_check_performance_after(self, participant, trial):
+        assert participant.id == trial.participant_id
         return trial.position % 2 == 1
 
     def performance_check(self, experiment, participant, participant_trials):

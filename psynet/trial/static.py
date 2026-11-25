@@ -325,7 +325,7 @@ class StaticTrialMaker(ChainTrialMaker):
         replies, so the participant briefly sees the old version. Repeat
         trials are prepared once every main trial is answered. With
         ``check_performance_every_trial``, the next trials' files still
-        download early, but each checked trial waits for the server's check.
+        download early, but the trial after a checked trial waits for the server's check.
         Can't be combined with ``sync_group_type``.
         Defaults to ``False``.
 
@@ -655,7 +655,7 @@ class StaticTrialMaker(ChainTrialMaker):
         # Feedback and a performance check that may fail the participant
         # come between the trials.
         return not (
-            self._checks_performance_after(trial, experiment, participant)
+            self._checks_performance_after(experiment, participant, trial)
             or trial.gives_feedback(experiment, participant)
         )
 

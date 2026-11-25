@@ -137,7 +137,8 @@ class DenseTrialMaker(StaticTrialMaker):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
         Defaults to ``False``.
         See :meth:`~psynet.trial.main.TrialMaker.performance_check`
         for implementing performance checks.
