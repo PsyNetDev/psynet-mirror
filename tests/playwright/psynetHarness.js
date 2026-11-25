@@ -273,7 +273,8 @@ function startExperiment(experimentDir, options = {}) {
     );
   }, timeoutMs);
 
-  urlPromise.finally(() => clearTimeout(timeoutHandle));
+  const clearStartupTimeout = () => clearTimeout(timeoutHandle);
+  urlPromise.then(clearStartupTimeout, clearStartupTimeout);
 
   proc.on("exit", (code) => {
     logStream.end();
@@ -361,7 +362,11 @@ async function stopProcess(proc) {
 /** Stop every server that startExperiment started and nothing has stopped yet. */
 async function stopRunningExperiments() {
   for (const proc of [...runningExperiments]) {
-    await stopExperiment(proc);
+    try {
+      await stopExperiment(proc);
+    } catch (error) {
+      console.warn(`Could not stop the leftover server (PID ${proc.pid}):`, error);
+    }
   }
 }
 
