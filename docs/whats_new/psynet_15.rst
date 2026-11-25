@@ -60,8 +60,6 @@ Rename these in your experiment:
      - ``page_config=...``
    * - ``get_js_vars()``
      - ``get_page_config()``
-   * - ``get_participant_js_vars(experiment, participant)``
-     - ``get_participant_page_config(experiment, participant)``
    * - ``psynet.var``
      - ``psynet.pageConfig``
    * - ``vars`` in a page module's ``activate()``

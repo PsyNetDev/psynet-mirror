@@ -138,7 +138,7 @@ stay the same while it is shown; per-trial data on a page that shows several
 trials goes in ``contents`` instead (see
 :doc:`/code/trials/keeping_a_task_on_one_page`). Before PsyNet 15 this was
 called ``js_vars``, ``get_js_vars()`` and ``psynet.var``; those names still
-work, with a deprecation warning, until PsyNet 16.
+work until PsyNet 16, and the Python ones warn.
 
 .. code-block:: javascript
 

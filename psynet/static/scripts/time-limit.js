@@ -64,9 +64,14 @@ export function activate({root, psynet}) {
         return (psynet.response && psynet.response.staged) || {};
     }
 
+    // Including a JSPage's answer, which is sent in the background.
+    function submitting() {
+        return Boolean(psynet.pageState.submitting || (psynet.answers && psynet.answers.sending));
+    }
+
     function submit() {
         if (submitted || stopped) return;
-        if (!psynet.pageReady || psynet.pageState.submitting || psynet.timelineHold) {
+        if (!psynet.pageReady || submitting() || psynet.timelineHold) {
             // Another submission is under way, or the page is still loading.
             timer = window.setTimeout(submit, 500);
             return;
@@ -118,7 +123,7 @@ export function activate({root, psynet}) {
         });
         if (line) {
             line.hidden = left === 0 || Boolean(
-                psynet.pageState.submitting || psynet.timelineHold || (psynet.waiting && psynet.waiting.released)
+                submitting() || psynet.timelineHold || (psynet.waiting && psynet.waiting.released)
             );
         }
         if (left > 0) timer = window.setTimeout(tick, 250);

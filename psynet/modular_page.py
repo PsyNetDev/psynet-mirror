@@ -2489,8 +2489,6 @@ class ModularPage(Page):
             "a component sets participant page configuration, which may change": any(
                 type(component).get_participant_page_config
                 is not JavaScriptContributor.get_participant_page_config
-                or type(component).get_participant_js_vars
-                is not JavaScriptContributor.get_participant_js_vars
                 for _, component in self._iter_layout_components()
             ),
         }

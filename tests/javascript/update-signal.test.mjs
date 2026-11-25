@@ -53,3 +53,14 @@ describe("update()'s signal", () => {
     await first;
   });
 });
+
+describe("sounds", () => {
+  it("started with the page belong to its first update(), but not to the next", async () => {
+    const psynet = modulePage(() => {});
+    const startedWithPage = (psynet.soundScope = {});
+    await psynet.updatePageModules(0);
+    assert.equal(psynet.soundScope, startedWithPage);
+    await psynet.updatePageModules(0);
+    assert.notEqual(psynet.soundScope, startedWithPage);
+  });
+});

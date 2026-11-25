@@ -161,6 +161,8 @@ The browser waits for the server as usual when:
   :class:`~psynet.modular_page.CheckboxControl`,
   :class:`~psynet.modular_page.DropdownControl` and
   :class:`~psynet.modular_page.NumberControl`, which ask for a missing answer;
+* the current page overrides ``on_complete``, which may change what comes
+  next, as :class:`~psynet.page.WaitPage` does;
 * either page has a ``time_limit``, background recording, a ``session_id`` or
   a full page reload;
 * the next page isn't built from components that allow it, such as an

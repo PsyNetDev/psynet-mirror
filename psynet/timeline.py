@@ -2890,12 +2890,14 @@ class Page(Elt):
         shows each trial, and only if it needs nothing PsyNet sets up for each
         page, such as a time limit, recording, media or a full page reload,
         and doesn't override ``consume``, which would run only once the
-        server serves the trial.
+        server serves the trial, or ``on_complete``, which may change what
+        comes next.
         """
         return (
             self._module_shows_the_next_trials()
             and not self.media.urls
             and type(self).consume is Page.consume
+            and type(self).on_complete is Page.on_complete
         )
 
     def _module_shows_the_next_trials(self):

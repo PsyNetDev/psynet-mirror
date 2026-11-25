@@ -638,7 +638,7 @@
     // one activation/cleanup lifecycle and run for every hosting page.
     psynet.activeJSPageBehaviors = [];
     psynet.pageModuleGeneration = 0;
-    // A sound stops its events (onEnd, looping, audioFinished) once this changes.
+    // A sound stops its events (looping, audioFinished) once this changes.
     psynet.soundScope = {};
     psynet.AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
@@ -826,10 +826,14 @@
       let [contents, ...upcomingContents] = psynet.predictedContents().slice(offset);
       let response = psynet.createResponseHandle();
       psynet.answers.handle = response;
-      psynet.updateController?.abort();
+      if (psynet.updateController) {
+        // Not on the page's first update(), as sounds started with the page
+        // belong to its first trial.
+        psynet.updateController.abort();
+        psynet.soundScope = {};
+      }
       let controller = new AbortController();
       psynet.updateController = controller;
-      psynet.soundScope = {};
       let signal = controller.signal;
       let generation = psynet.pageModuleGeneration;
       for (let update of psynet.pageModuleUpdates) {
@@ -1617,9 +1621,14 @@
 
       interrupt() {
         if (!psynet.waiting.config || psynet.timelineHold) return;
-        if (psynet.pageState.submitting || !psynet.pageReady) {
-          // A submission in flight may still be rejected, for example by
-          // validation; try again once it has settled and the page is ready.
+        if (
+          psynet.pageState.submitting ||
+          psynet.answers.sending ||
+          !psynet.pageReady
+        ) {
+          // A submission in flight, including a JSPage's answer sent in the
+          // background, may still be rejected, for example by validation;
+          // try again once it has settled and the page is ready.
           psynet.waiting.graceTimer = setTimeout(psynet.waiting.interrupt, 500);
           return;
         }

@@ -7,10 +7,7 @@ def _warn_renamed(cls, old, new):
     warn_from_caller(f"{cls.__name__}.{old} has been renamed to {new}.", FutureWarning)
 
 
-_RENAMED_HOOKS = [
-    ("get_js_vars", "get_page_config"),
-    ("get_participant_js_vars", "get_participant_page_config"),
-]
+_RENAMED_HOOKS = [("get_js_vars", "get_page_config")]
 
 
 def _bridge(cls, name, target, warn):
@@ -93,8 +90,4 @@ class JavaScriptContributor:
 
     def get_js_vars(self):
         """Deprecated: override :meth:`get_page_config` instead."""
-        return {}
-
-    def get_participant_js_vars(self, experiment, participant):
-        """Deprecated: override :meth:`get_participant_page_config` instead."""
         return {}

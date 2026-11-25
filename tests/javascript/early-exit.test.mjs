@@ -88,4 +88,27 @@ describe("the Leave button", () => {
     assert.equal(second["early-exit-modal"].hidden, false);
     assert.equal(second["early-exit-modal"].dataset.offerId, "offer");
   });
+
+  it("asks for the hold page's offer while a timeline hold covers the page", async () => {
+    const page = leavePage();
+    const sentFor = [];
+    const window = {
+      pageUuid: "page-1",
+      psynet: { answers: { sending: null }, submissionPageUuid: "hold-1" },
+      setTimeout,
+      clearTimeout,
+    };
+    const document = { getElementById: (id) => page[id] ?? null, addEventListener() {} };
+    const fetch = async (url, options) => {
+      sentFor.push(JSON.parse(options.body).page_uuid);
+      return { ok: false, json: async () => ({}) };
+    };
+    new Function("window", "document", "fetch", SOURCE)(window, document, fetch);
+    window.psynetEarlyExit.init();
+
+    page["early-exit-button"].click();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    assert.deepEqual(sentFor, ["hold-1"]);
+  });
 });

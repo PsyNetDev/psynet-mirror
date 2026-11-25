@@ -150,3 +150,26 @@ it("does not retry a submission the server refused with a message", async () => 
   assert.equal(calls, 1);
   deactivate();
 });
+
+it("waits for a JSPage's answer that is still being sent", async () => {
+  const timers = [];
+  globalThis.window = { setTimeout: (fn) => timers.push(fn), clearTimeout() {} };
+  const root = { querySelectorAll: () => [{ textContent: "" }], isConnected: true };
+  const submissions = [];
+  const psynet = {
+    pageReady: true,
+    pageState: {},
+    answers: { sending: Promise.resolve() },
+    pageReceivedAt: Date.now() - 10000,
+    nextPage: (rawAnswer, metadata) => submissions.push(metadata),
+  };
+
+  start(root, { secondsLeft: 10 }, psynet);
+  await flush();
+  assert.deepEqual(submissions, []);
+
+  psynet.answers.sending = null;
+  timers.pop()();
+  await flush();
+  assert.deepEqual(submissions, [{ time_limit_reached: true }]);
+});

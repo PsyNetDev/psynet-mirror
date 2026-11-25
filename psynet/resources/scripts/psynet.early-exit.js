@@ -247,7 +247,11 @@
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ page_uuid: global.pageUuid }),
+          // During a timeline hold the server's page is the hold's, while
+          // the page underneath stays on screen.
+          body: JSON.stringify({
+            page_uuid: global.psynet?.submissionPageUuid || global.pageUuid,
+          }),
         },
       );
       const result = await response.json().catch(() => ({}));

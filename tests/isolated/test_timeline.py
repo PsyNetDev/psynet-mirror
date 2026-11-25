@@ -209,6 +209,14 @@ def test_only_pages_built_from_declared_components_are_swapped_in():
     assert not SetsUpTask(
         "task", "<div></div>", "/static/task.js", time_estimate=1
     )._show_in_advance()
+
+    class CompletesTask(JSPage):
+        def on_complete(self, experiment, participant):
+            participant.var.done = True
+
+    assert not CompletesTask(
+        "task", "<div></div>", "/static/task.js", time_estimate=1
+    )._show_in_advance()
     with pytest.raises(TypeError, match="one module"):
         JSPage("task", "", "/static/task.js", js_page_modules=["/static/b.js"])
     assert because(chatroom=ChatRoom("room")) == (
