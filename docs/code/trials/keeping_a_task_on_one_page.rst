@@ -288,9 +288,9 @@ Also keep in mind:
   Playwright spec; see :doc:`/test/frontend`.
 
 Trials prepared in advance can't use sync groups. Repeat trials are prepared
-once every main trial is answered. With ``check_performance_every_trial``, the
-next trials' files still download early, but each checked trial waits for the
-server's check.
+once every main trial is answered, so the first repeat waits for the server.
+With ``check_performance_every_trial``, the next trials' files still download
+early, but the trial after a checked trial waits for the server's check.
 :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after` chooses
 which trials are checked, for example only the last of each block, so that the
 browser runs ahead over the others. The browser asks it before the trial is

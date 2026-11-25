@@ -1458,7 +1458,8 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
 
     recruit_mode
         Selects a recruitment criterion for determining whether to recruit
