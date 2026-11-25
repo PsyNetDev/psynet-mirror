@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,15 +16,31 @@ def _make_vocab_test(tmp_path, real=("cat", "dog"), fake=("xzz", "qrv"), **kwarg
         + "".join(f"{word},incorrect\n" for word in fake)
     )
     kwargs.setdefault("performance_threshold_per_trial", None)
-    with pytest.warns(UserWarning, match="not presented as images"):
+    kwargs.setdefault("n_items", 4)
+    kwargs.setdefault("present_as_image", False)
+    as_text = pytest.warns(UserWarning, match="not presented as images")
+    with nullcontext() if kwargs["present_as_image"] else as_text:
         return VocabTest(
             locale="en",
             label="vocab",
             csv_path=str(csv_path),
-            n_items=4,
-            present_as_image=False,
             **kwargs,
         )
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"n_trials": 0},
+        {"n_items": 3},
+        {"n_items": 6},
+        {"n_repeat_items": 5},
+        {"use_keyboard": False, "use_buttons": False},
+    ],
+)
+def test_invalid_settings_raise_value_errors(tmp_path, settings):
+    with pytest.raises(ValueError):
+        _make_vocab_test(tmp_path, present_as_image=True, font_url=None, **settings)
 
 
 def words(maker, answers, offset=0):

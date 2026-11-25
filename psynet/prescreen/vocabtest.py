@@ -408,6 +408,27 @@ class VocabTest(StaticTrialMaker):
             raise ValueError(
                 "Each vocabulary item needs a word and a correct or incorrect answer label."
             )
+        if n_items <= 0 or n_trials < 1 or n_repeat_items < 0:
+            raise ValueError(
+                "A vocabulary test needs at least one form with a positive item count."
+            )
+        if n_items % 2 != 0:
+            raise ValueError("The number of items must be even.")
+        if n_repeat_items > n_items:
+            raise ValueError(
+                "The number of repeated items must be less than or equal to the number of items."
+            )
+        if not use_buttons and not use_keyboard:
+            raise ValueError(
+                "Enable buttons or keyboard input for the vocabulary test."
+            )
+        if any(
+            sum(item["correct_answer"] == answer for item in test_items) < n_items // 2
+            for answer in ("correct", "incorrect")
+        ):
+            raise ValueError(
+                "The bank needs enough distinct real and fake items for one form."
+            )
 
         self.present_as_image = present_as_image
         if self.present_as_image:
@@ -425,10 +446,6 @@ class VocabTest(StaticTrialMaker):
         self.n_trials = n_trials
         self.n_items = n_items
         self.n_repeat_items = n_repeat_items
-        assert self.n_items % 2 == 0, "The number of items must be even."
-        assert self.n_repeat_items <= self.n_items, (
-            "The number of repeated items must be less than or equal to the number of items."
-        )
         self.show_instructions = show_instructions
         self.show_feedback = show_feedback
         self.hide_after = hide_after
@@ -440,21 +457,6 @@ class VocabTest(StaticTrialMaker):
         self.false_key_button = false_key_button
         self.false_key_label = false_key_label
 
-        if n_items <= 0 or n_trials < 1 or n_repeat_items < 0:
-            raise ValueError(
-                "A vocabulary test needs at least one form with a positive item count."
-            )
-        if not use_buttons and not use_keyboard:
-            raise ValueError(
-                "Enable buttons or keyboard input for the vocabulary test."
-            )
-        if any(
-            sum(item["correct_answer"] == answer for item in test_items) < n_items // 2
-            for answer in ("correct", "incorrect")
-        ):
-            raise ValueError(
-                "The bank needs enough distinct real and fake items for one form."
-            )
         count = n_trials * self.form_size
         super().__init__(
             id_=label,
