@@ -35,3 +35,20 @@ def test_a_failed_check_fails_the_trials_prepared_ahead():
     # The two trials prepared ahead are never answered.
     assert [t.complete for t in trials] == [True, True, False, False]
     assert all(t.failed for t in trials)
+
+
+@pytest.mark.parametrize("experiment_directory", [EXPERIMENT], indirect=True)
+@pytest.mark.usefixtures("launched_experiment")
+def test_repeat_trials_are_prepared_a_window_at_a_time():
+    bot = BotDriver()
+
+    def n_repeats():
+        trials = Trial.query.filter_by(participant_id=bot.id)
+        return sum(trial.is_repeat_trial for trial in trials)
+
+    for _ in range(5):
+        bot.take_page()
+    # The current trial and the two after it.
+    assert n_repeats() == 3
+    bot.take_page()
+    assert n_repeats() == 4

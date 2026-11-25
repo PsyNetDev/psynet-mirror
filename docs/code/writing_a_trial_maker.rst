@@ -356,8 +356,9 @@ pass ``prepare_trials_in_advance=True``:
         prepare_trials_in_advance=True,
     )
 
-The trial maker then creates the participant's trials, in order, when they
-reach it, and each trial page lists the files of the next few trials' pages.
+The trial maker then keeps the participant's next ``n_upcoming_trials``
+trials (two by default) created ahead of the current one, and each trial page
+lists the files of those trials' pages.
 The browser downloads them while the participant works on the current trial,
 so the next page usually opens without waiting for its file. This covers the
 page's media, such as an :class:`~psynet.modular_page.AudioPrompt` or
@@ -409,7 +410,10 @@ The browser also waits for the server as before when:
 * the page has a ``validate`` function or ``check_ready_for_response``;
 * an answer includes a recording or another file to upload;
 * a trial gives feedback, or ``show_after_trial`` returns a page; the trial
-  after it waits for the server.
+  after it waits for the server;
+* ``check_performance_every_trial`` checks a trial (see
+  :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`); the
+  trial after it waits for the check, though its files still download early.
 
 Pages directly in the timeline are also shown without waiting; see
 :ref:`showing_the_next_page_without_waiting`.
