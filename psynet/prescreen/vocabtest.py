@@ -293,7 +293,8 @@ class VocabTest(StaticTrialMaker):
         The path to the CSV file containing the test items.
     performance_threshold_per_trial : float
         Minimal percentage of correct responses. Each form is checked once its last word is answered, and a
-        participant whose score for it is below this threshold is disqualified. If set to None, the performance
+        participant whose score for it is below this threshold is disqualified. A word left unanswered until
+        the response timeout scores its form 0, as does a form left unfinished. If set to None, the performance
         will not be checked.
     performance_check_type : str
         The type of performance check. The performance can be checked based on accuracy or consistency. If set to
@@ -314,7 +315,7 @@ class VocabTest(StaticTrialMaker):
     show_feedback : bool
         Whether to show the feedback after each form. By default, the feedback is shown.
     hide_after : int
-        The time in milliseconds after which the item disappears. By default, the item disappears after 2000 ms.
+        The time in milliseconds after which the item disappears. By default, the item disappears after 1000 ms.
     lag_between_items : int
         The time in milliseconds between the presentation of items. By default, the time between the items is set to
         200 ms. This is useful to prevent the participant from responding too quickly.
@@ -357,7 +358,7 @@ class VocabTest(StaticTrialMaker):
         n_repeat_items: int = 0,
         show_instructions: bool = True,
         show_feedback: bool = True,
-        hide_after: int = 2000,
+        hide_after: int = 1000,
         lag_between_items: int = 200,
         use_keyboard: bool = True,
         use_buttons: bool = False,
@@ -464,6 +465,9 @@ class VocabTest(StaticTrialMaker):
             node_order=self.word_order,
             allow_repeated_nodes=True,
             check_performance_every_trial=True,
+            # Catches forms whose last words failed, which the check after
+            # each form never reaches.
+            check_performance_at_end=True,
             prepare_trials_in_advance=True,
         )
 
@@ -473,12 +477,7 @@ class VocabTest(StaticTrialMaker):
 
     def word_order(self, nodes, participant):
         """Balance real and fake words and prefer less familiar nodes across forms."""
-        visits = Counter(
-            node_id
-            for (node_id,) in self.trial_class.query.with_entities(
-                self.trial_class.node_id
-            ).filter_by(participant_id=participant.id, trial_maker_id=self.id)
-        )
+        visits = Counter()
         pools = [
             [node for node in nodes if node.definition["correct_answer"] == label]
             for label in ("correct", "incorrect")
@@ -548,7 +547,8 @@ class VocabTest(StaticTrialMaker):
                     role="status",
                     style=(
                         f"min-height:min({height}px,55vh);display:grid;place-items:center;"
-                        "font-size:clamp(2rem,7vw,5rem);font-weight:bold"
+                        "font-size:clamp(2rem,7vw,5rem);font-weight:bold;"
+                        "overflow-wrap:anywhere"
                     ),
                 ),
                 choice("real", _("Real"), self.true_key_label),
@@ -654,12 +654,17 @@ class VocabTest(StaticTrialMaker):
         return self.ends_form(trial)
 
     def performance_check(self, experiment, participant, participant_trials):
-        """Score the latest form that the participant has finished."""
-        n_answered = 1 + max((t.position for t in participant_trials), default=-1)
-        score = self.score_form(
-            participant_trials, n_answered - n_answered % self.form_size
-        )
-        return {"score": score, "passed": self._passes(score)}
+        """Score every form begun so far, giving the latest form's score; each must pass."""
+        n_begun = 1 + max((t.position for t in participant_trials), default=-1)
+        n_forms = -(-n_begun // self.form_size)
+        scores = [
+            self.score_form(participant_trials, (form + 1) * self.form_size)
+            for form in range(n_forms)
+        ]
+        return {
+            "score": scores[-1] if scores else None,
+            "passed": all(self._passes(score) for score in scores),
+        }
 
     @classmethod
     def get_language_name(self, test_locale):

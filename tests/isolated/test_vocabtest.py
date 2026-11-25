@@ -54,7 +54,7 @@ def test_form_scores_native_trials_and_repeated_nodes(tmp_path, kind, expected):
     assert maker.score_form(form, 6) == 0
 
 
-def test_each_form_is_checked_once_its_last_word_is_answered(tmp_path):
+def test_each_form_is_checked_once_its_last_word_is_answered_and_at_the_end(tmp_path):
     maker = _make_vocab_test(tmp_path, n_trials=2, performance_threshold_per_trial=1)
     trials = words(maker, ["real", "real", "fake", "fake"]) + words(
         maker, ["fake"] * 4, offset=4
@@ -69,6 +69,9 @@ def test_each_form_is_checked_once_its_last_word_is_answered(tmp_path):
         "score": 0.5,
         "passed": False,
     }
+    # The check at the end also fails a form left unfinished, for example
+    # because its last words timed out.
+    assert not maker.performance_check(None, None, trials[:6])["passed"]
 
 
 def test_word_pages_share_their_html_and_hide_the_answer(tmp_path):

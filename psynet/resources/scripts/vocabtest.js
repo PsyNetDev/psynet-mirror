@@ -5,9 +5,10 @@ export function activate({root, psynet}) {
     const target = root.querySelector("#test-stimulus");
     const controls = root.querySelectorAll("[data-choice]");
     const images = new Map();
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     let response = null;
     let nextAt = 0;
-    let timer;
+    let hideTimer;
 
     function enable(handle) {
         response = handle;
@@ -26,32 +27,31 @@ export function activate({root, psynet}) {
         return images.get(url);
     }
 
-    async function display(word, handle, signal) {
-        if (word.image) {
-            const img = imageFor(word.image);
+    // Resolves with the decoded image, or null once a newer word replaces this one.
+    async function decoded(url, signal) {
+        for (let attempt = 1; ; attempt++) {
+            const img = imageFor(url);
             try {
                 await img.decode();
+                return img;
             } catch (error) {
-                if (signal.aborted) return;
-                psynet.log.warn(`Couldn't decode ${word.image}, retrying: ${error}`);
-                images.delete(word.image);
-                timer = setTimeout(() => display(word, handle, signal), 1000);
-                return;
+                images.delete(url);
+                if (signal.aborted) return null;
+                // PsyNet then asks the participant to reload the page.
+                if (attempt === 3) throw new Error(`Couldn't load ${url}: ${error}`);
+                psynet.log.warn(`Couldn't decode ${url}, retrying: ${error}`);
+                await sleep(1000);
+                if (signal.aborted) return null;
             }
-            if (signal.aborted) return;
-            target.replaceChildren(img);
-        } else {
-            target.textContent = word.stimulus;
         }
-        enable(handle);
-        handle.startClock();
-        timer = setTimeout(() => { target.textContent = "…"; }, config.hideAfter);
     }
 
     function respond(choice) {
         if (response === null) return;
         const handle = response;
         enable(null);
+        clearTimeout(hideTimer);
+        target.replaceChildren();
         // Answering can call update() with the next word straight away.
         nextAt = performance.now() + config.lag;
         handle.answer(choice);
@@ -59,6 +59,8 @@ export function activate({root, psynet}) {
 
     function keydown(event) {
         if (event.repeat || !config.keyboard) return;
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;
         if (event.code === config.trueKey) respond("real");
         else if (event.code === config.falseKey) respond("fake");
     }
@@ -71,18 +73,28 @@ export function activate({root, psynet}) {
     document.addEventListener("keydown", keydown);
     root.addEventListener("click", click);
     return {
-        update({contents, upcomingContents, response: handle, signal}) {
-            clearTimeout(timer);
+        async update({contents, upcomingContents, response: handle, signal}) {
+            clearTimeout(hideTimer);
             enable(null);
             target.replaceChildren();
             for (const item of upcomingContents.slice(0, 2)) {
                 if (item.image) imageFor(item.image);
             }
-            timer = setTimeout(() => display(contents, handle, signal),
-                               Math.max(0, nextAt - performance.now()));
+            await sleep(Math.max(0, nextAt - performance.now()));
+            if (signal.aborted) return;
+            if (contents.image) {
+                const img = await decoded(contents.image, signal);
+                if (img === null) return;
+                target.replaceChildren(img);
+            } else {
+                target.textContent = contents.stimulus;
+            }
+            enable(handle);
+            handle.startClock();
+            hideTimer = setTimeout(() => { target.textContent = "…"; }, config.hideAfter);
         },
         cleanup() {
-            clearTimeout(timer);
+            clearTimeout(hideTimer);
             document.removeEventListener("keydown", keydown);
             root.removeEventListener("click", click);
         },
