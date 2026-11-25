@@ -53,10 +53,12 @@ def test_prepared_trials_are_predicted_and_time_out_once_shown():
 
     # Once the trial on screen times out, the trials waiting their turn are
     # failed too, so they stop counting towards their nodes.
-    trials[0].response_started_at = month_ago
+    trials[0].presented_at = month_ago
     db.session.commit()
     trial_maker.check_old_trials()
-    assert all(trial.failed for trial in trials)
+    assert [trial.failed_reason for trial in trials] == ["response_timeout"] + [
+        "not_presented"
+    ] * (len(trials) - 1)
 
 
 @pytest.mark.parametrize("experiment_directory", [EXPERIMENT], indirect=True)
