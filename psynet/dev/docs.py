@@ -180,7 +180,7 @@ def run_live_preview(
         raise ValueError(
             "sphinx-autobuild is required for --live-preview. "
             "Install or update the PsyNet dev dependencies, for example with "
-            "`uv pip install -e '.[dev,slack]'`."
+            "`uv pip install -e '.[dev]'`."
         )
 
     assert_live_preview_port_available(port)

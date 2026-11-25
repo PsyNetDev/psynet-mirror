@@ -6,6 +6,7 @@ import pytest
 from dallinger.models import timenow
 from flask import Flask
 
+from psynet.bot import Bot, BotResponse
 from psynet.experiment import get_experiment
 from psynet.modular_page import ModularPage, PushButtonControl, TextControl
 from psynet.page import InfoPage
@@ -209,6 +210,53 @@ def test_browser_timeout_answers_must_be_choices(in_experiment_directory, db_ses
         # Nothing selected is still accepted, and validate is still skipped.
         payload = _submit(exp, participant, None, time_limit_reached=True)
         assert payload["submission"] == "approved"
+    finally:
+        exp.timeline = original
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_bots_can_let_the_time_limit_run_out(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    original = exp.timeline
+    timed_out = BotResponse(time_limit_reached=True)
+    exp.timeline = Timeline(
+        ModularPage(
+            "offer",
+            "Offer?",
+            PushButtonControl(["1", "2"]),
+            time_limit=60,
+            time_limit_answer="timeout",
+            bot_response=timed_out,
+            time_estimate=10,
+        ),
+        ModularPage(
+            "note", "Note", TextControl(), bot_response=timed_out, time_estimate=5
+        ),
+        InfoPage("Done", time_estimate=1),
+    )
+    monkeypatch.setattr(
+        Bot, "wait_until_experiment_launch_is_complete", lambda self: None
+    )
+    monkeypatch.setattr(Bot, "_advance_to_first_page", lambda self: None)
+    try:
+        bot = Bot()
+        bot.status = "working"
+        _json_timeline(exp, bot)
+
+        # Accepted at once, long before the deadline, as the page's time-out.
+        submission = bot.get_current_page().call__get_bot_response(exp, bot)
+        assert _submit(exp, bot, submission.raw_answer, **submission.metadata)[
+            "submission"
+        ] == ("approved")
+        response = bot.response
+        assert (response.answer, response.time_limit_reached) == ("timeout", True)
+
+        with pytest.raises(ValueError, match="'note' has no time_limit"):
+            bot.get_current_page().call__get_bot_response(exp, bot)
     finally:
         exp.timeline = original
 

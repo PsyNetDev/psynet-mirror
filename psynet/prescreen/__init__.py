@@ -2129,7 +2129,7 @@ class BrowserCapabilityCheckPage(ModularPage):
             control=NullControl(),
             time_estimate=0.0,
             show_next_button=False,
-            js_vars={"capabilities": sorted(capabilities)},
+            page_config={"capabilities": sorted(capabilities)},
             js_page_modules=["/static/scripts/browser-capability-check.js"],
         )
 

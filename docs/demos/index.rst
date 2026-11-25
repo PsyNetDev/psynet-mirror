@@ -108,6 +108,9 @@ Pages and controls
     with buttons, text boxes and audio recording. :doc:`/design/pages`,
     :doc:`/code/writing_pages`.
 
+`features/back_button <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/back_button>`__
+    Instruction pages with Back buttons that show the previous page at once. :ref:`going_back_to_the_previous_page`.
+
 `features/modular_page <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/modular_page>`__
     A gallery of prompt and control combinations, ending with custom
     ``Prompt`` and ``Control`` classes. :doc:`/code/pages/control_gallery`.
@@ -226,6 +229,12 @@ Trials
     Picture ratings that show each picture as soon as the previous one is
     rated, with ``prepare_trials_in_advance`` and a page module that preloads
     the upcoming pictures. :doc:`/code/trials/keeping_a_task_on_one_page`.
+
+`features/rapid_ratings_built_in <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/rapid_ratings_built_in>`__
+    The same picture ratings with a built-in ``ImagePrompt`` and
+    ``PushButtonControl``: the browser swaps in each trial's page, rendered in
+    advance, as soon as the previous picture is rated.
+    :ref:`showing_the_next_trials_without_waiting`.
 
 Chains
 ------
@@ -419,8 +428,9 @@ Groups
 
 `experiments/crowd_estimate <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/crowd_estimate>`__
     A wisdom-of-crowds estimation game in an open lobby: groups of up to
-    four may start short and take latecomers until the game starts, and
-    anyone left without a group answers alone. Each question is one cued
+    four may start short and take latecomers until the game starts, a
+    player who stops responding is failed, and the others carry on while
+    at least three remain. Each question is one cued
     trial per player, with the group's median on the node they share.
     :doc:`/code/multiplayer/synchronization`.
 
@@ -448,8 +458,8 @@ Groups
 
 `experiments/public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__
     A repeated public goods game in groups of three that carries on with two
-    when a member returns the study or stops responding, and tells the last
-    player, and anyone without a group, why the game ended. Each round is one
+    when a member returns the study or stops responding, who is failed, and
+    fails the last player left. Each round is one
     cued trial per player that pays its bonus, with the group's pot on the
     round they share. :doc:`/code/multiplayer/synchronization`.
 
@@ -499,8 +509,9 @@ Groups
     filter them by room. The experiment's ``receive_message`` stores each
     message in a custom table, ``publish_to_subscribers`` sends room
     occupancy to every client, and a custom route returns a room's history
-    to late joiners. ``config.txt`` sets ``num_chatrooms``,
-    ``chatroom_max_occupancy`` and ``chatroom_show_history``.
+    to late joiners. The experiment registers the config keys
+    ``num_chatrooms``, ``chatroom_max_occupancy`` and
+    ``chatroom_show_history``, which you can set in ``config.txt``.
     :doc:`/code/multiplayer/realtime_interaction`.
     :doc:`/code/pages/custom_routes`.
 

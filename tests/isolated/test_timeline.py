@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from markupsafe import Markup
 
+from psynet.chatroom import ChatRoom
 from psynet.end import (
     RejectedConsentLogic,
     SuccessfulEndLogic,
@@ -22,7 +23,15 @@ from psynet.exit import (
     PaymentState,
 )
 from psynet.experiment import Experiment
-from psynet.page import InfoPage, SuccessfulEndPage, UnsuccessfulEndPage
+from psynet.modular_page import (
+    ModularPage,
+    MusicNotationPrompt,
+    Prompt,
+    PushButtonControl,
+    RadioButtonControl,
+    SliderControl,
+)
+from psynet.page import InfoPage, JSPage, SuccessfulEndPage, UnsuccessfulEndPage
 from psynet.participant import Participant
 from psynet.timeline import (
     AsyncCodeBlock,
@@ -128,6 +137,163 @@ def test_partial_render_makes_embedded_scripts_inert():
     assert 'type="text/html"' in inert_html
 
 
+def test_only_pages_whose_answers_may_be_turned_down_say_so():
+    def page(control, **kwargs):
+        return ModularPage("q", Prompt("?"), control, time_estimate=1, **kwargs)
+
+    assert not page(PushButtonControl(["a", "b"]))._may_reject_answers()
+    assert page(RadioButtonControl(["a", "b"]))._may_reject_answers()
+    assert not page(
+        RadioButtonControl(["a", "b"], force_selection=False)
+    )._may_reject_answers()
+    assert not page(
+        SliderControl(start_value=0, min_value=0, max_value=1)
+    )._may_reject_answers()
+    assert page(
+        PushButtonControl(["a"]), validate=lambda answer: None
+    )._may_reject_answers()
+
+    class WaitingControl(PushButtonControl):
+        def check_ready_for_response(self, experiment, participant):
+            return None
+
+    assert page(WaitingControl(["a"]))._may_reject_answers()
+
+    class WaitingPage(ModularPage):
+        def check_ready_for_response(self, experiment, participant):
+            return None
+
+    assert WaitingPage(
+        "q", Prompt("?"), PushButtonControl(["a"]), time_estimate=1
+    )._may_reject_answers()
+
+
+def test_only_pages_built_from_declared_components_are_swapped_in():
+    class CustomControl(PushButtonControl):
+        pass
+
+    def page(control=None, prompt=None, **kwargs):
+        control = control or PushButtonControl(["a"])
+        return ModularPage(
+            "q", prompt or Prompt("?"), control, time_estimate=1, **kwargs
+        )
+
+    def because(control=None, **kwargs):
+        return page(control, **kwargs)._cannot_be_rendered_early_because()
+
+    assert because() is None
+    # Page modules run as usual on a swapped-in page; only a JSPage's module
+    # shows the next trials itself.
+    music = page(prompt=MusicNotationPrompt("X:1\nK:C\nC"))
+    assert music._cannot_be_rendered_early_because() is None
+    assert not music._show_in_advance()
+    assert because(js_page_modules=["/static/setup.js"]) is None
+    task = JSPage("task", "<div id='task'></div>", "/static/task.js", time_estimate=1)
+    assert task._cannot_be_rendered_early_because() is None
+    assert task._show_in_advance()
+    assert not JSPage(
+        "task", "<div></div>", "/static/task.js", time_estimate=1, time_limit=5
+    )._show_in_advance()
+
+    class TaskPage(JSPage):
+        pass
+
+    class SetsUpTask(JSPage):
+        def consume(self, experiment, participant):
+            super().consume(experiment, participant)
+
+    # A subclass keeps its page for the next trials, but isn't swapped in.
+    subclass = TaskPage("task", "<div></div>", "/static/task.js", time_estimate=1)
+    assert subclass._module_shows_the_next_trials()
+    assert subclass._cannot_be_rendered_early_because() is not None
+    assert not SetsUpTask(
+        "task", "<div></div>", "/static/task.js", time_estimate=1
+    )._show_in_advance()
+
+    class CompletesTask(JSPage):
+        def on_complete(self, experiment, participant):
+            participant.var.done = True
+
+    assert not CompletesTask(
+        "task", "<div></div>", "/static/task.js", time_estimate=1
+    )._show_in_advance()
+    with pytest.raises(TypeError, match="one module"):
+        JSPage("task", "", "/static/task.js", js_page_modules=["/static/b.js"])
+    assert because(chatroom=ChatRoom("room")) == (
+        "ChatRoom doesn't set can_swap_in_advance"
+    )
+    assert because(CustomControl(["a"])) == (
+        "CustomControl doesn't set can_swap_in_advance"
+    )
+    assert because(RadioButtonControl(["a"])) is None
+    assert because(session_id="game") == "it has a session_id"
+    assert because(time_limit=5) == "it has a time limit"
+
+
+def test_no_back_button_among_a_barriers_waiting_pages():
+    pages = [InfoPage(text, time_estimate=1) for text in "ABC"]
+    timeline = Timeline(*pages)
+    index = timeline.elts["main"].index(pages[1])
+    assert timeline._can_go_back("main", index)
+    pages[1].links["barrier"] = object()
+    assert not timeline._can_go_back("main", index)
+    assert not timeline._can_go_back("main", index + 1)
+
+
+def test_pages_say_why_they_cant_be_left_or_rendered_early():
+    class SetsUp(InfoPage):
+        can_swap_in_advance = True
+
+        def consume(self, experiment, participant):
+            super().consume(experiment, participant)
+
+    info = InfoPage("A", time_estimate=1)
+    assert info._cannot_be_left_early_because() is None
+    assert info._cannot_be_rendered_early_because() is None
+    assert SetsUp("B", time_estimate=1)._cannot_be_rendered_early_because() == (
+        "it overrides consume"
+    )
+    radio = ModularPage("q", Prompt("?"), RadioButtonControl(["a"]), time_estimate=1)
+    assert radio._cannot_be_left_early_because() == (
+        "the server may turn its answers down (validate or check_ready_for_response)"
+    )
+
+    class Completes(InfoPage):
+        def on_complete(self, experiment, participant):
+            participant.var.done = True
+
+    assert Completes("C", time_estimate=1)._cannot_be_left_early_because() == (
+        "it overrides on_complete"
+    )
+
+    class Holds(InfoPage):
+        is_timeline_hold = True
+
+    assert Holds("D", time_estimate=1)._cannot_be_rendered_early_because() == (
+        "it holds the timeline"
+    )
+
+
+def test_layout_key_covers_main_body_and_js_vars():
+    def key(body, **js_vars):
+        page = Page(time_estimate=1, template_str="", page_config=js_vars)
+        return page.layout_key(f'<div id="main-body">{body}</div>', None, None)
+
+    assert key("task", timing=1) == key("task", timing=1)
+    assert key("task", timing=1) != key("other task", timing=1)
+    assert key("task", timing=1) != key("task", timing=2)
+    assert key("task", timing=None) != key("task")
+
+    page = Page(
+        time_estimate=1, template_str="", media=MediaSpec(audio={"a": "/1.wav"})
+    )
+    other = Page(
+        time_estimate=1, template_str="", media=MediaSpec(audio={"a": "/2.wav"})
+    )
+    html = '<div id="main-body">task</div>'
+    assert page.layout_key(html, None, None) != other.layout_key(html, None, None)
+
+
 def test_timeline_template_emits_js_dependencies_as_blocking_head_scripts():
     from psynet import __file__ as psynet_file
 
@@ -136,6 +302,13 @@ def test_timeline_template_emits_js_dependencies_as_blocking_head_scripts():
     ).read_text()
     assert "{% for src in js_dependencies %}" in template
     assert "data-psynet-load-failed" in template
+    # SurveyJS is large; pages that need it declare it via js_dependencies.
+    assert "scripts/survey-jquery/" not in template
+    # A second jQuery from Dallinger's libs block would drop head-loaded plugins.
+    assert "{% block jquery %}{% endblock %}" in template
+    head_block = template.split("{% block head %}")[1].split("{% endblock %}")[0]
+    assert "scripts/jquery-4.0.0.min.js" in head_block
+    assert "psynetHeadJQuery" not in template
 
 
 def test_automatic_trial_waits_for_page_ready():
@@ -362,18 +535,6 @@ def test_timeline_fragment_ignores_commented_div_close():
     assert "still inside" in fragment
 
 
-def test_new_page_uuid_does_not_follow_seeded_random():
-    import random
-
-    from psynet.timeline import new_page_uuid
-
-    random.seed(0)
-    first = new_page_uuid()
-    random.seed(0)
-    second = new_page_uuid()
-    assert first != second
-
-
 def test_partial_body_extraction_requires_named_fragment_wrapper():
     with pytest.raises(ValueError, match="could not find fragment root"):
         Page._extract_partial_body("<div id='main-body'></div>")
@@ -383,7 +544,11 @@ def test_prepared_partial_fragment_rendering_does_not_repeat_pre_render():
     # /response runs pre_render() before committing its write phase. The
     # read-only render helper must not execute author preparation twice.
     calls = []
-    page = MagicMock(upcoming_contents=None)
+    page = MagicMock(upcoming_pages=None)
+    page._upcoming_pages_payload.return_value = None
+    page._previous_page_payload.return_value = None
+    page.layout_key.return_value = "key"
+    page._cannot_be_rendered_early_because.return_value = None
     page.pre_render.side_effect = lambda: calls.append("pre_render")
     page.render.side_effect = lambda *args, **kwargs: calls.append("render") or "<html>"
     participant = SimpleNamespace(page_uuid="uuid-123")
@@ -398,7 +563,7 @@ def test_prepared_partial_fragment_rendering_does_not_repeat_pre_render():
 
     assert calls == ["render"]
     experiment.prepare_voluntary_exit_plan.assert_not_called()
-    assert payload == {"html": "<html>", "page_uuid": "uuid-123"}
+    assert payload == {"html": "<html>", "page_uuid": "uuid-123", "layout_key": "key"}
 
 
 def test_same_session_page_payload_uses_pre_render_contents():
@@ -1290,13 +1455,13 @@ def test_named_participant_colours_match_javascript():
 
 
 def test_js_vars_window_collisions_warn_at_construction():
-    with pytest.warns(UserWarning, match=r"js_vars keys collide.*'status'"):
+    with pytest.warns(UserWarning, match=r"page_config keys collide.*'status'"):
         page = Page(
             template_fragment_str="<p>ok</p>",
-            js_vars={"status": "in-progress", "color": "blue"},
+            page_config={"status": "in-progress", "color": "blue"},
         )
 
-    assert page.js_vars["status"] == "in-progress"
+    assert page.page_config["status"] == "in-progress"
 
 
 def test_js_vars_without_window_collisions_do_not_warn():
@@ -1304,7 +1469,7 @@ def test_js_vars_without_window_collisions_do_not_warn():
         warnings.simplefilter("error", UserWarning)
         Page(
             template_fragment_str="<p>ok</p>",
-            js_vars={"color": "blue", "trial_index": 1},
+            page_config={"color": "blue", "trial_index": 1},
         )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FutureWarning)
@@ -2249,3 +2414,48 @@ def test_page_level_early_exit_setting_overrides_the_recruiter_and_config():
     experiment.recruiter_class.show_early_exit_button = False
     shown = InfoPage("Hello", time_estimate=1, show_early_exit_button=True)
     assert shown.early_exit_available(experiment, participant) is True
+
+
+@pytest.mark.parametrize("next_html,kept", [("<div>task</div>", True), ("<p/>", False)])
+def test_a_jspage_shows_the_next_timeline_jspage_with_its_layout_itself(
+    next_html, kept
+):
+    current = JSPage("a", "<div>task</div>", "/static/task.js", time_estimate=1)
+    following = JSPage("b", next_html, "/static/task.js", time_estimate=1)
+    following._rendered_in_advance = True
+    following._page_key = "main.1"
+    experiment = MagicMock()
+    experiment.timeline._pages_rendered_in_advance.return_value = [following]
+    participant = SimpleNamespace(
+        id=1,
+        unique_id="u",
+        page_count=3,
+        progress=0.0,
+        _progress_after=lambda time_estimate, progress: progress,
+    )
+
+    with (
+        patch.object(JSPage, "render", lambda self, *args, **kwargs: self.html),
+        patch.object(JSPage, "layout_key", lambda self, html, *args: str(html)),
+    ):
+        [upcoming] = current._upcoming_pages_payload(experiment, participant)
+
+    assert ("html" not in upcoming) is kept
+
+
+def test_pages_not_rendered_in_advance_keep_the_back_button():
+    timeline = Timeline(
+        InfoPage("A", time_estimate=1),
+        InfoPage("B", time_estimate=1, render_in_advance=False),
+        InfoPage("C", time_estimate=1),
+    )
+    assert timeline._can_go_back("main", 1)
+    assert timeline._can_go_back("main", 2)
+
+
+def test_back_never_returns_to_a_page_without_a_next_button():
+    timeline = Timeline(
+        InfoPage("Moves on by itself", time_estimate=1, show_next_button=False),
+        InfoPage("B", time_estimate=1),
+    )
+    assert not timeline._can_go_back("main", 1)

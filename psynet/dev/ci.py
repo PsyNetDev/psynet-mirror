@@ -164,6 +164,8 @@ def _check_docker_constraints_compile(
                     "--extra",
                     "experiment",
                     "--extra",
+                    "test",
+                    "--extra",
                     "demos",
                     "--constraint",
                     "dallinger-dev-requirements.txt",

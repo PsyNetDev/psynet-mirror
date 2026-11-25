@@ -7,12 +7,13 @@ if TYPE_CHECKING:
 import copy
 import enum
 import hashlib
+import hmac
 import inspect
 import json
+import logging
 import random
 import re
 import time
-import uuid
 import warnings
 from collections import Counter
 from contextlib import contextmanager
@@ -59,6 +60,7 @@ from .utils import (
     render_string_with_translations,
     serialise,
     unserialise_datetime,
+    warn_from_caller,
 )
 
 if TYPE_CHECKING:
@@ -120,9 +122,19 @@ def _normalize_js_page_code(code, argument_name="js_page_code"):
     return normalized
 
 
-# Common Window names that legacy ``window.<js_vars key>`` access would
+def _page_config_argument(page_config, js_vars):
+    """Return ``page_config``, accepting the deprecated ``js_vars`` instead."""
+    if js_vars is not None:
+        warn_from_caller("js_vars has been renamed to page_config.", FutureWarning)
+        if page_config is not None:
+            raise ValueError("Pass page_config or js_vars, not both.")
+        page_config = js_vars
+    return {} if page_config is None else page_config
+
+
+# Common Window names that legacy ``window.<page_config key>`` access would
 # silently read instead of the page value. Not exhaustive; authors should
-# still prefer ``psynet.var``.
+# still prefer ``psynet.pageConfig``.
 _JS_VAR_WINDOW_COLLISION_KEYS = frozenset(
     {
         "alert",
@@ -155,18 +167,20 @@ _JS_VAR_WINDOW_COLLISION_KEYS = frozenset(
 )
 
 
-def _warn_js_var_window_collisions(js_vars):
-    """Warn when js_vars keys would not get a legacy window accessor."""
-    if not js_vars:
+def _warn_js_var_window_collisions(page_config):
+    """Warn when page_config keys would not get a legacy window accessor."""
+    if not page_config:
         return
-    collisions = sorted(key for key in js_vars if key in _JS_VAR_WINDOW_COLLISION_KEYS)
+    collisions = sorted(
+        key for key in page_config if key in _JS_VAR_WINDOW_COLLISION_KEYS
+    )
     if not collisions:
         return
     names = ", ".join(repr(key) for key in collisions)
     warnings.warn(
-        "js_vars keys collide with existing window properties "
+        "page_config keys collide with existing window properties "
         f"({names}). Legacy window.<key> reads will not see the page "
-        "value; use psynet.var instead. Common collisions include "
+        "value; use psynet.pageConfig instead. Common collisions include "
         "name, status, event, and history.",
         UserWarning,
         stacklevel=3,
@@ -353,10 +367,11 @@ class Elt:
     expected_repetitions = None
     id = None
     created_within_page_maker = False
-    # Set on a trial's feedback page maker and everything it produces.
-    _trial_feedback = False
-    # Set on the show_before_trial page maker and everything it produces.
-    _before_trial = False
+    # Set on the page makers that run after a trial is finalized (feedback
+    # and show_after_trial) and everything they produce.
+    _after_trial = False
+    # Set on the show_after_trial page maker and everything it produces.
+    _between_trials = False
 
     def __init__(self):
         self.links = {}
@@ -1225,13 +1240,43 @@ def _is_timeline_hold(page):
     return bool(getattr(page, "is_timeline_hold", False))
 
 
-def new_page_uuid():
-    """Return a page uuid that does not depend on seeded ``random``.
+_logged_waiting_reasons = set()
 
-    ``Experiment.make_uuid()`` draws from the process RNG, which bots seed.
-    Timeline hold records have a global unique constraint on ``page_uuid``.
+
+def _log_waiting_for_the_server(where, page, reason, level=logging.DEBUG):
+    """Say why the browser waits for the server ``where`` (``"after"`` or ``"before showing"``) ``page``.
+
+    Each reason is logged once per page class and label, so that authors can
+    find out why a page isn't shown without waiting. Trial makers that
+    prepare trials in advance log at INFO, as their author asked for this;
+    timeline pages log at DEBUG, as most of their waits are expected.
     """
-    return str(uuid.uuid4())
+    key = (where, type(page).__name__, page.label, reason)
+    if key not in _logged_waiting_reasons:
+        _logged_waiting_reasons.add(key)
+        logger.log(
+            level,
+            "The browser waits for the server %s %s %r, because %s.",
+            where,
+            type(page).__name__,
+            page.label,
+            reason,
+        )
+
+
+def make_page_uuid(participant, visit, page_key):
+    """Identify the participant's ``visit``-th page, which is ``page_key``.
+
+    The page UUID follows from the page and when it is shown, so the server
+    can tell the browser the page UUIDs of pages it shows in advance without
+    storing them. Visits are counted, so page UUIDs never repeat, which
+    timeline hold records rely on. ``/response`` accepts an answer only for
+    the current page UUID, so the UUID ends with a hash keyed by the
+    participant's ``unique_id``, which other clients don't know.
+    """
+    page = f"{participant.id}-{visit}-{page_key}"
+    key = participant.unique_id.encode()
+    return f"{page}-{hmac.new(key, page.encode(), hashlib.sha256).hexdigest()[:16]}"
 
 
 def _arrival_updates_for(page, participant):
@@ -1335,10 +1380,16 @@ class Page(Elt):
     label:
         Internal label to give the page, used for example in results saving.
 
+    page_config:
+        Dictionary that configures the page's JavaScript, read as
+        ``psynet.pageConfig``, such as a task's timings. It is the same for
+        every trial the page shows; what changes between trials goes in
+        ``contents``. See :doc:`/code/pages/custom_front_ends`. Legacy access
+        through matching ``window`` properties is deprecated and controlled by
+        ``legacy_js_var_globals``.
+
     js_vars:
-        Dictionary of page-scoped values exposed to JavaScript through
-        ``psynet.var``. Legacy access through matching ``window`` properties is
-        deprecated and controlled by ``legacy_js_var_globals``.
+        Deprecated name of ``page_config``.
 
     js_links:
         Deprecated list of classic JavaScript files executed as linked classic
@@ -1395,7 +1446,11 @@ class Page(Elt):
         Optional list of links to CSS stylesheets to include in the page.
 
     contents:
-        Optional dictionary to store some experiment specific data. For example, in an experiment about melodies, the contents property might look something like this: {”melody”: [1, 5, 2]}.
+        Optional dictionary of what this page shows, such as a trial's
+        stimulus and parameters, for example ``{"melody": [1, 5, 2]}``. The
+        page's JavaScript reads it as ``psynet.page.contents``, and a page
+        module's ``update`` receives it for each trial. It can change from one
+        trial to the next, which ``page_config`` can't.
 
     save_answer:
         If ``True`` (default), then the answer generated by the page is saved to ``participant.answer``,
@@ -1505,12 +1560,30 @@ class Page(Elt):
         no answer to submit, ``None`` is recorded. An answer that arrives
         more than 5 seconds after the limit is kept the same way.
 
+    render_in_advance
+        Whether PsyNet may render the page while the participant is still on
+        the page before it, so that it appears without waiting for the server
+        (default ``True``). This applies to pages directly in the timeline and
+        to trial pages that a trial maker prepares in advance. Pass ``False``
+        if the page shows something that the previous answer changes, for
+        example in a custom template or ``pre_render``.
+
+    show_back_button
+        Whether the page has a Back button where the participant can go back
+        to the page before it (default ``True``). PsyNet shows it only on
+        :class:`~psynet.modular_page.ModularPage` pages with a Next button,
+        directly after a page that collects no answer and has a Next button,
+        such as :class:`~psynet.page.InfoPage`, and that the browser could show
+        without waiting for the server. So it never returns to a question, a trial page, or past a
+        code block, a conditional or a page whose ``on_complete`` is
+        overridden.
+
 
     Attributes
     ----------
 
     contents : dict
-        A dictionary containing experiment specific data.
+        What this page shows, such as a trial's stimulus and parameters.
 
     session_id : str
         If session_id is not None, then it must be a string. If two consecutive pages occur with the same session_id, then when it's time to move to the second page, the browser will not navigate to a new page, but will instead update the Javascript variable psynet.page with metadata for the new page, and will trigger an event called pageUpdated. This event can be listened for with Javascript code like window.addEventListener(”pageUpdated”, ...).
@@ -1528,10 +1601,20 @@ class Page(Elt):
     requires_full_page_reload = False
     expect_scrolling = False
     skip_beforeunload = False
-    # Set by trial makers that prepare their trials in advance.
-    upcoming_contents = None
+    # Set by trial makers that prepare their trials in advance: the next
+    # pages that the browser can show before the server confirms them, and
+    # the URLs of the next pages' files by media type.
+    upcoming_pages = None
     upcoming_media = None
-    _full_page_layout_key = None
+    # What the page UUID says the page is, set by trials for their pages;
+    # otherwise the page's position in the timeline.
+    _page_key = None
+    # Set on a page rendered for the browser to swap in later: the page
+    # UUID it will have, which it carries rather than the participant's.
+    _page_uuid = None
+    # Likewise the progress it will show.
+    _progress = None
+    _rendered_in_advance = False
 
     def __init__(
         self,
@@ -1543,6 +1626,7 @@ class Page(Elt):
         template_fragment_str: Optional[str] = None,
         template_arg: Optional[Dict] = None,
         label: str = "untitled",
+        page_config: Optional[Dict] = None,
         js_vars: Optional[Dict] = None,
         js_links: Optional[Sequence[str]] = None,
         js_dependencies: Optional[Sequence[str]] = None,
@@ -1571,6 +1655,8 @@ class Page(Elt):
         background_recording=None,
         time_limit: Optional[float] = None,
         time_limit_answer=None,
+        render_in_advance: bool = True,
+        show_back_button: bool = True,
     ):
         super().__init__()
 
@@ -1599,8 +1685,7 @@ class Page(Elt):
 
         if template_arg is None:
             template_arg = {}
-        if js_vars is None:
-            js_vars = {}
+        page_config = _page_config_argument(page_config, js_vars)
         if contents is None:
             contents = {}
         if css_links is None:
@@ -1664,8 +1749,8 @@ class Page(Elt):
         self._spa_template_contract_warning_shown = False
         self.template_arg = template_arg
         self.label = label
-        self.js_vars = js_vars
-        _warn_js_var_window_collisions(js_vars)
+        self.page_config = page_config
+        _warn_js_var_window_collisions(page_config)
         self.legacy_js_links = legacy_js_links
         self.legacy_scripts = legacy_scripts
         self.js_dependencies = _normalize_javascript_urls(
@@ -1732,6 +1817,8 @@ class Page(Elt):
             )
         self.time_limit = time_limit
         self.time_limit_answer = time_limit_answer
+        self.render_in_advance = render_in_advance
+        self.show_back_button = show_back_button
         if show_abort_button is not None:
             warnings.warn(
                 "Page(show_abort_button=...) is deprecated; "
@@ -1837,6 +1924,11 @@ class Page(Elt):
 
         if not isinstance(res, BotResponse):
             res = BotResponse(answer=res)
+        if res.time_limit_reached and self.time_limit is None:
+            raise ValueError(
+                f"The bot returned BotResponse(time_limit_reached=True), but page "
+                f"'{self.label}' has no time_limit to run out."
+            )
 
         return res
 
@@ -1895,11 +1987,11 @@ class Page(Elt):
         """
         return _earliest_event_time(self.events, "submitEnable")
 
-    def __json__(self, participant):
-        return {
-            "attributes": self.attributes(participant),
-            "contents": self.contents,
-        }
+    def __json__(self, participant, layout_key=None):
+        attributes = self.attributes(participant)
+        if layout_key is not None:
+            attributes["layout_key"] = layout_key
+        return {"attributes": attributes, "contents": self.contents}
 
     def attributes(self, participant):
         """
@@ -1917,22 +2009,19 @@ class Page(Elt):
             "session_id": self.session_id,
             "type": type(self).__name__,
             "unique_id": participant.unique_id,
-            "page_uuid": participant.page_uuid,
+            "page_uuid": self._browser_page_uuid(participant),
             "is_unity_page": isinstance(self, UnityPage),
             "requires_full_page_reload": self.requires_full_page_reload,
             "expect_scrolling": self.expect_scrolling,
+            "shows_trials_itself": self._shows_trials_itself(),
             "background_recording": (
                 _browser_config(self, get_experiment(), participant)
                 if self.background_recording is not None
                 else None
             ),
         }
-        if self.upcoming_contents is not None:
-            attributes["upcoming_contents"] = self.upcoming_contents
         if self.upcoming_media:
             attributes["upcoming_media"] = self.upcoming_media
-        if self._full_page_layout_key is not None:
-            attributes["layout_key"] = self._full_page_layout_key
         arrival_updates = _arrival_updates_for(self, participant)
         if arrival_updates is not None:
             attributes["arrival_updates"] = arrival_updates
@@ -1962,8 +2051,10 @@ class Page(Elt):
         return ""
 
     def consume(self, experiment, participant):
-        participant.page_uuid = new_page_uuid()
         participant.page_count += 1
+        participant.page_uuid = make_page_uuid(
+            participant, participant.page_count, self._key(participant)
+        )
         notice = participant.group_removal_notice
         if notice is not None and notice.get("next_page"):
             # A notice for the next page, such as after timing out at a barrier.
@@ -2005,9 +2096,15 @@ class Page(Elt):
         """Return the seconds left if the browser reports the time limit too early.
 
         The browser's flag is trusted only around the deadline, so an edited
-        or early page cannot end the time limit early.
+        or early page cannot end the time limit early. A bot's flag, from
+        ``BotResponse(time_limit_reached=True)``, counts at once, so bot tests
+        need not wait for the deadline.
         """
+        from .bot import Bot
+
         if metadata.get("time_limit_reached") is not True:
+            return None
+        if isinstance(participant, Bot):
             return None
         seconds_left = self._time_limit_seconds_left(participant)
         if seconds_left is None or seconds_left <= TIME_LIMIT_EARLY_SECONDS:
@@ -2059,12 +2156,11 @@ class Page(Elt):
             participant=participant,
             label=self.label,
             page_type=type(self).__name__,
-            # Pages before a trial don't count towards its time_taken.
-            trial=None if self._before_trial else _trial_owning_page(participant),
+            trial=_trial_owning_page(participant),
         )
         db.session.add(resp)
 
-        resp._background_parent = participant.current_trial or participant
+        resp._recording_parent = _page_trial(self, participant) or participant
 
         timed_out = self._time_limit_reached(metadata, participant)
         if timed_out:
@@ -2090,7 +2186,7 @@ class Page(Elt):
                 metadata=metadata,
                 experiment=experiment,
                 participant=participant,
-                trial=participant.current_trial,
+                trial=_page_trial(self, participant),
                 response=resp,
             )
 
@@ -2132,14 +2228,14 @@ class Page(Elt):
     def _time_limit_counts(self, participant):
         """Whether this page's time limit updates the participant's and trial's timeout flags.
 
-        Untimed pages, pages shown while waiting at a barrier, and a trial's
-        feedback pages, such as a notice whose time limit only moves it on,
-        keep the flags from the last timed page.
+        Untimed pages, pages shown while waiting at a barrier, and the pages
+        after a trial, such as feedback or a break whose time limit only moves
+        it on, keep the flags from the last timed page.
         """
         return (
             self.time_limit is not None
             and participant.waiting_barrier_id is None
-            and not self._trial_feedback
+            and not self._after_trial
         )
 
     def _reject_impossible_answer(self, answer):
@@ -2329,6 +2425,19 @@ class Page(Elt):
         """
         pass
 
+    _pre_rendered = False
+
+    def _pre_render_once(self):
+        """Run ``pre_render``, unless it already ran for this request.
+
+        Trial makers that prepare trials in advance pre-render pages early to
+        compare them; the request then skips running ``pre_render`` again.
+        """
+        if not self._pre_rendered:
+            with forbid_commits(f"{type(self).__name__}.pre_render"):
+                self.pre_render()
+            self._pre_rendered = True
+
     def early_exit_available(self, experiment, participant) -> bool:
         """Return whether this page may offer the participant an early exit.
 
@@ -2353,9 +2462,20 @@ class Page(Elt):
             or get_config().get("show_early_exit_button", False)
         )
 
-    def _js_vars_for(self, experiment, participant):
-        """The page's ``js_vars`` when it renders for ``participant``."""
-        return self.js_vars
+    @property
+    def js_vars(self):
+        """Deprecated name of ``page_config``."""
+        warn_from_caller("Page.js_vars has been renamed to page_config.", FutureWarning)
+        return self.page_config
+
+    @js_vars.setter
+    def js_vars(self, value):
+        warn_from_caller("Page.js_vars has been renamed to page_config.", FutureWarning)
+        self.page_config = value
+
+    def _page_config_for(self, experiment, participant):
+        """The page's ``page_config`` when it renders for ``participant``."""
+        return self.page_config
 
     def render(self, experiment, participant, partial_mode=False):
         from .utils import get_config
@@ -2364,11 +2484,18 @@ class Page(Elt):
             raise NotImplementedError(
                 f"{type(self).__name__} delegates rendering and must override render()."
             )
-        if not partial_mode and self.upcoming_contents is not None:
+        full_page_layout_key = None
+        if not partial_mode and (
+            self.upcoming_pages is not None or self._module_shows_the_next_trials()
+        ):
             # Fragments carry their key beside the HTML; a full page needs a
-            # partial render to compute the same key.
-            self._full_page_layout_key = self.layout_key(
-                self.render(experiment, participant, partial_mode=True)
+            # partial render to compute the same key. It is passed to the
+            # template rather than stored, as timeline pages are shared by all
+            # participants.
+            full_page_layout_key = self.layout_key(
+                self.render(experiment, participant, partial_mode=True),
+                experiment,
+                participant,
             )
 
         # Architecture: docs/developer/page_lifecycle.rst
@@ -2378,24 +2505,24 @@ class Page(Elt):
         from .background_recording import _browser_config
         from .modular_page import RecordControl
 
-        internal_js_vars = {
+        page_state = {
             "backgroundRecording": _browser_config(self, experiment, participant),
             "uniqueId": participant.unique_id,
-            "pageUuid": participant.page_uuid,
+            "pageUuid": self._browser_page_uuid(participant),
             "dynamicallyUpdateProgressBarAndReward": self.dynamically_update_progress_bar_and_reward,
             "recordingCaptureSources": self._recording_capture_sources(),
         }
         seconds_left = self._time_limit_seconds_left(participant)
         if seconds_left is not None:
             _p = get_translator(context=True)
-            internal_js_vars["timeLimit"] = {
+            page_state["timeLimit"] = {
                 "secondsLeft": seconds_left,
                 "text": _p("time_limit", "{SECONDS} s left"),
                 "currentAnswer": self.time_limit_answer is CURRENT_ANSWER,
             }
         control = getattr(self, "control", None)
         if isinstance(control, RecordControl):
-            internal_js_vars["asynchronousUploadSources"] = (
+            page_state["asynchronousUploadSources"] = (
                 control.recording_sources
                 if control._uses_async_upload(experiment)
                 else None
@@ -2407,13 +2534,9 @@ class Page(Elt):
         self._check_spa_template_contract(
             inplace_timeline_transitions=config.get("inplace_timeline_transitions"),
         )
-        js_vars = {**self._js_vars_for(experiment, participant), **internal_js_vars}
+        page_config = self._page_config_for(experiment, participant)
         inplace_timeline_transitions = config.get("inplace_timeline_transitions")
         show_early_exit_button = self.early_exit_available(experiment, participant)
-        if show_early_exit_button:
-            early_exit_plan = experiment.prepared_voluntary_exit_plan(participant)
-        else:
-            early_exit_plan = None
 
         css_links = version_static_urls(self.css_links + experiment.css_links)
         legacy_js_links = version_static_urls(self.legacy_js_links)
@@ -2428,14 +2551,19 @@ class Page(Elt):
 
         all_template_args = {
             **self.template_arg,
-            "js_vars": js_vars,
+            "page_config": page_config,
+            "page_state": page_state,
             "page": self,
+            "full_page_layout_key": full_page_layout_key,
             "initial_download_progress": self.initial_download_progress,
             "time_reward": "%.2f" % participant.time_reward,
             "performance_reward": "%.2f" % participant.performance_reward,
             "total_reward": "%.2f"
             % (participant.performance_reward + participant.time_reward),
-            "progress_percentage": round(participant.progress * 100),
+            "progress_percentage": round(
+                (participant.progress if self._progress is None else self._progress)
+                * 100
+            ),
             "contact_email_on_error": config.get("contact_email_on_error"),
             "experiment_title": config.get("title"),
             "app_id": experiment.app_id,
@@ -2453,6 +2581,18 @@ class Page(Elt):
             "trial_progress_display_config": self.progress_display,
             "attributes": self.attributes,
             "contents": self.contents,
+            "back_button": experiment.timeline._back_button(participant, self),
+            # A reply carries these beside its fragment.
+            "upcoming_pages": (
+                None
+                if partial_mode
+                else self._upcoming_pages_payload(experiment, participant)
+            ),
+            "previous_page": (
+                None
+                if partial_mode
+                else self._previous_page_payload(experiment, participant)
+            ),
             "locale": locale,
             "partial_mode": partial_mode,
             "inplace_timeline_transitions": inplace_timeline_transitions,
@@ -2460,10 +2600,6 @@ class Page(Elt):
             "show_early_exit_button": show_early_exit_button,
             "show_abort_button": show_early_exit_button,
             "show_termination_button": show_early_exit_button,
-            "early_exit_confirmation": (
-                early_exit_plan.confirmation if early_exit_plan else None
-            ),
-            "early_exit_offer_id": early_exit_plan.plan_id if early_exit_plan else None,
             "aggressive_termination_on_no_focus": self.aggressive_termination_on_no_focus,
         }
         rendered = render_string_with_translations(
@@ -2747,8 +2883,194 @@ class Page(Elt):
         """
         return self.media.urls
 
-    def layout_key(self, fragment_html):
-        """Identify the page's ``#main-body`` and JavaScript in a partial render.
+    def _show_in_advance(self):
+        """Whether the page can show trials before the server confirms them.
+
+        Only a :class:`~psynet.page.JSPage` can, as its module's ``update``
+        shows each trial, and only if it needs nothing PsyNet sets up for each
+        page, such as a time limit, recording, media or a full page reload,
+        and doesn't override ``consume``, which would run only once the
+        server serves the trial, or ``on_complete``, which may change what
+        comes next.
+        """
+        return (
+            self._module_shows_the_next_trials()
+            and not self.media.urls
+            and type(self).consume is Page.consume
+            and type(self).on_complete is Page.on_complete
+        )
+
+    def _module_shows_the_next_trials(self):
+        """Whether the page's module can show the next trials the server serves, keeping the page.
+
+        The reply's layout key tells the browser whether the server's page
+        still matches the one on screen. Unlike swapping in a page rendered
+        in advance, this needs no ``can_swap_in_advance``, so a subclass of
+        :class:`~psynet.page.JSPage` keeps its page too.
+        """
+        return self._shows_trials_itself() and not any(
+            self._needs_the_server_because().values()
+        )
+
+    def _shows_trials_itself(self):
+        """Whether the page's JavaScript shows each trial through ``update``, as a :class:`~psynet.page.JSPage`'s does."""
+        return False
+
+    def _browser_page_uuid(self, participant):
+        """The page UUID that the browser submits the page's answer with."""
+        if self._rendered_in_advance:
+            return self._page_uuid
+        return participant.page_uuid
+
+    def _key(self, participant):
+        """What the page UUID says the page is: its trial's, or its position in the timeline."""
+        return self._page_key or ".".join(str(i) for i in participant.elt_id)
+
+    def _upcoming_pages_payload(self, experiment, participant):
+        """Describe ``upcoming_pages`` for the browser, each by the page UUID it will have.
+
+        A :class:`~psynet.page.JSPage` shows the next page from its
+        ``contents``; other pages are sent rendered, for the browser to swap in.
+        """
+        upcoming = self.upcoming_pages
+        if upcoming is None:
+            upcoming = experiment.timeline._pages_rendered_in_advance(participant, self)
+        if upcoming is None:
+            return None
+        payload = []
+        progress, answered = participant.progress, self
+        own_layout_key = None
+        for offset, page in enumerate(upcoming, start=1):
+            page_uuid = make_page_uuid(
+                participant, participant.page_count + offset, page._page_key
+            )
+            progress = participant._progress_after(answered.time_estimate, progress)
+            if page._rendered_in_advance:
+                page._page_uuid = page_uuid
+                page._progress = progress
+                html = page.render(experiment, participant, partial_mode=True)
+                layout_key = page.layout_key(html, experiment, participant)
+                if answered._show_in_advance() and page._show_in_advance():
+                    if own_layout_key is None:
+                        own_layout_key = self.layout_key(
+                            self.render(experiment, participant, partial_mode=True),
+                            experiment,
+                            participant,
+                        )
+                    if layout_key and layout_key == own_layout_key:
+                        # The JSPage on screen shows it through update().
+                        payload.append(
+                            {"page_uuid": page_uuid, "contents": page.contents}
+                        )
+                        answered = page
+                        continue
+                payload.append(
+                    {
+                        "page_uuid": page_uuid,
+                        "html": html,
+                        "contents": page.contents,
+                        "layout_key": layout_key,
+                    }
+                )
+            else:
+                payload.append({"page_uuid": page_uuid, "contents": page.contents})
+            answered = page
+        return payload
+
+    def _previous_page_payload(self, experiment, participant):
+        """The page before this one, rendered for the Back button with the page UUID it will have."""
+        previous = experiment.timeline._page_to_go_back_to(participant, self)
+        if previous is None or not previous.render_in_advance:
+            # Without a page rendered in advance, Back asks the server.
+            return None
+        # Timeline pages are shared by all participants.
+        previous = copy.copy(previous)
+        previous._page_uuid = make_page_uuid(
+            participant,
+            participant.page_count + 1,
+            ".".join(str(i) for i in previous.id),
+        )
+        _, previous._progress = experiment.timeline._back_restore_point(
+            participant, previous
+        )
+        previous._rendered_in_advance = True
+        previous._pre_render_once()
+        html = previous.render(experiment, participant, partial_mode=True)
+        return {
+            "page_uuid": previous._page_uuid,
+            "html": html,
+            "contents": previous.contents,
+            "layout_key": previous.layout_key(html, experiment, participant),
+        }
+
+    def _may_reject_answers(self):
+        """Whether the server may turn down the page's answers, for example to ask for a missing one."""
+        return (
+            self._validate_function is not None
+            or type(self).validate is not Page.validate
+            or type(self).check_ready_for_response is not Page.check_ready_for_response
+        )
+
+    def _swap_components(self):
+        """The page and what it is built from, each of which must allow being swapped in."""
+        return [self]
+
+    def _needs_the_server_because(self):
+        """What the server sets up as it serves the page and sees through as it is answered."""
+        return {
+            "it has a time limit": self.time_limit is not None,
+            "it records in the background": self.background_recording is not None,
+            "it needs a full page reload": self.requires_full_page_reload,
+            "it has a session_id": self.session_id is not None,
+        }
+
+    def _cannot_be_left_early_because(self):
+        """Say why the browser can't show the next page before the server has this page's answer, or return ``None``.
+
+        The answer reaches the server after the next page is on screen, so
+        the server must accept any answer.
+        """
+        reasons = {
+            "it holds the timeline": self.is_timeline_hold,
+            # It may change what the next page shows, or move the participant elsewhere.
+            "it overrides on_complete": type(self).on_complete is not Page.on_complete,
+            **self._needs_the_server_because(),
+            "the server may turn its answers down (validate or "
+            "check_ready_for_response)": self._may_reject_answers(),
+        }
+        return next((reason for reason, found in reasons.items() if found), None)
+
+    def _cannot_be_rendered_early_because(self):
+        """Say why the page can't be rendered before the server serves it, or return ``None``.
+
+        A page rendered early, while an earlier page is on screen, is shown
+        to the participant (swapped in, or for Back) as if the server had
+        served it. So the page's class and those of its prompt and control
+        must each set ``can_swap_in_advance = True`` in their own class body,
+        saying that they render the same then as when served and run as usual
+        when swapped in; a subclass doesn't inherit this, as it may add
+        behaviour that isn't safe. The page also mustn't set something up as
+        the participant reaches it, render itself, or need what the server
+        sets up as it serves each page.
+        """
+        if self.is_timeline_hold:
+            return "it holds the timeline"
+        undeclared = [
+            type(component).__name__
+            for component in self._swap_components()
+            if not vars(type(component)).get("can_swap_in_advance", False)
+        ]
+        if undeclared:
+            return f"{', '.join(undeclared)} doesn't set can_swap_in_advance"
+        reasons = {
+            **self._needs_the_server_because(),
+            "it overrides consume": type(self).consume is not Page.consume,
+            "it renders itself (delegated_render)": self.template_kind == "delegated",
+        }
+        return next((reason for reason, found in reasons.items() if found), None)
+
+    def layout_key(self, fragment_html, experiment, participant):
+        """Identify the page's ``#main-body``, JavaScript, ``page_config``, media and events in a partial render.
 
         A predicted trial page is only reused for the next trial if the two
         keys match, so that the page modules' ``update`` can show it.
@@ -2764,8 +3086,12 @@ class Page(Elt):
                 self.js_page_code,
                 self.legacy_js_links,
                 self.legacy_scripts,
+                self._page_config_for(experiment, participant),
+                self.media.data,
+                self.events,
             ],
             default=str,
+            sort_keys=True,
         )
         return hashlib.sha256(layout.encode()).hexdigest()[:16]
 
@@ -2996,10 +3322,10 @@ class PageMaker(Elt):
             elt.id = position + [i]
             elt.created_within_page_maker = True
             elt.links = {**self.links, **elt.links}
-            if self._trial_feedback:
-                elt._trial_feedback = True
-            if self._before_trial:
-                elt._before_trial = True
+            if self._after_trial:
+                elt._after_trial = True
+            if self._between_trials:
+                elt._between_trials = True
         return res
 
     def impute_time_estimates(self, elts):
@@ -3294,6 +3620,178 @@ class Timeline:
 
         return selected
 
+    def _page_to_render_in_advance(self, participant, page):
+        """The timeline page after ``page``, if the browser can show it before ``page`` is answered.
+
+        Only a page directly after a top-level page qualifies, so no code runs
+        between the two, and pages outside page makers show the same content
+        to every participant. ``page`` must also allow being left before the
+        server has its answer, and the following page being rendered early.
+        """
+        from .utils import get_config
+
+        if (
+            len(participant.elt_id) != 2
+            or page.id != participant.elt_id
+            or page.upcoming_pages is not None
+            or participant.group_removal_notice is not None
+            or not get_config().get("inplace_timeline_transitions")
+        ):
+            return None
+        branch, index = participant.elt_id
+        elts = self.elts[branch]
+        following = elts[index + 1] if index + 1 < len(elts) else None
+        if not isinstance(following, Page) or not following.render_in_advance:
+            return None
+        reason = page._cannot_be_left_early_because()
+        if reason is not None:
+            _log_waiting_for_the_server("after", page, reason)
+            return None
+        reason = following._cannot_be_rendered_early_because()
+        if reason is not None:
+            _log_waiting_for_the_server("before showing", following, reason)
+            return None
+        return following
+
+    def _page_to_go_back_to(self, participant, page):
+        """The timeline page before ``page``, if the participant can go back to it."""
+        if self._back_button(participant, page) == "enabled":
+            branch, index = page.id
+            previous = self.elts[branch][index - 1]
+            if self._back_restore_point(participant, previous) is not None:
+                return previous
+        return None
+
+    def _record_back_restore_point(self, participant, page):
+        """Remember the time credit and progress before ``page`` is answered, for Back.
+
+        Only a page that the next page can go back to gets a restore point;
+        any other page ends the run of pages Back can return through, so the
+        list is cleared.
+        """
+        position = page.id
+        if (
+            position is not None
+            and len(position) == 2
+            and self._can_go_back(position[0], position[1] + 1)
+        ):
+            participant.back_restore_points = [
+                *(participant.back_restore_points or []),
+                [list(position), participant.time_credit, participant.progress],
+            ]
+        elif participant.back_restore_points:
+            participant.back_restore_points = []
+
+    def _back_restore_point(self, participant, previous):
+        """The ``(time_credit, progress)`` from before ``previous`` was answered, or ``None``."""
+        points = participant.back_restore_points or []
+        if points and points[-1][0] == list(previous.id):
+            return points[-1][1], points[-1][2]
+        return None
+
+    def _back_button(self, participant, page):
+        """How ``page`` shows its Back button: ``"enabled"``, ``"disabled"`` or ``None``.
+
+        Back is enabled when the page can go back to the page before it, as
+        described in :meth:`_can_go_back`. A page that the next page can go
+        back to shows it disabled, so it doesn't appear from nowhere on the
+        next page.
+        """
+        from .modular_page import NextButton
+        from .utils import get_config
+
+        position = page.id
+        if (
+            position is None
+            or len(position) != 2
+            or participant.answer_accumulation_depth
+            or participant.group_removal_notice is not None
+            or not get_config().get("inplace_timeline_transitions")
+        ):
+            return None
+        branch, index = position
+        if self._can_go_back(branch, index):
+            return "enabled"
+        if (
+            self._can_go_back(branch, index + 1)
+            and page.show_back_button
+            and any(isinstance(b, NextButton) for b in getattr(page, "buttons", ()))
+        ):
+            return "disabled"
+        return None
+
+    def _can_go_back(self, branch, index):
+        """Whether the page at ``index`` in ``branch`` can go back to the page before it.
+
+        As with pages rendered in advance, both pages must be next to each
+        other directly in the timeline, so no code runs between them, and
+        must show the same to every participant. Back sits beside Next, so
+        the page must have a Next button, and so must the earlier page, so
+        that the participant can move on from it again. The earlier page must collect no
+        answer, so going back never revises one, and must not override
+        ``on_complete``, which would run again. Neither page may be one a
+        barrier shows while the participant waits, as a release moves the
+        participant on from there.
+        """
+        from .modular_page import ModularPage, NextButton, NullControl
+
+        elts = self.elts[branch]
+        if not 0 < index < len(elts):
+            return False
+        page, previous = elts[index], elts[index - 1]
+
+        def has_next_button(page):
+            return any(isinstance(b, NextButton) for b in getattr(page, "buttons", ()))
+
+        return (
+            isinstance(page, Page)
+            and page.show_back_button
+            and has_next_button(page)
+            and not page.is_timeline_hold
+            and "barrier" not in page.links
+            and page._cannot_be_rendered_early_because() is None
+            and not page._recording_capture_sources()
+            and isinstance(previous, ModularPage)
+            and has_next_button(previous)
+            and isinstance(previous.control, NullControl)
+            and not previous.is_timeline_hold
+            and "barrier" not in previous.links
+            and previous._cannot_be_rendered_early_because() is None
+            and type(previous).on_complete is Page.on_complete
+        )
+
+    def go_back(self, experiment, participant):
+        """Show the participant the page before the current one again.
+
+        The time credit and progress return to what they were before that
+        page was answered, as they are given again when the participant
+        moves on again.
+        """
+        page = self.get_current_elt(experiment, participant)
+        previous = self._page_to_go_back_to(participant, page)
+        if previous is None:
+            raise ValueError(f"Can't go back from page {page.id}.")
+        participant.time_credit, participant.progress = self._back_restore_point(
+            participant, previous
+        )
+        participant.back_restore_points = participant.back_restore_points[:-1]
+        participant.elt_id = list(previous.id)
+        previous.consume(experiment, participant)
+        return previous
+
+    def _pages_rendered_in_advance(self, participant, page):
+        """The pages that the browser can show after ``page``."""
+        following = self._page_to_render_in_advance(participant, page)
+        if following is None:
+            return None
+        # Timeline pages are shared by all participants, and the payload sets
+        # the page UUID it will have.
+        following = copy.copy(following)
+        following._page_key = ".".join(str(i) for i in following.id)
+        following._rendered_in_advance = True
+        following._pre_render_once()
+        return [following]
+
     @log_time_taken
     def advance_page(self, experiment, participant):
         participant._in_advance_page = True
@@ -3415,6 +3913,15 @@ def estimate_duration(logic):
     # This join ensures that any modules are resolved into lists of Elts.
     elts = join(logic)
     return CreditEstimate(elts).get_max("time")
+
+
+def _page_trial(page, participant):
+    """Return the trial that ``page``'s recordings belong to, or ``None``.
+
+    Feedback pages keep the trial that just finished, but pages from
+    :meth:`~psynet.trial.main.TrialMaker.show_after_trial` don't.
+    """
+    return None if page._between_trials else participant.current_trial
 
 
 def _trial_owning_page(participant):

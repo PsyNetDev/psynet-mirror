@@ -1,5 +1,4 @@
 {% macro make_accordion(params) %}
-    <script src="/static/scripts/bootstrap.bundle.min.js"></script>
     <div class="accordion" id="{{ params.id }}">
         {% for i, item in enumerate(params.items.items()) %}
             {% set key, value = item %}

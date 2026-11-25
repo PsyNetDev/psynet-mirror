@@ -14,7 +14,8 @@ reward for the throws each player won, so a player who closes the page and
 never comes back is paid too. The whole pair's outcome is on the trial's
 ``group_round``.
 
-A player whose partner leaves plays no more games; see ``README.md``.
+A player who doesn't come back for the next game is failed, and so is their
+partner, since a game for two can't go on with one; see ``README.md``.
 """
 
 import random
@@ -25,6 +26,7 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.live_game import (
+    FINISHED,
     LiveGame,
     LiveGamePage,
     LiveMessage,
@@ -33,7 +35,7 @@ from psynet.live_game import (
 )
 from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
-from psynet.timeline import Module, PageMaker, Timeline, conditional, for_loop
+from psynet.timeline import Module, Timeline, for_loop
 from psynet.trial.main import Trial
 
 Action = Literal["rock", "paper", "scissors"]
@@ -50,6 +52,9 @@ RESULT_SECONDS = 30
 # Seconds a partner can keep the other waiting for the next game, besides the
 # result page, whose time limit the wait allows for.
 LATE_AFTER = 20
+# A page opens within seconds, so a partner who hasn't opened the game this
+# long after the pair reached it isn't coming, and the game ends unplayed.
+READY_SECONDS = 20
 
 
 def result_for(player, choices):
@@ -113,8 +118,12 @@ class RockPaperScissors(LiveGame):
     name = "rock_paper_scissors"
     messages = [Choose]
     min_players = max_players = 2
-    # A player whose partner closes the page for good isn't left waiting:
-    # the game ends 30 seconds later, which allows for a reload.
+    # A game for two can't start without both players, so PsyNet ends it at
+    # once, with the reason TOO_FEW_READY, if a partner hasn't opened it by
+    # then.
+    ready_timeout = READY_SECONDS
+    # A player whose partner closes the page for good isn't left waiting: the
+    # game ends 30 seconds later, which allows for a reload.
     away_timeout = 30
     # A game takes a minute or two, so this ends it within five minutes even
     # if both players stop choosing.
@@ -152,7 +161,7 @@ class RockPaperScissors(LiveGame):
         whether the game was played to the end."""
         results = throws_seen_by(player, outcome["throws"])
         return {
-            "finished": reason == "finished",
+            "finished": reason == FINISHED,
             "throws": results,
             "wins": count(results, "win"),
             "partner_wins": count(results, "loss"),
@@ -240,7 +249,7 @@ def rock_paper_scissors_page(game):
         ),
         no_game_message="This game can't be played without your partner.",
         waiting_status="Waiting for your partner to open the game",
-        js_page_modules=["/static/rock-paper-scissors.js"],
+        module="/static/rock-paper-scissors.js",
         css_links=["/static/rock-paper-scissors.css"],
         time_estimate=60,
     )
@@ -269,10 +278,14 @@ class RockPaperScissorsTrial(Trial):
                 "reward_per_win": game["reward_per_win"],
             },
             # A partner who hasn't arrived LATE_AFTER seconds after their
-            # result page ran out leaves the pair, and the player waiting goes
-            # on to the game page without a game.
+            # result page ran out is failed, and so is the player waiting,
+            # since the pair can't play without them.
+            # A partner who never opened the game page, or left it for good,
+            # is late here at the next game, so the other player still sees
+            # the game's result first.
             late_after=LATE_AFTER,
-            late_action="leave_group",
+            late_action="fail",
+            waiting_message="Waiting for your partner to reach the game",
             page=rock_paper_scissors_page(game),
         )
 
@@ -288,28 +301,6 @@ class RockPaperScissorsTrial(Trial):
 
     def show_feedback(self, experiment, participant):
         return show_result(self.answer, self.performance_reward)
-
-
-def left_pair(participant):
-    return not participant.in_sync_group("pair")
-
-
-# Why a participant isn't in a pair, as sync_group_removal_reason returns it.
-NO_PARTNER_TEXTS = {
-    # With the grouper's max_wait_action="continue_without_group".
-    "no_group_formed": "We couldn't find you a partner, so there are no games.",
-    "late": "You didn't come back in time for the next game.",
-    "group_dissolved": "Your partner has left, so there are no more games.",
-    "removed_by_experimenter": "You were removed from the game.",
-}
-
-
-def no_more_games(participant):
-    text = NO_PARTNER_TEXTS[participant.sync_group_removal_reason("pair")]
-    return InfoPage(
-        f"{text} Your bonus is ${participant.performance_reward:.2f}.",
-        time_estimate=5,
-    )
 
 
 class Exp(psynet.experiment.Experiment):
@@ -331,8 +322,9 @@ class Exp(psynet.experiment.Experiment):
             # A participant who waits longer than this without a partner
             # fails, and goes to the end of the experiment.
             max_wait_time=300,
-            # A participant whose partner leaves the pair goes on without it.
-            below_quorum="continue_without_group",
+            # A participant whose partner is failed is failed too: a game
+            # for two can't go on with one.
+            below_quorum="fail",
         ),
         Module(
             "games",
@@ -345,15 +337,7 @@ class Exp(psynet.experiment.Experiment):
                     {"number": game + 1, **GAMES[game]}, round=game
                 ),
                 time_estimate_per_iteration=RockPaperScissorsTrial.time_estimate,
-                # Checked before each game: a participant who is no longer in
-                # a pair plays no more of them.
-                stop_if=left_pair,
             ),
-        ),
-        conditional(
-            "no_more_games",
-            left_pair,
-            PageMaker(no_more_games, time_estimate=5),
         ),
     )
 
@@ -366,7 +350,7 @@ class Exp(psynet.experiment.Experiment):
         ]
         # The bot's latest game is its second.
         game = bot.live_games["rock_paper_scissors"]
-        assert game.finished, game.error
+        assert game.end_reason == FINISHED, game.error
         assert trials[-1].live_game == game
         reward = 0
         for trial in trials:

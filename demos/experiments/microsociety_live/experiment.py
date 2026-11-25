@@ -8,7 +8,8 @@ members can learn where to fish from each other while they play. Each fish
 pays ``FISH_VALUE``.
 
 The lake is one live game that runs for as long as the society has members.
-A newcomer joins the society, sees where its members have been catching fish
+The first participant founds the society alone and opens its lake at once,
+so nobody waits for anyone. A newcomer joins the society, sees where its members have been catching fish
 lately and the tips of members who have left, and then sails onto the lake
 while the others fish: the ``PlayLiveGame`` has ``join_running_game=True``,
 and the game's ``on_add`` gives them a boat. Each member fishes for
@@ -18,7 +19,8 @@ ends each member's game then, so they move on and leave a tip while the
 others carry on, and its ``done_reason`` says whether they retired or stayed
 their time, which the game's ``answer`` gives as ``left``, so later pages
 and the export read it from the member's record of the lake. The lake
-closes once nobody is left on it.
+closes once nobody is left on it, and the next participant founds a new
+society with a new lake.
 
 The game records each catch with ``record``, so the newcomer's page and the
 export read the society's history from the lake's ``moments``.
@@ -74,7 +76,7 @@ COLOURS = ["purple", "green", "pink", "grey", "orange"]
 SPOT_LETTERS = "ABCDEFGH"
 # What the lake page needs to predict a move and draw the clock. The page
 # passes it to static/fishing.js.
-RULES = {"travel_seconds": TRAVEL_SECONDS, "stay_seconds": STAY_SECONDS}
+TIMINGS = {"travel_seconds": TRAVEL_SECONDS, "stay_seconds": STAY_SECONDS}
 
 # Why a member's game ended, which is their game's reason.
 RETIRED = "retired"
@@ -325,8 +327,11 @@ def lake_page():
         show_result_for=RESULTS_SECONDS,
         player_left_message=None,
         waiting_status="Waiting for the others to reach the lake…",
-        js_page_modules=["/static/fishing.js"],
-        js_vars={"fishing_rules": RULES},
+        module="/static/fishing.js",
+        # Fixed for the whole experiment. Settings that can differ between
+        # rounds go in the game's state and view instead, as in the
+        # public_goods_live demo.
+        page_config={"fishing_timings": TIMINGS},
         css_links=["/static/fishing.css"],
         time_estimate=STAY_SECONDS + RESULTS_SECONDS,
     )
@@ -344,53 +349,53 @@ def get_timeline():
         ),
         SimpleGrouper(
             group_type="society",
-            initial_group_size=2,
+            # The first member founds the society and opens its lake at
+            # once; everyone after joins the running lake, so nobody waits
+            # for anyone.
+            initial_group_size=1,
             # Room for a newcomer while a retiring member finishes up.
             max_group_size=SOCIETY_SIZE + 1,
             quorum=1,
             join_existing_groups=True,
             use_admission_points=False,
+            # One society at a time. Once its lake has closed and its last
+            # member has left, the next arrival founds a new one.
             max_groups=1,
-            below_quorum="continue_without_group",
+            # A participant for whom the society has no room within this
+            # long is failed (max_wait_action defaults to "fail").
             max_wait_time=GROUPING_WAIT,
-            max_wait_action="continue_without_group",
             waiting_message="Waiting for a society to join…",
         ),
         conditional(
-            "in_society",
-            in_society,
-            join(
-                conditional(
-                    "newcomer", lake_is_open, PageMaker(history_page, time_estimate=20)
+            "newcomer", lake_is_open, PageMaker(history_page, time_estimate=20)
+        ),
+        PlayLiveGame(
+            group_type="society",
+            game_class=Fishing,
+            page=lake_page(),
+            join_running_game=True,
+            # A founder is alone and a newcomer joins the running lake, so
+            # nobody waits here, unless they join just after the lake
+            # closed: they then wait for its last members, who leave the
+            # society once their results have been shown, and start a new
+            # lake. A group that takes newcomers can't use late_after, which
+            # would wait for members who may never come.
+            max_wait_time=60,
+            waiting_message="Waiting for the others to reach the lake…",
+        ),
+        leave_group("society"),
+        switch(
+            "leaving",
+            why_left,
+            {
+                RETIRED: leave_a_tip(
+                    "A newcomer has taken your place, so you retire from the society."
                 ),
-                PlayLiveGame(
-                    group_type="society",
-                    game_class=Fishing,
-                    page=lake_page(),
-                    join_running_game=True,
-                    # The founders reach the lake straight after the society
-                    # forms, and newcomers join the running lake without
-                    # waiting, so this only allows for a slow page. A group
-                    # that takes newcomers can't use late_after, which would
-                    # wait for members who may never come.
-                    max_wait_time=60,
-                    max_wait_action="leave_group",
-                    waiting_message="Waiting for the others to reach the lake…",
-                ),
-                leave_group("society"),
-                switch(
-                    "leaving",
-                    why_left,
-                    {
-                        RETIRED: leave_a_tip(
-                            "A newcomer has taken your place, so you retire from the society."
-                        ),
-                        STAYED: leave_a_tip("Your time on the lake is up."),
-                        "closed": InfoPage("The lake has closed.", time_estimate=5),
-                    },
-                ),
-            ),
-            InfoPage("We couldn't find a society for you to join.", time_estimate=5),
+                STAYED: leave_a_tip("Your time on the lake is up."),
+                # For a newcomer who came too late for the lake, or a lake
+                # that reached its timeout.
+                "closed": InfoPage("The lake has closed.", time_estimate=5),
+            },
         ),
         PageMaker(final_page, time_estimate=5),
     )
@@ -406,10 +411,6 @@ def _answer(lake):
     """Return the member's answer from the lake, or ``{}`` if they never got
     a boat, for example because the lake closed as they joined it."""
     return (lake and lake.answer) or {}
-
-
-def in_society(participant: Participant) -> bool:
-    return participant.in_sync_group("society")
 
 
 def lake_is_open(participant: Participant) -> bool:
@@ -535,35 +536,43 @@ class Exp(psynet.experiment.Experiment):
             ],
         }
 
-    test_n_bots = 4
+    test_n_bots = 5
     test_mode = "serial"
 
     def test_serial_run_bots(self, bots: List[BotDriver]):
-        founders, newcomers = bots[:2], bots[2:]
-        for bot in founders:
-            bot.take_page()
-        advance_past_wait_pages(founders)
-        assert all(bot.current_page_label == "fish" for bot in founders)
+        society, later = bots[:4], bots[4]
+        # The founder opens the lake alone, without waiting.
+        founder, newcomers = society[0], society[1:]
+        founder.take_page()
+        advance_past_wait_pages([founder])
+        assert founder.current_page_label == "fish"
 
-        # Newcomers join the society while the founders fish, read its
-        # history, and sail onto the lake without waiting. The second makes
-        # the lake too crowded, so the longest-serving founder retires.
+        # Newcomers join the society while the others fish, read its
+        # history, and sail onto the lake without waiting. The third makes
+        # the lake too crowded, so the founder retires.
         for bot in newcomers:
             bot.take_page()
             assert "The others are already fishing" in bot.current_page_text
             bot.take_page()
             assert bot.current_page_label == "fish"
-        run_bots_to_completion(bots, timeout=STAY_SECONDS + 60)
+        run_bots_to_completion(society, timeout=STAY_SECONDS + 60)
+
+        # Once that lake has closed, the next participant founds a new
+        # society, which max_groups=1 now allows, and opens a new lake.
+        later.take_page()
+        advance_past_wait_pages([later])
+        assert later.current_page_label == "fish"
+        run_bots_to_completion([later], timeout=STAY_SECONDS + 60)
 
         members = {
             row["participant_id"]: row for row in self.get_basic_data()["member"]
         }
         lefts = [members[bot.id]["left"] for bot in bots]
-        assert lefts.count(RETIRED) == 1, lefts
-        assert lefts.count(STAYED) == 3, lefts
-        # Everyone, including the last member on the lake, left a tip.
+        assert lefts == [RETIRED, STAYED, STAYED, STAYED, STAYED], lefts
+        # Everyone, including the last member on each lake, left a tip.
         assert all(members[bot.id]["tip"] for bot in bots), members
-        assert len({members[bot.id]["lake_id"] for bot in bots}) == 1
+        lake_ids = [members[bot.id]["lake_id"] for bot in bots]
+        assert len(set(lake_ids[:4])) == 1 and lake_ids[4] != lake_ids[0]
         for bot in bots:
             reward = bot.with_participant(lambda p: p.performance_reward)
             expected = members[bot.id]["fish"] * FISH_VALUE

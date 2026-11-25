@@ -29,6 +29,7 @@ import psynet.experiment
 from psynet.bot import Bot
 from psynet.live_game import (
     PLAYERS_LEFT,
+    TOO_FEW_READY,
     LiveGame,
     LiveGamePage,
     LiveMessage,
@@ -59,10 +60,9 @@ COIN_VALUE = 0.05
 # Bots open with a proposal that gives their partner this many coins, and
 # accept any proposal that gives them at least as many.
 BOT_GIVES = 4
-# The game's own end reasons. PsyNet's, such as "finished" when the time runs
+# The game's own end reason. PsyNet's, such as "finished" when the time runs
 # out and PLAYERS_LEFT, come first.
 DEAL = "deal"
-NO_SHOW = "no_show"
 
 
 class Propose(LiveMessage):
@@ -105,8 +105,9 @@ class Bargain(LiveGame):
     min_players = max_players = 2
     duration = BARGAIN_SECONDS
     # A player who hasn't opened the game by then, for example because they
-    # closed their page as the pair formed, isn't coming, so the game starts
-    # and ends at once, without a deal.
+    # closed their page as the pair formed, isn't coming. A game for two
+    # can't start without them, so PsyNet ends it at once, without a deal,
+    # with the reason TOO_FEW_READY.
     ready_timeout = LATE_AFTER
     # A player away from the game for this long has left it, which ends it.
     away_timeout = LATE_AFTER
@@ -119,22 +120,16 @@ class Bargain(LiveGame):
             "n_proposals": 0,
             "deal": None,
             "deal_at": None,
-            # The players who hadn't opened the game when it started.
-            "no_shows": [],
         }
 
-    def on_start(self, state):
-        state["no_shows"] = self._absent(state, "no_show")
-
     def view(self, state, player):
-        # Read again, as in outcome, for the final view of a game that
-        # nobody opened. The page shows it only once the game has ended.
         return {
             "stake": state["stake"],
             "mine": state["offers"][player],
             "theirs": state["offers"][1 - player],
             "deal": None if state["deal"] is None else state["deal"][player],
-            # Who didn't arrive, if anyone: "you" or "partner".
+            # Who didn't arrive, if anyone: "you" or "partner". The page shows
+            # it only once the game, which then never started, has ended.
             "no_show": _you_or_partner(player, self._absent(state, "no_show")),
             # Who left the game for good, which ended it, if anyone. A player
             # whose page was only briefly away, as for a reload, hasn't.
@@ -150,18 +145,17 @@ class Bargain(LiveGame):
         ]
 
     def is_over(self, state):
-        return state["deal"] is not None or bool(state["no_shows"])
+        return state["deal"] is not None
 
     def end_reason(self, state):
-        return DEAL if state["deal"] is not None else NO_SHOW
+        return DEAL
 
     def outcome(self, state, reason):
         return {
             "deal": state["deal"],
             "deal_at": state["deal_at"],
             "n_proposals": state["n_proposals"],
-            # Read again here, since a game that nobody opened ends without
-            # starting.
+            # The players who didn't open the game in time.
             "no_shows": self._absent(state, "no_show"),
         }
 
@@ -203,9 +197,9 @@ def _player_round_row(trial):
         "participant_id": trial.participant_id,
         "trial_id": trial.id,
         "round": trial.position,
-        # How the game ended: DEAL, NO_SHOW, or PsyNet's PLAYERS_LEFT,
-        # "finished" when the time ran out or "not_joined" when neither
-        # player opened it. None without a game.
+        # How the game ended: DEAL, or PsyNet's TOO_FEW_READY when a player
+        # didn't open it in time, PLAYERS_LEFT, or "finished" when the time
+        # ran out. None without a game.
         "end_reason": game.end_reason,
         # For a game that a player didn't open in time, arrived and
         # partner_arrived say who didn't.
@@ -296,7 +290,7 @@ def bargaining_page(stake):
         player_left_message="Your partner has left.",
         no_game_message="Your partner didn't arrive.",
         waiting_status="Waiting for your partner to open the game",
-        js_page_modules=["/static/bargaining.js"],
+        module="/static/bargaining.js",
         css_links=["/static/bargaining.css"],
         time_estimate=BARGAIN_SECONDS,
     )
@@ -314,15 +308,15 @@ class BargainTrial(Trial):
             page=bargaining_page(self.definition["stake"]),
             settings=self.definition,
             # A partner who hasn't arrived LATE_AFTER seconds after the pair
-            # formed has probably closed their page, so they leave the cohort
-            # too, and the next pairing doesn't wait for them. The player
-            # waiting goes on to the game page without a game.
+            # formed has probably closed their page, so they are failed,
+            # which takes them out of the cohort too, and the next pairing
+            # doesn't wait for them. The player waiting goes on to the game
+            # page without a game.
             late_after=LATE_AFTER,
-            late_action="leave_group",
-            # So does a partner who reached the game but never opened it, or
+            late_action="fail",
+            # So is a partner who reached the game but never opened it, or
             # left it for good, once the game's result is saved.
-            absent_action="leave_group",
-            also_leave=["cohort"],
+            absent_action="fail",
         )
 
     def coins(self):
@@ -330,10 +324,10 @@ class BargainTrial(Trial):
         return (self.answer or {}).get("coins", 0)
 
     def show_feedback(self, experiment, participant):
+        # A player who didn't arrive, or left the game, has been failed, so
+        # only their partner sees this page.
         reason = self.live_game.end_reason
-        if self.answer is not None and not self.answer["arrived"]:
-            text = "You didn't arrive in time, so there was no game this round."
-        elif self.answer is None or not self.answer["partner_arrived"]:
+        if self.answer is None or reason == TOO_FEW_READY:
             text = "Your partner didn't arrive, so there was no game this round."
         elif reason == DEAL:
             mine = self.coins()
@@ -342,11 +336,7 @@ class BargainTrial(Trial):
                 f"gets {self.definition['stake'] - mine}."
             )
         elif reason == PLAYERS_LEFT:
-            # absent_action took the player who left out of the cohort.
-            if participant.sync_group_removal_reason("cohort") == "left_game":
-                text = "You left the game, so there was no deal."
-            else:
-                text = "Your partner left the game, so there was no deal."
+            text = "Your partner left the game, so there was no deal."
         else:
             text = "You didn't reach a deal in time, so nobody was paid."
         return InfoPage(text, time_estimate=5)
@@ -382,20 +372,11 @@ def round_status(participant):
     return "no_cohort"
 
 
-END_OF_GAME_TEXTS = {
-    "late": "You didn't arrive in time, so the game is over for you.",
-    "no_show": "You didn't arrive in time, so the game is over for you.",
-    "left_game": "You left the game, so it's over for you.",
-}
-
-
 def end_of_game(participant):
-    """Return the last page, with the player's bonus, which also tells a
-    player who left the cohort without playing why the game ended for them."""
-    reason = participant.sync_group_removal_reason("cohort")
-    text = END_OF_GAME_TEXTS.get(reason, "That's the end of the game.")
+    """Return the last page, with the player's bonus."""
     return InfoPage(
-        f"{text} Your bonus is ${participant.performance_reward:.2f}.",
+        "That's the end of the game. Your bonus is "
+        f"${participant.performance_reward:.2f}.",
         time_estimate=5,
     )
 
@@ -411,6 +392,9 @@ def get_timeline():
             initial_group_size=COHORT_SIZE,
             quorum=2,
             max_wait_time=300,
+            # Players leave the cohort as they finish, so failing those left
+            # below the quorum could fail the last players still playing.
+            # Instead, keep_playing ends the rounds for them.
             below_quorum="continue_without_group",
         ),
         Module(

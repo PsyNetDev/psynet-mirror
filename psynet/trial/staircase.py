@@ -190,7 +190,8 @@ class GeometricStaircaseTrialMaker(ChainTrialMaker):
     ``"random"``) chooses the order of the staircases. See
     ``demos/experiments/staircase_pitch_discrimination``.
     Set ``check_performance_at_end=False`` for tasks that accept runs with no
-    reversal-based threshold estimate.
+    reversal-based threshold estimate; this also skips ``min_passing_score``
+    and ``max_passing_score``.
     """
 
     @property

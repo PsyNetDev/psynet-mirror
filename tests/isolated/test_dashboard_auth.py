@@ -64,7 +64,6 @@ def client():
         ("POST", "/dashboard/participants/pay-bonus"),
         ("POST", "/dashboard/participants/dismiss-bonus"),
         ("POST", "/dashboard/sync-groups/1/participant/1/fail"),
-        ("POST", "/dashboard/sync-groups/1/participant/1/kick"),
         ("POST", "/dashboard/module"),
         ("POST", "/dashboard/module/tooltip"),
         ("GET", "/dashboard/module/progress_info"),

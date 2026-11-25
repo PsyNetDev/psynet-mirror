@@ -1,24 +1,25 @@
 import json
+import math
 import shutil
 from pathlib import Path
 
 import polib
 import pytest
 
-from psynet.translation.translate import translate_package
+from psynet.translation.translate import MAX_BATCH_SIZE, translate_package
 from psynet.utils import get_psynet_root, working_directory
 
 mock_translate_counter = -1
 
 
-def mock_translate_func(texts, source_lang, target_lang, file_path=None):
+def mock_translate_func(texts, source_lang, target_lang, context=None):
     global mock_translate_counter
     mock_translate_counter += 1
     return [
         json.dumps(
             {
                 "languages": f"{source_lang} -> {target_lang}",
-                "translation_file_context": file_path,
+                "translation_file_context": context.file_path,
                 "api_call_id": mock_translate_counter,
                 "text": text,
             }
@@ -89,15 +90,14 @@ def test_translate_psynet(mocker, backup_locales):
         "psynet/demography/general.py"
     )
 
-    entry_gender_api_call_id = int(entry_gender_json["api_call_id"])
-
     entries_demography = [
         entry
         for entry in po_fr
         if entry.occurrences[0][0] == "psynet/demography/general.py"
     ]
 
-    # All entries in the demography file should have the same api_call_id,
-    # because translations are batched by file.
-    for entry in entries_demography:
-        assert json.loads(entry.msgstr)["api_call_id"] == entry_gender_api_call_id
+    # Translations are batched by file, in batches of at most MAX_BATCH_SIZE.
+    api_call_ids = {
+        json.loads(entry.msgstr)["api_call_id"] for entry in entries_demography
+    }
+    assert len(api_call_ids) == math.ceil(len(entries_demography) / MAX_BATCH_SIZE)

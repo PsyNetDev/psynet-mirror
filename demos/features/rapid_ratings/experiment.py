@@ -1,8 +1,7 @@
 from dominate import tags
 
 import psynet.experiment
-from psynet.modular_page import ModularPage
-from psynet.page import InfoPage
+from psynet.page import InfoPage, JSPage
 from psynet.timeline import PageMaker, Timeline
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 
@@ -17,7 +16,7 @@ PICTURES = [
     "pink cross",
 ]
 RATINGS = range(1, 6)
-BREAK_BEFORE = 4
+BREAK_AFTER = 3
 
 
 class RatingTrial(StaticTrial):
@@ -25,7 +24,7 @@ class RatingTrial(StaticTrial):
 
     def show_trial(self, experiment, participant):
         name = self.definition["name"]
-        return ModularPage(
+        return JSPage(
             "rating",
             tags.div(
                 tags.p("How much do you like this picture?"),
@@ -53,16 +52,17 @@ class RatingTrial(StaticTrial):
                 "name": name,
                 "url": f"/static/pictures/{name.replace(' ', '-')}.svg",
             },
-            show_next_button=False,
-            js_page_modules=["/static/rate-picture.js"],
+            module="/static/rate-picture.js",
             bot_response=3,
             time_estimate=self.time_estimate,
         )
 
 
 class RatingTrialMaker(StaticTrialMaker):
-    def show_before_trial(self, trial):
-        if trial.position == BREAK_BEFORE:
+    time_estimate_after_trials = 5
+
+    def show_after_trial(self, trial):
+        if trial.position == BREAK_AFTER:
             return InfoPage("Halfway there. Take a short break.", time_estimate=5)
 
 
@@ -99,6 +99,7 @@ class Exp(psynet.experiment.Experiment):
     )
 
     def test_check_bot(self, bot, **kwargs):
+        super().test_check_bot(bot, **kwargs)
         trials = RatingTrial.query.filter_by(participant_id=bot.id).all()
         assert sorted(trial.definition["name"] for trial in trials) == sorted(PICTURES)
         assert all(trial.answer == 3 for trial in trials)

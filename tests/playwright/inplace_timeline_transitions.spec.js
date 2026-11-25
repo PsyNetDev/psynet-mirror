@@ -523,13 +523,13 @@ test("in-place timeline transitions ignore duplicate nextPage while response is 
       .poll(
         () =>
           experimentPage.evaluate(() => ({
-            nextPagePending: window.psynet.nextPagePending,
+            submitting: window.psynet.pageState.submitting,
             pageReady: window.psynet.pageReady
           })),
         { timeout: 10000 }
       )
       .toEqual({
-        nextPagePending: true,
+        submitting: true,
         pageReady: true
       });
 
@@ -580,7 +580,7 @@ test("in-place timeline transition failures show refresh prompt and keep control
       .poll(
         () =>
           experimentPage.evaluate(() => ({
-            nextPagePending: window.psynet.nextPagePending,
+            submitting: window.psynet.pageState.submitting,
             transitionBusy: document.body.classList.contains(
               "timeline-transition-pending"
             ),
@@ -591,7 +591,7 @@ test("in-place timeline transition failures show refresh prompt and keep control
         { timeout: 10000 }
       )
       .toEqual({
-        nextPagePending: false,
+        submitting: false,
         transitionBusy: false,
         nextDisabled: true
       });

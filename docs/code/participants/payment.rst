@@ -89,6 +89,8 @@ To change how a recruiter computes the payment, subclass it and override
 :meth:`~psynet.recruiters.PsyNetRecruiterMixin.platform_base_for` or
 :meth:`~psynet.recruiters.PsyNetRecruiterMixin.total_owed`.
 
+.. _payment-leaving-early:
+
 Leaving early
 -------------
 

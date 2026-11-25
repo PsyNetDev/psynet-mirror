@@ -301,7 +301,7 @@ def psynet_page_ready(driver):
     return driver.execute_script(
         """
         const psynet = window.psynet;
-        if (!psynet || psynet.nextPagePending === true) {
+        if (!psynet || psynet.pageState?.submitting === true) {
             return false;
         }
         // New in-place timeline pages expose an explicit lifecycle readiness

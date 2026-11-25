@@ -104,9 +104,10 @@ def get_timeline():
             use_admission_points=True,
             # Two members play a round without waiting for a third.
             target_group_size=2,
-            below_quorum="continue_without_group",
+            # A member left alone is failed, as is one for whom no society
+            # forms or has room (max_wait_action defaults to "fail").
+            below_quorum="fail",
             max_wait_time=GROUPING_WAIT,
-            max_wait_action="continue_without_group",
             top_up_wait=TOP_UP_WAIT,
             waiting_message="Waiting for a society to join…",
         ),
@@ -121,12 +122,12 @@ def get_timeline():
                         group_type=GROUP,
                         waiting_message="Waiting for the next round to start…",
                         late_after=LATE_AFTER,
-                        late_action="leave_group",
+                        late_action="fail",
                         admission_point=True,
                         newcomer_max_wait=NEWCOMER_MAX_WAIT,
                         newcomer_page=PageMaker(history_page, time_estimate=20),
                     ),
-                    # The society may have dissolved at the barrier.
+                    # The barrier may have turned a newcomer away.
                     conditional("in_society", in_society, FishingTrial.cue()),
                 ),
                 expected_repetitions=MAX_ROUNDS,
@@ -142,23 +143,8 @@ def get_timeline():
                 "played_max_rounds": leave_a_tip(
                     f"You have played your {MAX_ROUNDS} rounds."
                 ),
-                "group_dissolved": InfoPage(
-                    "Too few members stayed, so the society ended for you.",
-                    time_estimate=5,
-                ),
-                "late": InfoPage(
-                    "You were away for too long, so you left the society.",
-                    time_estimate=5,
-                ),
-                "removed_by_experimenter": InfoPage(
-                    "You were removed from the society.", time_estimate=5
-                ),
-                "no_group_formed": InfoPage(
-                    "We couldn't find a society for you to join.", time_estimate=5
-                ),
                 "not_admitted": InfoPage(
-                    "The society you joined couldn't start a round with you, "
-                    "so you didn't play.",
+                    "We couldn't add you to the society in time, so you didn't play.",
                     time_estimate=5,
                 ),
             },
@@ -186,8 +172,9 @@ def life_stage(participant: Participant) -> Optional[str]:
     if last is not None and last.var.get("leaves_as"):
         return last.var.leaves_as
     if GROUP not in participant.active_sync_groups:
-        # "late", "group_dissolved", "removed_by_experimenter", "left_experiment",
-        # "no_group_formed" or "not_admitted".
+        # "not_admitted" for a newcomer who plays on; for a failed member,
+        # why they left, such as "late",
+        # "group_dissolved", "left_experiment" or "no_group_formed".
         return participant.sync_group_removal_reason(GROUP)
     return "playing"
 
@@ -273,7 +260,7 @@ class FishingTrial(Trial):
                 group_type=GROUP,
                 waiting_message="Waiting for the other members…",
                 late_after=FINISH_LATE_AFTER,
-                late_action="leave_group",
+                late_action="fail",
                 # Releasing the society closes the round and scores it.
                 on_release=self.score_round,
             ),
@@ -305,23 +292,14 @@ class FishingTrial(Trial):
 
     def score_answer(self, answer, definition):
         """Return the fish the member caught this round."""
+        # A failed member, for example one who was late or the last of a
+        # society that ended, is never scored: their trial doesn't finish.
         if answer is None:
             return 0
-        if self.sync_group_outcome == "stayed":
-            return self.var.catch
-        if self.sync_group_outcome == "group_dissolved":
-            # The society ended before the round was scored, so they fish alone.
-            self.var.catch = _draw_catch(answer)
-            return self.var.catch
-        # They left during the round: "late", "removed_by_experimenter" or "left_experiment".
-        return 0
+        return self.var.catch
 
     def compute_performance_reward(self, score):
         return FISH_VALUE * score
-
-    def gives_feedback(self, experiment, participant):
-        # A member who left the round sees why at the end of the timeline.
-        return self.sync_group_outcome == "stayed"
 
     def show_feedback(self, experiment, participant):
         if self.answer is None:
@@ -482,41 +460,43 @@ class Exp(psynet.experiment.Experiment):
         retiree2.take_page()
         retiree2.take_page(response="Spot 7 is poor.")
 
-        # The last founder goes quiet, so the round barrier removes them as
+        # The last founder goes quiet, so the round barrier fails them as
         # late, and they leave no tip.
         (quiet,) = [bot for bot in others if bot is not retiree2]
         society = newcomers[:2]
         _start_round([quiet, *society])
         for bot in society:
             bot.take_page(response=4)
+        quiet.allow_failure()
         make_late_now(society, "round_finished")
-        quiet.take_page(response=4)
-        assert "You were away for too long" in quiet.current_page_text
+        assert quiet.failed
 
         # The next newcomer reads both tips, then goes quiet on the history
-        # page and is removed as late.
+        # page and is failed as late.
         newcomers[2].take_page()
         _start_round(society, newcomers[2])
         assert "Spot 4 is reliable." in newcomers[2].current_page_text
         assert "Spot 7 is poor." in newcomers[2].current_page_text
         for bot in society:
             bot.take_page(response=4)
+        newcomers[2].allow_failure()
         make_late_now(society, "round_finished")
-        newcomers[2].take_page()
-        assert "You were away for too long" in newcomers[2].current_page_text
+        assert newcomers[2].failed
 
         # A newcomer waits for the next round, but the first newcomer goes
-        # quiet, so the society is left with one member and dissolves: the
-        # other keeps their catch, and the waiting newcomer is turned away.
+        # quiet and is failed, so the society is left with one member and
+        # dissolves: that member is failed too, and the waiting newcomer is
+        # turned away.
         _start_round(society)
         newcomers[3].take_page()
         assert newcomers[3].is_waiting
         society[1].take_page(response=4)
+        for bot in society:
+            bot.allow_failure()
         make_late_now([society[1]], "round_finished")
         advance_past_wait_pages([newcomers[3]])
-        assert "couldn't start a round with you" in newcomers[3].current_page_text
-        society[0].take_page(response=4)
-        assert "You were away for too long" in society[0].current_page_text
+        assert "couldn't add you to the society" in newcomers[3].current_page_text
+        assert all(bot.failed for bot in society)
         run_bots_to_completion(bots)
 
         # Through JSON, as the dashboard and export read it.
@@ -550,10 +530,6 @@ class Exp(psynet.experiment.Experiment):
         tips = {m["participant_id"]: m["tip"] for m in data["member"]}
         assert tips[retiree.id] == "Spot 4 is reliable.", tips
         assert tips[quiet.id] is None, tips
-        dissolved = [
-            r for r in data["member_round"] if r["outcome"] == "group_dissolved"
-        ]
-        assert dissolved[0]["catch"] is not None, dissolved
         assert rounds[-1]["dissolved_at"] is not None, rounds
 
 

@@ -16,6 +16,7 @@ from dominate import tags
 
 import psynet.experiment
 from psynet.live_game import (
+    FINISHED,
     LiveGame,
     LiveGamePage,
     LiveMessage,
@@ -55,7 +56,7 @@ OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
 
 #: What the game page needs to draw the board. The game page passes it to
 #: static/snake.js.
-RULES = {"size": SIZE, "square": SQUARE, "colors": COLORS}
+BOARD = {"size": SIZE, "square": SQUARE, "colors": COLORS}
 
 
 def step(square, direction):
@@ -243,7 +244,7 @@ class Snake(LiveGame):
         food = outcome["food"]
         others = food[:player] + food[player + 1 :]
         return {
-            "finished": reason == "finished",
+            "finished": reason == FINISHED,
             "score": food[player],
             "best": all(food[player] > n for n in others),
             "crashes": outcome["crashes"][player],
@@ -291,10 +292,7 @@ def food_text(n):
 
 
 def show_result(participant):
-    # None if the group started no game.
     answer = participant.live_games["snake"].answer
-    if answer is None:
-        return InfoPage("Your group couldn't play the game.", time_estimate=5)
     food = answer["score"]
     crashes = answer["crashes"]
     if not answer["finished"]:
@@ -348,16 +346,19 @@ class Exp(psynet.experiment.Experiment):
             waiting_message="Waiting for other participants to join you",
             # A participant who waits longer than this leaves the experiment.
             max_wait_time=300,
-            # When a member is late for the game, the others go on without
-            # a group, and without a game.
-            below_quorum="continue_without_group",
+            # The game needs two players. A group of more plays on without
+            # a member who is late for it; a player left alone is failed.
+            quorum=2,
+            below_quorum="fail",
         ),
         PlayLiveGame(
             group_type="snake",
             # The game page comes straight after the group forms, so this
-            # only has to allow for a page that is slow to load.
+            # only has to allow for a page that is slow to load. A member
+            # later than this is failed.
             late_after=60,
-            late_action="leave_group",
+            late_action="fail",
+            waiting_message="Waiting for everyone to open the game…",
             game_class=Snake,
             page=LiveGamePage(
                 "snake_live",
@@ -378,9 +379,12 @@ class Exp(psynet.experiment.Experiment):
                     tags.ul(id="snake-scores"),
                     id="snake-game",
                 ),
-                js_page_modules=["/static/snake.js"],
+                module="/static/snake.js",
                 css_links=["/static/snake.css"],
-                js_vars={"snake_rules": RULES},
+                # Fixed for the whole experiment. Settings that can differ
+                # between rounds go in the game's state and view instead, as in
+                # the public_goods_live demo.
+                page_config={"snake_board": BOARD},
                 time_estimate=60,
             ),
         ),
@@ -390,7 +394,7 @@ class Exp(psynet.experiment.Experiment):
     def test_check_bot(self, bot, **kwargs):
         super().test_check_bot(bot, **kwargs)
         game = bot.live_games["snake"]
-        assert game.finished, game.error
+        assert game.end_reason == FINISHED, game.error
         food = game.outcome["food"][game.participant_ids.index(bot.id)]
         assert game.answer["score"] == food
         assert bot.performance_reward == pytest.approx(BONUS_PER_FOOD * food)

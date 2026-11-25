@@ -12,8 +12,10 @@ from .messages import LiveMessage
 from .psynet_entry import (
     _SESSION_BOOKKEEPING,
     _UNCHANGED,
+    FINISHED,
     PLAYERS_LEFT,
     TIMEOUT,
+    TOO_FEW_READY,
     TOO_LATE,
     PlayerReady,
     _player,
@@ -30,6 +32,7 @@ _NOT_IN_VIEWS = (
     "participant_ids",
     "last_tick",
     "last_event",
+    "join_tick_at",
     "group_id",
     "stop_top_ups_at_end",
 )
@@ -145,14 +148,19 @@ def _returns_json(method, name):
 @_outermost
 def _waits_for_start(self, game_code, state):
     entry = _psynet_entry(state)
+    last_tick = entry["last_tick"]
     if entry["started_at"] is None:
-        return self.ready_timeout
+        join_tick_at = entry["join_tick_at"]
+        if join_tick_at is None:
+            return self.ready_timeout
+        if last_tick is not None:
+            join_tick_at = max(join_tick_at, math.nextafter(last_tick, math.inf))
+        return min(join_tick_at, self.ready_timeout)
     deadline = game_code(state)
     if deadline is not None:
         # On the game's clock, as the game's other methods see it.
         deadline += entry["started_at"]
     too_few_at = _too_few_players_at(self, state)
-    last_tick = entry["last_tick"]
     # Dallinger ignores a deadline at or before its last tick, which
     # would hide the later ones.
     if last_tick is not None:
@@ -205,11 +213,13 @@ def _skips_too_late_outcome(self, game_code, state, reason):
 
 
 def _psynet_end_reason(self, state):
-    """Return why PsyNet ends the game, once its time is up or too few
-    players are left, or None."""
+    """Return why PsyNet ends the game, once too few players were ready, its
+    time is up or too few players are left, or None."""
     entry = _psynet_entry(state)
+    if entry["too_few_ready"]:
+        return TOO_FEW_READY
     if entry["time_up"]:
-        return "finished" if self.duration is not None else TIMEOUT
+        return FINISHED if self.duration is not None else TIMEOUT
     if entry["players_left"]:
         return PLAYERS_LEFT
     return None

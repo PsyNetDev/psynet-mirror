@@ -20,30 +20,8 @@ function showParticipantActionModal(button) {
     const participantId = button.dataset.participantId;
     const modal = document.getElementById("participantActionModal");
     modal.querySelector("[data-participant-id]").textContent = participantId;
-    modal.querySelector("[data-confirm-failure]").dataset.participantId = participantId;
     modal.querySelector("[data-confirm-failure]").dataset.url = button.dataset.failUrl;
-    modal.querySelector("[data-confirm-kick]").dataset.participantId = participantId;
-    modal.querySelector("[data-confirm-kick]").dataset.url = button.dataset.kickUrl;
-    if (window.bootstrap && window.bootstrap.Modal && window.bootstrap.Modal.getOrCreateInstance) {
-        window.bootstrap.Modal.getOrCreateInstance(modal).show();
-    } else if (window.bootstrap && window.bootstrap.Modal) {
-        new window.bootstrap.Modal(modal).show();
-    } else {
-        $("#participantActionModal").modal("show");
-    }
-}
-
-async function kickSyncGroupParticipant(button) {
-    const data = new FormData();
-    data.append("kick_reason", "manual_kick");
-    button.disabled = true;
-    try {
-        await postSyncDashboardAction(button.dataset.url, data);
-        window.location.reload();
-    } catch (error) {
-        button.disabled = false;
-        window.alert(error.message);
-    }
+    window.bootstrap.Modal.getOrCreateInstance(modal).show();
 }
 
 async function failSyncGroupParticipant(button) {
@@ -132,7 +110,6 @@ async function failSyncGroupParticipant(button) {
                             type="button"
                             class="btn btn-link btn-sm p-0 align-baseline text-success"
                             data-fail-url="{{ url_for('dashboard.manual_fail_sync_group_participant', sync_group_id=g.id, participant_id=p.id) }}"
-                            data-kick-url="{{ url_for('dashboard.manual_kick_sync_group_participant', sync_group_id=g.id, participant_id=p.id) }}"
                             data-participant-id="{{ p.id }}"
                             title="Status: {{ p.status }}"
                             onclick="showParticipantActionModal(this)"
@@ -187,21 +164,16 @@ async function failSyncGroupParticipant(button) {
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="participantActionModalLabel">Manage participant</h5>
-                <button type="button" class="close btn-close" data-bs-dismiss="modal" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
+                <h5 class="modal-title" id="participantActionModalLabel">Fail participant</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                Choose an action for participant <strong>P<span data-participant-id></span></strong>.
-                Kicking removes them from the sync group without failing them; failing marks them with
-                <code>manual_failure</code>.
+                Fail participant <strong>P<span data-participant-id></span></strong>?
+                This marks them with <code>manual_failure</code> and removes them from all their
+                sync groups.
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-warning" data-confirm-kick onclick="kickSyncGroupParticipant(this)">
-                    Kick participant
-                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" data-confirm-failure onclick="failSyncGroupParticipant(this)">
                     Fail participant
                 </button>

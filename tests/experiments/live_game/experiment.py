@@ -122,7 +122,7 @@ class Exp(psynet.experiment.Experiment):
                     tags.button("Pick", type="button", id="pick"),
                     tags.p(id="game-error"),
                 ),
-                js_page_modules=["/static/pick-numbers.js"],
+                module="/static/pick-numbers.js",
                 time_estimate=5,
             ),
             settings={"pick_reward": 0.5},

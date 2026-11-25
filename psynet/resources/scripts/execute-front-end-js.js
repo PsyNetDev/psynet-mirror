@@ -1,3 +1,3 @@
-export function activate({vars}) {
-    globalThis.eval(vars["execute_front_end_js"]);
+export function activate({config}) {
+    globalThis.eval(config["execute_front_end_js"]);
 }

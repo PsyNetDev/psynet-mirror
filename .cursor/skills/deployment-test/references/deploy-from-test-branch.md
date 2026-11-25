@@ -191,11 +191,10 @@ git checkout <previous-deployment-branch> -- tests/deployment/payment_flows_prol
      `estimated_max_reward(wage_per_hour)`; the default wage yielded a CPI of
      ~0.5, which converted poorly) and opens with a short plain-language
      welcome page ("4-minute listening study, headphones required, ...")
-     before consent to reduce voluntary bounces at entry. The experiment
-     also sets the Lucid survey to `complete` via the API once the
-     participant target is reached (`Exp.recruit` override): Lucid does not
-     promptly stop admitting entrants at the quota on its own, and
-     `LucidRecruiter.close_recruitment` is a no-op.
+     before consent to reduce voluntary bounces at entry. It does not
+     close the survey itself: `LucidRecruiter.close_recruitment` pauses
+     entry once finished plus working participants cover the target, and
+     completes the survey when nobody is still working.
    - `audio_gibbs/lucid_recruitment_config.json` carries marketplace
      qualifications that prescreen panelists before they enter PsyNet:
      desktop-only (`MS_is_mobile`/`MS_is_tablet` excluded) and audio
@@ -224,7 +223,7 @@ cd <psynet-root>
 source <venv>/bin/activate
 echo "$VIRTUAL_ENV"
 uv pip install -e <dallinger-root>
-uv pip install -e ".[dev,slack]"
+uv pip install -e ".[dev]"
 ```
 
 7. Prepare deployable experiment boilerplate from the installed PsyNet (which
@@ -257,12 +256,16 @@ git commit -m "Refresh experiment scripts via psynet scripts update"
      Dallinger to its matching tag, e.g.
 
      ```text
-     dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@v12.2.1
-     psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v13.3.0rc0
+     dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@v12.4.0
+     psynet[experiment] @ git+https://gitlab.com/PsyNetDev/PsyNet.git@v14.0.0rc2
      ```
 
-     Keep the `[experiment]` extra on the PsyNet line. Without it the image
-     has no Dallinger, and PsyNet's deploy pre-check refuses the pin.
+     Keep the `[experiment]` extra in every PsyNet pin, including the
+     master-based one. Since PsyNet 14 the base package only bootstraps the
+     CLI, so without the extra the image has no Dallinger runtime. PsyNet's
+     deploy pre-check refuses such a pin; if it is bypassed, the `clock`
+     container fails with `dallinger_heroku_clock: executable file not
+     found`.
 
    - **Master-based deployment**: pin PsyNet to the latest pushed `master`
      commit hash, and Dallinger to the SHA that `pyproject.toml` declares.

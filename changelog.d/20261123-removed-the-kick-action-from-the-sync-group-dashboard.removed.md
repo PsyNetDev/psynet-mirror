@@ -1,0 +1,1 @@
+Removed the Kick action from the synchronous group dashboard; use Fail, which removes the participant from all their groups. The multiplayer demos no longer have pages, texts or checks for a player whom the experimenter removed from their group but who kept playing.

@@ -5,12 +5,29 @@ Live games
 .. automodule:: psynet.live_game
     :members:
     :show-inheritance:
-    :exclude-members: resolve, model_config, validate, get_participant_js_vars, check_ready_for_response
+    :exclude-members: resolve, model_config, validate, get_participant_page_config, check_ready_for_response
 
-.. data:: NOT_STARTED
+.. data:: NOT_STARTED_MESSAGE
     :value: "The game hasn't started yet."
 
     The reason a message sent before the game starts is rejected.
+
+.. data:: FINISHED
+    :value: "finished"
+
+    The reason a game ends with when its
+    :meth:`~psynet.live_game.LiveGame.is_over` returns ``True``, unless its
+    :meth:`~psynet.live_game.LiveGame.end_reason` gives one of its own, or
+    when it reaches its :attr:`~psynet.live_game.LiveGame.duration`. It's
+    Dallinger's :data:`~dallinger.realtime.game.FINISHED`.
+
+.. data:: FAILED
+    :value: "failed"
+
+    The reason a game ends with when its code raises an error; its record's
+    :attr:`~psynet.live_game.LiveGameRecord.status` is then
+    :attr:`~psynet.live_game.LiveGameStatus.FAILED`. It's Dallinger's
+    :data:`~dallinger.realtime.game.FAILED`.
 
 .. data:: TIMEOUT
     :value: "timeout"
@@ -24,6 +41,15 @@ Live games
     The reason a game with an
     :attr:`~psynet.live_game.LiveGame.away_timeout` ends with when too few
     players are left.
+
+.. data:: TOO_FEW_READY
+    :value: "too_few_ready"
+
+    The reason a game ends with, at once and without starting, when fewer
+    than its :attr:`~psynet.live_game.LiveGame.min_players` players are
+    ready at the end of the ready step, including when none of them opened
+    the game page. Its :meth:`~psynet.live_game.LiveGame.absences` says
+    ``"no_show"`` for the players who weren't ready.
 
 .. data:: TOO_LATE
     :value: "too_late"

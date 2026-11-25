@@ -133,7 +133,7 @@ async function expectChatMessage(page, content) {
 
 async function getPersistedMessageContents(page) {
   return page.evaluate(async () => {
-    const roomId = String(psynet.var.chatroom_room_id);
+    const roomId = String(psynet.pageConfig.chatroom_room_id);
     const url =
       `/chatroom_history?room_id=${encodeURIComponent(roomId)}` +
       `&participant_id=${encodeURIComponent(dallinger.identity.participantId)}` +

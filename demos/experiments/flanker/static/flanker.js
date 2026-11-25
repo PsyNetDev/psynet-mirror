@@ -3,7 +3,7 @@
 // trial's time_taken runs from the frame that shows the arrows to the key
 // press or tap, using the timestamps the browser gives both.
 export function activate({psynet, root}) {
-    const {timings} = psynet.var.flanker;
+    const {timings} = psynet.pageConfig.flanker;
     const stimulus = root.querySelector("#flanker-stimulus");
     const buttons = root.querySelectorAll("button[data-response]");
     const keys = {KeyF: "left", KeyJ: "right"};
@@ -52,10 +52,10 @@ export function activate({psynet, root}) {
             timers.push(setTimeout(() => {
                 stimulus.textContent = "+";
                 timers.push(setTimeout(() => {
-                    stimulus.textContent = contents.arrows;
                     // The callback runs at the start of the frame that paints
                     // the arrows, and receives that frame's time.
                     frame = requestAnimationFrame((shownAt) => {
+                        stimulus.textContent = contents.arrows;
                         response = handle;
                         handle.startClock(shownAt);
                         timers.push(setTimeout(

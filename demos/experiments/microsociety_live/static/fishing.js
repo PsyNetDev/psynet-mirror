@@ -47,9 +47,9 @@ function byWho(fish) {
   return [...entries.filter(([who]) => who === "you"), ...entries.filter(([who]) => who !== "you")];
 }
 
-export function activate({root, vars, psynet}) {
+export function activate({root, config, psynet}) {
   let live = psynet.liveGame;
-  let rules = vars.fishing_rules;
+  let timings = config.fishing_timings;
   let status = root.querySelector("#fish-status");
   if (!live.hasGame) {
     // PsyNet says why in a notice, and shows the Next button. Without a
@@ -77,7 +77,7 @@ export function activate({root, vars, psynet}) {
     if (type === "move") {
       let mine = predicted.boats.find((boat) => boat.who === "you");
       mine.spot = message.spot;
-      mine.arrives_at = sentAt + rules.travel_seconds;
+      mine.arrives_at = sentAt + timings.travel_seconds;
     }
   });
 
@@ -218,7 +218,7 @@ export function activate({root, vars, psynet}) {
       return;
     }
     let left = live.ended ? 0 : Math.max(0, view.leaves_at - now);
-    timeLeft.style.width = `${(left / rules.stay_seconds) * 100}%`;
+    timeLeft.style.width = `${(left / timings.stay_seconds) * 100}%`;
     secondsLeft.textContent = `${Math.ceil(left)} s`;
   }, 250);
   psynet.addPageEventListener(window, "resize", () => view && render({instant: true}));

@@ -21,6 +21,7 @@ from .timeline import (
     Page,
     PageMaker,
     _normalize_js_page_code,
+    _page_config_argument,
     conditional,
     get_template,
     join,
@@ -68,6 +69,8 @@ class InfoPage(ModularPage):
     **kwargs:
         Further arguments to pass to :class:`psynet.modular_page.ModularPage`.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -682,9 +685,12 @@ class JsPsychPage(Page):
         A list of links to CSS stylesheets to include. Typically this would include the standard
         jsPsych stylesheet.
 
+    page_config :
+        An optional dictionary of settings to pass to the front-end. These can then be accessed
+        in the timeline template, writing for example ``psynet.pageConfig["my_variable"]``.
+
     js_vars :
-        An optional dictionary of variables to pass to the front-end. These can then be accessed
-        in the timeline template, writing for example ``psynet.var["my_variable"]``.
+        Deprecated name of ``page_config``.
     """
 
     requires_full_page_reload = True
@@ -696,6 +702,7 @@ class JsPsychPage(Page):
         time_estimate: float,
         js_dependencies: Union[str, List[str]],
         css_links: Union[str, List[str]],
+        page_config: Optional[dict] = None,
         js_vars: Optional[dict] = None,
         **kwargs,
     ):
@@ -704,24 +711,121 @@ class JsPsychPage(Page):
             js_dependencies = [js_dependencies]
         if isinstance(css_links, str):
             css_links = [css_links]
-        js_vars = {} if js_vars is None else dict(js_vars)
-        if "jspsych_timeline_module" in js_vars:
+        page_config = dict(_page_config_argument(page_config, js_vars))
+        if "jspsych_timeline_module" in page_config:
             raise ValueError(
                 "jspsych_timeline_module is reserved for JsPsychPage internals."
             )
-        js_vars["jspsych_timeline_module"] = timeline
+        page_config["jspsych_timeline_module"] = timeline
 
         super().__init__(
             time_estimate=time_estimate,
             template_str=get_template("jspsych-page.html"),
             label=label,
-            js_vars=js_vars,
+            page_config=page_config,
             js_dependencies=js_dependencies,
             js_page_modules=["/static/scripts/jspsych-page.js"],
             css_links=css_links,
             framework_owned_template=True,
             **kwargs,
         )
+
+
+def _authored_html(page_class, html, kwargs):
+    """Return the HTML of a page whose front end the author writes, as markup.
+
+    Such pages, :class:`JSPage` and :class:`~psynet.live_game.LiveGamePage`,
+    take their HTML as a string, a ``dominate`` tag or a list of these, and
+    run one module, passed as ``module``.
+    """
+    if "js_page_modules" in kwargs:
+        raise TypeError(
+            f"{page_class} runs one module, passed as module=; import any "
+            "other modules from it."
+        )
+    parts = html if isinstance(html, (list, tuple)) else [html]
+    return Markup(
+        "".join(
+            part.render() if isinstance(part, dom_tag) else str(part) for part in parts
+        )
+    )
+
+
+class JSPage(Page):
+    """
+    A page whose front end is your own HTML and JavaScript module.
+
+    It suits one-off pages, such as a custom form, as well as trials. The
+    module's ``activate`` returns ``update``, which PsyNet calls once the page
+    can be answered, with the page's ``contents``, a ``response`` handle to
+    answer it with, and an ``AbortSignal`` that is aborted once a newer trial
+    is shown. ``validate`` and ``save_answer`` treat the answer as on any
+    page. When the next page is a ``JSPage`` with the same HTML, module and
+    ``page_config``, the page stays on screen and ``update`` shows the next
+    trial, whether it comes from the server or was prepared in advance. See
+    :ref:`custom_front_ends_js_page` and
+    :doc:`/code/trials/keeping_a_task_on_one_page`.
+
+    Parameters
+    ----------
+    label :
+        Label for the page.
+
+    html :
+        The page's HTML, as a string, a ``dominate`` tag or a list of these. It stays the same
+        from trial to trial; put what changes in ``contents``. Page JavaScript
+        goes in ``module``, not in ``<script>`` tags.
+
+    module :
+        URL of the JavaScript module that runs the page. Its ``activate``
+        must return ``{update}`` or ``{update, cleanup}``. To load other code,
+        import it from this module or list it in ``js_dependencies``.
+
+    time_estimate :
+        Time estimated for the page.
+
+    contents :
+        What this page shows, such as a trial's stimulus. ``update`` receives
+        it.
+
+    **kwargs :
+        Further arguments to pass to :class:`psynet.timeline.Page`, such as
+        ``page_config``, ``css`` and ``bot_response``. A ``time_limit`` or
+        background recording works as on any page, but then each trial
+        replaces the page and its module starts afresh. Rather than
+        ``media``, put the files' URLs in ``contents`` and load them from the
+        module.
+    """
+
+    can_swap_in_advance = True
+
+    def __init__(
+        self,
+        label: str,
+        html: Union[str, Markup, dom_tag, list],
+        module: str,
+        time_estimate: Optional[float] = None,
+        contents: Optional[dict] = None,
+        **kwargs,
+    ):
+        self.html = _authored_html(type(self).__name__, html, kwargs)
+        super().__init__(
+            label=label,
+            time_estimate=time_estimate,
+            template_fragment_str="{{ js_page_html }}",
+            template_arg={"js_page_html": self.html},
+            js_page_modules=[module],
+            contents=contents,
+            **kwargs,
+        )
+
+    def _shows_trials_itself(self):
+        return True
+
+    def _collect_spa_incompatibility_codes(self):
+        codes = super()._collect_spa_incompatibility_codes()
+        codes.extend(self._collect_spa_markup_contract_codes(str(self.html)))
+        return list(dict.fromkeys(codes))
 
 
 class ExecuteFrontEndJS(InfoPage):
@@ -734,7 +838,7 @@ class ExecuteFrontEndJS(InfoPage):
         super().__init__(
             content=self._spinner(),
             time_estimate=0.0,
-            js_vars={"execute_front_end_js": js},
+            page_config={"execute_front_end_js": js},
             js_page_modules=["/static/scripts/execute-front-end-js.js"],
             show_next_button=False,
         )

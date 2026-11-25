@@ -1,5 +1,5 @@
 const path = require("path");
-const { test, expect } = require("../fixtures");
+const { test, expect, STALE_PAGE_WARNING } = require("../fixtures");
 
 const {
   assertNoBackendError,
@@ -59,19 +59,30 @@ test("ratings advance while the server's replies are held back", { tag: "@inplac
     await expectPicture("red circle", STEP_TIMEOUT_MS);
     const gate = await responseGate(participant);
 
-    // Answers go one at a time; the break before the fifth trial stops the
-    // prediction after "green square".
+    // Answers go one at a time. The first page carries the next two trials,
+    // so the third answer waits for the server.
     gate.hold();
     await rate(5);
     await expectPicture("orange triangle");
     await rate(4);
     await expectPicture("yellow star");
     await participant.keyboard.press("3");
-    await expectPicture("green square");
-    await rate(2);
+    await expect(picture).toBeHidden();
     expect(gate.posted).toBe(1);
+    const leavingIsQuestioned = () =>
+      participant.evaluate(() => {
+        const event = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+    // Answers not yet saved make the browser ask before the page closes.
+    expect(await leavingIsQuestioned()).toBe(true);
     gate.release();
+    // The break after the fourth trial stops the prediction.
+    await expectPicture("green square", STEP_TIMEOUT_MS);
+    await rate(2);
     await waitForMainBodyContains(participant, "Take a short break.", STEP_TIMEOUT_MS);
+    expect(await leavingIsQuestioned()).toBe(false);
     // Each answer carries only its own trial's events.
     const [first, ...later] = gate.eventLogs;
     expect(later).toHaveLength(3);
@@ -107,6 +118,41 @@ test("ratings advance while the server's replies are held back", { tag: "@inplac
   });
 });
 
+test.describe("a page shown in advance that the server changed", () => {
+  test.use({ allowStalePages: true });
+
+  test("is replaced by the server's, with a warning", { tag: "@inplace-only" }, async ({
+    page,
+    context
+  }) => {
+    const dir = path.resolve("demos/features/rapid_ratings");
+
+    await withExperiment(page, context, dir, async (participant) => {
+      await completeInitialGateway(participant);
+      await participant.getByRole("button", { name: "Next", exact: true }).click();
+      const picture = participant.locator("#picture");
+      await expect(picture).toHaveAttribute("alt", "red circle", { timeout: STEP_TIMEOUT_MS });
+
+      // As if show_trial for the next trial depended on this answer.
+      await participant.route("**/response", async (route) => {
+        const response = await route.fetch();
+        const json = await response.json();
+        json.page.contents = { ...json.page.contents, name: "changed" };
+        await route.fulfill({ response, json });
+      });
+      const warning = participant.waitForEvent("console", {
+        predicate: (message) => message.text().includes(STALE_PAGE_WARNING),
+        timeout: STEP_TIMEOUT_MS
+      });
+      await participant.getByRole("button", { name: "5", exact: true }).click();
+      await warning;
+      await participant.unroute("**/response");
+      await expect(picture).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+      await assertNoBackendError(participant);
+    });
+  });
+});
+
 test("an answer from a page the server has moved past reloads the page", { tag: "@inplace-only" }, async ({
   page,
   context
@@ -130,5 +176,32 @@ test("an answer from a page the server has moved past reloads the page", { tag: 
     await expect(picture).toHaveAttribute("alt", "red circle", { timeout: STEP_TIMEOUT_MS });
     await expect(picture).toBeVisible();
     await expect(participant.locator("#alert-modal")).toBeHidden();
+  });
+});
+
+test("an answer that couldn't be sent brings its picture back", { tag: "@inplace-only" }, async ({
+  page,
+  context
+}) => {
+  const dir = path.resolve("demos/features/rapid_ratings");
+
+  await withExperiment(page, context, dir, async (participant) => {
+    await completeInitialGateway(participant);
+    await participant.getByRole("button", { name: "Next", exact: true }).click();
+    const picture = participant.locator("#picture");
+    await expect(picture).toHaveAttribute("alt", "red circle", { timeout: STEP_TIMEOUT_MS });
+
+    // As while the page is still loading: the picture stays under the alert.
+    await participant.evaluate(() => (psynet.pageReady = false));
+    await participant.getByRole("button", { name: "5", exact: true }).click();
+    await expect(participant.locator("#alert-modal")).toBeVisible();
+    await expect(picture).toHaveAttribute("alt", "red circle");
+    await participant.evaluate(() => (psynet.pageReady = true));
+    await participant.locator("#alert-button").click();
+    await expect(picture).toHaveAttribute("alt", "red circle");
+    await expect(picture).toBeVisible();
+    await participant.getByRole("button", { name: "5", exact: true }).click();
+    await expect(picture).toHaveAttribute("alt", "orange triangle", { timeout: STEP_TIMEOUT_MS });
+    await assertNoBackendError(participant);
   });
 });

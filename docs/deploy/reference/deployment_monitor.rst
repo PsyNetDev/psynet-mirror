@@ -65,13 +65,8 @@ You can choose between two storage backends:
   or for using cloud-based infrastructure.
 
 Your experiment is registered with the deployment monitor when you deploy it with a
-``psynet deploy`` subcommand, for example:
-
-
-.. code:: bash
-
-    psynet deploy ssh --app your-app-name --server your-server.example.org
-
+``psynet deploy`` subcommand. As the note above says, deployments made with
+``psynet deploy ssh`` don't currently appear in the monitor.
 
 .. warning::
 

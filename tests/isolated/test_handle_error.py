@@ -290,6 +290,8 @@ def test_prepare_commits_with_the_policy_recruiter():
     )
     participant = SimpleNamespace(
         id=42,
+        page_count=0,
+        unique_id="worker-1:assignment-1",
         complete=False,
         failed=True,
         early_exited=False,

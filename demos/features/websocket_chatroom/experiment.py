@@ -62,7 +62,7 @@ class ChatroomPage(Page):
         super().__init__(
             label="chatroom",
             template_fragment_path="templates/chatroom-page.html",
-            js_vars={
+            page_config={
                 "chatroom_room_id": room_id,
                 "chatroom_global_channel": global_channel,
                 "chatroom_room_label": self.room_label,
@@ -85,7 +85,7 @@ class RoomSelectionPage(Page):
             label="choose_chatroom",
             time_estimate=15,
             template_fragment_path="templates/room-selection.html",
-            js_vars={
+            page_config={
                 "num_chatrooms": config.get("num_chatrooms", 3),
                 "max_occupancy": config.get("chatroom_max_occupancy", None),
                 "chatroom_global_channel": GLOBAL_CHANNEL,
