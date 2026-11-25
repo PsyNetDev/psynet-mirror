@@ -20,6 +20,9 @@ class RatingTrial(StaticTrial):
 
 
 class RatingTrialMaker(StaticTrialMaker):
+    def should_check_performance_after(self, trial):
+        return trial.position % 2 == 1
+
     def performance_check(self, experiment, participant, participant_trials):
         participant.var.checked = participant.var.get("checked", []) + [
             [trial.complete for trial in participant_trials]
@@ -54,9 +57,9 @@ class Exp(psynet.experiment.Experiment):
         assert len(repeats) == N_REPEAT_TRIALS
         assert {trial.node_id for trial in repeats} <= {trial.node_id for trial in main}
         assert all(trial.complete and trial.answer == "yes" for trial in trials)
-        # Each check after a trial sees only the trials answered so far, not
-        # the ones prepared ahead.
+        # Every second trial is checked, and each check sees only the trials
+        # answered so far, not the ones prepared ahead.
         assert [len(seen) for seen in bot.var.checked] == list(
-            range(1, len(trials) + 1)
+            range(2, len(trials) + 1, 2)
         )
         assert all(all(seen) for seen in bot.var.checked)

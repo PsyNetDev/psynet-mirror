@@ -2180,7 +2180,8 @@ class TrialMaker(Module):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
 
     fail_trials_on_premature_exit
         Deprecated. Premature exit no longer fails completed trials.
@@ -3137,6 +3138,30 @@ class TrialMaker(Module):
         """
         participant.module_state.n_completed_trials += 1
 
+    def should_check_performance_after(self, trial):
+        """
+        Whether to check the participant's performance after ``trial``.
+
+        Only used with ``check_performance_every_trial=True``. Override it to
+        check less often, for example only at the end of each block. With
+        ``prepare_trials_in_advance=True``, the browser can then show the
+        next trial before the server has the answers to the trials that
+        aren't checked.
+
+        Parameters
+        ----------
+
+        trial
+            The trial that the participant has just finished.
+
+        Returns
+        -------
+
+        bool
+            ``True`` by default.
+        """
+        return True
+
     def performance_check(self, experiment, participant, participant_trials):
         """
         Defines an automated check for evaluating the participant's
@@ -3216,6 +3241,10 @@ class TrialMaker(Module):
         assert type in ["trial", "end"]
 
         def eval_checks(experiment, participant):
+            if type == "trial" and not self.should_check_performance_after(
+                participant.current_trial
+            ):
+                return True
             participant_trials = self._trials_to_check(participant)
             results = self.performance_check(
                 experiment=experiment,
