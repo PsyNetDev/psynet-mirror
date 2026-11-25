@@ -66,7 +66,7 @@ class Exp(psynet.experiment.Experiment):
         assert all(
             t.complete and t.finalized and t.answer in ("real", "fake") for t in trials
         )
-        assert all(t.response_started_at for t in trials)
+        assert all(t.presented_at for t in trials)
 
         for label, size, repeats in [
             ("wikivocab_nl", 30, 0),
