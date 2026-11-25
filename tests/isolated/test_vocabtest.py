@@ -54,19 +54,21 @@ def test_form_scores_native_trials_and_repeated_nodes(tmp_path, kind, expected):
     assert maker.score_form(form, 6) == 0
 
 
-def test_a_failed_form_ends_the_test_before_the_next_one(tmp_path):
-    maker = _make_vocab_test(tmp_path, n_trials=3, performance_threshold_per_trial=1)
-    correct = ["real", "real", "fake", "fake"]
-    trials = (
-        words(maker, correct)
-        + words(maker, ["fake"] * 4, offset=4)
-        + words(maker, correct, offset=8)
+def test_each_form_is_checked_once_its_last_word_is_answered(tmp_path):
+    maker = _make_vocab_test(tmp_path, n_trials=2, performance_threshold_per_trial=1)
+    trials = words(maker, ["real", "real", "fake", "fake"]) + words(
+        maker, ["fake"] * 4, offset=4
     )
-    maker.get_participant_trials = lambda participant: trials
-    assert maker.show_before_trial(None, trials[4]) is None
-    assert maker.show_before_trial(None, trials[5]) is None
-    assert maker.show_before_trial(None, trials[8]) is not None
-    assert maker.performance_check(None, None, trials) == {"score": 1, "passed": True}
+    checked = [maker.should_check_performance_after(t) for t in trials]
+    assert checked == [False, False, False, True] * 2
+    assert maker.performance_check(None, None, trials[:4]) == {
+        "score": 1,
+        "passed": True,
+    }
+    assert maker.performance_check(None, None, trials) == {
+        "score": 0.5,
+        "passed": False,
+    }
 
 
 def test_word_pages_share_their_html_and_hide_the_answer(tmp_path):
@@ -79,7 +81,7 @@ def test_word_pages_share_their_html_and_hide_the_answer(tmp_path):
         {"stimulus": "cat"},
         {"stimulus": "dog"},
     ]
-    assert pages[0].prompt.text.render() == pages[1].prompt.text.render()
+    assert str(pages[0].html) == str(pages[1].html)
 
 
 def test_vocab_test_rejects_sync_groups(tmp_path):

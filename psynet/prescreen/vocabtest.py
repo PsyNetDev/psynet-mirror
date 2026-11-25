@@ -16,8 +16,7 @@ from markupsafe import Markup
 from yaspin import yaspin
 
 from psynet.asset import OnDemandAsset
-from psynet.modular_page import ModularPage
-from psynet.page import InfoPage
+from psynet.page import InfoPage, JSPage
 from psynet.timeline import join
 from psynet.translation.keyboards import KeyboardPage
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
@@ -249,12 +248,8 @@ class VocabTrial(StaticTrial):
     def show_trial(self, experiment, participant):
         return self.trial_maker.word_page(self)
 
-    def ends_form(self):
-        """Return whether this is the last presentation of its form."""
-        return (self.position + 1) % self.trial_maker.form_size == 0
-
     def gives_feedback(self, experiment, participant):
-        return self.trial_maker.show_feedback and self.ends_form()
+        return self.trial_maker.show_feedback and self.trial_maker.ends_form(self)
 
     def show_feedback(self, experiment, participant):
         maker = self.trial_maker
@@ -297,8 +292,9 @@ class VocabTest(StaticTrialMaker):
     csv_path : str
         The path to the CSV file containing the test items.
     performance_threshold_per_trial : float
-        Minimal percentage of correct responses. If the participant's performance is below this threshold, the
-        participant will be disqualified. If set to None, the performance will not be checked.
+        Minimal percentage of correct responses. Each form is checked once its last word is answered, and a
+        participant whose score for it is below this threshold is disqualified. If set to None, the performance
+        will not be checked.
     performance_check_type : str
         The type of performance check. The performance can be checked based on accuracy or consistency. If set to
         "accuracy", the performance is checked based on the percentage of correct responses. If set to "consistency",
@@ -467,7 +463,7 @@ class VocabTest(StaticTrialMaker):
             max_trials_per_participant=count,
             node_order=self.word_order,
             allow_repeated_nodes=True,
-            check_performance_at_end=True,
+            check_performance_every_trial=True,
             prepare_trials_in_advance=True,
         )
 
@@ -544,7 +540,7 @@ class VocabTest(StaticTrialMaker):
             contents = {"image": trial.node.assets["image"].url}
         else:
             contents = {"stimulus": trial.definition["stimulus"]}
-        return ModularPage(
+        return JSPage(
             "vocabtest",
             tags.div(
                 tags.div(
@@ -560,7 +556,8 @@ class VocabTest(StaticTrialMaker):
                 cls="text-center",
             ),
             contents=contents,
-            js_vars={
+            module="/static/scripts/vocabtest.js",
+            page_config={
                 "vocab": {
                     "trueKey": self.true_key_button,
                     "falseKey": self.false_key_button,
@@ -571,8 +568,6 @@ class VocabTest(StaticTrialMaker):
                     "width": getattr(self, "image_width", None),
                 }
             },
-            js_page_modules=["/static/scripts/vocabtest.js"],
-            show_next_button=False,
             bot_response=lambda: random.choice(["real", "fake"]),
             time_estimate=self.trial_class.time_estimate,
         )
@@ -650,17 +645,20 @@ class VocabTest(StaticTrialMaker):
         threshold = self.performance_threshold_per_trial
         return threshold is None or score >= threshold
 
-    def show_before_trial(self, participant, trial):
-        """End the test before the next form if the participant failed the last one."""
-        if trial.position == 0 or trial.position % self.form_size:
-            return None
-        score = self.score_form(
-            self.get_participant_trials(participant), trial.position
-        )
-        return None if self._passes(score) else self.check_fail_logic()
+    def ends_form(self, trial):
+        """Return whether ``trial`` is the last presentation of its form."""
+        return (trial.position + 1) % self.form_size == 0
+
+    def should_check_performance_after(self, trial):
+        """Check each form once its last word is answered, so the words in between don't wait for the server."""
+        return self.ends_form(trial)
 
     def performance_check(self, experiment, participant, participant_trials):
-        score = self.score_form(participant_trials, self.n_trials * self.form_size)
+        """Score the latest form that the participant has finished."""
+        n_answered = 1 + max((t.position for t in participant_trials), default=-1)
+        score = self.score_form(
+            participant_trials, n_answered - n_answered % self.form_size
+        )
         return {"score": score, "passed": self._passes(score)}
 
     @classmethod

@@ -1,12 +1,11 @@
 // Every word's page shares this script. update() shows each word after the
 // configured lag, and the next words are preloaded while the participant answers.
 export function activate({root, psynet}) {
-    const config = psynet.var.vocab;
+    const config = psynet.pageConfig.vocab;
     const target = root.querySelector("#test-stimulus");
     const controls = root.querySelectorAll("[data-choice]");
     const images = new Map();
     let response = null;
-    let latest = null;
     let nextAt = 0;
     let timer;
 
@@ -27,19 +26,19 @@ export function activate({root, psynet}) {
         return images.get(url);
     }
 
-    async function display(word, handle) {
+    async function display(word, handle, signal) {
         if (word.image) {
             const img = imageFor(word.image);
             try {
                 await img.decode();
             } catch (error) {
-                if (latest !== handle) return;
+                if (signal.aborted) return;
                 psynet.log.warn(`Couldn't decode ${word.image}, retrying: ${error}`);
                 images.delete(word.image);
-                timer = setTimeout(() => display(word, handle), 1000);
+                timer = setTimeout(() => display(word, handle, signal), 1000);
                 return;
             }
-            if (latest !== handle) return;
+            if (signal.aborted) return;
             target.replaceChildren(img);
         } else {
             target.textContent = word.stimulus;
@@ -72,15 +71,14 @@ export function activate({root, psynet}) {
     document.addEventListener("keydown", keydown);
     root.addEventListener("click", click);
     return {
-        update({contents, upcomingContents, response: handle}) {
+        update({contents, upcomingContents, response: handle, signal}) {
             clearTimeout(timer);
-            latest = handle;
             enable(null);
             target.replaceChildren();
             for (const item of upcomingContents.slice(0, 2)) {
                 if (item.image) imageFor(item.image);
             }
-            timer = setTimeout(() => display(contents, handle),
+            timer = setTimeout(() => display(contents, handle, signal),
                                Math.max(0, nextAt - performance.now()));
         },
         cleanup() {
