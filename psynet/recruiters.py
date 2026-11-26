@@ -85,7 +85,7 @@ from . import exit as exit_domain
 from .consent import AudiovisualConsent, LucidConsent, OpenScienceConsent
 from .data import SQLBase, SQLMixin, register_table
 from .db import _check_external_call_allowed, _commit_external_call_state
-from .lucid import LucidService, get_lucid_service
+from .lucid import DevLucidService, LucidService, get_lucid_service
 from .notifier import _alert_researcher
 from .page import InfoPage
 from .participant import (
@@ -2636,7 +2636,7 @@ class LucidRecruitmentStatus(RecruitmentStatus):
     earnings_per_click: float
     system_conversion: int
     termination_loi: int
-    last_complete_date: datetime
+    last_complete_date: str | None
     config: dict
 
 
@@ -2776,8 +2776,12 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
         self.notifies_admin = admin_notifier(self.config)
         recruitment_config = json.loads(self.config.get("lucid_recruitment_config"))
 
-        self.lucidservice = get_lucid_service(self.config, recruitment_config)
+        self.lucidservice = self._create_lucid_service(recruitment_config)
         self.store = kwargs.get("store", RedisStore())
+
+    def _create_lucid_service(self, recruitment_config):
+        """Return the Lucid API client that this recruiter uses."""
+        return get_lucid_service(self.config, recruitment_config)
 
     def recruit(self, n=1):
         """Reopen entry if ``close_recruitment`` paused it; Lucid sends the entrants."""
@@ -3700,34 +3704,48 @@ class BaseLucidRecruiter(PsyNetRecruiterMixin, dallinger.recruiters.CLIRecruiter
     def change_lucid_status(self, status):
         _check_external_call_allowed()
         survey_number = self.current_survey_number()
-        service = get_lucid_service()
-        service.change_status(survey_number, status)
-        LucidStatus.query.order_by(LucidStatus.id.desc()).first().status = status
+        self.lucidservice.change_status(survey_number, status)
+        latest_status = LucidStatus.query.order_by(LucidStatus.id.desc()).first()
+        if latest_status is not None:
+            latest_status.status = status
         _commit_external_call_state()
 
 
 class DevLucidRecruiter(DevRecruiter, BaseLucidRecruiter):
     """
     Development recruiter for the Lucid Marketplace.
+
+    It runs the Lucid recruiter's code against :class:`~psynet.lucid.DevLucidService`,
+    which logs survey requests instead of sending them, so no survey is
+    created on Lucid, even in a live deployment.
     """
 
     nickname = "dev-lucid-recruiter"
 
     def __init__(self, *args, **kwargs):
-        super().__init__()
+        super().__init__(*args, **kwargs)
         self.ad_url = (
             f"http://localhost.cap:5000/ad?recruiter={self.nickname}&RID=[%RID%]"
         )
 
+    def _create_lucid_service(self, recruitment_config):
+        return DevLucidService(recruitment_config, exp_config=self.config)
+
+    def open_recruitment(self, n=1):
+        """Open a simulated Lucid survey, saying that nothing was created."""
+        response = super().open_recruitment(n=n)
+        response["message"] = "Lucid survey simulated; nothing was created on Lucid"
+        return response
+
     def get_status(self, submissions=None) -> LucidRecruitmentStatus:
-        survey_number = 123456789
+        survey_number = DevLucidService.SURVEY_NUMBER
         return LucidRecruitmentStatus(
             recruiter_name=self.nickname,
             participant_status_counts={},
             study_id=survey_number,
             study_status="DEV-LUCID",
             study_cost=0,
-            survey_sid="DEV-LUCID-SID",
+            survey_sid=DevLucidService.SURVEY_SID,
             survey_number=survey_number,
             total_completes=0,
             total_entrants=0,
@@ -3742,7 +3760,7 @@ class DevLucidRecruiter(DevRecruiter, BaseLucidRecruiter):
             earnings_per_click=0,
             system_conversion=0,
             termination_loi=0,
-            last_complete_date=datetime.now(),
+            last_complete_date=None,
             exchange_rate=0,
             config={},
         )
@@ -3857,7 +3875,9 @@ def get_lucid_settings(
     initial_response_within_s: int, default 180 seconds (3 minutes). If the participant does not proceed to the consent
         within this time, the participant is terminated via the backend-end.
 
-    debug_recruiter: bool, default False, whether to use the development recruiter. This is useful for local testing.
+    debug_recruiter: bool, default False, whether ``psynet debug local`` uses ``dev-lucid-recruiter``, which
+        simulates Lucid survey requests instead of sending them. This is useful for local testing. Remote debug deployments
+        such as ``psynet debug ssh`` still use the real Lucid recruiter.
 
     """
 
