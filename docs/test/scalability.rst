@@ -130,13 +130,16 @@ async job used, grouped by where the job runs, label,
 
 .. code-block:: text
 
-    Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
-      Runs in  Label           Priority  Declared  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
-      worker   AsyncCodeBlock  high      waits         2         0.027        0.052          0.085         no
+    Async job CPU time (Measured CPU-heavy: mean CPU >= 50% of mean wall time):
+      Runs in  Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  cpu_heavy  Measured CPU-heavy
+      worker   AsyncCodeBlock  high          2         0.027        0.052          0.085  False      no
 
 ``worker`` rows are :class:`~psynet.async_job.WorkerAsyncJob` jobs, which run
 in worker processes. ``web`` rows are :class:`~psynet.async_job.LocalAsyncJob`
-jobs, such as asset deposits, which run in a thread of the web process. A
+jobs, such as asset deposits, which run in a thread of the web process. The
+last two columns put a worker job's ``cpu_heavy`` setting next to whether it
+measured as CPU-heavy; a row that contradicts its setting ends with
+``<- Warning`` or ``<- Note``, explained after the table. A
 CPU-heavy worker job keeps a core busy while it runs, so as load grows it
 needs more worker processes and a server with a core for each (see
 :ref:`performance_testing_async_workers`). An I/O-bound job, such as an API

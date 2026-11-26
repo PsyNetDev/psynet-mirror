@@ -21,19 +21,22 @@ psynet test local
 ```
 
 When the bots finish, the log shows one row per place the job runs, async
-job label, priority and `cpu_heavy` declaration, for jobs that finished:
+job label, priority and `cpu_heavy` setting, for jobs that finished:
 
 ```text
-Async job CPU time (CPU-heavy: mean CPU >= 50% of mean wall time):
-  Runs in  Label           Priority  Declared  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  CPU-heavy
-  worker   AsyncCodeBlock  high      waits         2         0.027        0.052          0.085         no
+Async job CPU time (Measured CPU-heavy: mean CPU >= 50% of mean wall time):
+  Runs in  Label           Priority  Count  Mean CPU (s)  Max CPU (s)  Mean wall (s)  cpu_heavy  Measured CPU-heavy
+  worker   AsyncCodeBlock  high          2         0.027        0.052          0.085  False      no
 ```
 
 `Runs in` is `worker` for `WorkerAsyncJob` jobs, which run in worker
 processes, and `web` for `LocalAsyncJob` jobs, such as asset deposits. These
 run in a thread of the process that enqueued them, which is usually the web
 process; one enqueued from a worker job runs in that worker. Local jobs skip
-the worker queues, so their priority and declaration are `-`.
+the worker queues, so their priority and `cpu_heavy` are `-`. The last two
+columns put each worker job's `cpu_heavy` setting next to the measurement; a
+row that ends with `<- Warning` or `<- Note` contradicts its setting, and the
+matching message follows the table.
 
 If the log says `No async jobs finished.` and the experiment doesn't use async
 jobs, it puts no load on the workers; go straight to the performance test. If
@@ -64,13 +67,12 @@ test, make a first estimate of `worker_processes`, aiming for the CPU workers
 workers were busy the whole time:
 
 ```text
-CPU-worker seconds per participant = sum of (Count × Mean wall) over CPU-heavy worker rows / number of bots
+CPU-worker seconds per participant = sum of (Count × Mean wall) over worker rows with cpu_heavy True / number of bots
 worker_processes                   = participants at once × CPU-worker seconds per participant / (session seconds × 0.7 × cpu_processes_per_worker)
 ```
 
-Count only the rows whose `Declared` column says `CPU-heavy` (the last
-column, `CPU-heavy`, is measured): CPU workers run one of them
-at a time, so each is busy for the job's whole run time, which is why the
+Count only the worker rows whose `cpu_heavy` column says `True`: CPU workers
+run one of them at a time, so each is busy for the job's whole run time, which is why the
 formula uses Mean wall rather than Mean CPU. The other worker jobs mostly wait
 and share a worker process's greenlets; the performance test sizes them
 separately and recommends whichever needs more processes, which is rarely

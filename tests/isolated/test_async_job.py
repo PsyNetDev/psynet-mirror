@@ -759,15 +759,15 @@ def test_cpu_time_summary_flags_cpu_heavy_labels():
         "worker",
         "analyse",
         "high",
-        "CPU-heavy",
         "3",
         "0.800",
         "1.200",
         "1.000",
+        "True",
         "yes",
     ]
-    assert rows["upload"][:4] == ["web", "upload", "-", "-"]
-    assert rows["upload"][-1] == "no"
+    assert rows["upload"][:3] == ["web", "upload", "-"]
+    assert rows["upload"][-2:] == ["-", "no"]
 
     assert _format_cpu_time_summary([]) == "No async jobs finished."
 
@@ -796,6 +796,8 @@ def test_cpu_time_summary_flags_jobs_that_contradict_their_declaration(
 
     notes = [line for line in lines if line.startswith(("Warning", "Note"))]
     assert [n[: len(note)] for n in notes] == ([note] if note else [])
+    flag = f"<- {note.split(':')[0]}" if note else "yes" if cpu >= 0.5 * wall else "no"
+    assert lines[2].endswith(flag)
 
 
 class _UndeclaredAnalysisTrial(StaticTrial):

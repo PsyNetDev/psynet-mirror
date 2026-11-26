@@ -755,13 +755,14 @@ def _format_cpu_time_summary(rows):
     A row counts as CPU-heavy when its mean CPU time is at least
     ``_CPU_HEAVY_RATIO`` of its mean wall time; such jobs need a CPU core
     each while they run, whereas I/O-bound jobs mostly wait. The "Runs in"
-    column says whether that core is in a worker or the web process, and
-    "Declared" gives a worker job's ``cpu_heavy`` declaration. Web jobs have
-    neither and show ``-``. Notes after the table point out
-    worker jobs whose measurements contradict their ``cpu_heavy``
-    declaration: CPU-heavy ones declared ``False`` that ran for at least
-    ``_STALL_WARNING_S`` of CPU once, and ones declared ``True`` that are
-    not CPU-heavy and ran for at least ``_STALL_WARNING_S`` on average.
+    column says whether that core is in a worker or the web process. The
+    last two columns put a worker job's ``cpu_heavy`` setting next to the
+    measurement; web jobs have no setting and show ``-``. Notes after the
+    table point out worker jobs whose measurements contradict their
+    ``cpu_heavy`` setting, and their rows end with ``<- Warning`` or
+    ``<- Note``: CPU-heavy ones set to ``False`` that ran for at least
+    ``_STALL_WARNING_S`` of CPU once, and ones set to ``True`` that are not
+    CPU-heavy and ran for at least ``_STALL_WARNING_S`` on average.
     """
     if not rows:
         return "No async jobs finished."
@@ -769,19 +770,22 @@ def _format_cpu_time_summary(rows):
         "Runs in",
         "Label",
         "Priority",
-        "Declared",
         "Count",
         "Mean CPU (s)",
         "Max CPU (s)",
         "Mean wall (s)",
-        "CPU-heavy",
+        "cpu_heavy",
+        "Measured CPU-heavy",
+        "",
     ]
     table = [header]
     notes = []
     for row in rows:
         cpu_heavy = row["mean_cpu"] >= _CPU_HEAVY_RATIO * row["mean_wall"]
         declared = row.get("cpu_heavy")
+        flag = ""
         if declared is False and cpu_heavy and row["max_cpu"] >= _STALL_WARNING_S:
+            flag = "<- Warning"
             notes.append(
                 f"Warning: worker job {row['label']!r} looks CPU-heavy but is "
                 "declared cpu_heavy=False, so it can stall the other async "
@@ -791,6 +795,7 @@ def _format_cpu_time_summary(rows):
         elif (
             declared is True and not cpu_heavy and row["mean_wall"] >= _STALL_WARNING_S
         ):
+            flag = "<- Note"
             notes.append(
                 f"Note: worker job {row['label']!r} is declared cpu_heavy=True "
                 "but mostly waits; with cpu_heavy=False it could run beside "
@@ -803,23 +808,25 @@ def _format_cpu_time_summary(rows):
                 row["runs_in"],
                 row["label"],
                 row["priority"] or "-",
-                {True: "CPU-heavy", False: "waits"}.get(declared, "-"),
                 str(row["count"]),
                 f"{row['mean_cpu']:.3f}",
                 f"{row['max_cpu']:.3f}",
                 f"{row['mean_wall']:.3f}",
+                {True: "True", False: "False"}.get(declared, "-"),
                 "yes" if cpu_heavy else "no",
+                flag,
             ]
         )
     widths = [max(len(cell) for cell in column) for column in zip(*table)]
     lines = [
-        f"Async job CPU time (CPU-heavy: mean CPU >= {_CPU_HEAVY_RATIO:.0%} "
-        "of mean wall time):"
+        f"Async job CPU time (Measured CPU-heavy: mean CPU >= "
+        f"{_CPU_HEAVY_RATIO:.0%} of mean wall time):"
     ]
     for line in table:
-        cells = [cell.ljust(width) for cell, width in zip(line[:4], widths[:4])]
-        cells += [cell.rjust(width) for cell, width in zip(line[4:], widths[4:])]
-        lines.append("  " + "  ".join(cells))
+        cells = [cell.ljust(width) for cell, width in zip(line[:3], widths[:3])]
+        cells += [cell.rjust(width) for cell, width in zip(line[3:7], widths[3:7])]
+        cells += [cell.ljust(width) for cell, width in zip(line[7:], widths[7:])]
+        lines.append(("  " + "  ".join(cells)).rstrip())
     return "\n".join(lines + notes)
 
 
