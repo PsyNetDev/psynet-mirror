@@ -51,7 +51,9 @@ for the user's approval. They may prefer fewer reviews or other models.
   need a third review.
 - Any commit after the first of those two restarts the count, except one
   that only rewords comments or `changelog.d/` fragments, or only adds or
-  changes tests; record such commits in the MR description.
+  changes tests; record such commits in the MR description. A commit that
+  only adds or changes tests after the second of those reviews gets one
+  more review, of that commit only.
 - Reviews read the diff; they don't replace running the change end to end
   (`psynet test local` in a relevant demo; see "Testing" in `AGENTS.md`).
   Use the change the way a user would early, not only after the reviews
