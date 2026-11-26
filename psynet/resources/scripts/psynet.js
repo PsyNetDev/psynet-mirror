@@ -574,7 +574,6 @@
       };
       psynet.setPageReady(false);
       psynet.pageLoaded = false;
-      psynet.failedDuringSubmit = null;
       psynet.pageModuleUpdates = [];
       psynet.clearSubmissionControlState();
       psynet.media.audioRequired = false;
@@ -1739,9 +1738,9 @@
 
     // The participant was failed from another request, such as the dashboard,
     // while on the page ``pageUuid``: the server now shows the failure page.
-    // Held pages are moved on by their hold wake. A pending submission
-    // usually gets the failure page in its response; if it is rejected
-    // instead, sendSubmission calls this again with failedDuringSubmit.
+    // Held pages are moved on by their hold wake. A pending submission is
+    // left to its reply: the server answers a failed participant with the
+    // failure page or a stale-page reload, and a failed request reloads.
     // A page shown in advance has its own UUID, so a failure on an earlier
     // page is left to the reply to the answers still being sent. Trials shown
     // in advance on the same page keep its UUID, so the reload drops their
@@ -1755,7 +1754,6 @@
         return false;
       }
       if (psynet.pageState.submitting) {
-        psynet.failedDuringSubmit = pageUuid;
         return false;
       }
       psynet.log.info("Participant failed; loading the next page.");
@@ -4466,10 +4464,7 @@
         let passed =
           current &&
           (await postSubmission(rawAnswer, metadata, blobs, onRejection, options));
-        if (!passed && psynet.pageState === page) {
-          page.submitting = false;
-          psynet.moveOnAfterFailure(psynet.failedDuringSubmit);
-        }
+        if (!passed && psynet.pageState === page) page.submitting = false;
         return passed;
       });
     };
