@@ -1002,9 +1002,7 @@ Search for ``ExperimentAsset``, ``CachedAsset``, ``CachedFunctionAsset``,
 --------------
 
 Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
-``LocalAsyncProcess``, ``async_processes``, ``process_id``,
-``AsyncCodeBlock(``, ``WorkerAsyncJob(``, ``def async_post_trial``,
-``def async_post_grow_network`` and ``def async_on_deploy``.
+``LocalAsyncProcess``, ``async_processes`` and ``process_id``.
 
 * Async processes are now called async jobs, and live in
   ``psynet.async_job``: ``AsyncJob``, ``WorkerAsyncJob`` and
@@ -1014,33 +1012,11 @@ Search for ``psynet.process``, ``AsyncProcess``, ``WorkerAsyncProcess``,
 
       from psynet.async_job import WorkerAsyncJob
 
-      WorkerAsyncJob(
-          function=analyse, arguments={"trial": trial}, cpu_heavy=True
-      ).enqueue()
+      WorkerAsyncJob(function=analyse, arguments={"trial": trial}).enqueue()
 
   PsyNet logs a warning when a job is created but never enqueued.
-* Say whether each job of yours is CPU-heavy, i.e. computes for long, as an
-  audio analysis or model fit does, rather than mostly waiting, as a web API
-  call does. CPU-heavy jobs run in CPU workers, one at a time, so that they
-  don't stall the other jobs of a worker process. Without the declaration,
-  PsyNet raises an error:
-
-  * pass ``cpu_heavy=True`` or ``cpu_heavy=False`` to each
-    ``WorkerAsyncJob`` and ``AsyncCodeBlock``;
-  * set ``async_post_trial_cpu_heavy = True`` or ``False`` on each trial
-    class that defines ``async_post_trial``, unless it inherits it from a
-    recording trial such as ``AudioRecordTrial``, which declares ``True``;
-  * set ``async_post_grow_network_cpu_heavy`` on each network class that
-    defines ``async_post_grow_network``, and ``async_on_deploy_cpu_heavy``
-    on each node class that defines ``async_on_deploy``. Media
-    imitation-chain and media Gibbs nodes, which synthesize stimuli there,
-    declare ``True``.
-
-  ``psynet test local`` warns when a job's measured CPU time contradicts
-  its declaration. See :ref:`async_job_cpu_heavy`.
-* The old names still work but warn. ``WorkerAsyncProcess(...)``, which
-  now needs ``cpu_heavy=`` too, and ``LocalAsyncProcess(...)`` create and
-  enqueue the job, and
+* The old names still work but warn. ``WorkerAsyncProcess(...)`` and
+  ``LocalAsyncProcess(...)`` create and enqueue the job, and
   ``AsyncJob.get_process`` calls ``get_async_job``. A subclass of
   ``WorkerAsyncProcess`` or ``LocalAsyncProcess`` becomes a subclass of the
   new class, so call ``.enqueue()`` on its jobs.

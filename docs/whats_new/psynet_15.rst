@@ -74,3 +74,45 @@ trial, such as a stimulus or a condition's parameter, belongs in the page's
 ``contents``, and one that differs between rounds of a live game belongs in
 the game's settings and views. The page's configuration is for what stays
 the same.
+
+CPU-heavy async jobs
+--------------------
+
+**CPU-heavy async jobs, such as recording analyses, run in their own CPU
+workers.** A worker process runs many jobs at once, but they only take turns
+while they wait, so a job that computes for seconds used to stall the others,
+including jobs holding a participant's database lock. Each worker process now
+starts ``cpu_processes_per_worker`` CPU workers beside it (default ``1``),
+which run CPU-heavy jobs one at a time (see :ref:`async_job_cpu_heavy`).
+
+This is a breaking change: **say whether each of your async jobs is
+CPU-heavy**, i.e. computes for long, as an audio analysis or model fit does,
+rather than mostly waiting, as a web API call does. Without the declaration,
+PsyNet raises an error that explains the choice. Search for
+``AsyncCodeBlock(``, ``WorkerAsyncJob(``, ``WorkerAsyncProcess(``,
+``def async_post_trial``, ``def async_post_grow_network`` and
+``def async_on_deploy``, then:
+
+- pass ``cpu_heavy=True`` or ``cpu_heavy=False`` to each ``WorkerAsyncJob``,
+  ``AsyncCodeBlock`` and deprecated ``WorkerAsyncProcess``:
+
+  .. code-block:: python
+
+      from psynet.async_job import WorkerAsyncJob
+
+      WorkerAsyncJob(
+          function=analyse, arguments={"trial": trial}, cpu_heavy=True
+      ).enqueue()
+
+- set ``async_post_trial_cpu_heavy = True`` or ``False`` on each trial class
+  that defines ``async_post_trial``, unless it inherits it from a recording
+  trial such as ``AudioRecordTrial``, which declares ``True``;
+- set ``async_post_grow_network_cpu_heavy`` on each network class that
+  defines ``async_post_grow_network``, and ``async_on_deploy_cpu_heavy`` on
+  each node class that defines ``async_on_deploy``. Media imitation-chain and
+  media Gibbs nodes, which synthesize stimuli there, declare ``True``.
+
+``psynet test local`` warns when a job's measured CPU time contradicts its
+declaration. CPU workers need a Dallinger version with
+``cpu_processes_per_worker``; the performance test counts them and sizes
+``worker_processes`` for them too (see :doc:`/test/scalability`).

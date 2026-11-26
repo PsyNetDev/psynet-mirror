@@ -852,6 +852,7 @@ def _stop_top_ups_soon(group_id, session_id):
             _stop_top_ups,
             arguments={"group_id": group_id, "session_id": session_id},
             label="stop_live_game_top_ups",
+            cpu_heavy=False,
         ).enqueue()
 
 
