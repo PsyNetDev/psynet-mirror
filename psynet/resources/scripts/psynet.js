@@ -1714,6 +1714,10 @@
         return;
       }
       (message.targets || []).forEach((target) => {
+        if (target.reason === "participant_failed") {
+          psynet.moveOnAfterFailure(target.page_uuid);
+          return;
+        }
         if (
           target.hold_message &&
           psynet.timelineHold &&
@@ -1730,6 +1734,38 @@
           psynet.applyArrivalNotice(target.notice, { removed: target.removed });
         }
       });
+    };
+
+    // The participant was failed from another request, such as the dashboard,
+    // while on the page ``pageUuid``: the server now shows the failure page.
+    // Held pages are moved on by their hold wake. A pending submission is
+    // left to its reply: the server answers a failed participant with the
+    // failure page or a stale-page reload, and a failed request reloads.
+    // A page shown in advance has its own UUID, so a failure on an earlier
+    // page is left to the reply to the answers still being sent. Trials shown
+    // in advance on the same page keep its UUID, so the reload drops their
+    // unsent answers.
+    psynet.moveOnAfterFailure = function (pageUuid) {
+      if (
+        !pageUuid ||
+        pageUuid !== window.pageUuid ||
+        psynet.timelineHold
+      ) {
+        return false;
+      }
+      if (psynet.pageState.submitting) {
+        return false;
+      }
+      psynet.log.info("Participant failed; loading the next page.");
+      psynet.pageState.submitting = true;
+      psynet.waiting.stop();
+      psynet.stopArrivalUpdates();
+      Promise.resolve(psynet.loadNextTimelinePageWithReload()).catch((error) => {
+        // The next submit or reload shows the failure page instead.
+        psynet.log.warn("Could not load the failure page: " + error);
+        psynet.pageState.submitting = false;
+      });
+      return true;
     };
 
     // Shows the notice and ready seats of an arrival snapshot. Responses can
@@ -1792,6 +1828,9 @@
         }
         // The answer describes the page that asked for it.
         if (pageUuid !== window.pageUuid) {
+          return;
+        }
+        if (psynet.moveOnAfterFailure(data?.failed_on_page)) {
           return;
         }
         psynet.applyArrivalSnapshot(data || {}, request);
@@ -4662,10 +4701,10 @@
         psynet.soundScope = {};
         psynet.page = response.page;
         psynet.submissionPageUuid = response.page.attributes.page_uuid;
-        psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);
-        psynet.waiting.start(response.page.attributes?.waiting);
         psynet.pageState.pageUuid = response.page.attributes.page_uuid;
         window.pageUuid = psynet.pageState.pageUuid;
+        psynet.ensureArrivalUpdates(response.page.attributes?.arrival_updates);
+        psynet.waiting.start(response.page.attributes?.waiting);
         psynet.pageLoadTime = new Date();
         psynet.pageState.backgroundRecording = response.page.attributes.background_recording;
         await psynet.prepareBackgroundRecording();

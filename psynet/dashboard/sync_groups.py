@@ -1,3 +1,17 @@
+"""The dashboard's Sync groups tab: groupers' progress, recent groups, and failing a member.
+
+The tab only reads group state, apart from the Fail action, which fails the
+participant through :meth:`~psynet.participant.Participant.fail` like any
+other failure. Some of what it shows is derived rather than stored, such as a
+group being *finished* (see ``_group_status``), so keep such display rules
+here rather than adding columns that the framework would have to maintain.
+
+``report_sync_groups`` eager-loads up to 500 groups with their member links
+and participants, so row helpers should only read those, to avoid a query per
+group or member. ``_get_active_sync_group_participant`` locks the participant
+row before their group link and group; keep that order when changing it.
+"""
+
 from collections import defaultdict
 
 from dallinger.experiment_server.utils import error_response, success_response
@@ -82,14 +96,18 @@ def manual_fail_sync_group_participant(
 
 
 def _fail_sync_group_participant(participant_id, sync_group_id, fail_reason):
-    """Fail a working participant who is active in the given sync group."""
+    """Fail a participant who is still taking part and still in the given sync group."""
     if fail_reason != MANUAL_FAILURE_REASON:
         raise ValueError(f"Invalid fail reason: {fail_reason}")
 
     participant = _get_active_sync_group_participant(participant_id, sync_group_id)
 
-    if participant.failed or participant.status != "working":
-        raise ValueError("Only active working participants can be failed manually.")
+    if not _is_taking_part(participant):
+        raise ValueError(
+            "Only participants still taking part can be failed manually; this "
+            "participant has already failed, finished, or reached the end of "
+            "the experiment."
+        )
 
     participant.fail(MANUAL_FAILURE_REASON)
     return participant
@@ -185,23 +203,89 @@ def _summarize_waiting_at_barriers(participant_ids, waiting_by_participant):
     ]
 
 
+def _is_taking_part(participant):
+    """Return whether ``participant`` is still working and not yet in the timeline's end logic.
+
+    End logic includes the "That's the end!" page shown before the
+    participant clicks Finish. Every timeline branch other than ``"main"``
+    is end logic, so this agrees with
+    :meth:`~psynet.timeline.Timeline.participant_is_in_end_logic` without
+    instantiating the experiment for each of the dashboard's members.
+    """
+    return (
+        not participant.failed
+        and participant.status == "working"
+        and (participant.elt_id or ["main"])[0] == "main"
+    )
+
+
+def _current_members(group, *, admitted_only=False):
+    """Return the members still in the group, including pending ones unless ``admitted_only``.
+
+    Members who left it, for example because they were failed, moved on to
+    another group or left after their last round, don't count: the group's
+    status, count and end time describe the members still in it.
+    """
+    return [
+        link.participant
+        for link in group.participant_links
+        if link.active and (link.admitted_at is not None or not admitted_only)
+    ]
+
+
+def _group_status(group):
+    """Return ``"active"``, ``"finished"`` or ``"closed"`` for the Status column.
+
+    Groups only close when their last member leaves, so a group whose members
+    all reached the end of the experiment stays active in the database; the
+    dashboard shows it as finished instead, unless it still accepts top-ups.
+    """
+    if not group.active:
+        return "closed"
+    members = _current_members(group)
+    if (
+        members
+        and not group.accepts_top_ups
+        and not any(_is_taking_part(p) for p in members)
+    ):
+        return "finished"
+    return "active"
+
+
+def _finish_time(group):
+    """Return the latest end time of a finished group's members, or ``None``.
+
+    ``None`` (shown as "—") until every member has one; a participant gets it
+    when they click Finish on the last page.
+    """
+    end_times = [p.end_time for p in _current_members(group)]
+    if not end_times or None in end_times:
+        return None
+    return max(end_times)
+
+
 def _participant_row(link, group):
     """Build the dashboard row data for one participant/group link."""
     participant = link.participant
     active_in_group = getattr(link, "active", True)
     failure_tags = getattr(participant, "failure_tags", None)
+    status = getattr(participant, "status", None) or "—"
+    if (
+        status == "working"
+        and not participant.failed
+        and not _is_taking_part(participant)
+    ):
+        status = "working, reached the end"
 
     return {
         "id": participant.id,
         "failed": participant.failed,
-        "status": getattr(participant, "status", None) or "—",
+        "status": status,
         "failed_reason": ", ".join(failure_tags) if failure_tags else None,
         "active_in_group": active_in_group,
+        "removal_reason": None if active_in_group else link.removal_reason,
         "can_fail_manually": (
-            active_in_group
-            and not participant.failed
-            and participant.status == "working"
-            and group.active
+            active_in_group and _is_taking_part(participant) and group.active
         ),
     }
 
@@ -228,20 +312,23 @@ def _simple_group_fields(group):
 
 def _group_row(group, waiting_by_participant):
     """Build the dashboard row data for one sync group."""
-    participant_ids = {participant.id for participant in group.participants}
+    participant_ids = {participant.id for participant in _current_members(group)}
     participants = sorted(
         [_participant_row(link, group) for link in group.participant_links],
         key=lambda participant: participant["id"],
     )
 
+    status = _group_status(group)
     row = {
         "id": group.id,
         "group_type": group.group_type or "—",
-        "active": group.active,
-        "n_active_participants": group.n_active_participants,
+        "status": status,
+        "n_active_participants": sum(
+            _is_taking_part(p) for p in _current_members(group, admitted_only=True)
+        ),
         "leader_id": group.leader_id,
         "leader_worker_id": group.leader.worker_id if group.leader else "—",
-        "end_time": group.end_time,
+        "end_time": _finish_time(group) if status == "finished" else group.end_time,
         "last_barrier_pass_time": group.last_barrier_pass_time,
         "participants": participants,
         "waiting_at_barriers": _summarize_waiting_at_barriers(
