@@ -1,28 +1,48 @@
+"""Vocabulary tests (WikiVocab, BibleVocab) for screening participants by language.
+
+A test shows real and made-up words one at a time; the participant says which are real.
+Each word shown is its own :class:`VocabTrial`, so exports give one row per word, with
+its answer, response time, ``position`` and ``node_id`` (repeats share a node).
+
+Words come in forms: ``n_items`` words, half real and half fake, then
+``n_repeat_items`` of them again. :meth:`VocabTest.word_order` plans every form on
+block entry, so a trial's form follows from its ``position``. Screening checks each
+form once its last word is answered (:meth:`VocabTest.should_check_performance_after`)
+and again at the end, and every form begun so far must pass.
+
+Every word uses the same :class:`~psynet.page.JSPage`, with only its ``contents``
+changing, so with trials prepared in advance the page stays on screen and
+``psynet/resources/scripts/vocabtest.js`` shows the next word without asking the
+server. Keep anything that changes between words in ``contents``; changing the
+page's HTML or ``page_config`` per word makes each word wait for the server.
+"""
+
+import csv
 import os
 import random
 import re
-import secrets
 import tempfile
 import warnings
+from collections import Counter
 from importlib import resources
 from pathlib import Path
 from typing import Optional, Type
 
 import arabic_reshaper
 import requests
+from dominate import tags
 from markupsafe import Markup
 from yaspin import yaspin
 
-from psynet.asset import FileAsset
-from psynet.page import InfoPage
-from psynet.timeline import MediaSpec, Page, get_template, join
+from psynet.asset import OnDemandAsset
+from psynet.page import InfoPage, JSPage
+from psynet.timeline import join
 from psynet.translation.keyboards import KeyboardPage
 from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
 from psynet.utils import (
     get_fitting_font_size,
     get_language_dict,
     get_locale,
-    get_logger,
     get_translator,
     text_to_image,
 )
@@ -228,151 +248,40 @@ locale2bible_tag = {
 biblevocab_locales = list(locale2bible_tag.values())
 
 
-class VocabPage(Page):
-    """
-    A page for the vocabulary test. The page shows a series of items, each consisting of a string of characters. The
-    participant has to decide whether the string is an existing word in the given language or not. Each string is shown
-    for a short time and then disappears. The participant can either respond by pressing the corresponding key on the
-    keyboard or by clicking the corresponding button on the screen.
-
-    Attributes
-    ----------
-
-    time_estimate : int
-        The time estimate for the page in seconds.
-    items : list[dict]
-        The list of items to show. This includes n_items + n_repeat_items item. The order is randomized on the backend.
-        The order on the frontend is fixed.
-    test_config : dict
-        A dictionary containing the test configuration which is passed on to the frontend.
-    media : MediaSpec
-        The media specification for the vocabulary items (by default all assets associated with the trial).
-    """
-
-    def __init__(
-        self,
-        time_estimate,
-        items: list[dict],
-        test_config: dict,
-        media: Optional[MediaSpec] = None,
-    ):
-        self.items = items
-        super().__init__(
-            label="vocabtest",
-            time_estimate=time_estimate,
-            template_str=get_template("vocabtest.html"),
-            framework_owned_template=True,
-            page_config={
-                "items": items,
-                "testConfig": test_config,
-            },
-            media=media,
-        )
-
-    def get_bot_response(self, experiment, bot):
-        from psynet.bot import BotResponse
-
-        answer = [
-            {"hash": item["hash"], "answer": random.choice(["real", "fake"])}
-            for item in self.items
-        ]
-        return BotResponse(
-            raw_answer=answer,
-            metadata=self.metadata(),
-        )
+_ = get_translator()
 
 
 class VocabTrial(StaticTrial):
-    """
-    A trial for the vocabulary test. The trial shows a series of items, each consisting of a string of characters. The
-    participant has to decide whether the string is an existing word in the given language or not. Each string is shown
-    for a short time and then disappears. The participant can either respond by pressing the corresponding key on the
-    keyboard or by clicking the corresponding button on the screen.
-    """
+    """One presentation of a vocabulary item, including a repeated presentation."""
 
-    @property
-    def trial_maker(self) -> "VocabTest":
-        return self.node.trial_maker
+    time_estimate = 1.8
+    # The feedback after a form's last word adds to that trial's time.
+    check_time_credit_received = False
 
-    def get_base_test_config(self):
-        return {
-            "trueKeyButton": self.trial_maker.true_key_button,
-            "trueKeyLabel": self.trial_maker.true_key_label,
-            "falseKeyButton": self.trial_maker.false_key_button,
-            "falseKeyLabel": self.trial_maker.false_key_label,
-            "hideAfter": self.trial_maker.hide_after,
-            "lagBetweenItems": self.trial_maker.lag_between_items,
-            "useKeyboard": self.trial_maker.use_keyboard,
-            "showButtons": self.trial_maker.use_buttons,
-            "presentAsImage": self.trial_maker.present_as_image,
-        }
-
-    def finalize_definition(self, definition, experiment, participant):
-        previous_trials = [
-            previous
-            for previous in VocabTrial.query.filter_by(
-                trial_maker_id=self.trial_maker_id,
-                participant_id=participant.id,
-            ).all()
-            if previous is not self
-        ]
-        selected_hashes = self.trial_maker.choose_hashes(
-            self.node.seed, previous_trials
-        )
-        assets = self.trial_maker.get_assets(self.node.seed, selected_hashes)
-        self.assets = {**self.assets, **assets}
-        return {**definition, "hashes": selected_hashes}
-
-    @property
-    def items(self) -> list[dict]:
-        return [{"hash": _hash} for _hash in self.definition["hashes"]]
-
-    def show_image_trial(self):
-        test_config = self.get_base_test_config()
-        test_config["imageWidth"] = self.trial_maker.image_width
-        test_config["imageHeight"] = self.trial_maker.image_height
-        return VocabPage(
-            items=self.items,
-            test_config=test_config,
-            media=(MediaSpec(image={**self.assets})),
-            time_estimate=self.trial_maker.time_estimate_per_trial,
-        )
-
-    def show_text_trial(self):
-        hash2stimulus = {item["hash"]: item["stimulus"] for item in self.node.seed}
-        items = [
-            {**item, "stimulus": hash2stimulus[item["hash"]]} for item in self.items
-        ]
-        return VocabPage(
-            items=items,
-            test_config=self.get_base_test_config(),
-            media=None,
-            time_estimate=self.trial_maker.time_estimate_per_trial,
+    @staticmethod
+    def score_answer(answer, definition):
+        return int(
+            answer == ("real" if definition["correct_answer"] == "correct" else "fake")
         )
 
     def show_trial(self, experiment, participant):
-        if self.trial_maker.present_as_image:
-            return self.show_image_trial()
-        else:
-            return self.show_text_trial()
+        return self.trial_maker.word_page(self)
+
+    def gives_feedback(self, experiment, participant):
+        return self.trial_maker.show_feedback and self.trial_maker.ends_form(self)
 
     def show_feedback(self, experiment, participant):
-        if not self.trial_maker.show_feedback or self.score is None:
-            return None
-        prompt = _("Your score was") + f" {self.score:.0%}. "
-        prompt += _("Press the button to continue.")
-
+        maker = self.trial_maker
+        score = maker.score_form(
+            maker.get_participant_trials(participant), self.position + 1
+        )
         return InfoPage(
-            prompt,
+            _("Your score was")
+            + f" {score:.0%}. "
+            + _("Press the button to continue."),
             time_estimate=5,
         )
 
-    def score_answer(self, answer, definition):
-        return self.trial_maker.score_trial(self)
-
-
-_ = get_translator()
-logger = get_logger()
 
 default_test_config = {
     "image_width": 500,
@@ -390,8 +299,7 @@ class VocabTest(StaticTrialMaker):
     (https://github.com/polvanrijn/VocabTest).
 
     VocabTest does not support synchronized groups. Each participant must
-    receive independently chosen items; a follower copy would run
-    ``finalize_definition`` again and pick a different set.
+    receive independently chosen items.
 
     Attributes
     ----------
@@ -403,30 +311,30 @@ class VocabTest(StaticTrialMaker):
     csv_path : str
         The path to the CSV file containing the test items.
     performance_threshold_per_trial : float
-        Minimal percentage of correct responses. If the participant's performance is below this threshold, the
-        participant will be disqualified. If set to None, the performance will not be checked.
+        Minimal percentage of correct responses. Each form is checked once its last word is answered, and a
+        participant whose score for it is below this threshold is disqualified. A word left unanswered until
+        the response timeout scores its form 0, as does a form left unfinished. If set to None, the performance
+        will not be checked.
     performance_check_type : str
         The type of performance check. The performance can be checked based on accuracy or consistency. If set to
         "accuracy", the performance is checked based on the percentage of correct responses. If set to "consistency",
         the performance is checked based on the percentage of consistent responses between the first and second
         presentation of the same item.
     n_trials : int
-        The number of trials per participant. Each trial shows a sequence of items. By default, the participant will
-        perform one trial.
+        The number of scored forms per participant (default 1). Each word presentation is one saved trial.
     n_items : int
-        The number of items per trial. The number of items must be even. The items are randomly selected from the
+        The number of items per form. The number of items must be even. The items are randomly selected from the
         list of real and fake words, such that there are an equal number of real and fake words. By default, the number
         of items is set to 30.
     n_repeat_items : int
-        The number of repeated items per trial. The repeated items are randomly selected from the list of selected
-        items. By default, the number of repeated items is set to 0. This parameter is only used when the performance
-        check type is set to "consistency".
+        The number of repeated items per form. The repeated items are randomly selected from the list of selected
+        items. By default, the number of repeated items is set to 0. Consistency compares the two responses to each repeated word. Accuracy scores only first presentations.
     show_instructions : bool
         Whether to show the instructions at the beginning of the test. By default, the instructions are shown.
     show_feedback : bool
-        Whether to show the feedback after each trial. By default, the feedback is shown.
+        Whether to show the feedback after each form. By default, the feedback is shown.
     hide_after : int
-        The time in milliseconds after which the item disappears. By default, the item disappears after 2000 ms.
+        The time in milliseconds after which the item disappears. By default, the item disappears after 1000 ms.
     lag_between_items : int
         The time in milliseconds between the presentation of items. By default, the time between the items is set to
         200 ms. This is useful to prevent the participant from responding too quickly.
@@ -447,7 +355,7 @@ class VocabTest(StaticTrialMaker):
         https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values for a list of key codes.
     false_key_label : str
         The label for the incorrect answer. By default, the label is "L" (corresponding to the key code "KeyL").
-    trial_class : ChainTrial
+    trial_class : Type[VocabTrial]
         The class of the trial. By default, the trial class is VocabTrial.
     present_as_image: bool
         Whether to present the items as images or as text. If set to True, the items are presented as images. If set
@@ -469,7 +377,7 @@ class VocabTest(StaticTrialMaker):
         n_repeat_items: int = 0,
         show_instructions: bool = True,
         show_feedback: bool = True,
-        hide_after: int = 2000,
+        hide_after: int = 1000,
         lag_between_items: int = 200,
         use_keyboard: bool = True,
         use_buttons: bool = False,
@@ -489,43 +397,61 @@ class VocabTest(StaticTrialMaker):
         if kwargs.get("sync_group_type") is not None:
             raise ValueError(
                 "VocabTest does not support synchronized groups. "
-                "Each participant must receive independently chosen items; "
-                "a follower copy would pick a different item set."
+                "Each participant must receive independently chosen items."
             )
         self.locale = locale
         self.label = label
 
-        assert (
-            performance_threshold_per_trial is None
-            or 0 <= performance_threshold_per_trial <= 1
-        )
+        if performance_threshold_per_trial is not None and not (
+            0 <= performance_threshold_per_trial <= 1
+        ):
+            raise ValueError("performance_threshold_per_trial must be between 0 and 1.")
         self.performance_threshold_per_trial = performance_threshold_per_trial
 
-        assert performance_check_type in ["accuracy", "consistency"]
+        if performance_check_type not in ("accuracy", "consistency"):
+            raise ValueError(
+                "performance_check_type must be 'accuracy' or 'consistency'."
+            )
         self.performance_check_type = performance_check_type
         if performance_check_type == "consistency":
-            assert n_repeat_items > 0, (
-                "The number of repeated items must be greater than 0."
-            )
-        concatenated_chars = ""
-        test_items = []
-        with open(csv_path) as f:
-            lines = [line.strip() for line in f.readlines()]
-            headers = lines[0].split(",")
-            assert headers == ["stimulus", "correct_answer"]
-            lines = lines[1:]
-            for line in lines:
-                stimulus, correct_answer = line.split(",")
-                concatenated_chars += stimulus.strip()
-                test_items.append(
-                    {
-                        "stimulus": stimulus,
-                        "correct_answer": correct_answer,
-                        # The browser sees this ID, so it must not be derivable from the
-                        # (public) word list, which also lists the correct answers.
-                        "hash": secrets.token_hex(16),
-                    }
+            if n_repeat_items <= 0:
+                raise ValueError(
+                    "A consistency check needs at least one repeated item."
                 )
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if reader.fieldnames != ["stimulus", "correct_answer"]:
+                raise ValueError("Expected the columns stimulus,correct_answer.")
+            test_items = list(reader)
+        if not test_items or any(
+            not item["stimulus"]
+            or item["correct_answer"] not in ("correct", "incorrect")
+            for item in test_items
+        ):
+            raise ValueError(
+                "Each vocabulary item needs a word and a correct or incorrect answer label."
+            )
+        if n_items <= 0 or n_trials < 1 or n_repeat_items < 0:
+            raise ValueError(
+                "A vocabulary test needs at least one form with a positive item count."
+            )
+        if n_items % 2 != 0:
+            raise ValueError("The number of items must be even.")
+        if n_repeat_items > n_items:
+            raise ValueError(
+                "The number of repeated items must be less than or equal to the number of items."
+            )
+        if not use_buttons and not use_keyboard:
+            raise ValueError(
+                "Enable buttons or keyboard input for the vocabulary test."
+            )
+        if any(
+            sum(item["correct_answer"] == answer for item in test_items) < n_items // 2
+            for answer in ("correct", "incorrect")
+        ):
+            raise ValueError(
+                "The bank needs enough distinct real and fake items for one form."
+            )
 
         self.present_as_image = present_as_image
         if self.present_as_image:
@@ -534,7 +460,7 @@ class VocabTest(StaticTrialMaker):
                 self.image_width,
                 self.image_height,
                 self.font_size,
-            ) = self.image_setup(concatenated_chars, test_items, font_url, **kwargs)
+            ) = self.image_setup(test_items, font_url, **kwargs)
         else:
             warnings.warn(
                 "The test is not presented as images. This will make it easier for LLMs to pass the test."
@@ -543,10 +469,6 @@ class VocabTest(StaticTrialMaker):
         self.n_trials = n_trials
         self.n_items = n_items
         self.n_repeat_items = n_repeat_items
-        assert self.n_items % 2 == 0, "The number of items must be even."
-        assert self.n_repeat_items <= self.n_items, (
-            "The number of repeated items must be less than or equal to the number of items."
-        )
         self.show_instructions = show_instructions
         self.show_feedback = show_feedback
         self.hide_after = hide_after
@@ -558,20 +480,121 @@ class VocabTest(StaticTrialMaker):
         self.false_key_button = false_key_button
         self.false_key_label = false_key_label
 
-        self.time_estimate_per_trial = self.n_items * 1.8  # based on extensive testing
-
+        count = n_trials * self.form_size
         super().__init__(
             id_=label,
             trial_class=trial_class,
-            nodes=[StaticNode(seed=test_items)],
-            expected_trials_per_participant=self.n_trials,
-            max_trials_per_participant=self.n_trials,
-            check_performance_every_trial=True,
+            nodes=[self.word_node(item) for item in test_items],
+            expected_trials_per_participant=count,
+            max_trials_per_participant=count,
+            node_order=self.word_order,
             allow_repeated_nodes=True,
-            recruit_mode=None,
-            target_trials_per_node=None,
-            target_n_participants=None,
-            sync_group_type=None,
+            check_performance_every_trial=True,
+            # Catches forms whose last words failed, which the check after
+            # each form never reaches.
+            check_performance_at_end=True,
+            prepare_trials_in_advance=True,
+        )
+
+    @property
+    def form_size(self):
+        return self.n_items + self.n_repeat_items
+
+    def word_order(self, nodes, participant):
+        """Balance real and fake words and prefer less familiar nodes across forms."""
+        visits = Counter()
+        pools = [
+            [node for node in nodes if node.definition["correct_answer"] == label]
+            for label in ("correct", "incorrect")
+        ]
+        order = []
+        for _ in range(self.n_trials):
+            originals = []
+            for pool in pools:
+                # Randomize ties between words with equal exposure.
+                random.shuffle(pool)
+                originals.extend(
+                    sorted(pool, key=lambda node: visits[node.id])[: self.n_items // 2]
+                )
+            random.shuffle(originals)
+            form = originals + random.sample(originals, self.n_repeat_items)
+            order.extend(form)
+            visits.update(node.id for node in form)
+        return order
+
+    def word_node(self, item):
+        if not self.present_as_image:
+            return StaticNode(definition=item)
+        text = item["stimulus"]
+        if self.use_arabic_script:
+            reshaper = arabic_reshaper.ArabicReshaper()
+            if self.locale in ("ur", "fa"):
+                reshaper.language = {"ur": "Urdu", "fa": "Farsi"}[self.locale]
+            text = reshaper.reshape(text)
+        image = OnDemandAsset(
+            function=text_to_image,
+            extension=".png",
+            arguments=dict(
+                text=text,
+                width=self.image_width,
+                height=self.image_height,
+                font_path=self.font_path,
+                font_size=self.font_size,
+            ),
+        )
+        return StaticNode(definition=item, assets={"image": image})
+
+    def word_page(self, trial):
+        """Return the page for one word; every word's page has the same HTML."""
+
+        def choice(value, label, key):
+            caption = f"{label} ({key})" if self.use_keyboard else label
+            if self.use_buttons:
+                return tags.button(
+                    caption,
+                    type="button",
+                    disabled=True,
+                    data_choice=value,
+                    cls="btn btn-outline-secondary mx-1",
+                )
+            return tags.span(caption, cls="mx-2")
+
+        height = self.image_height if self.present_as_image else 260
+        if self.present_as_image:
+            contents = {"image": trial.node.assets["image"].url}
+        else:
+            contents = {"stimulus": trial.definition["stimulus"]}
+        return JSPage(
+            "vocabtest",
+            tags.div(
+                tags.div(
+                    id="test-stimulus",
+                    role="status",
+                    style=(
+                        f"min-height:min({height}px,55vh);display:grid;place-items:center;"
+                        "font-size:clamp(2rem,7vw,5rem);font-weight:bold;"
+                        "overflow-wrap:anywhere"
+                    ),
+                ),
+                choice("real", _("Real"), self.true_key_label),
+                choice("fake", _("Fake"), self.false_key_label),
+                cls="text-center",
+            ),
+            contents=contents,
+            module="/static/scripts/vocabtest.js",
+            page_config={
+                "vocab": {
+                    "trueKey": self.true_key_button,
+                    "falseKey": self.false_key_button,
+                    "keyboard": self.use_keyboard,
+                    "buttons": self.use_buttons,
+                    "hideAfter": self.hide_after,
+                    "lag": self.lag_between_items,
+                    "width": getattr(self, "image_width", None),
+                }
+            },
+            bot_response=lambda: random.choice(["real", "fake"]),
+            time_estimate=self.trial_class.time_estimate,
         )
 
     @staticmethod
@@ -602,7 +625,8 @@ class VocabTest(StaticTrialMaker):
                 raise
         return os.path.abspath(font_path)
 
-    def image_setup(self, concatenated_chars, test_items, font_url, **kwargs):
+    def image_setup(self, test_items, font_url, **kwargs):
+        concatenated_chars = "".join(item["stimulus"] for item in test_items)
         arabic_regex = r"[^0-9\u0600-\u06ff\u0750-\u077f\ufb50-\ufbc1\ufbd3-\ufd3f\ufd50-\ufd8f\ufd50-\ufd8f\ufe70-\ufefc\uFDF0-\uFDFD]+"
         arabic_chars = re.sub(arabic_regex, "", concatenated_chars)
         arabic_percentage = len(arabic_chars) / len(concatenated_chars)
@@ -611,11 +635,11 @@ class VocabTest(StaticTrialMaker):
         image_width = kwargs.get("image_width", default_test_config["image_width"])
         image_height = kwargs.get("image_height", default_test_config["image_height"])
 
-        default_test_config["font_path"] = self.get_font_path(font_url)
+        self.font_path = os.path.relpath(self.get_font_path(font_url))
 
         font_size = get_fitting_font_size(
             text=test_items[-1]["stimulus"],
-            font_path=default_test_config["font_path"],
+            font_path=self.font_path,
             max_width=int(image_width * 0.8),
             max_height=int(image_height * 0.8),
             min_font_size=10,
@@ -623,200 +647,68 @@ class VocabTest(StaticTrialMaker):
         )
         return use_arabic_script, image_width, image_height, font_size
 
-    def select_hashes(self, stimuli, n):
-        assert len({item["hash"] for item in stimuli}) == len(stimuli), (
-            "Duplicate hashes found in input to select_hashes."
-        )
-        selected_hashes = []
-        enough_stimuli = False
-        n_visited = sorted({item["n_visited"] for item in stimuli})
-        while not enough_stimuli:
-            for i in n_visited:
-                subset = [item for item in stimuli if item["n_visited"] == i]
-                n_missing_hashes = n - len(selected_hashes)
-                available_hashes = [item["hash"] for item in subset]
-                if len(subset) >= n_missing_hashes:
-                    selected_hashes.extend(
-                        random.sample(available_hashes, n_missing_hashes)
-                    )
-                    enough_stimuli = True
-                else:
-                    selected_hashes.extend(available_hashes)
-        assert len(set(selected_hashes)) == len(selected_hashes), (
-            "Duplicates found in output of select_hashes."
-        )
-        return selected_hashes
+    def score_form(self, trials, stop):
+        """Score the form that ends just before position ``stop``.
 
-    def choose_hashes(self, stimuli, previous_trials):
-        assert len({item["hash"] for item in stimuli}) == len(stimuli), (
-            "Duplicate hashes found in input to choose_hashes."
-        )
-        visited_hashes = []
-        for _trial in previous_trials:
-            visited_hashes.extend(_trial.definition["hashes"])
-
-        hash_hist = {}
-        for hash_ in visited_hashes:
-            hash_hist[hash_] = hash_hist.get(hash_, 0) + 1
-
-        for item in stimuli:
-            item["n_visited"] = hash_hist.get(item["hash"], 0)
-
-        stimuli = list(sorted(stimuli, key=lambda x: x["n_visited"]))
-        correct_stimuli = [
-            item for item in stimuli if item["correct_answer"] == "correct"
-        ]
-        incorrect_stimuli = [
-            item for item in stimuli if item["correct_answer"] == "incorrect"
-        ]
-
-        n = self.n_items // 2
-        selected_hashes = (
-            # balance the number of correct and incorrect answers
-            self.select_hashes(correct_stimuli, n)
-            + self.select_hashes(incorrect_stimuli, n)
-        )
-        selected_hashes = random.sample(selected_hashes, n * 2)
-        assert len(set(selected_hashes)) == len(selected_hashes), (
-            "choose_hashes returned duplicate hashes."
-        )
-        if self.n_repeat_items > 0:
-            selected_hashes = selected_hashes + random.sample(
-                selected_hashes, self.n_repeat_items
-            )
-        return selected_hashes
-
-    def get_assets(self, stimuli, selected_hashes):
-        if not self.present_as_image:
-            return {}
-        assets = {
-            asset.local_key: asset
-            for asset in FileAsset.query.filter(
-                FileAsset.local_key.in_(selected_hashes)
-            ).all()
-        }
-
-        # Generate images
-        with tempfile.TemporaryDirectory() as temp_dir:
-            for i, hash_ in enumerate(selected_hashes):
-                if hash_ in assets:
-                    continue
-                item = next(item for item in stimuli if item["hash"] == hash_)
-                padded_i = str(i).zfill(4)
-                text = item["stimulus"]
-                if self.use_arabic_script:
-                    reshaper = arabic_reshaper.ArabicReshaper()
-                    if self.locale == "ur":
-                        reshaper.language = "Urdu"
-                    elif self.locale == "fa":
-                        reshaper.language = "Farsi"
-                    text = reshaper.reshape(text)
-                path = os.path.join(temp_dir, f"{padded_i}.png")
-                text_to_image(
-                    text=text,
-                    path=path,
-                    width=self.image_width,
-                    height=self.image_height,
-                    font_size=self.font_size,
-                    font_path=default_test_config["font_path"],
-                )
-                asset = FileAsset(
-                    local_key=hash_,
-                    input_path=path,
-                    extension=".png",
-                    description=f"{hash_}-{item['stimulus']}-{item['correct_answer']}",
-                )
-                asset.deposit()
-                assets[hash_] = asset
-        return assets
-
-    @staticmethod
-    def score_consistency(items, repeat_items):
-        item_dict = {item["hash"]: item for item in items}
-        repeat_item_dict = {item["hash"]: item for item in repeat_items}
-        common_hashes = set(item_dict.keys()) & set(repeat_item_dict.keys())
-        n_consistent = 0
-        for hash_ in common_hashes:
-            if item_dict[hash_]["answer"] == repeat_item_dict[hash_]["answer"]:
-                n_consistent += 1
-        return n_consistent / len(common_hashes) if common_hashes else 0
-
-    @staticmethod
-    def score_accuracy(items, definition):
-        n_correct = 0
-        for item in items:
-            correct_answer = definition[item["hash"]]["correct_answer"]
-            if (
-                item["answer"] == "real"
-                and correct_answer == "correct"
-                or item["answer"] == "fake"
-                and correct_answer == "incorrect"
-            ):
-                n_correct += 1
-        return n_correct / len(items)
-
-    @staticmethod
-    def _answer_matches_items(answer, hashes):
-        """
-        Check that a submitted answer covers exactly the trial's items.
+        Override this to change how a form is scored.
 
         Parameters
         ----------
-        answer :
-            The answer submitted by the browser, a list of ``{"hash", "answer"}`` dicts.
-        hashes : list[str]
-            The item hashes stored in the trial definition, in presentation order.
+        trials : list of VocabTrial
+            The participant's trials in this test.
+        stop : int
+            The position after the form's last word, a multiple of
+            :attr:`form_size`.
 
         Returns
         -------
-        bool
-            ``True`` if the answer lists the trial's items in order, each answered
-            with ``"real"`` or ``"fake"``.
+        float
+            The share of real-or-fake answers that are correct, or for
+            ``performance_check_type="consistency"`` the share of repeats
+            answered as the first time. A form with a word that wasn't
+            answered scores 0.
         """
-        return (
-            isinstance(answer, list)
-            and all(isinstance(item, dict) for item in answer)
-            and [item.get("hash") for item in answer] == list(hashes)
-            and all(item.get("answer") in ("real", "fake") for item in answer)
+        form = sorted(
+            (t for t in trials if stop - self.form_size <= t.position < stop),
+            key=lambda t: t.position,
         )
-
-    def score_trial(self, trial):
-        hashes = trial.definition["hashes"]
-        items = trial.answer
-        if not self._answer_matches_items(items, hashes):
-            logger.warning(
-                "Scoring vocabulary trial %s as 0 because the answer does not "
-                "match the trial's items.",
-                trial.id,
-            )
+        if len(form) != self.form_size or any(
+            not t.complete or t.failed or t.answer not in ("real", "fake") for t in form
+        ):
             return 0
-
-        definition = {
-            item["hash"]: item for item in trial.node.seed if item["hash"] in hashes
-        }
-
-        repeat_items = []
-        if self.n_repeat_items > 0:
-            repeat_items = items[-self.n_repeat_items :]
-            items = items[: -self.n_repeat_items]
-
-        if self.performance_check_type == "accuracy":
-            return self.score_accuracy(items, definition)
-        elif self.performance_check_type == "consistency":
-            return self.score_consistency(items, repeat_items)
-        else:
-            raise ValueError(
-                f"Unknown performance check type: {self.performance_check_type}"
+        originals = form[: self.n_items]
+        if self.performance_check_type == "consistency":
+            first_answers = {t.node_id: t.answer for t in originals}
+            repeats = form[self.n_items :]
+            return sum(t.answer == first_answers.get(t.node_id) for t in repeats) / len(
+                repeats
             )
+        return sum(t.score for t in originals) / len(originals)
+
+    def _passes(self, score):
+        threshold = self.performance_threshold_per_trial
+        return threshold is None or score >= threshold
+
+    def ends_form(self, trial):
+        """Return whether ``trial`` is the last presentation of its form."""
+        return (trial.position + 1) % self.form_size == 0
+
+    def should_check_performance_after(self, trial):
+        """Check each form once its last word is answered, so the words in between don't wait for the server."""
+        return self.ends_form(trial)
 
     def performance_check(self, experiment, participant, participant_trials):
-        score = self.score_trial(participant_trials[-1])
-        passed = (
-            True
-            if self.performance_threshold_per_trial is None
-            else score >= self.performance_threshold_per_trial
-        )
-        return {"score": score, "passed": passed}
+        """Score every form begun so far, giving the latest form's score; each must pass."""
+        n_begun = 1 + max((t.position for t in participant_trials), default=-1)
+        n_forms = -(-n_begun // self.form_size)
+        scores = [
+            self.score_form(participant_trials, (form + 1) * self.form_size)
+            for form in range(n_forms)
+        ]
+        return {
+            "score": scores[-1] if scores else None,
+            "passed": all(self._passes(score) for score in scores),
+        }
 
     @classmethod
     def get_language_name(self, test_locale):
@@ -876,17 +768,27 @@ class VocabTest(StaticTrialMaker):
         )
 
     @classmethod
-    def get_instructions_keyboard(cls):
+    def get_instructions_keyboard(cls, true_key=("KeyA", "A"), false_key=("KeyL", "L")):
+        if true_key[1] == "A" and false_key[1] == "L":
+            real = _(
+                "Press <kbd>A</kbd> if the presented word is <strong>real</strong>"
+            )
+            fake = _(
+                "Press <kbd>L</kbd> if the presented word is <strong>fake</strong>"
+            )
+        else:
+            key_hint = Markup("{} (<kbd>{}</kbd>)")
+            real = str(key_hint.format(_("Real"), true_key[1]))
+            fake = str(key_hint.format(_("Fake"), false_key[1]))
         prompt = Markup(
             _("To do the task quickly, you should use the keys on your keyboard.")
             + " "
             + _("You can use the following keys:")
             + "<ul>"
             + "<li>"
-            + _("Press <kbd>A</kbd> if the presented word is <strong>real</strong>")
-            + "</li>"
-            + "<li>"
-            + _("Press <kbd>L</kbd> if the presented word is <strong>fake</strong>")
+            + real
+            + "</li><li>"
+            + fake
             + "</li>"
             + "</ul>"
             + "<br>"
@@ -906,8 +808,8 @@ class VocabTest(StaticTrialMaker):
         )
         return KeyboardPage(
             prompt=prompt,
-            highlight_keys=["KeyA", "KeyL"],
-            press_keys=["KeyA", "KeyL"],
+            highlight_keys=[true_key[0], false_key[0]],
+            press_keys=[true_key[0], false_key[0]],
             time_estimate=5,
         )
 
@@ -916,21 +818,26 @@ class VocabTest(StaticTrialMaker):
         return InfoPage(_("The test will start on the next page."), time_estimate=1)
 
     @classmethod
-    def get_instructions(cls, test_locale, use_keyboard):
+    def get_instructions(cls, test_locale, use_keyboard, **keyboard):
         pages = [
             cls.get_instructions_intro(test_locale),
             cls.get_instructions_spelling(test_locale),
         ]
 
         if use_keyboard:
-            pages.append(cls.get_instructions_keyboard())
+            pages.append(cls.get_instructions_keyboard(**keyboard))
         pages.append(cls.get_instructions_start())
         return join(*pages)
 
     @property
     def introduction(self):
         if self.show_instructions:
-            return self.get_instructions(self.locale, self.use_keyboard)
+            return self.get_instructions(
+                self.locale,
+                self.use_keyboard,
+                true_key=(self.true_key_button, self.true_key_label),
+                false_key=(self.false_key_button, self.false_key_label),
+            )
         else:
             return None
 

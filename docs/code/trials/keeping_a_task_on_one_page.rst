@@ -230,6 +230,8 @@ so that PsyNet asks the participant to enable sound before the first trial.
 
 :download:`The rapid ratings demo <../../../demos/features/rapid_ratings/experiment.py>`
 rates pictures this way, with a break halfway through.
+:class:`~psynet.prescreen.vocabtest.VocabTest` works the same way, with its page
+script in ``psynet/resources/scripts/vocabtest.js``.
 
 Each answer is still checked and saved as usual. If the server rejects one,
 PsyNet also drops the answers given after it. The browser stops running ahead
