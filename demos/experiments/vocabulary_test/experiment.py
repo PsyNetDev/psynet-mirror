@@ -49,7 +49,6 @@ class Exp(psynet.experiment.Experiment):
         WikiVocab(
             "en",
             n_trials=2,
-            present_as_image=False,
             show_instructions=False,
             performance_threshold_per_trial=0,
         ),

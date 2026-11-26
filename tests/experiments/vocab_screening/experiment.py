@@ -17,7 +17,6 @@ class Exp(psynet.experiment.Experiment):
             n_trials=2,
             n_items=N_ITEMS,
             n_repeat_items=N_REPEAT_ITEMS,
-            present_as_image=False,
             show_instructions=False,
             performance_threshold_per_trial=0.99,
         ),
