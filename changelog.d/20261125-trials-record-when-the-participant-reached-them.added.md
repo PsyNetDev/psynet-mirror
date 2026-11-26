@@ -1,0 +1,1 @@
+Trials have a new `presented_at` column recording when the participant reached them, which stays empty for trials prepared in advance that the participant never reached. When a trial prepared in advance times out, the trials prepared after it are failed with `failed_reason="not_presented"`, so exports can tell them apart from the trial that timed out.

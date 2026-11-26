@@ -254,7 +254,8 @@ class StaticTrialMaker(ChainTrialMaker):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
         Defaults to ``False``.
         See :meth:`~psynet.trial.main.TrialMaker.performance_check`
         for implementing performance checks.
@@ -296,10 +297,9 @@ class StaticTrialMaker(ChainTrialMaker):
         waits; see :class:`~psynet.trial.main.TrialMaker`.
 
     prepare_trials_in_advance
-        If ``True``, create a participant's trials, in order, when they
-        reach the trial maker (as many as node selection allows then; the
-        rest once those are done), and send each trial page with the
-        contents of the next ``n_upcoming_trials`` trials. A
+        If ``True``, keep each participant's next ``n_upcoming_trials``
+        trials created, in order, ahead of the one they are on, and send
+        each trial page with the contents of those trials. A
         :class:`~psynet.page.JSPage` then shows the next trial as soon as
         the participant answers, without waiting for the server; see
         :doc:`/code/trials/keeping_a_task_on_one_page`. Other trial pages,
@@ -314,25 +314,27 @@ class StaticTrialMaker(ChainTrialMaker):
         in-place timeline transitions, which are on by default. The response
         timeout counts from when the server first sends each trial's page;
         once one times out, the participant's trials waiting their turn
-        fail with it. As every block is prepared at once,
-        ``participant.module_state.block`` is the last block prepared while
-        the trials are taken; read a trial's own block from ``trial.block``.
+        fail with it. As trials are prepared ahead,
+        ``participant.module_state.block`` can be the block of a trial
+        waiting its turn; read a trial's own block from ``trial.block``.
         Nodes are selected (``custom_node_filter``, ``select_node`` and the
-        node order) when the trials are created, before any is answered, so
-        selection can't adapt to the participant's answers. Likewise, the
-        next trials' pages are built, with ``show_trial``, before the earlier
-        trials are answered: if a trial's page shows something that earlier
-        answers change, the browser replaces the page shown in advance with
-        the server's once the server replies, so the participant briefly sees
-        the old version.
-        Can't be combined with
-        ``sync_group_type``, ``check_performance_every_trial``,
-        ``n_repeat_trials`` or ``recruit_mode="n_trials"``.
+        node order) when the trials are created, ``n_upcoming_trials``
+        answers early, so selection can't adapt to the participant's last
+        few answers. Likewise, the next trials' pages are built, with
+        ``show_trial``, before the earlier trials are answered: if a trial's
+        page shows something that earlier answers change, the browser
+        replaces the page shown in advance with the server's once the server
+        replies, so the participant briefly sees the old version. Repeat
+        trials are prepared once every main trial is answered. With
+        ``check_performance_every_trial``, the next trials' files still
+        download early, but the trial after a checked trial waits for the server's check.
+        Can't be combined with ``sync_group_type``.
         Defaults to ``False``.
 
     n_upcoming_trials
-        With ``prepare_trials_in_advance``, how many of the next trials'
-        contents or rendered pages each trial page carries (default = 2). The
+        With ``prepare_trials_in_advance``, how many trials are kept created
+        ahead of the current one, and how many of their contents or rendered
+        pages each trial page carries (default = 2). The
         participant can be up to one more than this many answers ahead of the
         server, and this many trials' files are downloaded early. Each extra
         trial makes every trial request build one more page, so raise it only
@@ -422,16 +424,10 @@ class StaticTrialMaker(ChainTrialMaker):
         _reject_removed_balance_argument(
             "balance_across_nodes", balance_across_nodes, "node_order"
         )
-        if prepare_trials_in_advance and (
-            sync_group_type
-            or check_performance_every_trial
-            or n_repeat_trials
-            or recruit_mode == "n_trials"
-        ):
+        if prepare_trials_in_advance and sync_group_type:
+            # The group's trials are chosen together, one at a time.
             raise ValueError(
-                "prepare_trials_in_advance=True can't be combined with "
-                "sync_group_type, check_performance_every_trial, "
-                "n_repeat_trials or recruit_mode='n_trials'."
+                "prepare_trials_in_advance=True can't be combined with sync_group_type."
             )
         self.prepare_trials_in_advance = prepare_trials_in_advance
         if n_upcoming_trials < 1:
@@ -551,9 +547,7 @@ class StaticTrialMaker(ChainTrialMaker):
         if not self.prepare_trials_in_advance:
             return super().prepare_trial(experiment, participant)
         trials = self.get_participant_trials(participant)
-        trial = next((t for t in trials if not t.complete and not t.failed), None)
-        if trial is not None:
-            return trial, "available"
+        waiting = [t for t in trials if not t.complete and not t.failed]
         # As without preparation, failed trials are replaced: they don't count
         # towards the limit, and their nodes can be chosen again.
         kept = [t for t in trials if not t.failed]
@@ -564,21 +558,39 @@ class StaticTrialMaker(ChainTrialMaker):
         state.participated_networks = [
             n for n in state.participated_networks if n not in failed_networks
         ]
-        new_trials, status = self._prepare_trials(experiment, participant, len(kept))
-        if new_trials:
-            return new_trials[0], "available"
+        new_trials, status = self._prepare_trials(
+            experiment,
+            participant,
+            n_existing=len(kept),
+            n_wanted=self._n_prepared_trials - len(waiting),
+        )
+        waiting += new_trials
+        if waiting:
+            return waiting[0], "available"
         return None, status
 
-    def _prepare_trials(self, experiment, participant, n_existing):
-        """Create the participant's next trials in the order that they will take them.
+    def _trials_to_check(self, participant):
+        trials = super()._trials_to_check(participant)
+        if not self.prepare_trials_in_advance:
+            return trials
+        # Without the trials prepared ahead, as if they didn't exist yet.
+        return [t for t in trials if t.complete or t.failed]
+
+    @property
+    def _n_prepared_trials(self):
+        """The trial on screen and the ones its page carries."""
+        return self.n_upcoming_trials + 1
+
+    def _prepare_trials(self, experiment, participant, n_existing, n_wanted):
+        """Create up to ``n_wanted`` of the participant's next trials, in the order that they will take them.
 
         Stops early if node selection has to wait, for example for a busy node;
-        :meth:`prepare_trial` prepares the rest once these trials are done.
+        :meth:`prepare_trial` prepares more once these trials are done.
         Returns the new trials and the status that ended preparation.
         """
         trials = []
         status = "exit"
-        while (
+        while len(trials) < n_wanted and (
             self.max_trials_per_participant is None
             or n_existing + len(trials) < self.max_trials_per_participant
         ):
@@ -592,10 +604,29 @@ class StaticTrialMaker(ChainTrialMaker):
             if trial.network_id not in participated:
                 participated.append(trial.network_id)
         if trials:
-            logger.info(
+            logger.debug(
                 "Prepared %i trials for participant %i.", len(trials), participant.id
             )
         return trials, status
+
+    def _prepare_repeat_trial(self, experiment, participant):
+        if not self.prepare_trials_in_advance:
+            return super()._prepare_repeat_trial(experiment, participant)
+        # The main trials are all answered by now, as prepare_trial only
+        # gives up once none is waiting, so repeats are drawn from them all.
+        waiting = [
+            t
+            for t in self.get_participant_trials(participant)
+            if t.is_repeat_trial and not t.complete and not t.failed
+        ]
+        while len(waiting) < self._n_prepared_trials:
+            trial, _ = super()._prepare_repeat_trial(experiment, participant)
+            if trial is None:
+                break
+            waiting.append(trial)
+        if waiting:
+            return waiting[0], "available"
+        return None, "exit"
 
     def _check_trials_shown_in_advance(self, participant):
         """Fail a test if the participant's trial pages were compared but none matched.
@@ -621,6 +652,15 @@ class StaticTrialMaker(ChainTrialMaker):
             "update() receives; the server log names the trials. A picture in the "
             "page's HTML makes every trial's page different. Pages other than "
             "JSPage are sent rendered instead and aren't checked."
+        )
+
+    def _may_run_ahead_after(self, trial, experiment, participant):
+        """Whether the next trial's page may be shown before the server has ``trial``'s answer."""
+        # Feedback and a performance check that may fail the participant
+        # come between the trials.
+        return not (
+            self._checks_performance_after(experiment, participant, trial)
+            or trial.gives_feedback(experiment, participant)
         )
 
     @staticmethod
@@ -652,7 +692,9 @@ class StaticTrialMaker(ChainTrialMaker):
         swappable = not adoptable and self._swappable(page)
         shown = [] if adoptable or swappable else None
         media = {}
-        ahead = shown is not None and not trial.gives_feedback(experiment, participant)
+        ahead = shown is not None and self._may_run_ahead_after(
+            trial, experiment, participant
+        )
         trial_class = self.trial_class
         upcoming = (
             trial_class.query.filter(
@@ -715,7 +757,7 @@ class StaticTrialMaker(ChainTrialMaker):
                 if swappable:
                     next_page._rendered_in_advance = True
                 shown.append(next_page)
-                ahead = not following.gives_feedback(experiment, participant)
+                ahead = self._may_run_ahead_after(following, experiment, participant)
         # A JSPage needs the list, even if empty, to show the page itself.
         return (shown if adoptable else shown or None), media
 

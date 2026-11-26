@@ -103,4 +103,4 @@ class Exp(psynet.experiment.Experiment):
         trials = RatingTrial.query.filter_by(participant_id=bot.id).all()
         assert sorted(trial.definition["name"] for trial in trials) == sorted(PICTURES)
         assert all(trial.answer == 3 for trial in trials)
-        assert all(trial.response_started_at for trial in trials)
+        assert all(trial.presented_at for trial in trials)
