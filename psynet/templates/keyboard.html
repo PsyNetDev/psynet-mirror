@@ -29,10 +29,12 @@
         let fallbackType = 'ANSI';
         let keyboardType = fallbackType;
         let currentKeyboard = keyboardIDs.find(`[value="${keyboardID}"]`)[0];
+        // The layouts load asynchronously, so the participant may have left the page.
+        if (!currentKeyboard) return;
         let addLatinKeys = currentKeyboard.getAttribute('addLatinKeys') === 'true';
 
         if (autoCorrectType) {
-            keyboardType = currentKeyboard?.getAttribute('type') || fallbackType;
+            keyboardType = currentKeyboard.getAttribute('type') || fallbackType;
             $('#keyboardType').val(keyboardType);
         }
         keyboardState.instance = new InternationalKeyboard({
