@@ -458,8 +458,9 @@ silent member, and for how long to wait out timeouts in bot tests.
 
 - Close a group with `GroupCloser` before a later grouper of the same
   `group_type` forms new groups. It is a `GroupBarrier`, so members wait there
-  for each other; one isn't needed at the end of the timeline, because a group
-  whose members have all finished closes by itself.
+  for each other; one isn't needed at the end of the timeline, because nobody
+  waits for a group whose members have all finished (the dashboard's Sync
+  groups tab shows it as Finished).
 - Do not leave default wait limits in place for real recruitment sessions
   without checking whether they are appropriate.
 - Do not assume top-ups are safe; define exactly which groups may accept late

@@ -1,0 +1,1 @@
+A group member who is failed by someone else, for example with the dashboard's Fail dialog or for being late, now moves on to the failure page straight away if their open page is connected to their group (pages shown to group members are), instead of staying on their page until they submit or reload.

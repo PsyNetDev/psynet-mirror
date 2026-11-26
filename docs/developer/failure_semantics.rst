@@ -85,6 +85,15 @@ trial. Timeline holds are the exception: they are rebuilt and resumed as
 usual so that their wait is settled. Code must not assume that an open page
 means its trial will complete.
 
+Queuing the redirect also queues a directed ``timeline_hold_wake`` message
+with ``reason="participant_failed"`` and the open page's ``page_uuid``
+(``_queue_failure_redirect``), unless a hold wake was queued for the page,
+so that a page with a group websocket (see ``_arrival_updates_for``)
+reloads ``/timeline`` straight away. Because pub/sub messages are lost
+before the websocket connects, ``arrival_notice_payload``, which the page
+fetches when it connects, reports the same page as ``failed_on_page``. Pages
+without a group websocket still wait for their next request.
+
 Sync groups
 ~~~~~~~~~~~
 

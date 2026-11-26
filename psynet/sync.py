@@ -7100,7 +7100,10 @@ def arrival_notice_payload(unique_id):
 
     Redis arrival wakes are fire-and-forget. The browser fetches this when
     the arrival websocket opens so a partner who arrived during connect is
-    still shown.
+    still shown. ``failed_on_page`` is the page a participant failed from
+    another request was on, which the browser then leaves (see
+    :func:`psynet.timeline_hold._queue_failure_redirect`); it is only
+    included for such a participant.
     """
     from psynet.participant import Participant
 
@@ -7109,10 +7112,13 @@ def arrival_notice_payload(unique_id):
     participant = Participant.query.filter_by(unique_id=unique_id).one_or_none()
     if participant is None:
         return {"notice": None, "group_ready": []}
-    return {
+    payload = {
         **_arrival_notice_fields(participant),
         "group_ready": _ready_seats_for(participant),
     }
+    if participant.failed and participant.pending_redirect == "unsuccessful_end":
+        payload["failed_on_page"] = participant.page_uuid
+    return payload
 
 
 def _ready_seats_for(participant):
