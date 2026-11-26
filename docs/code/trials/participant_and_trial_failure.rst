@@ -23,9 +23,13 @@ PsyNet also fails trials itself:
 
 - when recording analysis returns ``"failed": True``;
 - when the participant has not responded ``response_timeout_sec`` seconds
-  after the trial was created (a trial maker attribute, default five
+  after the trial was created, or with ``prepare_trials_in_advance`` after
+  they reached it (a trial maker attribute, default five
   minutes; ``None`` turns the timeout off). If they submit later, the answer is still stored, but the trial
-  stays failed and the participant is not failed;
+  stays failed and the participant is not failed. With
+  ``prepare_trials_in_advance``, the trials prepared after it, which the
+  participant never reached, are failed at the same time with
+  ``failed_reason="not_presented"``;
 - when the participant fails or leaves before completing the trial;
 - when background work for the trial raises an error: ``async_post_trial``
   (``failed_reason="async_post_trial_failed"``), an async job that
@@ -125,7 +129,12 @@ Failed trials in analysis
 -------------------------
 
 Exported trial tables include ``failed`` and ``failed_reason`` columns, and
-the participant table includes ``failure_tags``. Analyses normally leave out
+the participant table includes ``failure_tags``. The ``presented_at`` column
+records when the participant reached each trial, and is empty for trials they
+never reached, such as trials prepared in advance after the one where they
+stopped or failed. It records when the server reached the trial: a trial
+shown in advance whose previous answer never reached the server, for example
+because the participant closed the page, stays empty. Analyses normally leave out
 failed trials. In code, ``participant.alive_trials`` and
 ``node.alive_trials`` list the trials that have not failed, and queries can
 filter on the column:

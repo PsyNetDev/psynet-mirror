@@ -533,8 +533,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     n_repeat_trials = Column(Integer)
     time_taken = Column(Float)
     time_limit_reached = Column(Boolean)
-    # The response timeout of trials prepared in advance counts from here.
-    response_started_at = Column(DateTime)
+    # When the participant reached the trial, or None if they never did; the
+    # response timeout of trials prepared in advance counts from here.
+    presented_at = Column(DateTime)
     # Pages shown in advance are compared by layout key, rendered once per trial.
     layout_key = Column(String)
     _initial_assets = deferred(Column(PythonDict))
@@ -1804,8 +1805,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             check_trial = getattr(barrier, "_check_trial", None)
             if check_trial is not None:
                 check_trial(self)
-        if self.response_started_at is None:
-            self.response_started_at = datetime.datetime.now()
+        if self.presented_at is None:
+            self.presented_at = datetime.datetime.now()
         if (
             len(logic) == 1
             and isinstance(logic[0], Page)
@@ -2180,7 +2181,8 @@ class TrialMaker(Module):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
 
     fail_trials_on_premature_exit
         Deprecated. Premature exit no longer fails completed trials.
@@ -2906,7 +2908,7 @@ class TrialMaker(Module):
         )
         # Trials prepared in advance wait unseen until their turn.
         started = (
-            self.trial_class.response_started_at
+            self.trial_class.presented_at
             if self.prepare_trials_in_advance
             else self.trial_class.creation_time
         )
@@ -2930,20 +2932,25 @@ class TrialMaker(Module):
                 .all()
             )
 
-        trials_to_fail = lock(open_trials.filter(started < time_threshold))
-        if self.prepare_trials_in_advance and trials_to_fail:
+        timed_out = lock(open_trials.filter(started < time_threshold))
+        not_presented = []
+        if self.prepare_trials_in_advance and timed_out:
             # These participants have stopped, and their trials waiting their
             # turn would otherwise keep counting towards their nodes.
-            participant_ids = {trial.participant_id for trial in trials_to_fail}
-            trials_to_fail += lock(
+            participant_ids = {trial.participant_id for trial in timed_out}
+            not_presented = lock(
                 open_trials.filter(
-                    self.trial_class.response_started_at.is_(None),
+                    self.trial_class.presented_at.is_(None),
                     self.trial_class.participant_id.in_(participant_ids),
                 )
             )
-        logger.info("Found %i old trial(s) to fail.", len(trials_to_fail))
-        for trial in trials_to_fail:
+        logger.info(
+            "Found %i old trial(s) to fail.", len(timed_out) + len(not_presented)
+        )
+        for trial in timed_out:
             trial.fail(reason="response_timeout")
+        for trial in not_presented:
+            trial.fail(reason="not_presented")
 
     def init_participant(self, experiment, participant):
         """
@@ -3137,6 +3144,54 @@ class TrialMaker(Module):
         """
         participant.module_state.n_completed_trials += 1
 
+    def should_check_performance_after(self, experiment, participant, trial):
+        """
+        Whether to check the participant's performance after ``trial``.
+
+        Only used with ``check_performance_every_trial=True``. Override it to
+        check less often, for example only at the end of each block. With
+        ``prepare_trials_in_advance=True``, the browser can then show the
+        next trial before the server has the answers to the trials that
+        aren't checked. The browser asks before ``trial`` is answered, so
+        decide from what is fixed when the trial is created, such as its
+        ``position``, ``block`` or ``definition``, not from answers or the
+        participant's progress, and don't change anything. Like
+        :meth:`show_after_trial`, the method may take any subset of its
+        parameters.
+
+        Parameters
+        ----------
+
+        experiment
+            An instantiation of :class:`psynet.experiment.Experiment`,
+            corresponding to the current experiment.
+
+        participant
+            An instantiation of :class:`psynet.participant.Participant`,
+            corresponding to the current participant.
+
+        trial
+            The trial that the participant has just finished, or, with
+            ``prepare_trials_in_advance=True``, one that hasn't been answered
+            yet.
+
+        Returns
+        -------
+
+        bool
+            ``True`` by default.
+        """
+        return True
+
+    def _checks_performance_after(self, experiment, participant, trial):
+        """Whether the participant's performance is checked after ``trial``."""
+        return self.check_performance_every_trial and call_function_with_context(
+            self.should_check_performance_after,
+            experiment=experiment,
+            participant=participant,
+            trial=trial,
+        )
+
     def performance_check(self, experiment, participant, participant_trials):
         """
         Defines an automated check for evaluating the participant's
@@ -3216,7 +3271,11 @@ class TrialMaker(Module):
         assert type in ["trial", "end"]
 
         def eval_checks(experiment, participant):
-            participant_trials = self.get_participant_trials(participant)
+            if type == "trial" and not self._checks_performance_after(
+                experiment, participant, participant.current_trial
+            ):
+                return True
+            participant_trials = self._trials_to_check(participant)
             results = self.performance_check(
                 experiment=experiment,
                 participant=participant,
@@ -3286,6 +3345,10 @@ class TrialMaker(Module):
             .all()
         )
         return [record[0] for record in records]
+
+    def _trials_to_check(self, participant):
+        """The participant's trials that :meth:`performance_check` receives."""
+        return self.get_participant_trials(participant)
 
     def get_participant_trials(self, participant):
         """
@@ -3647,7 +3710,8 @@ class NetworkTrialMaker(TrialMaker):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
 
     fail_trials_on_premature_exit
         See :class:`~psynet.trial.main.TrialMaker`.
