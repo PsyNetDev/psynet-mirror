@@ -1,0 +1,1 @@
+`/branch-review` rates a missing test medium only when no test exercises the changed behavior, or when a likely regression with real consequences would pass the tests. A test that could be stronger is low. In the `branch-review-loop` skill, a commit that only adds or changes tests no longer restarts the count of clean reviews.
