@@ -1,6 +1,8 @@
-export async function activate({root, trial, vars}) {
+export async function activate({root, trial}) {
     const score = root.querySelector("#abcScore");
-    const content = vars["music_notation_prompt"].content;
+    // In the prompt's markup rather than the page's configuration, as it
+    // differs from trial to trial.
+    const content = score.dataset.abc;
 
     function renderScore() {
         score.style.visibility = "visible";

@@ -1,1 +1,0 @@
-Fixed `while_loop` changing the elements passed to it: it scaled their time estimates in place, so resolving a barrier's waiting pages again (for example when estimating the experiment's duration) multiplied its progress estimate each time. Loops now scale copies, so several barriers can also share the same `waiting_logic`.

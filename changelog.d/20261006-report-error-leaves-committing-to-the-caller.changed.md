@@ -1,1 +1,0 @@
-Calling `Experiment.report_error` directly no longer commits; the error record is added to the current transaction, so code that reports an error outside a request or worker job must commit afterwards for the record to be saved.

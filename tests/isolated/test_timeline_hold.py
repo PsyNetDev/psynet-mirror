@@ -121,6 +121,19 @@ def test_separate_hold_visits_do_not_recredit_earlier_waiting():
     assert p.total_wait_page_time == pytest.approx(2)
 
 
+def test_catch_up_hold_shows_its_message_once_the_wait_lasts():
+    from dallinger.models import timenow
+
+    def catch_up_hold(seconds_ago):
+        return TimelineHoldRecord(
+            silent=True, started_at=timenow() - timedelta(seconds=seconds_ago)
+        )
+
+    assert catch_up_hold(0).is_silent()
+    assert not catch_up_hold(5).is_silent()
+    assert not TimelineHoldRecord(silent=False, started_at=timenow()).is_silent()
+
+
 def test_while_loop_timeout_uses_exact_elapsed_time():
     start = datetime(2026, 1, 1)
     key = _while_loop_state_key("wait_while", "loop_start_time")

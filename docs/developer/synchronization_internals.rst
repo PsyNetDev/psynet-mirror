@@ -87,6 +87,16 @@ Barrier checks and participant requests take their locks in this order:
    ``NOWAIT``, so that a busy group defers the check. A newcomer's own
    request waits up to a second for an open group (see below). A member who leaves or fails changes the group
    with an ``UPDATE``, which waits up to ``timeline_lock_timeout_seconds``.
+   A live game's ending job removing absent players (``absent_action``)
+   holds the remaining players' rows, and locks the rows of the groups they
+   leave in id order, waiting, and reloads their member links, so sibling
+   games sharing a group count each other's leavers. It does this before
+   paying anyone, which locks the players' trials (step 5). With
+   ``absent_action="fail"`` that is every group they're in, and they are
+   failed only after everyone is paid, so failing them, which locks their
+   unfinished trials, takes no other group's row. The author's
+   ``participant_fail_routines`` run while the job holds these locks, and
+   an error there rolls back the whole ending transaction, rewards included.
    A synchronized trial maker recording a run's choices in the group's
    ``trial_maker_runs`` also waits for the row, after locking any
    participant rows it needs.
@@ -220,7 +230,8 @@ and of those among them whose latest timed page ran out of time
 the time-out as it happens in ``Participant.timed_out_since_barrier``, which
 the next barrier copies onto the visit and clears; waiting pages and a trial's
 feedback pages leave it alone (``Page._time_limit_counts``; the feedback page
-maker marks the pages it makes with ``_trial_feedback``).
+maker marks the pages it makes with ``_after_trial``, as does
+:meth:`~psynet.trial.main.TrialMaker.show_after_trial`).
 Hold overlays for members who are already waiting are still sent with the
 update, so their counts can lag until the next arrival.
 

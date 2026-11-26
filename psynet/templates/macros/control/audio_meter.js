@@ -30,8 +30,8 @@ audioMeterControl.init = function(json) {
     this.displayRange = config.display_range;
     this.decay = config.decay;
     this.threshold = config.threshold;
-    this.grace = config.grace
-    this.warnOnClip = config.warn_on_clip
+    this.grace = config.grace;
+    this.warnOnClip = config.warn_on_clip;
     this.msgDuration = config.msg_duration;
 
     this.audioContext = null;
@@ -46,13 +46,8 @@ audioMeterControl.init = function(json) {
     this.mediaStreamSource = null;
     this.rafID = null;
 
-    this.timeLastTooLow = -1e20;
-    this.timeLastTooHigh = -1e20;
-    this.timeUntilTooLow = 1.5; // ms
-    this.timeUntilTooHigh = 0.0; // ms
-
-    this.timeLastNotTooLow = -1e20;
-    this.timeLastNotTooHigh = -1e20;
+    this.timeLastNotTooLow = null;
+    this.timeLastNotTooHigh = null;
 
     this.messageTimer = null;
 
@@ -104,7 +99,7 @@ audioMeterControl.checkMicrophone = function(stream) {
 }
 
 audioMeterControl.onMicrophoneGranted = async function(stream) {
-    this.showMessage("Starting audio meter...", "blue");
+    this.showMessage("Starting audio meter...", "blue", null);
 
     // Show device name
     if (this.audioMeterDeviceName) {
@@ -129,10 +124,16 @@ audioMeterControl.onMicrophoneGranted = async function(stream) {
     this.mediaStreamSource = this.audioContext.createMediaStreamSource(stream);
 
     // Create a new volume meter and connect it.
+    this.timeLastNotTooLow = null;
+    this.timeLastNotTooHigh = null;
     this.audioMeter = this.createAudioMeter(this.audioContext);
     this.mediaStreamSource.connect(this.audioMeter);
 
     // kick off the visual updating
+    this.requestLevelChange();
+}
+
+audioMeterControl.requestLevelChange = function() {
     var audioMeterControl = this;
     this.rafID = window.requestAnimationFrame(function(time) {
         audioMeterControl.onLevelChange(time);
@@ -190,16 +191,20 @@ audioMeterControl.setLevel = function(proportion) {
     }
 }
 
-audioMeterControl.showMessage = function(message, color) {
+audioMeterControl.showMessage = function(message, color, duration) {
     this.audioMeterText.innerHTML = message;
     this.applyColor(color);
 
     clearTimeout(this.messageTimer);
+    this.messageTimer = null;
+    if (duration == null) {
+        return;
+    }
 
     var self = this;
     this.messageTimer = psynet.trial.setTimer(function() {
         self.resetMessage();
-    }, self.msgDuration * 2000);
+    }, duration * 1000);
 }
 
 audioMeterControl.resetMessage = function() {
@@ -212,25 +217,33 @@ audioMeterControl.onLevelChange = function(time) {
         return;
     }
 
-    if (this.audioMeter.volume.high >= this.threshold.high) {
-        this.timeLastTooHigh = time;
-    } else {
+    if (this.audioMeter.volume === null) {
+        this.requestLevelChange();
+        return;
+    }
+
+    if (this.timeLastNotTooLow === null) {
+        // Grace periods count from the first level reading.
+        this.timeLastNotTooLow = time;
+        this.timeLastNotTooHigh = time;
+        this.resetMessage();
+    }
+
+    if (this.audioMeter.volume.high < this.threshold.high) {
         this.timeLastNotTooHigh = time;
     }
 
-    if (this.audioMeter.volume.low <= this.threshold.low) {
-        this.timeLastTooLow = time;
-    } else {
+    if (this.audioMeter.volume.low > this.threshold.low) {
         this.timeLastNotTooLow = time;
     }
 
     if (
-        this.audioMeter.checkClipping() ||
-        time - this.timeLastNotTooHigh > this.timeUntilTooHigh * 1000.0
+        (this.warnOnClip && this.audioMeter.checkClipping()) ||
+        time - this.timeLastNotTooHigh > this.grace.high * 1000.0
     ) {
-        this.showMessage("Too loud!", "red")
-    } else if (time - this.timeLastNotTooLow > this.timeUntilTooLow * 1000.0) {
-        this.showMessage("Too quiet!", "red")
+        this.showMessage("Too loud!", "red", this.msgDuration.high);
+    } else if (time - this.timeLastNotTooLow > this.grace.low * 1000.0) {
+        this.showMessage("Too quiet!", "red", this.msgDuration.low);
     }
 
     var proportion;
@@ -244,10 +257,7 @@ audioMeterControl.onLevelChange = function(time) {
 
     this.setLevel(proportion);
 
-    var audioMeterControl = this;
-    this.rafID = window.requestAnimationFrame(function(time) {
-        audioMeterControl.onLevelChange(time);
-    });
+    this.requestLevelChange();
 }
 
 /*
@@ -271,11 +281,7 @@ audioMeterControl.createAudioMeter = function(audioContext, clipLevel, averaging
     }
     processor.clipping = false;
     processor.lastClip = 0;
-    processor.volume = {
-        display: 0.0,
-        high: 0.0,
-        low: 0.0
-    }
+    processor.volume = null;
     processor.clipLevel = clipLevel || 0.98;
     processor.averaging = averaging || 0.95;
     processor.clipLag = clipLag || 750;
@@ -327,11 +333,17 @@ audioMeterControl.volumeAudioProcess = function(event) {
     // Now smooth this out with the averaging factor applied
     // to the previous sample - take the max here because we
     // want "fast attack, slow release."
+    var db = this.rmsToDb(rms);
+    if (this.audioMeter.volume === null) {
+        this.audioMeter.volume = { display: db, high: db, low: db };
+        return;
+    }
+
     var self = this;
     ["display", "high", "low"].forEach(function(x) {
         // Exponential smmoothing, see https://en.wikipedia.org/wiki/Exponential_smoothing
         var alpha = 1 - Math.exp(- bufferDuration / self.decay[x]);
-        self.audioMeter.volume[x] = (1 - alpha) * self.audioMeter.volume[x] + alpha * self.rmsToDb(rms);
+        self.audioMeter.volume[x] = (1 - alpha) * self.audioMeter.volume[x] + alpha * db;
     })
 
     // this.volume = Math.max(rms, this.volume*this.averaging);
@@ -342,26 +354,30 @@ audioMeterControl.rmsToDb = function(rms) {
 }
 
 audioMeterControl.updateFromSliders = function() {
+    function sliderValue(id) {
+        return Number($("#" + id).get(0).value);
+    }
+
     this.decay = {
-        display: $("#decay-display").get(0).value,
-        high: $("#decay-high").get(0).value,
-        low: $("#decay-low").get(0).value
+        display: sliderValue("decay-display"),
+        high: sliderValue("decay-high"),
+        low: sliderValue("decay-low")
     }
 
     this.threshold = {
-        high: $("#threshold-high").get(0).value,
-        low: $("#threshold-low").get(0).value,
+        high: sliderValue("threshold-high"),
+        low: sliderValue("threshold-low"),
     }
 
     this.grace = {
-        high: $("#grace-high").get(0).value,
-        low: $("#grace-low").get(0).value,
+        high: sliderValue("grace-high"),
+        low: sliderValue("grace-low"),
     }
 
-    this.warnOnClip = Boolean($("#warn-on-clip").get(0).value)
+    this.warnOnClip = Boolean(sliderValue("warn-on-clip"))
 
     this.msgDuration = {
-        high: $("#msg-duration-high").get(0).value,
-        low: $("#msg-duration-low").get(0).value,
+        high: sliderValue("msg-duration-high"),
+        low: sliderValue("msg-duration-low"),
     }
 }

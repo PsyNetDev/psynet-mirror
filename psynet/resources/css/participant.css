@@ -272,8 +272,6 @@ body {
     background-color: var(--psynet-page-bg);
     color: var(--psynet-text);
     font-family: var(--psynet-font-sans);
-    /* Dallinger's stylesheet sets 300/13pt, which renders thin and small. */
-    font-weight: 400;
     font-size: 1.0625rem;
     line-height: 1.6;
     letter-spacing: -0.011em;
@@ -588,6 +586,37 @@ code {
     gap: 0.75rem;
     justify-content: center;
     margin-top: 2rem;
+}
+
+/* Back sits just left of Next, which stays centred. */
+.psynet-actions-with-back {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+}
+
+.psynet-actions-with-back > :not(.psynet-back-button, script) {
+    grid-column: 2;
+}
+
+/* Narrower than Next, so that both fit on a phone. */
+.psynet-back-button {
+    justify-self: end;
+    min-height: 46px;
+    /* An accent outline, so that it reads as a live button next to Next and
+       stands apart from its faint grey disabled state. */
+    --bs-btn-color: var(--psynet-accent);
+    --bs-btn-border-color: var(--psynet-accent);
+    --bs-btn-hover-color: var(--psynet-accent-hover);
+    --bs-btn-hover-bg: var(--psynet-accent-soft);
+    --bs-btn-hover-border-color: var(--psynet-accent-hover);
+    --bs-btn-active-color: var(--psynet-accent-hover);
+    --bs-btn-active-bg: var(--psynet-accent-soft);
+    --bs-btn-active-border-color: var(--psynet-accent-hover);
+    --bs-btn-disabled-color: var(--psynet-text-muted);
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: var(--psynet-border);
+    --bs-btn-disabled-opacity: 0.6;
 }
 
 #next-button,

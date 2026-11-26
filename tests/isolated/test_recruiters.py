@@ -2406,7 +2406,7 @@ def test_lucid_terminated_exit_redirects_without_worker_complete():
 
     page = recruiter.release_participant(MagicMock(), participant)
 
-    script = page.js_vars["execute_front_end_js"]
+    script = page.page_config["execute_front_end_js"]
     assert "https://lucid.test/terminate" in script
     assert "worker_complete" not in script
     assert participant.status == "returned"
@@ -2431,8 +2431,8 @@ def test_lucid_terminated_exit_keeps_ris_20_when_progress_is_one():
     recruiter.lucidservice.generate_submit_url.assert_called_once_with(
         ris=20, rid="rid-1"
     )
-    assert "RIS=20" in page.js_vars["execute_front_end_js"]
-    assert "RIS=10" not in page.js_vars["execute_front_end_js"]
+    assert "RIS=20" in page.page_config["execute_front_end_js"]
+    assert "RIS=10" not in page.page_config["execute_front_end_js"]
 
 
 def test_lucid_terminated_exit_keeps_security_ris_when_progress_is_one():
@@ -2454,7 +2454,7 @@ def test_lucid_terminated_exit_keeps_security_ris_when_progress_is_one():
     recruiter.lucidservice.generate_submit_url.assert_called_once_with(
         ris=30, rid="rid-1"
     )
-    assert "RIS=30" in page.js_vars["execute_front_end_js"]
+    assert "RIS=30" in page.page_config["execute_front_end_js"]
 
 
 def test_lucid_error_page_does_not_complete_when_progress_is_one():
@@ -2515,7 +2515,7 @@ def test_lucid_early_exit_terminates_the_panel_session():
     recruiter.lucidservice.terminate_respondent.assert_called_once_with(
         "rid-1", "early_exit", None
     )
-    assert "worker_complete" not in release_page.js_vars["execute_front_end_js"]
+    assert "worker_complete" not in release_page.page_config["execute_front_end_js"]
     assert participant.status == "returned"
     assert recruiter.decide_payment(
         participant, experiment=MagicMock()
@@ -4029,7 +4029,7 @@ def test_submit_assignment_page_shows_a_spinner():
     page = object.__new__(GenericRecruiter).submit_assignment()
 
     assert "spinner-border" in page.content
-    assert page.js_vars["execute_front_end_js"] == "psynet.finishAndGoToExit()"
+    assert page.page_config["execute_front_end_js"] == "psynet.finishAndGoToExit()"
 
 
 def _resolve_show_reward(recruiter_cls, configured):

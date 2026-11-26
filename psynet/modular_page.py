@@ -24,6 +24,7 @@ import numpy as np
 from dominate import tags
 from dominate.dom_tag import dom_tag
 from dominate.util import raw
+from dominate.util import text as dom_text
 from flask import current_app
 from markupsafe import Markup
 
@@ -32,13 +33,14 @@ from .background_recording import VideoRecordConfig  # noqa: F401
 from .bot import BotResponse, _as_browser_json
 from .chatroom import ChatRoom  # noqa: F401
 from .javascript_hooks import JavaScriptContributor
-from .static_resources import package_static_url
+from .static_resources import cacheable_static_url, package_static_url
 from .timeline import (
     Event,
     FailedValidation,
     MediaSpec,
     Page,
     Trigger,
+    _page_config_argument,
     is_list_of,
 )
 from .utils import (
@@ -55,8 +57,8 @@ from .utils import (
 logger = get_logger()
 
 
-def _merge_js_var_sources(*sources):
-    """Merge JavaScript variable sources, rejecting duplicate keys."""
+def _merge_page_config_sources(*sources):
+    """Merge page configuration sources, rejecting duplicate keys."""
     merged = {}
     owners = {}
 
@@ -67,7 +69,7 @@ def _merge_js_var_sources(*sources):
         for key, value in values.items():
             if key in owners:
                 raise ValueError(
-                    f"Duplicate JavaScript variable {key!r}: "
+                    f"Duplicate page configuration key {key!r}: "
                     f"contributed by {owners[key]} and {source_name}."
                 )
 
@@ -151,6 +153,8 @@ class Prompt(JavaScriptContributor):
         in PsyNet's built-in ``prompt.html`` file.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         text: Union[None, str, Markup] = None,
@@ -183,6 +187,11 @@ class Prompt(JavaScriptContributor):
     def media(self):
         return MediaSpec()
 
+    @property
+    def prefetch_urls(self):
+        """URLs of files shown without the media spec, by media type, to download early."""
+        return {}
+
     def visualize(self, trial):
         if self.text is None:
             return ""
@@ -196,14 +205,6 @@ class Prompt(JavaScriptContributor):
 
     def update_events(self, events):
         pass
-
-    def get_js_vars(self):
-        """Page-local JavaScript variables this component contributes.
-
-        Keys must be unique across all page components and explicit
-        :class:`ModularPage` ``js_vars``.
-        """
-        return {}
 
     def _collect_spa_markup_contract_codes(self):
         if self.text_html is None:
@@ -318,6 +319,8 @@ class AudioPrompt(BaseAudioPrompt):
     kwargs
         Passed to :class:`~psynet.modular_page.Prompt`.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -595,6 +598,8 @@ class ImagePrompt(Prompt):
 
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         url: str,
@@ -619,6 +624,19 @@ class ImagePrompt(Prompt):
         self.margin_bottom = margin_bottom
 
     macro = "image"
+
+    @property
+    def src(self):
+        """The URL the page loads, content-versioned for a local static file.
+
+        A versioned URL is cached without revalidation, so an image downloaded
+        in advance shows at once.
+        """
+        return cacheable_static_url(self.url)
+
+    @property
+    def prefetch_urls(self):
+        return {"image": [self.src]}
 
     @property
     def metadata(self):
@@ -665,6 +683,8 @@ class ColorPrompt(Prompt):
 
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         color: List[float],
@@ -684,6 +704,14 @@ class ColorPrompt(Prompt):
     @property
     def metadata(self):
         return {"text": str(self.text), "hsl": self.hsl}
+
+
+def _overrides_validation(control, cls):
+    """Whether ``control``'s class validates answers differently from ``cls``."""
+    return (
+        type(control).validate is not cls.validate
+        or type(control).check_ready_for_response is not cls.check_ready_for_response
+    )
 
 
 class Control(JavaScriptContributor):
@@ -778,16 +806,14 @@ class Control(JavaScriptContributor):
     def metadata(self):
         return {}
 
-    def get_js_vars(self):
-        """Page-local JavaScript variables this control contributes.
-
-        See :meth:`Prompt.get_js_vars`.
-        """
-        return {}
-
     @property
     def media(self):
         return MediaSpec()
+
+    @property
+    def prefetch_urls(self):
+        """URLs of files shown without the media spec, by media type, to download early."""
+        return {}
 
     def format_answer(self, raw_answer, **kwargs):
         """
@@ -892,6 +918,29 @@ class Control(JavaScriptContributor):
     def update_events(self, events):
         pass
 
+    def _check_page(self, page):
+        # Called once the page is built. Raises if the control can't be used
+        # on ``page``.
+        pass
+
+    def _may_reject_answers(self):
+        """Whether the server may turn down an answer given with the control."""
+        return _overrides_validation(self, Control)
+
+    def check_ready_for_response(self, experiment, participant):
+        """
+        Check whether the page can accept the participant's response yet, as
+        :meth:`psynet.timeline.Page.check_ready_for_response` describes.
+        """
+        return None
+
+    def ends_by(self, experiment, participant):
+        """
+        Return the time by which the page will have ended at the latest, as
+        :meth:`psynet.timeline.Page.ends_by` describes.
+        """
+        return None
+
     def call__get_bot_response(self, experiment, bot, page, prompt):
         if self._bot_response == NoArgumentProvided:
             res = self.get_bot_response(experiment, bot, page, prompt)
@@ -939,6 +988,8 @@ class NullControl(Control):
     """
     Here the participant just has a single button that takes them to the next page.
     """
+
+    can_swap_in_advance = True
 
     # The macro is named blank, not null, for back-compatibility reasons
     macro = "blank"
@@ -1141,6 +1192,8 @@ class CheckboxControl(OptionControl):
         See :class:`OptionControl`.
     """
 
+    can_swap_in_advance = True
+
     input_type = "checkbox"
 
     def __init__(
@@ -1196,9 +1249,13 @@ class CheckboxControl(OptionControl):
                         True if answer is not None and choice in answer else False
                     ),
                 )
+                dom_text(" ")
                 tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
+
+    def _may_reject_answers(self):
+        return self.force_selection or _overrides_validation(self, CheckboxControl)
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
@@ -1264,6 +1321,8 @@ class DropdownControl(OptionControl):
         See :class:`OptionControl`.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         choices: List[str],
@@ -1308,6 +1367,9 @@ class DropdownControl(OptionControl):
                         tags.option(value=choice).add(_dominate_label(label))
         return html.render()
 
+    def _may_reject_answers(self):
+        return self.force_selection or _overrides_validation(self, DropdownControl)
+
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
         if self.force_selection and response.answer in ("", None):
@@ -1349,6 +1411,8 @@ class PushButtonControl(OptionControl):
     **kwargs
         Other arguments to pass to :class:`OptionControl`, such as ``restrict_to_choices``.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -1429,6 +1493,8 @@ class KeyboardPushButtonControl(PushButtonControl):
     kwargs:
         Other arguments to pass to :class:`~psynet.modular_page.PushButtonControl`.
     """
+
+    can_swap_in_advance = True
 
     macro = "keyboard_push_buttons"
 
@@ -1635,6 +1701,8 @@ class RadioButtonControl(OptionControl):
         See :class:`OptionControl`.
     """
 
+    can_swap_in_advance = True
+
     input_type = "radio"
 
     def __init__(
@@ -1703,9 +1771,13 @@ class RadioButtonControl(OptionControl):
                     value=choice,
                     checked=(True if choice == answer else False),
                 )
+                dom_text(" ")
                 tags.span(_dominate_label(label))
                 tags.br()
         return html.render()
+
+    def _may_reject_answers(self):
+        return self.force_selection or _overrides_validation(self, RadioButtonControl)
 
     def validate(self, response, **kwargs):
         _p = get_translator(context=True)
@@ -1751,6 +1823,8 @@ class NumberControl(Control):
     text_align:
         CSS width property for the alignment of the text inside the number input field. Default: `"right"`.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -1828,6 +1902,8 @@ class TextControl(Control):
     block_copy_paste:
         Whether to block the copy, cut and paste options in the text input box.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -2068,9 +2144,20 @@ class ModularPage(Page):
         :class:`~psynet.modular_page.Control`
         objects instead.
 
+    page_config
+        Optional dictionary that configures the page's JavaScript, read as
+        ``psynet.pageConfig``, such as a task's timings. It is the same for
+        every trial the page shows; what changes between trials goes in
+        ``contents``. See :doc:`/code/pages/custom_front_ends`.
+
+    contents
+        Optional dictionary of what this page shows, such as a trial's
+        stimulus and parameters, read as ``psynet.page.contents``; a page
+        module's ``update`` receives it for each trial. It can change from
+        one trial to the next, which ``page_config`` can't.
+
     js_vars
-        Optional dictionary of page-scoped values exposed to JavaScript through
-        ``psynet.var``.
+        Deprecated name of ``page_config``.
 
     start_trial_automatically
         If ``True`` (default), the trial starts automatically, e.g. by the playing
@@ -2120,6 +2207,8 @@ class ModularPage(Page):
         including ``js_dependencies`` and ``js_page_modules``.
     """
 
+    can_swap_in_advance = True
+
     default_layout = ["prompt", "media", "progress", "control", "chatroom", "buttons"]
 
     def __init__(
@@ -2131,6 +2220,7 @@ class ModularPage(Page):
         time_estimate: Optional[float] = None,
         media: Optional[MediaSpec] = None,
         events: Optional[dict] = None,
+        page_config: Optional[dict] = None,
         js_vars: Optional[dict] = None,
         start_trial_automatically: bool = True,
         buttons: Optional[List] = None,
@@ -2146,8 +2236,7 @@ class ModularPage(Page):
         if media is None:
             media = MediaSpec()
 
-        if js_vars is None:
-            js_vars = {}
+        page_config = _page_config_argument(page_config, js_vars)
 
         if buttons is None:
             buttons = []
@@ -2216,16 +2305,16 @@ class ModularPage(Page):
                 active_roles["chatroom"].macro if "chatroom" in active_roles else None
             ),
         }
-        js_var_sources = [
+        config_sources = [
             (
                 f"{role} {type(component).__name__}",
-                component.get_js_vars(),
+                component.get_page_config(),
             )
             for role, component in components
         ]
-        js_var_sources.extend(
+        config_sources.extend(
             [
-                ("ModularPage js_vars", js_vars),
+                ("ModularPage page_config", page_config),
                 (
                     "PsyNet internals",
                     {"modular_page_components": modular_page_components},
@@ -2245,12 +2334,28 @@ class ModularPage(Page):
             },
             media=all_media,
             events=events,
-            js_vars=_merge_js_var_sources(*js_var_sources),
+            page_config=_merge_page_config_sources(*config_sources),
             start_trial_automatically=start_trial_automatically,
             validate=validate,
             framework_owned_template=True,
             **assets,
             **kwargs,
+        )
+        self.control._check_page(self)
+
+    def _page_config_for(self, experiment, participant):
+        return _merge_page_config_sources(
+            (
+                "the page's page_config or a component's get_page_config",
+                self.page_config,
+            ),
+            *(
+                (
+                    f"{role} {type(component).__name__}",
+                    component.get_participant_page_config(experiment, participant),
+                )
+                for role, component in self._iter_layout_components()
+            ),
         )
 
     def _iter_layout_components(self):
@@ -2362,6 +2467,35 @@ class ModularPage(Page):
         else:
             return super().validate(response, **kwargs)
 
+    def _swap_components(self):
+        return [
+            component
+            for component in (self, self.prompt, self.control, self.chatroom)
+            if component is not None
+        ]
+
+    def _may_reject_answers(self):
+        return (
+            self._validate_function is not None
+            or type(self).validate is not ModularPage.validate
+            or type(self).check_ready_for_response
+            is not ModularPage.check_ready_for_response
+            or self.control._may_reject_answers()
+        )
+
+    def _cannot_be_rendered_early_because(self):
+        reasons = {
+            "it shows a chat, whose messages may change": self.chatroom is not None,
+            "a component sets participant page configuration, which may change": any(
+                type(component).get_participant_page_config
+                is not JavaScriptContributor.get_participant_page_config
+                for _, component in self._iter_layout_components()
+            ),
+        }
+        return super()._cannot_be_rendered_early_because() or next(
+            (reason for reason, found in reasons.items() if found), None
+        )
+
     def _reject_impossible_answer(self, answer):
         """Delegate to the control, logging a warning when it rejects the answer."""
         rejection = self.control._reject_impossible_answer(answer)
@@ -2417,7 +2551,10 @@ class ModularPage(Page):
         if not self.buttons:
             return ""
 
-        logic = ['<div class="psynet-actions">']
+        logic = [
+            '<div class="psynet-actions{% if back_button %} psynet-actions-with-back{% endif %}">',
+            '{% if back_button %}{{ psynet_controls.back_button(back_button == "disabled") }}{% endif %}',
+        ]
         for i, button in enumerate(self.buttons):
             logic.append(f"{{% set button_params = buttons[{i}] %}}")
             logic.append(button.render())
@@ -2457,6 +2594,15 @@ class ModularPage(Page):
             ]
         )
 
+    @property
+    def prefetch_urls(self):
+        urls = super().prefetch_urls
+        for part in (self.prompt, self.control):
+            for media_type, extra in part.prefetch_urls.items():
+                known = urls.setdefault(media_type, [])
+                known.extend(url for url in extra if url not in known)
+        return urls
+
     def visualize(self, trial):
         prompt = self.prompt.visualize(trial)
         response = self.control.visualize_response(
@@ -2478,6 +2624,12 @@ class ModularPage(Page):
                 (tags.h3("Response"),)
                 tags.div(raw(response), id="response-visualization", style=div_style)
         return div.render()
+
+    def check_ready_for_response(self, experiment, participant):
+        return self.control.check_ready_for_response(experiment, participant)
+
+    def ends_by(self, experiment, participant):
+        return self.control.ends_by(experiment, participant)
 
     def format_answer(self, raw_answer, **kwargs):
         """
@@ -2530,6 +2682,20 @@ class AudioMeterControl(Control):
     Shows a live microphone level meter, warning when the input is too loud or too quiet.
 
     Useful for checking recording levels before recording trials. The bot response is ``None``.
+
+    Tune the meter by overriding its class attributes in a subclass, as
+    :class:`TappingAudioMeterControl` does:
+
+    * ``display_range``: dB range shown by the meter bar (``min``, ``max``).
+    * ``decay``: smoothing time constants in seconds for the bar (``display``)
+      and the loudness checks (``high``, ``low``).
+    * ``threshold``: dB levels above which input is too loud (``high``) and
+      below which it is too quiet (``low``).
+    * ``grace``: seconds the input must stay too loud (``high``) or too quiet
+      (``low``) before the warning appears.
+    * ``warn_on_clip``: whether clipping also shows the "Too loud!" warning.
+    * ``msg_duration``: seconds each warning stays visible after the input
+      returns to range (``high``, ``low``).
 
     Parameters
     ----------
@@ -2768,6 +2934,8 @@ class SliderControl(Control):
         Arguments for the  optional additional template. Default: `None`.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         start_value: float,
@@ -2836,6 +3004,10 @@ class SliderControl(Control):
                 assert x >= min_value
                 assert x <= max_value
             return sorted(snap_values)
+
+    def _may_reject_answers(self):
+        # validate() only checks the slider's settings.
+        return _overrides_validation(self, SliderControl)
 
     def validate(self, response, **kwargs):
         if self.max_value <= self.min_value:
@@ -3959,13 +4131,12 @@ class RecordControl(Control):
                 summary[key] = None
         return summary
 
-    def get_js_vars(self):
-        """Provide defaults; rendering resolves the experiment storage backend."""
+    def get_page_config(self):
+        """Provide the upload labels and size limit; the page state says
+        which sources upload asynchronously, as that depends on the
+        experiment's storage backend."""
         return {
             "recordingLabels": _recording_labels(),
-            "asynchronousUploadSources": self.recording_sources
-            if self._async_upload_enabled()
-            else None,
             "asynchronousUploadMaxBytes": self._recording_max_bytes(),
         }
 
@@ -3976,10 +4147,11 @@ class RecordControl(Control):
             _reserve_recording,
             _resolve_unavailable,
         )
+        from .trial.main import Trial
         from .trial.record import Recording
 
         sizes = response._recording_sizes
-        parent = participant.current_trial or participant
+        parent = response._recording_parent
         summary = dict(response.answer)
         uploads = []
         max_bytes = self._recording_max_bytes()
@@ -4005,7 +4177,9 @@ class RecordControl(Control):
             if reason:
                 # The browser already knows these bytes cannot be uploaded, so
                 # resolve now rather than waiting for the lease to expire.
-                _resolve_unavailable(asset, reason, participant.current_trial)
+                _resolve_unavailable(
+                    asset, reason, parent if isinstance(parent, Trial) else None
+                )
             id_key, url_key = self._answer_reference_keys(source)
             summary[id_key] = asset.id
             summary[url_key] = asset.url
@@ -4643,6 +4817,12 @@ class SurveyJSControl(Control):
             return None
         return json.loads(raw_answer)
 
+    def get_js_dependencies(self):
+        """Load the SurveyJS library only on pages that contain a survey."""
+        return super().get_js_dependencies() + [
+            "/static/scripts/survey-jquery/survey.jquery.min.js"
+        ]
+
     def get_css(self):
         css = super().get_css()
         css.append(
@@ -4756,6 +4936,8 @@ class MultiRatingControl(SurveyJSControl):
         Whether to show question titles (default: True).
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         *scales: "RatingScale",
@@ -4830,6 +5012,8 @@ class RatingControl(MultiRatingControl):
     bot_response :
         An optional argument that can be used to specify a response delivered by automatic bots to this page.
     """
+
+    can_swap_in_advance = True
 
     def __init__(
         self,
@@ -5006,6 +5190,8 @@ class MusicNotationPrompt(Prompt):
         Alignment instructions for this text.
     """
 
+    can_swap_in_advance = True
+
     def __init__(
         self,
         content: str,
@@ -5024,10 +5210,6 @@ class MusicNotationPrompt(Prompt):
     def get_js_page_modules(self):
         """Activate score rendering for each hosting page."""
         return [package_static_url("psynet", "scripts/music-notation-prompt.js")]
-
-    def get_js_vars(self):
-        """Provide the ABC notation consumed by the page module."""
-        return {"music_notation_prompt": {"content": self.content}}
 
     def update_events(self, events):
         super().update_events(events)

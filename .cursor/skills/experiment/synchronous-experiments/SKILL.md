@@ -13,6 +13,7 @@ If participants exchange live actions or messages within a trial, also read
 Read these pages before acting. The "Documentation" section of the experiment's `AGENTS.md` explains how to find and search them.
 
 - `design/groups` — group design concepts
+- `design/rounds` — round-based experiments: cued trials, regrouping, slow players
 - `code/multiplayer/synchronization` — grouping, barriers, waiting, and release callbacks
 - `reference/api/sync` — synchronization API
 
@@ -95,8 +96,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   only written during the trial's pages and until a barrier there releases
   the group, so for a barrier after `show_trial`, or after an earlier
   release in it, check `participant.sync_group_removal_reason(...)` instead.
-- For deterministic roles or turn order, use `psynet.sync.group_seats(group)`
-  (seats in join order, stable while the group exists), as in
+- For deterministic roles or turn order, use `group.seats`
+  (`SyncGroup.seats`: seats in join order, stable while the group exists), as in
   `story_chain`; PsyNet does not guarantee the order of
   `sync_group.participants`.
 - Put additional `GroupBarrier`s inside `Trial.show_trial` for phase boundaries
@@ -115,19 +116,50 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   a split join the next one rather than being failed. For players who stop
   responding mid-round, follow "Moving slow players on" in
   `code/multiplayer/writing_a_round_based_experiment`: use
-  `late_action="leave_group"` with `also_leave=[<within group type>]` so
-  that they also leave the `within` group; see the quorum caveat there.
-- A member on a timed page isn't treated as late until its limit plus 10 s,
-  so `late_after` need not cover the page (see "Timeouts" in
-  `code/multiplayer/synchronization`); the demos use 30 s so that a
-  background tab can notice the round has started.
+  `late_action="fail"`, which takes them out of the `within` group too
+  (no `also_leave` needed). The regrouper's pairs never dissolve, so the
+  partner is released alone, `on_release` gets the leaver in `left`, and the
+  regrouper pairs the partner again at the next split, with no conditional
+  logic in the trial; see the quorum caveat there.
+- Failing a player who times out isn't a penalty: it ends a session that
+  can no longer contribute, and they are paid for what they completed. Recommend `late_action="fail"`, and let
+  the others carry on where the design allows: a fixed group with a `quorum`
+  below its size plays on with fewer members, and `below_quorum="fail"`
+  fails those left below it. `late_action="leave_group"`,
+  `below_quorum="continue_without_group"` and `sync_group_optional = True`
+  are advanced options, only for designs where carrying on without a group
+  is meaningful; with `"leave_group"`, whether a late player appears in a
+  round depends on request timing (see "After leaving a group" in
+  `code/multiplayer/synchronization`).
+- After any group barrier, a partner may be gone, so a page that uses their
+  input must handle it being missing, for example a `PageMaker` that shows
+  "Your partner left before making an offer." when the offer isn't on
+  `group_round.var`. Cue the trial right after a `Regrouper`, where a pair
+  it has just formed is complete; a barrier in between needs a check that
+  the pair is still complete. See "What the remaining
+  players see when someone times out" in
+  `code/multiplayer/late_slow_and_leaving_players`.
+- Once a member has opened a timed page, `late_after` counts from its limit
+  plus 10 s, so it needs to cover only the untimed pages (see "Timeouts" in
+  `code/multiplayer/synchronization`). A member who closes their tab on a
+  30 s page with `late_after=20` is late about 60 s after the page opened,
+  and one who never opens it 20 s after the round started; keep
+  `late_after` short (the demos use 15-30 s) and long enough for a
+  background tab to notice the round has started.
 - The regrouper groups players at random, sits out whoever has played most,
   and counts rounds (`rounds_played`, `rounds_sat_out`); pass `roles=[...]`
   (given out at random by default) and read `self.sync_group_role` in the
-  cued trial instead of assigning roles yourself. To avoid last round's partner or to
-  alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
-  demo's `pairing.py`, which overrides `form_groups` and `assign_roles`; override them
-  likewise for other rules. With `left_over="sit_out"`, odd
+  cued trial instead of assigning roles yourself. Pass `avoid_repeats=True`
+  to avoid last round's partners where possible, and `keep_roles=True` for
+  players who keep the role of their first group (read it with
+  `regrouper.role(participant)`, which is `None` until their first group);
+  who sits out is then decided per role. Put `leave_group("pair")` (the
+  regrouper's group type) after a player's last round so newcomers' roles
+  aren't balanced against them; with `within`, leave that group instead,
+  e.g. `leave_group("cohort")`.
+  To alternate roles, copy `PairingRegrouper` from the `ultimatum_pairing`
+  demo's `pairing.py`, which overrides `assign_roles`; override `form_groups`
+  or `assign_roles` likewise for other rules. With `left_over="sit_out"`, odd
   players out sit out the round; with `within`, a player waiting alone first
   waits one more period for cohort members. The default `max_wait_time`
   allows for this; an explicit one must then exceed twice the `deadline` or
@@ -139,8 +171,9 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   group of at least the quorum (`start_short_with` overrides that). A
   grouper whose `quorum` is below `initial_group_size`, or whose group type
   has a barrier with `late_after`, must be given `below_quorum`, and
-  `late_after` must be given `late_action`; pair
-  `late_action="leave_group"` with `below_quorum="continue_without_group"`.
+  `late_after` must be given `late_action`: use `late_action="fail"` with
+  `below_quorum="fail"`. (The advanced `late_action="leave_group"` needs
+  `below_quorum="continue_without_group"`.)
   To let
   latecomers join only before the game starts, follow "Letting latecomers
   join before the game starts" in `code/multiplayer/synchronization`, with
@@ -159,15 +192,20 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   too far along for them to catch up with, pass `join_criterion` (see
   `join_criterion` under "Forming groups" in
   `code/multiplayer/synchronization`).
-  To let participants who find no group carry on alone instead of being
-  failed, pass the grouper `max_wait_action="continue_without_group"`.
+  A participant for whom no group forms is failed by default
+  (`max_wait_action="fail"`); keep that unless the design has a meaningful
+  task for them alone (`max_wait_action="continue_without_group"`).
   `demos/experiments/crowd_estimate` shows this whole open-lobby workflow,
-  with each question as a cued trial whose ungrouped version
-  (`sync_group_optional = True` on the trial class) lets a player without a
-  group answer alone; without it, a cue by a player without a group raises.
-- Branch on `participant.in_sync_group(group_type)` wherever the timeline
-  needs a group: stop a rounds loop with it in the `while_loop` condition,
-  and give a synchronized trial maker a solo alternative, for example
+  with each question as a cued trial; it fails late players and the
+  members of a group that falls below its quorum, because nobody can give
+  a group median alone. A cue by a player without a group raises, unless
+  the trial class sets `sync_group_optional = True` (advanced).
+- Where players can be left without a group and still playing, such as a
+  newcomer turned away (`"not_admitted"`), branch on `participant.in_sync_group(group_type)`
+  wherever the timeline needs a group: stop a rounds loop with it in the
+  `while_loop` condition or a `for_loop`'s `stop_if`. With the advanced
+  `"continue_without_group"` setups, give a synchronized trial maker a solo
+  alternative, for example
   `conditional("paired", in_pair, paired_trials, solo_trials)`.
 - Write each round as one cued trial per player (`Trial.cue()` on a trial
   class with `sync_group_type`): `show_trial` returns the round's pages and
@@ -183,7 +221,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `ultimatum_pairing`:
   `join(pairing, switch("round", round_status, {"paired": OfferTrial.cue(), "sat_out": sitting_out, "no_cohort": []}))`,
   where `round_status` checks `pairing.sat_out(participant)` to tell a
-  sit-out from a player removed for being late. Without a cohort, a
+  sit-out from a player whose cohort has ended. Without a cohort, a
   two-way `conditional` is enough (see "Variations" in
   `code/multiplayer/writing_a_round_based_experiment`).
 - To end the rounds once a participant has left their group, pass
@@ -191,19 +229,16 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `not participant.in_sync_group("pair")`; `stop_if` never cuts a started
   iteration short. Follow the
   loop with a `conditional` on the same function for what a member who
-  left, or anyone who never had a group, does instead, such as answering
-  the rest of the questions alone.
-  `public_goods` stops its `round=i` loop with `stop_if` in a team game that
-  plays on with fewer members, down to its quorum, and pays the last member
-  for the round in which the group dissolves: a started cued trial runs to
-  its end, where `score_answer` reads its `sync_group_outcome`.
+  left does instead, such as a page that explains why. A game that fails
+  every member who leaves, such as `public_goods`, a team game that plays
+  on with fewer members down to its quorum and then fails the last member
+  (`below_quorum="fail"`), needs neither.
 - In a `Regrouper` game the player whose partner left stays in the pair, so
   they play the round out and see its outcome, as in `ultimatum_pairing`;
-  only the player removed for being late is out of the pair, and gets their
-  own page there. The barrier's `on_release` can take `left`, the members
-  who left since the previous barrier, and
-  `p.sync_group_removal_reason("pair")` tells the one who stayed whether
-  their partner returned the study or was too slow.
+  a player failed for being late goes to the end of the experiment. The
+  barrier's `on_release` can take `left`, the members who left since the
+  previous barrier, and `p.sync_group_removal_reason("pair")` tells the one
+  who stayed whether their partner returned the study or was too slow.
 - For lobbies/quorums, combine `SimpleGrouper(..., waiting_logic=...)` with
   filler work via `trial_maker.custom(...)`, as in `sync_quorum`. Keep
   `waiting_logic` atomic, one short trial per pass
@@ -307,12 +342,12 @@ Module("game", for_loop(
   `conditional` on `participant.in_sync_group(...)`, with a page as the
   other branch, so a player the regrouper sat out gets a page instead of a
   trial. With a cohort (`within=`), use the three-way `switch` on
-  `round_status` instead, as described above. Where players without a
-  group play on alone, as in an open lobby, leave the cue unwrapped and
-  branch in `show_trial` on `self.sync_group is None`, as `crowd_estimate`
-  does. A started trial runs to its
-  end even if the player leaves the group, so its `show_feedback` explains every outcome, including being
-  removed for lateness. Read how the round ended for each player from
+  `round_status` instead, as described above. Only in the advanced designs
+  where players without a group play on alone, leave the cue unwrapped,
+  set `sync_group_optional = True` and branch in `show_trial` on
+  `self.sync_group is None`. A started trial runs to its
+  end even if the player leaves the group, so its `show_feedback` explains
+  every outcome the player can still see, such as a partner leaving. Read how the round ended for each player from
   `trial.sync_group_outcome` (`"stayed"` once a barrier in the trial's
   pages releases the group with them in it, after which it doesn't change;
   before that, why they left, such as `"late"`), a partner's from their
@@ -373,41 +408,33 @@ with a group. List the cases and your decisions in the experiment's README.
 | Case | Recognise it by | Simulate it in the bot test |
 |---|---|---|
 | Runs out of time on a timed page (stays in the group) | `trial.time_limit_reached`; answer `None` or `time_limit_answer` | `bot.run_out_of_time()` |
-| Closes the tab or stops responding | reason `"late"`, from a barrier's `late_after` | Stop taking pages for that bot, then `make_late_now(bots, "<barrier id>")` once the others wait there |
+| Closes the tab or stops responding (barrier `late_action="fail"` fails them) | reason `"late"`, from a barrier's `late_after` | `bot.allow_failure()`, stop taking pages for that bot, then `make_late_now(bots, "<barrier id>")` once the others wait there; assert `bot.failed` |
 | Waits for others who never arrive (barrier `max_wait_action="leave_group"`; the default fails them) | reason `"waited_too_long"`, from a barrier's `max_wait_time` | Wait out the barrier's `max_wait_time` |
 | Is left in a group below quorum | reason `"group_dissolved"`, from the grouper's `below_quorum` | Make enough members drop out or late |
 | Returns the study | reason `"left_experiment"` | `bot.drop_out()` |
 | Is failed by the experiment | reason `"left_experiment"` | `bot.allow_failure()`, then `bot.fail("reason")` |
-| Is removed on the dashboard | reason `"removed_by_experimenter"` | `group.remove_participant(participant, reason="removed_by_experimenter")` |
+| Is failed on the dashboard's Sync groups tab | reason `"left_experiment"`; failure tag `"manual_failure"` | `bot.allow_failure()`, then `bot.fail("manual_failure")` |
 | Arrives when no group can form (grouper `max_wait_action="continue_without_group"`; the default fails them) | reason `"no_group_formed"` | Send fewer bots than a group needs, even a short one with `quorum` or `start_short_after`, and wait out the grouper's `max_wait_time` |
 | Sits a round out at a `Regrouper` | not in a group; `regrouper.sat_out(participant)` | An odd number of bots with `left_over="sit_out"` |
 | Joins but is never admitted (`use_admission_points=True`) | reason `"not_admitted"`, from `newcomer_max_wait`, top-ups stopping or the group ending | Send a bot in while the group plays, then end the group or stop its top-ups |
 
 The reasons come from `participant.sync_group_removal_reason(group_type)`;
 the `sync_group_outcome` of their trial in the round holds the same value until a barrier
-releases the group. A player who comes back after being removed keeps their
-reason; test it by taking pages for the silent bot again.
+releases the group. A failed player's final page already explains why
+PsyNet ended their session, for example "You took too long to reach the
+next step, so we ended your session."
 
-PsyNet already tells a player removed by a barrier that their group went on
-without them. Pay by `self.sync_group_outcome` in `score_answer`, tell the
-others who left from `on_release`'s `left` argument, and map the reasons
-your game can meet to the text of the page after an early end, as in
-`public_goods`. Include `"removed_by_experimenter"`, which a dashboard removal can give in
-any game; a missing reason raises `KeyError`:
+Tell the others who left from `on_release`'s `left` argument, as in
+`public_goods`. With `late_action="fail"` and `below_quorum="fail"`, every
+member who leaves is failed, including one the experimenter fails on the
+dashboard, so `score_answer` runs only for players who finished the round
+and no page needs to handle a player without a group. With the advanced
+`"leave_group"` or `"continue_without_group"` options, pay by
+`self.sync_group_outcome` in `score_answer`, map every reason your game
+can meet (such as `"late"` or `"group_dissolved"`) to its own text, and
+test that a player who comes back after being removed sees it.
 
-```python
-ENDED_EARLY_TEXTS = {
-    "late": "You were away for too long, so the game ended early for you.",
-    "group_dissolved": "Too few players stayed, so the game ended early.",
-    "removed_by_experimenter": "You were removed from the game.",
-}
-
-def game_ended_early(participant):
-    text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
-    return InfoPage(f"{text} Your bonus is ${participant.performance_reward:.2f}.")
-```
-
-Read `references/test-dropouts.md` for a worked pair test with a quitter and a
+Read `references/test-dropouts.md` for a worked dropout test with a quitter and a
 silent member, and for how long to wait out timeouts in bot tests.
 
 - Check why a bot left with
@@ -419,7 +446,8 @@ silent member, and for how long to wait out timeouts in bot tests.
   finish bots that still wait for each other with
   `run_bots_to_completion(bots)`. For several groups in one test, and for
   `Regrouper` partners, follow "Bots that drop out" in `test/backend`.
-- A member removed for being late sees "went on without you" only on the page
+- With the advanced `late_action="leave_group"`, a member removed for being
+  late sees "went on without you" only on the page
   they were on; assert `current_notice` before that bot takes the page. "After
   leaving a group" in `code/multiplayer/synchronization` gives the wording,
   which depends on how many members were left.

@@ -698,6 +698,25 @@ def sandbox(*args, **kwargs):
     )
 
 
+def _ticking_game_warning(mode):
+    """The warning ``psynet debug local`` and ``psynet deploy local`` give when
+    they run the development server for an experiment with a live game that
+    ticks, or ``None``. ``mode`` is the deployment's mode, ``"debug"`` or
+    ``"live"``."""
+    from .experiment import import_local_experiment
+
+    games = import_local_experiment()["class"].realtime_games
+    if not any(game.tick_rate for game in games):
+        return None
+    command = "psynet debug local" if mode == "debug" else "psynet deploy local"
+    return (
+        "This experiment has a live game with ticks. The development server "
+        "sometimes delivers the game's views late, in bursts, so other players' "
+        f"movement stalls or jumps. Run {command} --legacy instead, which uses "
+        "gunicorn, like a deployed experiment."
+    )
+
+
 def _run_local(ctx, docker, archive, legacy, no_browsers, mode, context_group):
     """
     Debug the experiment locally (this should normally be your first choice).
@@ -1501,6 +1520,24 @@ def _debug_docker(ctx, archive, no_browsers):
         reset_console()
 
 
+def _ready_rows(warning):
+    """Return this command's rows for Dallinger's ``Ready.`` block.
+
+    They are the development server ``warning``, if there is one, since the
+    copy printed at the start has scrolled away by then, and, in an isolated
+    session, the ``export`` line that lets other terminals use the session's
+    database and Redis.
+    """
+    from .isolated_environment import READY_ENV_VAR
+
+    rows = []
+    if warning:
+        rows.append(("Warning", warning))
+    if os.environ.get(READY_ENV_VAR):
+        rows.append(("Other terminals", _isolated_session_export_line(os.environ)))
+    return rows
+
+
 def _isolated_session_export_line(env):
     """Return the ``export`` command that points another terminal at an isolated session."""
     from .testing.locks import ISOLATED_SESSION_VARIABLES
@@ -1672,8 +1709,6 @@ def _exit_on_termination_signal():
 def _debug_auto_reload(archive, no_browsers):
     from dallinger.deployment import DevelopmentDeployment
 
-    from .isolated_environment import READY_ENV_VAR
-
     develop_module = importlib.import_module("dallinger.command_line.develop")
     port = _local_base_port()
     # Dallinger's development server runs `flask run`, which reads these variables.
@@ -1685,11 +1720,9 @@ def _debug_auto_reload(archive, no_browsers):
     os.environ["FLASK_RUN_EXCLUDE_PATTERNS"] = os.pathsep.join(
         _reloader_exclude_patterns()
     )
-    ready_rows = []
-    if os.environ.get(READY_ENV_VAR):
-        ready_rows.append(
-            ("Other terminals", _isolated_session_export_line(os.environ))
-        )
+    warning = _ticking_game_warning(deployment_info.read("mode"))
+    if warning:
+        click.echo(f"Warning: {warning}", err=True)
 
     run_pre_auto_reload_checks()
 
@@ -1699,7 +1732,7 @@ def _debug_auto_reload(archive, no_browsers):
     try:
         with _stop_child_processes_on_signal():
             develop_module.run_debug(
-                port=port, no_browsers=no_browsers, ready_rows=ready_rows
+                port=port, no_browsers=no_browsers, ready_rows=_ready_rows(warning)
             )
     finally:
         db.session.commit()
@@ -3040,7 +3073,6 @@ def run_pre_checks(
             # The message explains how to add a consent page.
             raise click.ClickException(str(e)) from e
     exp._check_background_recording_pages()
-    exp.check_python_dependencies()
 
     try:
         with open("requirements.txt", "r") as f:
@@ -4949,7 +4981,7 @@ def rpdb(ip, port):
 @click.argument("path")
 @require_exp_directory
 def load(path):
-    """Replace the local database with a provided zip file.
+    """Replace the local database with an export folder or zip file.
 
     Stop ``psynet debug`` and any other client using this database role first.
     The command refuses to drop tables while another client using the same
@@ -8379,7 +8411,13 @@ def locales(codes_only):
 @psynet.command("translate")
 @click.argument("locales", nargs=-1)
 @click.option(
-    "--force", is_flag=True, help="Force retranslation of existing translations"
+    "--force",
+    is_flag=True,
+    help=(
+        "Delete each locale's catalog and retranslate everything, including "
+        "translations you have reviewed. Without --force, only untranslated "
+        "texts are sent."
+    ),
 )
 @click.option(
     "--skip-pot",
@@ -8412,7 +8450,7 @@ def translate(locales, force, skip_pot, continue_on_error, translator):
     languages :
         The target languages, specified as space-separated language codes
     force : bool
-        If True, force retranslation of existing translations
+        If True, delete each locale's catalog and retranslate everything, including reviewed translations
     skip_pot : bool
         If True, skip the generation of the translation template (.pot file); useful for checking failed translations
         since recreating the template takes some time, but the translation did not change.

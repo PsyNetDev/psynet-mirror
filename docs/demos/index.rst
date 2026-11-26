@@ -108,6 +108,9 @@ Pages and controls
     with buttons, text boxes and audio recording. :doc:`/design/pages`,
     :doc:`/code/writing_pages`.
 
+`features/back_button <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/back_button>`__
+    Instruction pages with Back buttons that show the previous page at once. :ref:`going_back_to_the_previous_page`.
+
 `features/modular_page <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/modular_page>`__
     A gallery of prompt and control combinations, ending with custom
     ``Prompt`` and ``Control`` classes. :doc:`/code/pages/control_gallery`.
@@ -210,6 +213,28 @@ Trials
 `features/trial_cue_adaptive <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/trial_cue_adaptive>`__
     A 1-up/1-down staircase written with ``Trial.cue`` and ``while_loop``,
     with the adaptive rule in a separate, testable module.
+
+`features/staircase_on_one_page <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/staircase_on_one_page>`__
+    A brightness staircase on ordinary trial pages that answer on a key press,
+    while a ``GeometricStaircaseTrialMaker`` chooses the next brightness
+    difference after each answer.
+
+`experiments/flanker <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/flanker>`__
+    An Eriksen flanker reaction time task: a fixation cross, a row of arrows
+    and a key press per trial, with each trial following the last without
+    waiting for the server and reaction times measured from the frame that
+    shows the arrows. :doc:`/code/trials/keeping_a_task_on_one_page`.
+
+`features/rapid_ratings <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/rapid_ratings>`__
+    Picture ratings that show each picture as soon as the previous one is
+    rated, with ``prepare_trials_in_advance`` and a page module that preloads
+    the upcoming pictures. :doc:`/code/trials/keeping_a_task_on_one_page`.
+
+`features/rapid_ratings_built_in <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/rapid_ratings_built_in>`__
+    The same picture ratings with a built-in ``ImagePrompt`` and
+    ``PushButtonControl``: the browser swaps in each trial's page, rendered in
+    advance, as soon as the previous picture is rated.
+    :ref:`showing_the_next_trials_without_waiting`.
 
 Chains
 ------
@@ -403,8 +428,9 @@ Groups
 
 `experiments/crowd_estimate <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/crowd_estimate>`__
     A wisdom-of-crowds estimation game in an open lobby: groups of up to
-    four may start short and take latecomers until the game starts, and
-    anyone left without a group answers alone. Each question is one cued
+    four may start short and take latecomers until the game starts, a
+    player who stops responding is failed, and the others carry on while
+    at least three remain. Each question is one cued
     trial per player, with the group's median on the node they share.
     :doc:`/code/multiplayer/synchronization`.
 
@@ -432,10 +458,50 @@ Groups
 
 `experiments/public_goods <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods>`__
     A repeated public goods game in groups of three that carries on with two
-    when a member returns the study or stops responding, and tells the last
-    player, and anyone without a group, why the game ended. Each round is one
+    when a member returns the study or stops responding, who is failed, and
+    fails the last player left. Each round is one
     cued trial per player that pays its bonus, with the group's pot on the
     round they share. :doc:`/code/multiplayer/synchronization`.
+
+`experiments/rock_paper_scissors_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/rock_paper_scissors_live>`__
+    Pairs play two live games of rock, paper, scissors, each on one page.
+    Each game is a cued trial per player, whose answer is the player's part
+    of the game's outcome. The trial's definition sets how many throws the
+    game has and the bonus that the game pays for a throw won. Part 1 of
+    :doc:`/code/multiplayer/live_game_tutorial`.
+
+`experiments/snake_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/snake_live>`__
+    In this live game, two to four players each steer a snake around a
+    shared board. The game moves every snake a square on each tick, and each
+    page sends only the player's turns and draws the views as they arrive. Each
+    piece of food eaten pays a bonus. Part 2 of :doc:`/code/multiplayer/live_game_tutorial`.
+
+`experiments/shared_canvas_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/shared_canvas_live>`__
+    In this live game, two to eight players move around a shared canvas
+    with the arrow keys and collect coins. The server works out every player's
+    position from the moves their page sends. The page predicts the player's
+    own moves, and draws the other players by interpolating between the
+    game's ticks. Each coin pays a bonus. Part 3 of :doc:`/code/multiplayer/live_game_tutorial`.
+
+`experiments/bargaining_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/bargaining_live>`__
+    The live counterpart of ``ultimatum_pairing``: a cohort of four is
+    re-paired every round, and each pair bargains over a stake for up to a
+    minute, with either player free to propose a split, change it, or accept
+    their partner's. Each round is one cued trial per player that starts the
+    pair's game. :doc:`/code/multiplayer/live_games`.
+
+`experiments/public_goods_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/public_goods_live>`__
+    The live counterpart of ``public_goods``: each round, the members of a
+    team of three see each other's contributions to the pot as they change,
+    and can change their own until the time is up. The pot is on the round
+    the team shares. :doc:`/code/multiplayer/live_games`.
+
+`experiments/microsociety_live <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/microsociety_live>`__
+    The live counterpart of ``microsociety``, played as one continuous
+    game: the members of a fishing society steer boats between fishing
+    spots and see who catches what, where, while newcomers sail onto the
+    lake and each member leaves once their time is up or a newcomer takes
+    their place. :ref:`live-games-join-and-finish`.
 
 `features/websocket_chatroom <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/websocket_chatroom>`__
     A multi-room chat written directly on WebSockets rather than
@@ -443,8 +509,9 @@ Groups
     filter them by room. The experiment's ``receive_message`` stores each
     message in a custom table, ``publish_to_subscribers`` sends room
     occupancy to every client, and a custom route returns a room's history
-    to late joiners. ``config.txt`` sets ``num_chatrooms``,
-    ``chatroom_max_occupancy`` and ``chatroom_show_history``.
+    to late joiners. The experiment registers the config keys
+    ``num_chatrooms``, ``chatroom_max_occupancy`` and
+    ``chatroom_show_history``, which you can set in ``config.txt``.
     :doc:`/code/multiplayer/realtime_interaction`.
     :doc:`/code/pages/custom_routes`.
 

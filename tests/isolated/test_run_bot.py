@@ -17,7 +17,7 @@ from psynet.experiment import Request
 from psynet.modular_page import ModularPage
 from psynet.participant import DriverStopped, ParticipantDriver
 from psynet.pytest_psynet import path_to_test_experiment
-from psynet.timeline import Response
+from psynet.timeline import Response, ResponseNotReady
 
 MEDIA_HEADERS = {"wav": b"RIFF\x00\x00\x00\x00WAVE", "webm": b"\x1a\x45\xdf\xa3"}
 
@@ -54,6 +54,7 @@ class TestRunBot:
         assert status["page"]["label"] == "favourite_colour"
         assert status["page"]["time_estimate"] == 5
         assert status["page"]["is_timeline_hold"] is False
+        assert status["page"]["awaiting_release"] is False
         assert not bot.is_waiting
         assert status["page"]["bot_response"]["answer"] == "red"
         assert len(response_files) == 0
@@ -184,6 +185,24 @@ def test_advance_past_wait_pages_moves_on_bots_a_stop_at_barrier_released():
     bot.take_page.assert_called_once()
 
 
+def test_advance_past_wait_pages_polls_current_visits_and_stops_at_the_next():
+    from psynet.bot import _advance_past_wait_pages
+
+    def at_turn(page_uuid):
+        page = {"is_timeline_hold": True, "barrier_id": "turn", "can_resume": False}
+        return {"page_uuid": page_uuid, "page": page}
+
+    bot = MagicMock()
+    bot.status = at_turn("current")
+    # The first poll doesn't release the bot; the second moves it on to the
+    # barrier's next visit.
+    visits = iter(["current", "next"])
+    bot.take_page.side_effect = lambda: setattr(bot, "status", at_turn(next(visits)))
+    _advance_past_wait_pages([bot], 10, "turn", current_visits={"current"})
+    assert bot.take_page.call_count == 2
+    assert bot.status["page_uuid"] == "next"
+
+
 def _driver_page_status(page_uuid, answer="ok"):
     return {
         "page_uuid": page_uuid,
@@ -293,6 +312,42 @@ def test_submit_response_does_not_retry_when_the_page_uuid_is_unchanged(
         driver._submit_response(driver.status, {})
 
     assert posted == ["hold-a"]
+
+
+def test_submit_response_sends_it_again_after_a_retry_after(monkeypatch):
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.id = 7
+    driver.experiment = SimpleNamespace(base_url="http://psynet.test")
+    driver.response_files = {}
+    driver.status = _driver_page_status("page-a")
+    replies = [
+        {"submission": "rejected", "message": "Wait.", "retry_after": 2},
+        {"submission": "rejected", "message": "Wait.", "retry_after": 1.5},
+        {"submission": "approved"},
+    ]
+    posted = []
+    slept = []
+
+    def fake_post(_url, data=None, files=None):
+        posted.append(json.loads(data["json"])["page_uuid"])
+        return _driver_http_response(replies[len(posted) - 1])
+
+    driver.__dict__["_http_session"] = SimpleNamespace(post=fake_post)
+    monkeypatch.setattr(driver, "_fetch_status", lambda: None)
+    monkeypatch.setattr(driver, "_sleep", slept.append)
+    monkeypatch.setattr("psynet.participant.db.session.expire_all", lambda: None)
+
+    driver._submit_response(driver.status, {})
+
+    assert posted == ["page-a", "page-a", "page-a"]
+    assert slept == [2, 1.5]
+
+
+@pytest.mark.parametrize("retry_after", [0, "1", None])
+def test_retry_after_is_a_positive_number(retry_after):
+    with pytest.raises(ValueError, match="retry_after must be a positive number"):
+        ResponseNotReady("Wait.", retry_after=retry_after)
+    assert ResponseNotReady("Wait.").retry_after == 1
 
 
 def test_submit_response_sends_hold_resume_for_timeline_holds(monkeypatch):
@@ -467,6 +522,63 @@ def test_paced_bots_stay_on_a_page_for_at_least_its_min_duration(
     driver.take_page(render_pages=False, time_factor=time_factor)
 
     assert sleeps[0] == pytest.approx(expected_sleep, abs=0.05)
+
+
+@pytest.mark.parametrize(
+    "outcome", ["released", "unreleased", "ended", "replaced", "replaced_waiting"]
+)
+def test_bots_poll_instead_of_answering_until_their_barrier_releases_them(
+    monkeypatch, outcome
+):
+    """Waiters must not hold their rows while a barrier is ready to lock them all.
+
+    A bot that is not released within 5 s answers the page anyway. If the
+    server ends or replaces the page meanwhile, the bot doesn't answer it.
+    """
+    driver = ParticipantDriver.__new__(ParticipantDriver)
+    driver.status = {**_driver_page_status("page-a"), "status": "working"}
+    driver.status["page"]["awaiting_release"] = True
+    driver.response_files = {}
+    clock = [0.0]
+    events = []
+
+    def fetch(release_poll=False):
+        events.append("poll" if release_poll else "fetch")
+        driver.status_time_fetched = clock[0]
+        page_uuid = "page-b" if outcome.startswith("replaced") else "page-a"
+        driver.status = {**_driver_page_status(page_uuid), "status": "working"}
+        if outcome == "ended":
+            driver.status = {"status": "abandoned", "page_uuid": page_uuid}
+        elif release_poll and outcome in ("unreleased", "replaced_waiting"):
+            driver.status["page"] = {"awaiting_release": True}
+
+    def sleep(seconds):
+        clock[0] += seconds
+
+    monkeypatch.setattr("psynet.participant.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr(driver, "_sleep", sleep)
+    monkeypatch.setattr(driver, "_fetch_status", fetch)
+    monkeypatch.setattr(
+        driver,
+        "_submit_response",
+        lambda status, *args: events.append(status["page"]["bot_response"]["answer"]),
+    )
+    driver.status_time_fetched = 0.0
+
+    still_working = driver.take_page(render_pages=False)
+
+    assert still_working == (outcome != "ended")
+    if outcome == "released":
+        assert events == ["poll", "ok"]
+    elif outcome == "unreleased":
+        assert events == ["poll"] * 20 + ["fetch", "ok"]
+        assert clock[0] == pytest.approx(5.0)
+    elif outcome == "replaced_waiting":
+        # The bot answers the new page on its next take_page, so needs all of it.
+        assert events == ["poll", "fetch"]
+        assert "time_estimate" in driver.status["page"]
+    else:
+        assert events == ["poll"]
 
 
 def test_advance_past_wait_pages_names_bots_still_waiting():

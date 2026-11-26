@@ -36,6 +36,42 @@ Keeping the document open avoids a full reload, but it also means that PsyNet
 must explicitly reproduce the resource cleanup and initialization that a reload
 would normally provide.
 
+Pages rendered in advance
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A page can carry ``upcoming_pages`` in its bootstrap data and fragment
+payload: the pages the browser may show before the server confirms them,
+each with the page UUID the participant will get on reaching it. When the
+participant answers, ``psynet.js`` swaps in the next one and queues the answer
+for ``/response``. A reply whose page UUID matches is adopted without another
+swap; any other reply replaces the page as usual.
+
+A page UUID follows from the participant, how many pages they have been shown
+and what the page is (``make_page_uuid``), so the server knows each upcoming
+page's UUID without storing it: a trial page is keyed by its trial, other
+pages by their position in the timeline. ``_upcoming_pages_payload`` sets it
+on each page rendered in advance before rendering it. Timeline pages are
+shared by all participants, so ``Timeline._pages_rendered_in_advance`` renders
+a copy of the next page.
+
+Going back
+~~~~~~~~~~
+
+The same rules decide whether a top-level page can go back to the page before
+it (``Timeline._page_to_go_back_to``). In addition, the page must have a Next
+button, for Back to sit beside, and the earlier page must collect no answer
+(its control is a ``NullControl``), so going back never revises an answer.
+``Timeline._back_button`` also shows Back, disabled, on a page that the next page can go back to, and the render passes the result to the template as ``back_button``. The
+page also sends the browser the earlier page as ``previous_page``, rendered
+with the page UUID and progress it will have, like the pages rendered in
+advance (``Page._page_uuid`` and ``Page._progress``). The Back button queues a ``/response`` with
+``back`` set instead of an answer. If no answers are queued, the browser shows
+``previous_page`` at once and sends the request in the background; otherwise
+it waits for the queued answers to be sent and shows the page in the reply.
+``Timeline.go_back`` moves ``elt_id`` back, takes back the earlier page's time
+credit and progress, and consumes that page again, so it gets the predicted
+page UUID. A rejected Back reloads the page.
+
 Server-side rendering
 ---------------------
 
@@ -127,6 +163,21 @@ are no longer part of this pipeline. Put database preparation in
 ``pre_render()``, customize response data through ``ResponseResult``, and keep
 ``render()`` read-only.
 
+Before ``process_response``, and inside the same ``forbid_commits`` block,
+``POST /response`` calls the page's
+:meth:`~psynet.timeline.Page.check_ready_for_response`. ``ModularPage`` passes
+the call to its control. A :class:`~psynet.timeline.ResponseNotReady` ends the
+request with a rejection before anything is written: no ``Response`` row, and
+no ``time_taken`` on the trial. Its ``retry_after`` goes in the rejection
+payload, and the route answers without calling the experiment's
+``response_rejected``, since the participant has nothing to correct. ``psynet.waitIfRetryLater`` then shows
+the message in a status notice and resends the same submission after that
+many seconds, and the bot driver sleeps and resends. Neither limits its
+attempts, so the page has to stop refusing by itself.
+A :class:`~psynet.live_game.LiveGamePage`'s control uses this to keep a game page open until its game's
+result is saved, and raises an error for a game that is still running more
+than a minute after it should have ended, which can no longer end.
+
 Participant-facing write phases use a bounded PostgreSQL ``lock_timeout`` so
 unexpected contention fails safely instead of occupying a web worker
 indefinitely. ``GET /timeline?mode=json`` and ``POST /response`` return
@@ -155,7 +206,9 @@ that check commits; partners leave on overlay wake (websocket on-open, a 2 s
 safety poll, or a later GET). The last arriver self-skips the hold they just
 released. A hold consumed immediately after skipping a released wait
 (last-arrival self-skip, overlay resume, GET recovery, or a poller skip)
-is marked silent so the overlay stays a spinner until partners catch up.
+is marked silent so the overlay stays a spinner while partners catch up.
+After ``CATCH_UP_SPINNER_SECONDS`` (3 s) a silent hold that is still waiting,
+for example for a partner who never arrives, shows its waiting message.
 The overlay chip and websocket are reused when the next page is also a hold.
 The visit claim is held on a second connection until that check finishes.
 The ORM session does not take that key while the extra transaction is open.
@@ -192,7 +245,7 @@ Page bootstrap data
 -------------------
 
 ``#psynet-template-data`` is the server-to-browser contract for the active
-page. It includes page metadata, ``js_vars``, event definitions, media requests,
+page. It includes page metadata, ``page_config``, event definitions, media requests,
 managed JavaScript resources, routes, feature flags, and localized strings.
 
 On an in-place transition, ``psynet.refreshTemplateData()`` updates the
@@ -214,6 +267,7 @@ PsyNet:
 * stops page media and invalidates outstanding media loads;
 * clears Lucid termination state;
 * runs registered page cleanup callbacks and event-listener cleanup;
+* closes the page's live game connection, if it has one;
 * resets page-scoped response and JavaScript state.
 
 2. Commit the new fragment
@@ -238,7 +292,8 @@ PsyNet then:
 7. imports and activates ``js_page_modules``;
 8. initializes trial progress, media, controls, and ``trialConstruct`` behavior;
 9. marks the page ready and registers the ``pageReady`` trial event;
-10. prepares and starts the trial, then enables response and submission.
+10. stops dimming an in-place page and calls page modules' ``update``;
+11. prepares and starts the trial, then enables response and submission.
 
 Readiness and trial startup
 ---------------------------
@@ -304,8 +359,22 @@ Page modules
 named ``activate(context)`` export. Modules are imported and cached normally,
 while ``activate()`` runs for every hosting page.
 
-The activation context contains ``root``, ``trial``, ``vars``, ``page``, and
-``psynet``. ``activate()`` may return an asynchronous cleanup function.
+The activation context contains ``root``, ``trial``, ``config`` (the page's
+``page_config``), ``page``, and ``psynet``, plus ``vars``, a deprecated name
+of ``config``. ``activate()`` may return an asynchronous cleanup function, or
+an object ``{update, cleanup}``. PsyNet calls
+``update({contents, upcomingContents, response, signal})`` after the page is
+ready, aborting the previous call's ``signal`` first and the last one when the
+page is left; see :doc:`/code/trials/keeping_a_task_on_one_page`. Answers
+given through ``response`` go to ``/response`` in the background, in order,
+from the answer queue in ``psynet.js``. A reply that keeps a ``JSPage`` on
+screen is adopted without an in-place swap (``psynet.keptPageFragment``): it
+must be a ``JSPage`` with the shown page's layout key and, if a trial was
+shown in advance, that trial's page UUID and contents. A page UUID is
+made from the participant's id, how many pages they have been shown and what
+the page is (its trial, or its position in the timeline; see
+``make_page_uuid``), so the server can tell the browser the page UUIDs of the
+next trials' pages without storing them.
 
 Most page code and modules do not require cleanup because PsyNet already
 removes page DOM, stops trial-owned resources, and resets response state.
@@ -594,13 +663,56 @@ skipped its own later hold, an ordinary POST of the previous hold uuid is
 catch-up, not a multi-tab reject. Hold-resume overlays catch up the same way
 so the browser can swap in place.
 
+Live game sockets
+-----------------
+
+``psynet.liveGame`` joins a :class:`~psynet.live_game.LiveGamePage` to its
+live game, over Dallinger's ``/experiment-socket`` route. The page's
+control, a ``LiveGameControl`` in ``psynet/live_game/control.py``,
+contributes everything the page needs through the component hooks:
+
+* ``get_js_dependencies`` loads ``live-game.js``, so only documents that
+  show a game page load it;
+* ``get_js_page_code`` calls ``PsyNetLiveGame.activatePage``, which creates
+  ``psynet.liveGame`` for the first game page a document shows, shows the
+  no-game notice, opens the page's game socket at ``timelinePageReady`` if
+  the page's own JavaScript hasn't already, and returns the cleanup that
+  closes it;
+* ``get_participant_page_config`` adds the game's id and channel to the page's
+  ``page_config`` each time the page renders. It raises an error for a participant
+  who hasn't reached the barrier of the ``PlayLiveGame`` the page belongs to.
+
+The socket's scope is the participant's ``websocketScope``, a ``.``,
+``dallinger.pageScope``, another ``.`` and a count of the game sockets the
+document has opened. ``dallinger.pageScope`` names the document, which tells
+two tabs apart, and the count tells apart the game pages one document shows
+in turn, so the real-time engine never takes a new page's messages for an
+earlier page's. ``Experiment.accept_websocket_connection`` checks the part
+before the first ``.``, and accepts up to 64 letters, digits and dots after
+it. PsyNet's own directed messages, such as a timeline hold's wake, name the
+bare ``websocketScope``, so game sockets don't receive them.
+
+The same game page open in a second tab plays as the same player. Once one tab
+moves the participant on, the other's submission is refused, like any stale
+tab's.
+
+When the page's ``auto_advance`` is on, which is the default, the game
+socket's ``onResultSaved`` and ``onRefused`` call ``psynet.nextPage()``. If
+the page isn't ready yet, as when a reload finds the game already ended,
+the call waits for ``timelinePageReady``, and is dropped if the participant
+has left the page by then. The page hides its Next button while its game
+socket is connected, and shows it again once the socket has been closed for
+ten seconds.
+
 Adding new frontend components
 ------------------------------
 
 For new Prompt and Control components:
 
 * keep templates focused on markup;
-* use ``get_js_vars()`` for serialized page configuration;
+* use ``get_page_config()`` for serialized page configuration;
+* use ``get_participant_page_config(experiment, participant)`` for configuration that
+  depends on the participant, read each time the page renders;
 * use ``get_js_dependencies()`` for classic load-once libraries;
 * use ``get_js_page_code()`` for short inline activation snippets;
 * use ``get_js_page_modules()`` for per-page module behavior;
@@ -637,6 +749,12 @@ Key implementation and test locations
 * ``psynet/resources/scripts/psynet.js`` — browser lifecycle orchestration.
 * ``psynet/resources/scripts/websocket-channel.js`` — shared WebSocket channel
   framing and reconnect lifecycle.
+* ``psynet/resources/scripts/live-game.js`` — ``psynet.liveGame``, a game
+  page's connection to its live game.
+* ``psynet/live_game/`` — live games on the server: the game class, its
+  method wrappers, ``PlayLiveGame``, the control and the ready step.
+* ``tests/isolated/test_live_game.py``, ``tests/javascript/live-game.test.mjs``
+  and ``tests/playwright/live_game.spec.js`` — live games.
 * ``psynet/timeline_hold.py`` — durable hold state, accounting, and wake
   publication.
 * ``psynet/experiment.py`` — GET hold resolution (``_resolve_get_timeline_hold``,

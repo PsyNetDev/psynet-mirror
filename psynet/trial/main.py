@@ -16,6 +16,7 @@ from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -73,6 +74,7 @@ from ..timeline import (
     DatabaseCheck,
     Module,
     ModuleState,
+    Page,
     PageMaker,
     ParticipantFailRoutine,
     PreDeployRoutine,
@@ -82,6 +84,7 @@ from ..timeline import (
     join,
     switch,
     while_loop,
+    with_fixed_progress,
 )
 from ..timeline_hold import _reject_countdown
 from ..utils import (
@@ -166,6 +169,14 @@ class AssetParentMixin:
             asset.deposit()
 
         self.assets[local_key] = asset
+
+
+class _AfterTrialPageMaker(PageMaker):
+    """Runs :meth:`TrialMaker.show_after_trial`, whose pages must each give a ``time_estimate``."""
+
+    def impute_time_estimates(self, elts):
+        # The page maker's own estimate is 0, which would silently pay nothing.
+        pass
 
 
 @register_table
@@ -347,6 +358,20 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         default node. ``False`` (default) raises an error instead, which
         usually means the cue needs a :func:`~psynet.timeline.conditional`
         on ``participant.in_sync_group(...)``.
+
+    live_game_class : type or None
+        Set this class attribute to the :class:`~psynet.live_game.LiveGame`
+        subclass that :meth:`show_trial` plays with a
+        :class:`~psynet.live_game.PlayLiveGame`, so that PsyNet checks the
+        two together when the experiment loads, rather than when it first
+        builds the trial's pages: a game that pays through its
+        ``performance_reward`` in a trial class that also defines
+        :meth:`compute_performance_reward`, which would pay each player
+        twice, raises an error, as does a game that can't be played, such
+        as one without a ``name``. A trial whose ``show_trial`` then plays
+        another game raises an error too, when the trial's pages are
+        built. ``None`` (default) leaves these
+        checks to when the pages are built.
 
     time_credit_before_trial: float
         Reports the amount of time credit that the participant had before they started the trial (in seconds).
@@ -539,6 +564,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     n_repeat_trials = Column(Integer)
     time_taken = Column(Float)
     time_limit_reached = Column(Boolean)
+    # When the participant reached the trial, or None if they never did; the
+    # response timeout of trials prepared in advance counts from here.
+    presented_at = Column(DateTime)
+    # Pages shown in advance are compared by layout key, rendered once per trial.
+    layout_key = Column(String)
     _initial_assets = deferred(Column(PythonDict))
 
     time_credit_before_trial = Column(Float)
@@ -643,6 +673,14 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     accumulate_answers = False
     sync_group_type = None
     sync_group_optional = False
+    live_game_class = None
+
+    def __init_subclass__(cls, **kwargs):
+        if cls.live_game_class is not None:
+            from ..live_game.play import _check_trial_class
+
+            _check_trial_class(cls)
+        super().__init_subclass__(**kwargs)
 
     # Back-compat alias: older code referred to the creating node as ``origin``.
     @property
@@ -652,6 +690,28 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @property
     def var(self):
         return VarStore(self)
+
+    @property
+    def _page_key(self):
+        """What the page UUID of the trial's page says it is."""
+        return f"trial{self.id}"
+
+    @property
+    def live_game(self):
+        """The live game played in this trial, by the
+        :class:`~psynet.live_game.PlayLiveGame` that its ``show_trial``
+        returned, as the participant's
+        :class:`~psynet.live_game.LiveGameRecord`, with their ``answer``.
+        Its ``status`` is
+        :attr:`LiveGameStatus.NOT_STARTED <psynet.live_game.LiveGameStatus.NOT_STARTED>`
+        if the group started no game in the trial's round, and it's ``None``
+        for a trial that wasn't played in a group's round.
+        """
+        from ..live_game.record import LiveGameRecord
+
+        if self.group_round is None:
+            return None
+        return LiveGameRecord(self.group_round.live_game_id, self.participant)
 
     @classmethod
     def get_for_participant(cls, participant_id: int, trial_maker_id: int = None):
@@ -847,8 +907,23 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         reward = self.compute_performance_reward(score=self.score)
         assert isinstance(reward, (float, int))
         self._log_performance_reward(reward)
-        self.performance_reward = reward
+        # A live game played in the trial, which needs a group round, may have
+        # recorded its rewards since this trial was loaded, so add to the
+        # stored value, under the row lock that the game's record job also
+        # takes.
+        if self.sync_group_round_id is not None and inspect(self).persistent:
+            db.session.refresh(
+                self, attribute_names=["performance_reward"], with_for_update=True
+            )
+        self._record_performance_reward(reward)
         self.participant.inc_performance_reward(reward)
+
+    def _record_performance_reward(self, amount):
+        """Add ``amount`` to the trial's ``performance_reward``, without paying
+        it. It adds rather than sets, because a live game played in the trial
+        records its rewards on the trial as well, before or after the trial's
+        own."""
+        self.performance_reward = (self.performance_reward or 0) + amount
 
     def _log_performance_reward(self, reward):
         logger.debug(
@@ -960,6 +1035,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Returns a :class:`~psynet.timeline.Page` object,
         or alternatively a list of such objects,
         that solicits an answer from the participant.
+
+        A trial maker that prepares its trials in advance also calls this
+        method for upcoming trials, before the participant reaches them, to
+        show them without waiting for the server. It must then depend only on
+        the trial and its node, not on other trials' answers or scores, and
+        must not change anything.
 
         Parameters
         ----------
@@ -1685,6 +1766,29 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @classmethod
     def trial_logic(cls, trial_maker=None):
         time_estimate = cls._get_trial_time_estimate(trial_maker)
+        after_trial = None
+        if trial_maker is not None:
+
+            def show_after_trial(experiment, participant):
+                trial = participant.current_trial
+                if (
+                    participant.failed
+                    or trial.failed
+                    or trial_maker._left_sync_group(participant)
+                ):
+                    return None
+                return call_function_with_context(
+                    trial_maker.show_after_trial,
+                    experiment=experiment,
+                    participant=participant,
+                    trial=trial,
+                )
+
+            after_trial = _AfterTrialPageMaker(
+                show_after_trial, time_estimate=0, label="show_after_trial"
+            )
+            after_trial._after_trial = True
+            after_trial._between_trials = True
 
         return join(
             CodeBlock(cls._log_time_credit_before_trial),
@@ -1700,6 +1804,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             cls._construct_feedback_logic(trial_maker),
             CodeBlock(cls._log_time_credit_after_trial),
             CodeBlock(cls._log_progress_after_trial),
+            after_trial,
         )
 
     @classmethod
@@ -1721,6 +1826,8 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             participant=participant,
             trial_maker=self.trial_maker,
         )
+        # Resolves collections such as a PlayLiveGame, so their barriers count.
+        logic = join(logic)
         barriers = list(_group_barriers(logic))
         if (
             self.group_round is not None
@@ -1733,6 +1840,26 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
                 "to close each round."
             )
         check_late_removal_policies(barriers, participant)
+        for barrier in barriers:
+            # Such as a PlayLiveGame's, which checks that its game and the
+            # trial don't both pay for the game.
+            check_trial = getattr(barrier, "_check_trial", None)
+            if check_trial is not None:
+                check_trial(self)
+        if self.presented_at is None:
+            self.presented_at = datetime.datetime.now()
+        if (
+            len(logic) == 1
+            and isinstance(logic[0], Page)
+            and self.trial_maker is not None
+        ):
+            page = logic[0]
+            if self.id is None:
+                db.session.flush([self])
+            page._page_key = self._page_key
+            page.upcoming_pages, page.upcoming_media = self.trial_maker._upcoming(
+                self, page, experiment, participant
+            )
         return logic
 
     @classmethod
@@ -1832,7 +1959,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             time_estimate=0,
         )
         # Feedback pages' time limits don't count as running out of time.
-        feedback_pages._trial_feedback = True
+        feedback_pages._after_trial = True
 
         return conditional(
             label=label,
@@ -2095,7 +2222,8 @@ class TrialMaker(Module):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
 
     fail_trials_on_premature_exit
         Deprecated. Premature exit no longer fails completed trials.
@@ -2152,8 +2280,9 @@ class TrialMaker(Module):
         How often to check for timeouts, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300),
+        or ``None`` for no limit
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
@@ -2171,6 +2300,14 @@ class TrialMaker(Module):
 
     introduction
         An optional event or list of elts to execute prior to beginning the trial loop.
+
+    time_estimate_after_trials : float
+        The total time, in seconds, that each participant is expected to spend
+        on the pages from :meth:`~psynet.trial.main.TrialMaker.show_after_trial`,
+        such as breaks (default = 0). It is added once to the experiment's
+        duration estimate, and the progress bar moves on by it when the
+        trial loop ends. The time credit a participant earns still comes
+        from the pages' own ``time_estimate``.
 
     give_end_feedback_passed : bool
         If ``True``, then participants who pass the final performance check
@@ -2397,6 +2534,8 @@ class TrialMaker(Module):
     performance_threshold = 0.0
 
     time_estimate_per_trial = None
+
+    time_estimate_after_trials = 0
 
     introduction = None
 
@@ -2805,22 +2944,56 @@ class TrialMaker(Module):
         ]
 
     def check_old_trials(self):
+        if self.response_timeout_sec is None:
+            return
         time_threshold = datetime.datetime.now() - datetime.timedelta(
             seconds=self.response_timeout_sec
         )
-        trials_to_fail = (
-            self.trial_class.query.filter_by(complete=False, failed=False)
-            .filter(self.trial_class.creation_time < time_threshold)
-            .order_by(self.trial_class.id)
+        # Trials prepared in advance wait unseen until their turn.
+        started = (
+            self.trial_class.presented_at
+            if self.prepare_trials_in_advance
+            else self.trial_class.creation_time
+        )
+        open_trials = self.trial_class.query.filter_by(
+            complete=False, failed=False
+        ).filter(
+            # Custom prepare_trial code can create trials without a trial maker.
+            or_(
+                self.trial_class.trial_maker_id == self.id,
+                self.trial_class.trial_maker_id.is_(None),
+            )
+        )
+
+        def lock(query):
             # A locked trial belongs to an in-flight request that may complete
             # it; the next check retries it if not.
-            .with_for_update(of=self.trial_class, skip_locked=True)
-            .populate_existing()
-            .all()
+            return (
+                query.order_by(self.trial_class.id)
+                .with_for_update(of=self.trial_class, skip_locked=True)
+                .populate_existing()
+                .all()
+            )
+
+        timed_out = lock(open_trials.filter(started < time_threshold))
+        not_presented = []
+        if self.prepare_trials_in_advance and timed_out:
+            # These participants have stopped, and their trials waiting their
+            # turn would otherwise keep counting towards their nodes.
+            participant_ids = {trial.participant_id for trial in timed_out}
+            not_presented = lock(
+                open_trials.filter(
+                    self.trial_class.presented_at.is_(None),
+                    self.trial_class.participant_id.in_(participant_ids),
+                )
+            )
+        logger.info(
+            "Found %i old trial(s) to fail.", len(timed_out) + len(not_presented)
         )
-        logger.info("Found %i old trial(s) to fail.", len(trials_to_fail))
-        for trial in trials_to_fail:
+        for trial in timed_out:
             trial.fail(reason="response_timeout")
+        for trial in not_presented:
+            trial.fail(reason="not_presented")
 
     def init_participant(self, experiment, participant):
         """
@@ -2934,6 +3107,59 @@ class TrialMaker(Module):
             corresponding to the current participant.
         """
 
+    def show_after_trial(self, experiment, participant, trial):
+        """
+        Return pages to show after ``trial``, such as a break, or ``None``.
+
+        The pages run once the trial is finalized and its feedback shown, and
+        before the next trial is prepared, so they don't affect either trial;
+        recordings made on them belong to the participant. They are skipped
+        after a failed trial. PsyNet can't tell yet whether another trial
+        follows, so check ``trial.position`` to avoid a break after the last
+        trial. Give each page a ``time_estimate``, and set
+        :attr:`time_estimate_after_trials` to the total time the pages are
+        expected to take, so that the duration estimate includes them. Like
+        :meth:`~psynet.trial.main.Trial.show_trial`, the method may take any
+        subset of its parameters.
+
+        Parameters
+        ----------
+
+        experiment
+            An instantiation of :class:`psynet.experiment.Experiment`,
+            corresponding to the current experiment.
+
+        participant
+            An instantiation of :class:`psynet.participant.Participant`,
+            corresponding to the current participant.
+
+        trial
+            The :class:`~psynet.trial.main.Trial` that just finished, or one
+            that hasn't been answered yet (see below).
+
+        Returns
+        -------
+
+        Timeline logic, such as a page or a list of pages, or ``None``.
+        A trial maker that prepares its trials in advance also calls this
+        method for the current and upcoming trials before they are answered,
+        to find where the next trials stop being predictable. It must then
+        not change anything, nor rely on ``trial.answer`` or ``trial.score``,
+        which are still ``None``.
+        """
+        return None
+
+    prepare_trials_in_advance = False
+
+    def _upcoming(self, trial, page, experiment, participant):
+        """Return what is known about the pages of the trials after ``trial``.
+
+        Returns the pages of the trials that the browser can show in advance
+        and the URLs of the next trials' files by media type; each is ``None``
+        if unknown.
+        """
+        return None, None
+
     def finalize_trial(self, answer, trial, experiment, participant):
         """
         This function is run after the participant completes the trial.
@@ -2960,6 +3186,54 @@ class TrialMaker(Module):
             corresponding to the current participant.
         """
         participant.module_state.n_completed_trials += 1
+
+    def should_check_performance_after(self, experiment, participant, trial):
+        """
+        Whether to check the participant's performance after ``trial``.
+
+        Only used with ``check_performance_every_trial=True``. Override it to
+        check less often, for example only at the end of each block. With
+        ``prepare_trials_in_advance=True``, the browser can then show the
+        next trial before the server has the answers to the trials that
+        aren't checked. The browser asks before ``trial`` is answered, so
+        decide from what is fixed when the trial is created, such as its
+        ``position``, ``block`` or ``definition``, not from answers or the
+        participant's progress, and don't change anything. Like
+        :meth:`show_after_trial`, the method may take any subset of its
+        parameters.
+
+        Parameters
+        ----------
+
+        experiment
+            An instantiation of :class:`psynet.experiment.Experiment`,
+            corresponding to the current experiment.
+
+        participant
+            An instantiation of :class:`psynet.participant.Participant`,
+            corresponding to the current participant.
+
+        trial
+            The trial that the participant has just finished, or, with
+            ``prepare_trials_in_advance=True``, one that hasn't been answered
+            yet.
+
+        Returns
+        -------
+
+        bool
+            ``True`` by default.
+        """
+        return True
+
+    def _checks_performance_after(self, experiment, participant, trial):
+        """Whether the participant's performance is checked after ``trial``."""
+        return self.check_performance_every_trial and call_function_with_context(
+            self.should_check_performance_after,
+            experiment=experiment,
+            participant=participant,
+            trial=trial,
+        )
 
     def performance_check(self, experiment, participant, participant_trials):
         """
@@ -3040,7 +3314,11 @@ class TrialMaker(Module):
         assert type in ["trial", "end"]
 
         def eval_checks(experiment, participant):
-            participant_trials = self.get_participant_trials(participant)
+            if type == "trial" and not self._checks_performance_after(
+                experiment, participant, participant.current_trial
+            ):
+                return True
+            participant_trials = self._trials_to_check(participant)
             results = self.performance_check(
                 experiment=experiment,
                 participant=participant,
@@ -3110,6 +3388,10 @@ class TrialMaker(Module):
             .all()
         )
         return [record[0] for record in records]
+
+    def _trials_to_check(self, participant):
+        """The participant's trials that :meth:`performance_check` receives."""
+        return self.get_participant_trials(participant)
 
     def get_participant_trials(self, participant):
         """
@@ -3255,6 +3537,9 @@ class TrialMaker(Module):
                 expected_repetitions=self.expected_trials_per_participant,
                 fix_time_credit=False,
             ),
+            # The show_after_trial pages don't move the progress bar, as
+            # PsyNet can't tell how often they appear.
+            with_fixed_progress([], self.time_estimate_after_trials),
         )
 
     def _wait_for_trial(self):
@@ -3468,7 +3753,8 @@ class NetworkTrialMaker(TrialMaker):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
 
     fail_trials_on_premature_exit
         See :class:`~psynet.trial.main.TrialMaker`.
@@ -3570,8 +3856,9 @@ class NetworkTrialMaker(TrialMaker):
         How often to check for trials that have timed out, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300),
+        or ``None`` for no limit
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,

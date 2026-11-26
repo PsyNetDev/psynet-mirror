@@ -150,6 +150,11 @@ async function expectRejectedSubmissionRestores(page, button) {
     { times: 1 }
   );
   await expect(button).toBeEnabled({ timeout: STEP_TIMEOUT_MS });
+  // The next page may have been rendered in advance, which would be swapped
+  // in at once instead of waiting for the held submission.
+  await page.evaluate(() => {
+    psynet.upcomingPages = [];
+  });
   const boxBefore = await button.boundingBox();
   const spinner = button.locator(".psynet-button-spinner");
   try {

@@ -70,6 +70,8 @@ brackets, and fill them in with ``.format``:
     Do not use f-strings. An f-string fills in the variable before the
     translation is looked up, so no translation is found.
 
+.. _i18n_contexts:
+
 Contexts
 ~~~~~~~~
 
@@ -122,23 +124,21 @@ Each locale's translations are stored in
 Translators
 ~~~~~~~~~~~
 
-PsyNet supports two machine translators:
+PsyNet translates with OpenAI ChatGPT (``chat_gpt``).
 
-- OpenAI ChatGPT (``chat_gpt``, the default)
-- Google Translate (``google_translate``)
+``psynet translate`` only sends strings that have no translation yet. It
+groups them by source file, at most 30 strings per request. ChatGPT also
+receives, for disambiguation:
 
-Set the default in ``config.txt`` or ``~/.dallingerconfig``, or pass
-``--translator`` to ``psynet translate``:
+- the context of each string (see :ref:`i18n_contexts`);
+- the existing translations from the same file, so that new translations use
+  the same terms;
+- the file's source code, or for large files the lines around each string;
+- the script to write the language in, from CLDR (for example Ol Chiki for
+  Santali), except where PsyNet's catalogs use another script (Arabic for
+  Kurdish, Latin for Serbian).
 
-.. code-block:: text
-
-    [Translator]
-    default_translator = <translator_name>
-
-Both translators send one file at a time, so they can use the other strings in
-the file as context. ChatGPT also sees the file's source code.
-
-**OpenAI ChatGPT** needs an OpenAI API key in ``~/.dallingerconfig``:
+ChatGPT needs an OpenAI API key in ``~/.dallingerconfig``:
 
 .. code-block:: text
 
@@ -151,25 +151,10 @@ It also needs the ``openai`` package:
 
     pip install openai
 
-**Google Translate** needs a Google Cloud service account:
-
-1. Create a project in the Google Cloud Console.
-2. Enable the Cloud Translation API.
-3. Create a service account.
-4. On the service account's **Keys** tab, create a JSON key and save it on
-   your computer, for example in your home directory.
-5. Add the key's path to ``~/.dallingerconfig``:
-
-   .. code-block:: text
-
-       [Translator]
-       google_translate_json_path = <path_to_your_json_file>
-
-It also needs the ``google-cloud-translate`` package:
-
-.. code-block:: console
-
-    pip install google-cloud-translate
+Google Translate is no longer supported. Remove
+``default_translator = google_translate`` from your configuration if it is
+there; ``google_translate_json_path`` and ``google_translate_project_id`` are
+ignored.
 
 Reviewing and revising
 ----------------------
@@ -187,11 +172,20 @@ Revising translations
 
 When you run ``psynet translate`` again:
 
-- fuzzy (machine) translations are overwritten;
-- checked translations are kept unless their English text has changed, and
-  are used as context for the other translations in the file;
+- existing translations, fuzzy or checked, are kept as long as their English
+  text and context are unchanged;
+- fuzzy translations that are identical to the English text are translated
+  once more, because they are often failed machine translations. If the
+  model returns the English text again, as is right for many country names
+  and for "OK", the entry is marked ``psynet-kept-source`` and kept on later
+  runs. To keep an English translation without the retry, remove the fuzzy
+  flag;
 - translations of strings that no longer occur in the source code are
   removed.
+
+To get a new machine translation for a string, delete its translation in
+Poedit and run ``psynet translate`` again. ``psynet translate --force``
+retranslates everything and discards the translations you have checked.
 
 PsyNet keeps no backup of the translations, so commit the experiment's
 ``locales`` directory to Git regularly.

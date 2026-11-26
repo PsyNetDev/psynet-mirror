@@ -16,6 +16,16 @@ from psynet.pytest_psynet import (
 PYTEST_BOT_CLASS = bot_class()
 
 
+def buttons(driver):
+    """Return the labels of the page's Back and Next buttons, as shown in its text."""
+    back = driver.find_elements(By.ID, "back-button")
+    assert all(button.text in {"Back", "Zurück"} for button in back)
+    return " ".join(
+        [button.text for button in back]
+        + [driver.find_element(By.ID, "next-button").text]
+    )
+
+
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_demo_experiment("translation")], indirect=True
 )
@@ -42,7 +52,7 @@ class TestExp(object):
             assert_text(
                 driver,
                 "main-body",
-                f"Willkommen zur Übersetzungsdemo! {next_label}",
+                f"Willkommen zur Übersetzungsdemo! {buttons(driver)}",
             )
             next_page(driver, "next-button")
 
@@ -51,7 +61,7 @@ class TestExp(object):
                 driver,
                 "main-body",
                 "You have chosen to translate this experiment to de. Below you will see this text translated! Unten sehen Sie diesen Text übersetzt! "
-                + next_label,
+                + buttons(driver),
             )
 
             next_page(driver, "next-button")
@@ -61,7 +71,7 @@ class TestExp(object):
                 driver,
                 "main-body",
                 "Here is an example of inline variable usage: Mein Name ist Alice. Mein Lieblingsessen ist pizza. Mein am wenigsten bevorzugtes Essen ist broccoli. "
-                + next_label,
+                + buttons(driver),
             )
 
             next_page(driver, "next-button")
@@ -80,6 +90,6 @@ class TestExp(object):
             # after the release-branch ``psynet translate`` pass.
             if is_release_branch():
                 end_page = driver.find_element(By.ID, "main-body").text
-                assert "Das ist das Ende des Experiments!" in end_page
+                assert "Das ist das Ende!" in end_page
 
             click_finish_button(driver)

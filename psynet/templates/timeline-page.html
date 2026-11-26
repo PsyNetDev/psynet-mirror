@@ -218,12 +218,8 @@
             {{ timeline_hold_region() }}
             {{ timeline_main_body() }}
             {{ timeline_footer() }}
-            {% if early_exit_offer_id %}
-                {{ early_exit_modal(
-                    participant.assignment_id,
-                    early_exit_offer_id,
-                    early_exit_confirmation
-                ) }}
+            {% if show_early_exit_button %}
+                {{ early_exit_modal(participant.assignment_id) }}
             {% endif %}
             {{ template_data_script() }}
         </div>
@@ -238,12 +234,8 @@
             {{ timeline_main_body() }}
 
             {% block modals %}
-                {% if early_exit_offer_id %}
-                    {{ early_exit_modal(
-                        participant.assignment_id,
-                        early_exit_offer_id,
-                        early_exit_confirmation
-                    ) }}
+                {% if show_early_exit_button %}
+                    {{ early_exit_modal(participant.assignment_id) }}
                 {% endif %}
 
                 {% block comment_modal %}
@@ -295,7 +287,7 @@
 {% block head %}
     {{ super() }}
 
-    <script src="{{ url_for('static', filename='scripts/jquery-3.7.1.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/jquery-4.0.0.min.js') }}"></script>
     <script src="{{ url_for('static', filename='scripts/JSZip/jszip.min.js') }}"></script>
 
     {% for src in js_dependencies %}
@@ -314,10 +306,13 @@
     {{ browser_detect.head() }}
 {% endblock %}
 
+{# The head already loads jQuery. A second copy from Dallinger's libs would
+   replace it and drop jQuery plugins loaded as js_dependencies (e.g. SurveyJS). #}
+{% block jquery %}{% endblock %}
+
 {% block libs %}
     {{ super() }}
     <script src="{{ url_for('static', filename='scripts/platform.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='scripts/survey-jquery/survey-jquery.js') }}"></script>
 {% endblock %}
 
 {% block scripts %}

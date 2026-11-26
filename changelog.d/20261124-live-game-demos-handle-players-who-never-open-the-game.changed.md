@@ -1,0 +1,1 @@
+Changed the `public_goods_live` demo to start a round sooner without a player who never opens the game page. Such a player is failed and left out of the pot and the round's pay, and a round that fewer than two players open ends without a pot; the export gains `arrived`, `n_players` and `end_reason` columns.

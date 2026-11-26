@@ -450,6 +450,14 @@ hold-resume POST without starving a waiter Redis subscribe. The
 default vs legacy *job* split is still in-place vs full reload
 (``inplace_timeline_transitions``), not Flask vs gunicorn.
 
+Specs still stop their own servers with ``stopExperiment`` in a ``finally``
+block. A test that times out may never get there, so an automatic fixture in
+``tests/playwright/fixtures.js`` also stops any server that
+``startExperiment`` started and nothing stopped, before the next test needs
+the port. Specs must therefore import ``test`` from
+``tests/playwright/fixtures.js``, not from ``@playwright/test``, and must not
+share one server between tests.
+
 Optional environment variables:
 
 - ``PSYNET_USE_LEGACY_DEBUG=1``: add ``--legacy`` to the debug command.

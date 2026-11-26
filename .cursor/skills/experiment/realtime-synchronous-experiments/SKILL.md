@@ -11,7 +11,10 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 - `code/multiplayer/realtime_interaction` — channels, `WebSocketElt`, the
   server-authority model, consistency, disconnects, and testing
-- `design/groups` — group design concepts, including real-time interaction
+- `design/groups` — group design concepts, including how members interact
+- `design/live_games` — live games: how they work and the kinds of game
+- `code/multiplayer/live_game_tutorial` and `code/multiplayer/live_games` —
+  writing a live game, step by step, and the full guide
 - `code/multiplayer/synchronization` — groups, barriers, and timeouts
 - `code/multiplayer/chatroom` — the built-in chatroom, a complete
   `WebSocketElt` implementation
@@ -32,7 +35,7 @@ Read these pages before acting. The "Documentation" section of the experiment's 
 
 Write these decisions into the experiment plan before coding:
 
-1. **Session boundaries.** Which trial or node owns each live session, how its
+1. **Session boundaries.** Which trial or node owns each live interaction, how its
    input parameters come from the node definition, and which group members
    share it (usually `trial.sync_group`).
 2. **State table.** Where the server stores session state, and how each

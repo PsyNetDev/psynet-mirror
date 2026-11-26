@@ -910,6 +910,30 @@ class TestCommandLine(object):
 #
 
 
+def test_local_runs_warn_about_the_development_server_for_a_game_with_ticks(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from psynet.command_line import _ticking_game_warning
+
+    def experiment_with(*tick_rates):
+        games = [SimpleNamespace(tick_rate=rate) for rate in tick_rates]
+        experiment = SimpleNamespace(realtime_games=games)
+        monkeypatch.setattr(
+            "psynet.experiment.import_local_experiment",
+            lambda: {"class": experiment},
+        )
+
+    experiment_with(0, 20)
+    assert "Run psynet debug local --legacy" in _ticking_game_warning("debug")
+    assert "Run psynet deploy local --legacy" in _ticking_game_warning("live")
+    experiment_with(0)
+    assert _ticking_game_warning("debug") is None
+    experiment_with()
+    assert _ticking_game_warning("debug") is None
+
+
 def test_debug_legacy_starts_four_gunicorn_workers(monkeypatch):
     """Legacy debug defaults to four workers so a quartet extra waiter can POST."""
     from psynet.command_line import LEGACY_DEBUG_GUNICORN_THREADS, _debug_legacy
@@ -955,10 +979,10 @@ def test_reloader_ignores_only_other_develop_folders(own):
 
 @pytest.mark.parametrize("isolated", [True, False])
 @pytest.mark.parametrize("no_browsers", [True, False])
-def test_debug_auto_reload_adds_the_isolated_session_row(
-    monkeypatch, isolated, no_browsers
+def test_debug_auto_reload_adds_the_ready_rows(
+    monkeypatch, capsys, isolated, no_browsers
 ):
-    """In an isolated session, the ``Ready.`` block tells other terminals how to connect."""
+    """The ``Ready.`` block repeats the development server warning and, in an isolated session, tells other terminals how to connect."""
     from psynet.command_line import _debug_auto_reload, _reloader_exclude_patterns
 
     calls = []
@@ -980,10 +1004,17 @@ def test_debug_auto_reload_adds_the_isolated_session_row(
     else:
         # This test session is itself isolated.
         monkeypatch.delenv("_PSYNET_TEST_ENVIRONMENT_READY", raising=False)
+    monkeypatch.setattr(
+        "psynet.command_line._ticking_game_warning",
+        lambda mode: f"Views are late in {mode} mode.",
+    )
+    monkeypatch.setattr("psynet.command_line.deployment_info.read", lambda key: "live")
 
     _debug_auto_reload(archive=None, no_browsers=no_browsers)
 
-    rows = [
+    assert capsys.readouterr().err == "Warning: Views are late in live mode.\n"
+    warning = [("Warning", "Views are late in live mode.")]
+    export = [
         (
             "Other terminals",
             "export DATABASE_URL=postgresql://localhost/db_5100 "
@@ -994,7 +1025,7 @@ def test_debug_auto_reload_adds_the_isolated_session_row(
         {
             "port": 5100,
             "no_browsers": no_browsers,
-            "ready_rows": rows if isolated else [],
+            "ready_rows": warning + (export if isolated else []),
         }
     ]
     assert os.environ["FLASK_RUN_PORT"] == os.environ["base_port"] == "5100"

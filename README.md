@@ -2,7 +2,7 @@
 
 [![Pipeline](https://gitlab.com/PsyNetDev/PsyNet/badges/master/pipeline.svg?ignore_skipped=true)](https://gitlab.com/PsyNetDev/PsyNet/-/pipelines)
 [![Latest release](https://gitlab.com/PsyNetDev/PsyNet/-/badges/release.svg)](https://gitlab.com/PsyNetDev/PsyNet/-/releases)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PsyNetDev/psynet-mirror)
+[![Ask DeepWiki](https://gitlab.com/PsyNetDev/PsyNet/-/raw/master/docs/_static/images/deepwiki-badge.svg)](https://deepwiki.com/PsyNetDev/psynet-mirror)
 
 PsyNet is a Python framework for behavioral experiments that are difficult to
 run on conventional platforms: procedures that adapt to each response, chains
@@ -12,12 +12,12 @@ interacting in real time. It provides extensive automation of the data collectio
 including testing with simulated participants, participant recruitment and payment,
 experiment deployment, monitoring, and data export.
 
-**[Read the documentation](https://psynetdev.gitlab.io/PsyNet/alpha/)**
+**[Read the documentation](https://psynetdev.gitlab.io/PsyNet/)**
 
 ## Get started
 
 First install uv, Git, Docker, Google Chrome and the PostgreSQL client library
-([install guide](https://psynetdev.gitlab.io/PsyNet/alpha/install.html)).
+([install guide](https://psynetdev.gitlab.io/PsyNet/install.html)).
 On Windows, use WSL (Ubuntu). Then create an experiment and run it:
 
 ```bash
@@ -31,16 +31,16 @@ psynet debug local      # opens the dashboard and the participant view
 
 Then open the folder in a coding agent (Cursor, Claude Code, Codex, ...) and
 describe your study, or write the code yourself, starting from
-[Creating an experiment](https://psynetdev.gitlab.io/PsyNet/alpha/code/project/creating_an_experiment.html).
-The [Quickstart](https://psynetdev.gitlab.io/PsyNet/alpha/quickstart.html) walks
+[Creating an experiment](https://psynetdev.gitlab.io/PsyNet/code/project/creating_an_experiment.html).
+The [Quickstart](https://psynetdev.gitlab.io/PsyNet/quickstart.html) walks
 through this in about ten minutes.
 
 ## Learn more
 
-- [Demos](https://psynetdev.gitlab.io/PsyNet/alpha/demos/index.html): working experiments to copy from.
-- [Deploy](https://psynetdev.gitlab.io/PsyNet/alpha/deploy/index.html): servers, recruiters and going live.
-- [What's new](https://psynetdev.gitlab.io/PsyNet/alpha/whats_new/index.html): release notes and upgrade guides.
-- [Contributing](https://psynetdev.gitlab.io/PsyNet/alpha/developer/index.html): developing PsyNet itself.
+- [Demos](https://psynetdev.gitlab.io/PsyNet/demos/index.html): working experiments to copy from.
+- [Deploy](https://psynetdev.gitlab.io/PsyNet/deploy/index.html): servers, recruiters and going live.
+- [What's new](https://psynetdev.gitlab.io/PsyNet/whats_new/index.html): release notes and upgrade guides.
+- [Contributing](https://psynetdev.gitlab.io/PsyNet/developer/index.html): developing PsyNet itself.
 
 ## Credits
 

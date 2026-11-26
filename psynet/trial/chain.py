@@ -1379,7 +1379,8 @@ class ChainTrialMaker(NetworkTrialMaker):
         or ``"across"`` for across-participant chains.
 
     expected_trials_per_participant
-        Expected number of trials that each participant will complete.
+        Expected number of trials that each participant will complete, not
+        counting repeat trials: the ``n_repeat_trials`` are added on top.
         This can either be an integer, or the string ``"n_start_nodes"``,
         which will be read as referring to the number of start nodes with
         which the trial maker is initialized
@@ -1388,8 +1389,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         This is used for timeline/progress estimation purposes.
 
     max_trials_per_participant
-        Maximum number of trials that each participant may complete (optional);
-        once this number is reached, the participant will move on
+        Maximum number of trials that each participant may complete (optional),
+        not counting repeat trials, which follow once it is reached.
+        Once this number is reached, the participant will move on
         to the next stage in the timeline.
         This can either be an integer, or the string ``"n_start_nodes"``,
         which will be read as referring to the number of start nodes with
@@ -1458,7 +1460,8 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     check_performance_every_trial
         If ``True``, the participant's performance
-        is evaluated after each trial.
+        is evaluated after each trial, or after the trials chosen by
+        :meth:`~psynet.trial.main.TrialMaker.should_check_performance_after`.
 
     recruit_mode
         Selects a recruitment criterion for determining whether to recruit
@@ -1579,8 +1582,9 @@ class ChainTrialMaker(NetworkTrialMaker):
         How often to check for trials that have timed out, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 60)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300),
+        or ``None`` for no limit
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
@@ -3372,4 +3376,6 @@ class ChainTrialMaker(NetworkTrialMaker):
 
     def finalize_trial(self, answer, trial, experiment, participant):
         super().finalize_trial(answer, trial, experiment, participant)
-        participant.module_state.participated_networks.append(trial.network_id)
+        participated = participant.module_state.participated_networks
+        if trial.network_id not in participated:
+            participated.append(trial.network_id)

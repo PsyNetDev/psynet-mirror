@@ -42,6 +42,7 @@ has written, checking it, and changing it yourself.
    :maxdepth: 1
 
    writing_a_trial_maker
+   trials/keeping_a_task_on_one_page
    writing_a_chain_experiment
    trials/create_and_rate
    trials/participant_and_trial_failure
@@ -71,9 +72,11 @@ has written, checking it, and changing it yourself.
    multiplayer/writing_a_round_based_experiment
    multiplayer/chatroom
    multiplayer/pseudonyms
-   multiplayer/realtime_interaction
    multiplayer/synchronization
    multiplayer/late_slow_and_leaving_players
+   multiplayer/live_game_tutorial
+   multiplayer/live_games
+   multiplayer/realtime_interaction
 
 .. toctree::
    :caption: Database

@@ -1,6 +1,6 @@
-export async function activate({root, trial, vars, page, psynet}) {
+export async function activate({root, trial, config, vars, page, psynet}) {
     const moduleUrl = new URL(
-        vars["jspsych_timeline_module"],
+        config["jspsych_timeline_module"],
         window.location.href
     ).href;
     const timelineModule = await import(moduleUrl);
@@ -41,6 +41,8 @@ export async function activate({root, trial, vars, page, psynet}) {
     try {
         const timeline = await timelineModule.buildTimeline({
             jsPsych,
+            config,
+            // Deprecated name of config.
             vars,
             page,
             psynet,

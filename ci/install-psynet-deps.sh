@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install PsyNet's dependencies (experiment and demos extras) into the image's
+# Install PsyNet's dependencies (experiment, test and demos extras) into the image's
 # Python. Both CI images, Dockerfile and Dockerfile.playwright, run this, so
 # they resolve the same versions.
 #
@@ -15,7 +15,7 @@
 set -eu
 python_version="$(python -c 'import platform; print(platform.python_version())')"
 uv pip compile --python-version "$python_version" pyproject.toml \
-    --extra experiment --extra demos \
+    --extra experiment --extra test --extra demos \
     --constraint dallinger-dev-requirements.txt \
     --output-file constraints.txt
 uv pip install --no-cache --system -r constraints.txt

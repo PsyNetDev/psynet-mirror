@@ -99,6 +99,28 @@ def test_lucid_debrief_uses_return_to_panel_copy():
     assert "You may close this page." in rejected.plain_text
 
 
+def test_unsuccessful_end_says_earnings_are_kept(monkeypatch):
+    monkeypatch.setattr(
+        "psynet.utils.get_config",
+        lambda: SimpleNamespace(get=lambda key, default=None: "$"),
+    )
+    experiment = MagicMock()
+    experiment.with_lucid_recruitment.return_value = False
+    participant = SimpleNamespace(
+        failure_tags=["sync group below quorum"],
+        time_reward=0.5,
+        performance_reward=0.27,
+    )
+    with patch.object(UnsuccessfulEndLogic, "should_show_reward", True):
+        page = UnsuccessfulEndLogic().debrief_participant(experiment, participant)
+    html = str(page.prompt.text)
+    assert "You keep what you have earned so far." in html
+    assert "performance reward of <strong>$0.27</strong>" in html
+    with patch.object(UnsuccessfulEndLogic, "should_show_reward", False):
+        page = UnsuccessfulEndLogic().debrief_participant(experiment, participant)
+    assert "You keep what you have earned" not in str(page.prompt.text)
+
+
 def test_end_pages_can_continue_by_themselves():
     experiment = MagicMock()
     experiment.with_lucid_recruitment.return_value = True
@@ -144,6 +166,13 @@ def test_unsuccessful_end_explains_why_the_participant_stopped():
     assert "waited too long" in UnsuccessfulEndLogic().failure_reason(waiting_page)
     assert "Too few members" in UnsuccessfulEndLogic().failure_reason(too_few)
     assert "took too long" in UnsuccessfulEndLogic().failure_reason(slow)
+    live_game_tags = ["live_game:play", "fail_on_timeout"]
+    no_show = SimpleNamespace(failure_tags=[*live_game_tags, "no_show"])
+    left_game = SimpleNamespace(failure_tags=[*live_game_tags, "left_game"])
+    assert "didn't open the game" in UnsuccessfulEndLogic().failure_reason(no_show)
+    assert "away from the game" in UnsuccessfulEndLogic().failure_reason(left_game)
+    not_a_game = SimpleNamespace(failure_tags=["no_show"])
+    assert UnsuccessfulEndLogic().failure_reason(not_a_game) is None
     assert UnsuccessfulEndLogic().failure_reason(other) is None
     assert (
         UnsuccessfulEndLogic(failure_message="The study is full.").failure_reason(other)

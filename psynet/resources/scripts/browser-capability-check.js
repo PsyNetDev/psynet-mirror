@@ -1,5 +1,5 @@
-export function activate({vars, psynet}) {
-    const capabilities = vars["capabilities"] ?? [];
+export function activate({config, psynet}) {
+    const capabilities = config["capabilities"] ?? [];
     let cancelled = false;
     let timer = null;
     // Checks may wait on a permission prompt, so they must not block page

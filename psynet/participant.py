@@ -13,7 +13,7 @@ import time
 import zipfile
 from contextlib import ExitStack
 from smtplib import SMTPAuthenticationError
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 import dallinger.models
 import requests
@@ -254,6 +254,12 @@ def _is_psynet_stale_timeline_response(response):
 
 
 _TIMELINE_HOLD_POLL_SECONDS = 0.1
+# Barrier sweeps run every 0.5 s. A bot not released by then answers the
+# page as usual, so the waiting loop's own time limits still apply.
+_AWAIT_RELEASE_MAX_SECONDS = 5.0
+# Release polls take no row locks, so they can't block a sweep; the interval
+# only bounds how long a released bot takes to notice.
+_AWAIT_RELEASE_POLL_SECONDS = 0.25
 _BOT_RECORDING_UPLOAD_ATTEMPTS = 5
 # Under load, a partner's barrier check can hold the participant row for
 # several seconds. A busy reply may itself take up to the lock timeout, so
@@ -326,6 +332,7 @@ def _raise_for_status_with_server_details(response):
 
 
 if TYPE_CHECKING:
+    from .live_game import LiveGameRecord
     from .sync import ParticipantLinkSyncGroup, SyncGroup
     from .timeline import Module
 
@@ -390,6 +397,12 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     page_count : int
         The number of pages that the participant has advanced through.
         Should not be modified directly.
+
+    live_game_data : dict or None
+        What PsyNet stores about the participant's live games, keyed by the
+        id of the :class:`~psynet.live_game.PlayLiveGame` that started each
+        one. Read it through :attr:`live_games` and
+        :attr:`live_game_history`. Should not be modified directly.
 
     complete : bool
         Whether the participant has successfully completed the experiment.
@@ -473,6 +486,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     time_credit_fixes = Column(PythonList)
     # progress_fixes is analogous to time_credit_fixes, but for progress.
     progress_fixes = Column(PythonList)
+    # What Back restores: ``[page id, time credit, progress]`` from just before
+    # each page answered in the current run of pages that Back can return to.
+    back_restore_points = Column(PythonList)
 
     page_uuid = Column(String)
     # Framework bookkeeping, not author API: page_deadline, waiting_barrier_id,
@@ -492,6 +508,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     #: or :attr:`psynet.timeline.Response.time_limit_reached` instead.
     timed_out_since_barrier = Column(Boolean, default=False)
     page_count = Column(Integer)
+    live_game_data = Column(PythonDict)
     early_exited = Column(Boolean)
     exit_plan = Column(PythonDict)
     complete = Column(Boolean)
@@ -746,6 +763,37 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     def active_sync_groups(self) -> Dict[str, "SyncGroup"]:
         return {group.group_type: group for group in self.sync_groups if group.active}
 
+    @property
+    def live_games(self) -> Dict[str, "LiveGameRecord"]:
+        """``{play_id: game}``: the participant's latest game at each
+        :class:`~psynet.live_game.PlayLiveGame` they have reached, as a
+        :class:`~psynet.live_game.LiveGameRecord`, keyed by the step's
+        ``id_``, which is the game's ``name`` unless it was given one::
+
+            game = participant.live_games["rock_paper_scissors"]
+            game.answer, game.outcome, game.messages
+
+        If their group didn't start a game there, for example because it
+        broke up while it waited, the record's ``status`` is
+        :attr:`LiveGameStatus.NOT_STARTED <psynet.live_game.LiveGameStatus.NOT_STARTED>` and its ``answer`` is ``None``. A step they never
+        reached isn't in it.
+        """
+        from .live_game.play import _participant_live_games
+
+        return _participant_live_games(self)
+
+    @property
+    def live_game_history(self) -> Dict[str, List["LiveGameRecord"]]:
+        """``{play_id: [game, ...]}``: every game the participant played at
+        each :class:`~psynet.live_game.PlayLiveGame`, oldest first, as
+        :class:`~psynet.live_game.LiveGameRecord` objects, such as a game
+        played in each round of a loop. Each has the participant's answer
+        in that game.
+        """
+        from .live_game.play import _participant_live_game_history
+
+        return _participant_live_game_history(self)
+
     def latest_sync_group(self, group_type: str) -> Optional["SyncGroup"]:
         """Return the participant's latest group of ``group_type``, or ``None`` if they had none.
 
@@ -782,7 +830,10 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         type before. Otherwise returns why they left their latest group of
         that type: ``"late"`` (removed by a barrier's
         ``late_after``, with any ``late_action``, from its group or a group
-        listed in its ``also_leave``), ``"waited_too_long"`` (waited at a
+        listed in its ``also_leave``), ``"no_show"`` or ``"left_game"``
+        (didn't play a :class:`~psynet.live_game.PlayLiveGame`'s game, or
+        left it for good, with its ``absent_action``),
+        ``"waited_too_long"`` (waited at a
         barrier for longer than its ``max_wait_time``, with any
         ``max_wait_action``), ``"group_dissolved"`` (still in the group when it was
         dissolved below its quorum, with any ``below_quorum``), ``"moved_on"`` (a
@@ -796,21 +847,21 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         ``"left_experiment"`` (failed,
         including returning the study, and for a member's other groups
         when a barrier's ``late_action="fail"`` or ``max_wait_action="fail"``,
-        or a dissolving group's ``below_quorum="fail"``, fails them), or
-        ``"removed_by_experimenter"`` (removed from the dashboard, or by
+        a PlayLiveGame's ``absent_action="fail"``, or a dissolving group's
+        ``below_quorum="fail"``, fails them), or
+        ``"removed_by_experimenter"`` (removed by your own code calling
         :meth:`~psynet.sync.SyncGroup.remove_participant` with that reason).
         A player sat out of their first round was never in a group, so this
         returns ``None`` for them; check :meth:`~psynet.sync.Regrouper.sat_out`
         or ``in_sync_group`` instead.
 
         To explain an early end, map the reasons your game can meet to your
-        own text. A missing reason raises ``KeyError``, so include
-        ``"removed_by_experimenter"``, which a dashboard removal can give in any game::
+        own text. A missing reason raises ``KeyError``, so list every reason
+        your timeline can produce::
 
             ENDED_EARLY_TEXTS = {
                 "late": "You were away for too long, so the game ended early for you.",
                 "group_dissolved": "Too few players stayed, so the game ended early.",
-                "removed_by_experimenter": "You were removed from the game.",
             }
             text = ENDED_EARLY_TEXTS[participant.sync_group_removal_reason("team")]
         """
@@ -1000,6 +1051,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.progress = 0.0
         self.time_credit_fixes = []
         self.progress_fixes = []
+        self.back_restore_points = []
         self.elt_id = ["main", -1]
         self.elt_id_max = []
         self.answer_accumulation_depth = 0
@@ -1119,12 +1171,16 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.time_credit = new_value
 
     def inc_progress(self, time_credit: float):
+        self.progress = self._progress_after(time_credit)
+
+    def _progress_after(self, time_credit: float, progress: Optional[float] = None):
+        """The progress after adding ``time_credit`` to ``progress`` (by default the current progress)."""
         if self.estimated_max_time_credit == 0.0:
-            new_value = 1.0
-        else:
-            new_value = self.progress + time_credit / self.estimated_max_time_credit
-            new_value = min([new_value, *self.progress_fixes])
-        self.progress = new_value
+            return 1.0
+        if progress is None:
+            progress = self.progress
+        new_value = progress + time_credit / self.estimated_max_time_credit
+        return min([new_value, *self.progress_fixes])
 
     def inc_performance_reward(self, value):
         self.performance_reward += value
@@ -1652,11 +1708,16 @@ class ParticipantDriver:
             )
         assert self.status is not None
 
+        still_on_page = True
         if not _status_is_timeline_hold(self.status):
             # Holds are paced by the poll sleep below, as browsers poll from
             # arrival; their time_estimate is expected_wait, not a poll gap.
             self._simulate_page_time(time_factor)
-        self._submit_response(self.status, self.response_files, response)
+            still_on_page = self._await_release()
+            if not self.is_working:
+                return False
+        if still_on_page:
+            self._submit_response(self.status, self.response_files, response)
         if render_pages:
             self._render_page()
             # GET /timeline can skip a ready hold after the submit fetch.
@@ -1677,15 +1738,19 @@ class ParticipantDriver:
         """Reload the cached page and response files from the experiment server."""
         self._fetch_status()
 
-    def _fetch_status(self):
+    def _fetch_status(self, release_poll=False):
         """
         Fetch the participant's current status and any associated response files,
         and store them in the participant driver's attributes
         (self.status and self.response_files).
+
+        With ``release_poll``, a bot awaiting its barrier's release gets a
+        minimal status without the page's bot response.
         """
         response = _retry_busy_http(
             lambda: self.experiment.authenticated_session.get(
-                f"{self.experiment.base_url}/participant_status/{self.id}"
+                f"{self.experiment.base_url}/participant_status/{self.id}",
+                params={"release_poll": 1} if release_poll else None,
             ),
             sleep=self._sleep,
         )
@@ -1746,6 +1811,36 @@ class ParticipantDriver:
         wake_time = self.status_time_fetched + simulated_page_time
         self._sleep(max(wake_time - time.monotonic(), 0))
 
+    def _await_release(self):
+        """Poll instead of answering while the barrier this bot waits at is about to release it.
+
+        A release must lock every waiter's row, which a bot holds while the
+        server processes its answer, so bots that kept answering pages of
+        ``waiting_logic`` might never be released together.
+
+        Returns whether the bot is still on the page it arrived at, so it
+        should answer it; the server may end or replace the page meanwhile,
+        for example when the barrier fails the bot.
+        """
+        page_uuid = self.status["page_uuid"]
+        deadline = time.monotonic() + _AWAIT_RELEASE_MAX_SECONDS
+
+        def still_on_page():
+            return self.is_working and self.status["page_uuid"] == page_uuid
+
+        while (
+            still_on_page()
+            and self.status["page"].get("awaiting_release")
+            and time.monotonic() < deadline
+        ):
+            next_poll = self.status_time_fetched + _AWAIT_RELEASE_POLL_SECONDS
+            self._sleep(max(next_poll - time.monotonic(), 0))
+            self._fetch_status(release_poll=True)
+        if self.is_working and self.status["page"].get("awaiting_release"):
+            # Release polls return only part of the page, even if it was replaced.
+            self._fetch_status()
+        return still_on_page()
+
     def _sleep(self, seconds):
         """Sleep, raising :class:`DriverStopped` if ``stop_event`` is or becomes set."""
         if self.stop_event is None:
@@ -1799,6 +1894,9 @@ class ParticipantDriver:
 
         At least one of raw_answer and answer should be provided.
         If answer is present, then raw_answer will be ignored.
+
+        If the server refuses the response with a ``retry_after``, the bot
+        resends it after that many seconds, as a browser does.
 
         Parameters
         ----------
@@ -1856,8 +1954,13 @@ class ParticipantDriver:
                     files=files,
                 )
 
-            http_response = _retry_busy_http(send, sleep=self._sleep)
-        resp_json = http_response.json()
+            while True:
+                http_response = _retry_busy_http(send, sleep=self._sleep)
+                resp_json = http_response.json()
+                retry_after = resp_json.get("retry_after")
+                if resp_json.get("submission") != "rejected" or retry_after is None:
+                    break
+                self._sleep(retry_after)
         if resp_json.get("submission") != "approved":
             if self._retry_submit_after_page_advanced(
                 status, response, _retried_stale_page
@@ -2054,15 +2157,19 @@ class ParticipantDriver:
         """
         from .bot import BotResponse
 
-        deadline = self.with_participant(lambda participant: participant.page_deadline)
-        if deadline is None:
+        deadline, time_limit = self.with_participant(
+            lambda participant: (
+                participant.page_deadline,
+                participant.get_current_page().time_limit,
+            )
+        )
+        # page_deadline outlives its page, for a later barrier's late_after.
+        if deadline is None or time_limit is None:
             raise ValueError("The bot's current page has no time limit.")
         self._sleep(max(0.0, (deadline - timenow()).total_seconds()))
         page = {
             **self.status["page"],
-            "bot_response": BotResponse(
-                raw_answer=None, metadata={"time_limit_reached": True}
-            ).__json__(),
+            "bot_response": BotResponse(time_limit_reached=True).__json__(),
         }
         self._submit_response({**self.status, "page": page}, {})
         return self.is_working
