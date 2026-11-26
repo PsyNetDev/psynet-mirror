@@ -2683,6 +2683,20 @@ class AudioMeterControl(Control):
 
     Useful for checking recording levels before recording trials. The bot response is ``None``.
 
+    Tune the meter by overriding its class attributes in a subclass, as
+    :class:`TappingAudioMeterControl` does:
+
+    * ``display_range``: dB range shown by the meter bar (``min``, ``max``).
+    * ``decay``: smoothing time constants in seconds for the bar (``display``)
+      and the loudness checks (``high``, ``low``).
+    * ``threshold``: dB levels above which input is too loud (``high``) and
+      below which it is too quiet (``low``).
+    * ``grace``: seconds the input must stay too loud (``high``) or too quiet
+      (``low``) before the warning appears.
+    * ``warn_on_clip``: whether clipping also shows the "Too loud!" warning.
+    * ``msg_duration``: seconds each warning stays visible after the input
+      returns to range (``high``, ``low``).
+
     Parameters
     ----------
     calibrate : bool
