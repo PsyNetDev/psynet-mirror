@@ -9,6 +9,10 @@ const URL_IN_TEXT_RE = /https?:\/\/[^\s"'<>]+/g;
 
 const PSYNET_ERROR_SELECTORS = ["#error-text"];
 let latestBackendLogPath = null;
+// Servers started by startExperiment and not yet stopped. A test that times
+// out never reaches its own stopExperiment, so a fixture stops these.
+const runningExperiments = new Set();
+const stopPromises = new WeakMap();
 const DEBUG_PORT = Number(
   process.env.PSYNET_DEBUG_PORT || process.env.base_port || 5000
 );
@@ -214,6 +218,7 @@ function startExperiment(experimentDir, options = {}) {
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
+  runningExperiments.add(proc);
 
   const outputLines = [];
   let resolveUrl;
@@ -268,7 +273,8 @@ function startExperiment(experimentDir, options = {}) {
     );
   }, timeoutMs);
 
-  urlPromise.finally(() => clearTimeout(timeoutHandle));
+  const clearStartupTimeout = () => clearTimeout(timeoutHandle);
+  urlPromise.then(clearStartupTimeout, clearStartupTimeout);
 
   proc.on("exit", (code) => {
     logStream.end();
@@ -291,11 +297,24 @@ function startExperiment(experimentDir, options = {}) {
   };
 }
 
-async function stopExperiment(proc) {
+/**
+ * Stop a server that startExperiment started. Calls that overlap, such as
+ * a timed-out test's own cleanup and the leftover-server fixture, share one stop.
+ */
+function stopExperiment(proc) {
   if (!proc) {
-    return;
+    return Promise.resolve();
   }
+  if (!stopPromises.has(proc)) {
+    stopPromises.set(
+      proc,
+      stopProcess(proc).finally(() => runningExperiments.delete(proc))
+    );
+  }
+  return stopPromises.get(proc);
+}
 
+async function stopProcess(proc) {
   const waitForExit = (timeoutMs) =>
     new Promise((resolve) => {
       if (proc.exitCode !== null || proc.signalCode !== null) {
@@ -337,6 +356,17 @@ async function stopExperiment(proc) {
   if (await isPortInUse(DEBUG_PORT)) {
     killProcessTree(proc, "SIGKILL");
     await waitForPortToBeFree(DEBUG_PORT, 10000);
+  }
+}
+
+/** Stop every server that startExperiment started and nothing has stopped yet. */
+async function stopRunningExperiments() {
+  for (const proc of [...runningExperiments]) {
+    try {
+      await stopExperiment(proc);
+    } catch (error) {
+      console.warn(`Could not stop the leftover server (PID ${proc.pid}):`, error);
+    }
   }
 }
 
@@ -1796,6 +1826,7 @@ module.exports = {
   startParticipantsTogether,
   startResponseSubmitTracker,
   stopExperiment,
+  stopRunningExperiments,
   waitForResponseSubmitIncrement,
   waitForMainBodyContains,
   waitForPromptContains,
