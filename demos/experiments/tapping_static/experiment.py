@@ -288,9 +288,6 @@ music_tapping = join(
 # Experiment
 class Exp(psynet.experiment.Experiment):
     label = "Tapping (static) demo"
-    # REPP analyses are CPU-heavy and never yield to other async jobs, so
-    # run one job per worker process at a time; add worker processes to scale.
-    config = {"worker_greenlets_per_process": 1}
 
     timeline = Timeline(
         REPPVolumeCalibrationMusic(),  # calibrate volume with music
