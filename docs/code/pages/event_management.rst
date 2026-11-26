@@ -228,6 +228,12 @@ the two:
         time_estimate=5,
     )
 
+This suits occasional timed responses. For a run of fast reaction time
+trials, such as a flanker or lexical decision task, keep the trials on one
+page so that each follows the last without waiting for the server, and
+measure each reaction time with the page module's response clock; see
+:doc:`/code/trials/keeping_a_task_on_one_page` and the ``flanker`` demo.
+
 A bot's default push-button answer has no event log, so ``rt_ms`` is
 ``None``. To test the timing path, return
 ``BotResponse(raw_answer=..., metadata={"event_log": [...]})`` from

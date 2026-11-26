@@ -290,7 +290,7 @@ def bargaining_page(stake):
         player_left_message="Your partner has left.",
         no_game_message="Your partner didn't arrive.",
         waiting_status="Waiting for your partner to open the game",
-        js_page_modules=["/static/bargaining.js"],
+        module="/static/bargaining.js",
         css_links=["/static/bargaining.css"],
         time_estimate=BARGAIN_SECONDS,
     )

@@ -112,6 +112,16 @@ async function startBackgroundHold(page, { trackLucidUnload = false } = {}) {
 
 async function probeTimelineHoldClientBehavior(page) {
   await installTimelineHoldReleaseProbe(page);
+  // Submissions run one at a time, so a hold check already started (for
+  // example when the hold's websocket connected) would run before the probe's.
+  await page.waitForFunction(
+    () =>
+      psynet.timelineHold &&
+      !psynet.timelineHold.resumeInFlight &&
+      !psynet.pageState.submitting,
+    null,
+    { timeout: 15000 }
+  );
   const overlay = await evaluateOnLivePage(page, () => {
     const controller = psynet.timelineHold;
     if (!controller) {
@@ -258,6 +268,7 @@ async function probeTimelineHoldClientBehavior(page) {
             xhr.status = 200;
             xhr.response = JSON.stringify({
               submission: "approved",
+              holdClientProbe: true,
               page: { contents: "", attributes: {} }
             });
           }
@@ -275,8 +286,10 @@ async function probeTimelineHoldClientBehavior(page) {
     const originalApproved = psynet.handleApprovedResponse;
     const originalAlert = psynet.alert;
     let approved = 0;
-    psynet.handleApprovedResponse = async () => {
-      approved += 1;
+    psynet.handleApprovedResponse = async (response) => {
+      if (response.holdClientProbe) {
+        approved += 1;
+      }
       return true;
     };
     psynet.alert = (text) => {
@@ -284,15 +297,17 @@ async function probeTimelineHoldClientBehavior(page) {
         `unexpected psynet.alert during hold client probe: ${text}`
       );
     };
-    const pendingBefore = psynet.nextPagePending;
-    psynet.nextPagePending = false;
+    const pendingBefore = psynet.pageState.submitting;
+    psynet.pageState.submitting = false;
     window.__holdClientNext = { done: false };
-    // Do not await nextPage in this evaluate. submitGenericResponse waits
+    // Do not await sendSubmission in this evaluate. submitGenericResponse waits
     // up to 250ms between the busy 503 and the retry; Playwright's awaitPromise
     // does not flush that timer while the evaluate is still open.
     Promise.resolve()
       .then(() =>
-        psynet.nextPage(null, {}, {}, undefined, { timelineHoldResume: true })
+        psynet.sendSubmission(null, {}, {}, undefined, {
+          timelineHoldResume: true
+        })
       )
       .then((passed) => {
         window.__holdClientNext = {
@@ -316,7 +331,7 @@ async function probeTimelineHoldClientBehavior(page) {
       window.XMLHttpRequest = OriginalXHR;
       psynet.handleApprovedResponse = originalApproved;
       psynet.alert = originalAlert;
-      psynet.nextPagePending = pendingBefore;
+      psynet.pageState.submitting = pendingBefore;
       psynet.scheduleTimelineHoldCheck = originalSchedule;
       psynet.scheduleTimelineHoldTimeout = originalTimeout;
       PsyNetWebSocketChannel.connect = originalConnect;
@@ -680,7 +695,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       experimentPage.locator("#psynet-timeline-hold-indicator")
     ).toBeVisible({ timeout: STEP_TIMEOUT_MS });
     // Silence before pageReady: a safety-poll resume during that wait can
-    // POST /response and leave nextPagePending set for the client probe.
+    // POST /response and leave a submission pending for the client probe.
     await silenceTimelineHoldSafetyPoll(experimentPage);
     await waitForTimelinePageReady(experimentPage, STEP_TIMEOUT_MS);
 
@@ -770,7 +785,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       const originalResponseEnable = psynet.response.enable;
       const originalSubmitEnable = psynet.submit.enable;
       const originalSchedule = psynet.scheduleTimelineHoldCheck;
-      const originalNextPage = psynet.nextPage;
+      const originalSendSubmission = psynet.sendSubmission;
       const originalSetTimeout = window.setTimeout;
       const effects = {
         alerts: 0,
@@ -781,9 +796,9 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       // The client-behavior probe reconnects the hold websocket, so its
       // onOpen resume may still be in flight.
       const originalResume = await window.__quietTimelineHold("busy probe");
-      const pendingBefore = psynet.nextPagePending;
+      const pendingBefore = psynet.pageState.submitting;
       try {
-        psynet.nextPagePending = false;
+        psynet.pageState.submitting = false;
         psynet.alert = () => {
           effects.alerts += 1;
         };
@@ -818,12 +833,12 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
         const secondBusyRetryArmed = psynet.timelineHold?.busyRetryTimer != null;
         const resumeRequested = Boolean(psynet.timelineHold?.resumeRequested);
 
-        // A real resume that gets a busy 503 must reach nextPage, then
+        // A real resume that gets a busy 503 must reach sendSubmission, then
         // schedule one check and queue no immediate wake. Timers are counted
         // but never run, so the probe arms nothing that outlives it.
-        const resumeEffects = { nextPageCalls: 0, scheduleCalls: 0, timers: 0 };
-        psynet.nextPage = async (_button, _answer, _metadata, _blobs, options) => {
-          resumeEffects.nextPageCalls += 1;
+        const resumeEffects = { sendCalls: 0, scheduleCalls: 0, timers: 0 };
+        psynet.sendSubmission = async (_answer, _metadata, _blobs, _onRejection, options) => {
+          resumeEffects.sendCalls += 1;
           await psynet.handleBusyResponse(request, options);
           return false;
         };
@@ -849,13 +864,13 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
           resume: resumeEffects
         };
       } finally {
-        psynet.nextPage = originalNextPage;
+        psynet.sendSubmission = originalSendSubmission;
         psynet.alert = originalAlert;
         psynet.response.enable = originalResponseEnable;
         psynet.submit.enable = originalSubmitEnable;
         psynet.scheduleTimelineHoldCheck = originalSchedule;
         psynet.resumeTimelineHold = originalResume;
-        psynet.nextPagePending = pendingBefore;
+        psynet.pageState.submitting = pendingBefore;
       }
     });
     expect(busyHoldEffects).toEqual({
@@ -865,7 +880,7 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
       secondBusyRetryArmed: false,
       delayedWakeMs: 250,
       scheduleCalls: 0,
-      resume: { nextPageCalls: 1, scheduleCalls: 1, timers: 0 },
+      resume: { sendCalls: 1, scheduleCalls: 1, timers: 0 },
       alerts: 0,
       responseEnables: 0,
       submitEnables: 0
@@ -920,35 +935,35 @@ test("timeline hold client overlay and busy retry stay on a live hold", { tag: "
     });
 
     const pendingEffects = await experimentPage.evaluate(async () => {
-      const originalNextPage = psynet.nextPage;
+      const originalSendSubmission = psynet.sendSubmission;
       const originalSchedule = psynet.scheduleTimelineHoldCheck;
-      const effects = { nextPageCalls: 0, scheduleCalls: 0 };
+      const effects = { sendCalls: 0, scheduleCalls: 0 };
       // An in-flight resume would make the probe return before scheduling.
       const originalResume = await window.__quietTimelineHold(
         "pending request probe"
       );
       try {
-        psynet.nextPage = () => {
-          effects.nextPageCalls += 1;
+        psynet.sendSubmission = () => {
+          effects.sendCalls += 1;
         };
         psynet.scheduleTimelineHoldCheck = () => {
           effects.scheduleCalls += 1;
         };
-        psynet.nextPagePending = true;
+        psynet.pageState.submitting = true;
         effects.result = await originalResume.call(
           psynet,
           "test pending request"
         );
       } finally {
         psynet.resumeTimelineHold = originalResume;
-        psynet.nextPagePending = false;
-        psynet.nextPage = originalNextPage;
+        psynet.pageState.submitting = false;
+        psynet.sendSubmission = originalSendSubmission;
         psynet.scheduleTimelineHoldCheck = originalSchedule;
       }
       return effects;
     });
     expect(pendingEffects).toEqual({
-      nextPageCalls: 0,
+      sendCalls: 0,
       scheduleCalls: 1,
       result: false
     });

@@ -295,7 +295,6 @@ def test_custom_record_controls_keep_uploading_with_the_answer(submission):
     exp, _, _, _ = submission
     control = CustomRecordControl(duration=1)
     assert not control._uses_async_upload(exp)
-    assert control.get_js_vars()["asynchronousUploadSources"] is None
 
 
 def test_subclasses_that_read_the_answer_bytes_keep_uploading_with_it(submission):

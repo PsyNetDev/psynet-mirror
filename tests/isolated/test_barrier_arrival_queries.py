@@ -569,6 +569,7 @@ def test_barrier_arrival_get_sql_does_not_grow_with_group_size(db_session):
     exp = get_experiment()
     _reset_experiment(exp)
     counts = {}
+    summaries = {}
     with _restored_experiment(exp):
         for group_size in (3, 7):
             group_type = f"grow{group_size}_{uuid.uuid4().hex[:6]}"
@@ -595,4 +596,11 @@ def test_barrier_arrival_get_sql_does_not_grow_with_group_size(db_session):
             )
             assert released == group_size
             counts[group_size] = (arrival.total_count, last_arrival.total_count)
-    assert counts[3] == counts[7], counts
+            summaries[group_size] = "\n".join(
+                f"n={group_size} {label}:\n{profiler.format_summary(top_n=80, sort_by='count')}"
+                for label, profiler in (
+                    ("arrival", arrival),
+                    ("last arrival", last_arrival),
+                )
+            )
+    assert counts[3] == counts[7], f"{counts}\n{summaries[3]}\n{summaries[7]}"

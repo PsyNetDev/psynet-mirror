@@ -1,0 +1,1 @@
+Changed the browser to send every submission (answers, answers given in advance, a barrier's release, a timeline hold's check and Back) through one queue, in the order they were made. Custom code or tests that read `psynet.nextPagePending` should read `psynet.pageState.submitting`, which is true once the page shown has been submitted.

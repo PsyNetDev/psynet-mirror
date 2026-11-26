@@ -368,3 +368,7 @@ def _versioned_url_for_for_test(app, filename):
     """Build a versioned URL while its application context is active."""
     with app.test_request_context("/"):
         return versioned_url_for("static", filename=filename)
+
+
+def test_cacheable_static_url_is_unchanged_outside_an_app_context():
+    assert cacheable_static_url("static/theme.css") == "static/theme.css"

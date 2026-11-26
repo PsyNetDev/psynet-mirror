@@ -1,3 +1,4 @@
+import datetime
 import logging
 
 import pytest
@@ -313,6 +314,23 @@ class TestParticipantFailure:
         assert trial.response is not None and trial.time_taken is not None
         assert not participant.failed
         assert bot.is_working
+
+    def test_response_timeout_none_keeps_old_trials_open(
+        self, launched_experiment, monkeypatch
+    ):
+        bot = BotDriver()
+        trial = Trial.query.filter_by(participant_id=bot.id, complete=False).one()
+        trial.creation_time -= datetime.timedelta(days=30)
+        db.session.commit()
+        trial_maker = trial.trial_maker
+
+        monkeypatch.setattr(trial_maker, "response_timeout_sec", None)
+        trial_maker.check_old_trials()
+        assert not trial.failed
+
+        monkeypatch.undo()
+        trial_maker.check_old_trials()
+        assert trial.failed
 
     def test_participant_fail_while_trial_open_does_not_complete_on_submit(
         self, launched_experiment

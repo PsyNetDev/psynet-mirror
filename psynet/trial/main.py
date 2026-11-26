@@ -16,6 +16,7 @@ from markupsafe import Markup
 from sqlalchemy import (
     Boolean,
     Column,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -68,6 +69,7 @@ from ..timeline import (
     DatabaseCheck,
     Module,
     ModuleState,
+    Page,
     PageMaker,
     ParticipantFailRoutine,
     PreDeployRoutine,
@@ -77,6 +79,7 @@ from ..timeline import (
     join,
     switch,
     while_loop,
+    with_fixed_progress,
 )
 from ..timeline_hold import _reject_countdown
 from ..utils import (
@@ -144,6 +147,14 @@ class AssetParentMixin:
             asset.deposit()
 
         self.assets[local_key] = asset
+
+
+class _AfterTrialPageMaker(PageMaker):
+    """Runs :meth:`TrialMaker.show_after_trial`, whose pages must each give a ``time_estimate``."""
+
+    def impute_time_estimates(self, elts):
+        # The page maker's own estimate is 0, which would silently pay nothing.
+        pass
 
 
 @register_table
@@ -522,6 +533,10 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     n_repeat_trials = Column(Integer)
     time_taken = Column(Float)
     time_limit_reached = Column(Boolean)
+    # The response timeout of trials prepared in advance counts from here.
+    response_started_at = Column(DateTime)
+    # Pages shown in advance are compared by layout key, rendered once per trial.
+    layout_key = Column(String)
     _initial_assets = deferred(Column(PythonDict))
 
     time_credit_before_trial = Column(Float)
@@ -643,6 +658,11 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @property
     def var(self):
         return VarStore(self)
+
+    @property
+    def _page_key(self):
+        """What the page UUID of the trial's page says it is."""
+        return f"trial{self.id}"
 
     @property
     def live_game(self):
@@ -983,6 +1003,12 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
         Returns a :class:`~psynet.timeline.Page` object,
         or alternatively a list of such objects,
         that solicits an answer from the participant.
+
+        A trial maker that prepares its trials in advance also calls this
+        method for upcoming trials, before the participant reaches them, to
+        show them without waiting for the server. It must then depend only on
+        the trial and its node, not on other trials' answers or scores, and
+        must not change anything.
 
         Parameters
         ----------
@@ -1698,6 +1724,29 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
     @classmethod
     def trial_logic(cls, trial_maker=None):
         time_estimate = cls._get_trial_time_estimate(trial_maker)
+        after_trial = None
+        if trial_maker is not None:
+
+            def show_after_trial(experiment, participant):
+                trial = participant.current_trial
+                if (
+                    participant.failed
+                    or trial.failed
+                    or trial_maker._left_sync_group(participant)
+                ):
+                    return None
+                return call_function_with_context(
+                    trial_maker.show_after_trial,
+                    experiment=experiment,
+                    participant=participant,
+                    trial=trial,
+                )
+
+            after_trial = _AfterTrialPageMaker(
+                show_after_trial, time_estimate=0, label="show_after_trial"
+            )
+            after_trial._after_trial = True
+            after_trial._between_trials = True
 
         return join(
             CodeBlock(cls._log_time_credit_before_trial),
@@ -1713,6 +1762,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             cls._construct_feedback_logic(trial_maker),
             CodeBlock(cls._log_time_credit_after_trial),
             CodeBlock(cls._log_progress_after_trial),
+            after_trial,
         )
 
     @classmethod
@@ -1754,6 +1804,20 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             check_trial = getattr(barrier, "_check_trial", None)
             if check_trial is not None:
                 check_trial(self)
+        if self.response_started_at is None:
+            self.response_started_at = datetime.datetime.now()
+        if (
+            len(logic) == 1
+            and isinstance(logic[0], Page)
+            and self.trial_maker is not None
+        ):
+            page = logic[0]
+            if self.id is None:
+                db.session.flush([self])
+            page._page_key = self._page_key
+            page.upcoming_pages, page.upcoming_media = self.trial_maker._upcoming(
+                self, page, experiment, participant
+            )
         return logic
 
     @classmethod
@@ -1853,7 +1917,7 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             time_estimate=0,
         )
         # Feedback pages' time limits don't count as running out of time.
-        feedback_pages._trial_feedback = True
+        feedback_pages._after_trial = True
 
         return conditional(
             label=label,
@@ -2173,8 +2237,9 @@ class TrialMaker(Module):
         How often to check for timeouts, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 300)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300),
+        or ``None`` for no limit
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,
@@ -2192,6 +2257,14 @@ class TrialMaker(Module):
 
     introduction
         An optional event or list of elts to execute prior to beginning the trial loop.
+
+    time_estimate_after_trials : float
+        The total time, in seconds, that each participant is expected to spend
+        on the pages from :meth:`~psynet.trial.main.TrialMaker.show_after_trial`,
+        such as breaks (default = 0). It is added once to the experiment's
+        duration estimate, and the progress bar moves on by it when the
+        trial loop ends. The time credit a participant earns still comes
+        from the pages' own ``time_estimate``.
 
     give_end_feedback_passed : bool
         If ``True``, then participants who pass the final performance check
@@ -2416,6 +2489,8 @@ class TrialMaker(Module):
     performance_threshold = 0.0
 
     time_estimate_per_trial = None
+
+    time_estimate_after_trials = 0
 
     introduction = None
 
@@ -2824,19 +2899,48 @@ class TrialMaker(Module):
         ]
 
     def check_old_trials(self):
+        if self.response_timeout_sec is None:
+            return
         time_threshold = datetime.datetime.now() - datetime.timedelta(
             seconds=self.response_timeout_sec
         )
-        trials_to_fail = (
-            self.trial_class.query.filter_by(complete=False, failed=False)
-            .filter(self.trial_class.creation_time < time_threshold)
-            .order_by(self.trial_class.id)
+        # Trials prepared in advance wait unseen until their turn.
+        started = (
+            self.trial_class.response_started_at
+            if self.prepare_trials_in_advance
+            else self.trial_class.creation_time
+        )
+        open_trials = self.trial_class.query.filter_by(
+            complete=False, failed=False
+        ).filter(
+            # Custom prepare_trial code can create trials without a trial maker.
+            or_(
+                self.trial_class.trial_maker_id == self.id,
+                self.trial_class.trial_maker_id.is_(None),
+            )
+        )
+
+        def lock(query):
             # A locked trial belongs to an in-flight request that may complete
             # it; the next check retries it if not.
-            .with_for_update(of=self.trial_class, skip_locked=True)
-            .populate_existing()
-            .all()
-        )
+            return (
+                query.order_by(self.trial_class.id)
+                .with_for_update(of=self.trial_class, skip_locked=True)
+                .populate_existing()
+                .all()
+            )
+
+        trials_to_fail = lock(open_trials.filter(started < time_threshold))
+        if self.prepare_trials_in_advance and trials_to_fail:
+            # These participants have stopped, and their trials waiting their
+            # turn would otherwise keep counting towards their nodes.
+            participant_ids = {trial.participant_id for trial in trials_to_fail}
+            trials_to_fail += lock(
+                open_trials.filter(
+                    self.trial_class.response_started_at.is_(None),
+                    self.trial_class.participant_id.in_(participant_ids),
+                )
+            )
         logger.info("Found %i old trial(s) to fail.", len(trials_to_fail))
         for trial in trials_to_fail:
             trial.fail(reason="response_timeout")
@@ -2952,6 +3056,59 @@ class TrialMaker(Module):
             An instantiation of :class:`psynet.participant.Participant`,
             corresponding to the current participant.
         """
+
+    def show_after_trial(self, experiment, participant, trial):
+        """
+        Return pages to show after ``trial``, such as a break, or ``None``.
+
+        The pages run once the trial is finalized and its feedback shown, and
+        before the next trial is prepared, so they don't affect either trial;
+        recordings made on them belong to the participant. They are skipped
+        after a failed trial. PsyNet can't tell yet whether another trial
+        follows, so check ``trial.position`` to avoid a break after the last
+        trial. Give each page a ``time_estimate``, and set
+        :attr:`time_estimate_after_trials` to the total time the pages are
+        expected to take, so that the duration estimate includes them. Like
+        :meth:`~psynet.trial.main.Trial.show_trial`, the method may take any
+        subset of its parameters.
+
+        Parameters
+        ----------
+
+        experiment
+            An instantiation of :class:`psynet.experiment.Experiment`,
+            corresponding to the current experiment.
+
+        participant
+            An instantiation of :class:`psynet.participant.Participant`,
+            corresponding to the current participant.
+
+        trial
+            The :class:`~psynet.trial.main.Trial` that just finished, or one
+            that hasn't been answered yet (see below).
+
+        Returns
+        -------
+
+        Timeline logic, such as a page or a list of pages, or ``None``.
+        A trial maker that prepares its trials in advance also calls this
+        method for the current and upcoming trials before they are answered,
+        to find where the next trials stop being predictable. It must then
+        not change anything, nor rely on ``trial.answer`` or ``trial.score``,
+        which are still ``None``.
+        """
+        return None
+
+    prepare_trials_in_advance = False
+
+    def _upcoming(self, trial, page, experiment, participant):
+        """Return what is known about the pages of the trials after ``trial``.
+
+        Returns the pages of the trials that the browser can show in advance
+        and the URLs of the next trials' files by media type; each is ``None``
+        if unknown.
+        """
+        return None, None
 
     def finalize_trial(self, answer, trial, experiment, participant):
         """
@@ -3274,6 +3431,9 @@ class TrialMaker(Module):
                 expected_repetitions=self.expected_trials_per_participant,
                 fix_time_credit=False,
             ),
+            # The show_after_trial pages don't move the progress bar, as
+            # PsyNet can't tell how often they appear.
+            with_fixed_progress([], self.time_estimate_after_trials),
         )
 
     def _wait_for_trial(self):
@@ -3589,8 +3749,9 @@ class NetworkTrialMaker(TrialMaker):
         How often to check for trials that have timed out, in seconds (default = 30).
         Users are invited to override this.
 
-    response_timeout_sec : float
-        How long until a trial's response times out, in seconds (default = 300)
+    response_timeout_sec : float or None
+        How long until a trial's response times out, in seconds (default = 300),
+        or ``None`` for no limit
         (i.e. how long PsyNet will wait for the participant's response to a trial).
         This is a lower bound on the actual timeout
         time, which depends on when the timeout daemon next runs,

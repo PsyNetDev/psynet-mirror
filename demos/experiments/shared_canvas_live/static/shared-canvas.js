@@ -125,7 +125,7 @@ function draw(context, rules, you, mine, others) {
   drawCircle(context, me.x, me.y, rules.player_radius, rules.colors[you], "#111827", 4);
 }
 
-export function activate({ root, vars, psynet }) {
+export function activate({ root, config, psynet }) {
   let status = root.querySelector("#canvas-status");
   let live = psynet.liveGame;
   if (!live.hasGame) {
@@ -133,7 +133,7 @@ export function activate({ root, vars, psynet }) {
     // its drawing loop.
     return;
   }
-  let rules = vars.canvas_rules;
+  let rules = config.canvas_rules;
   let context = root.querySelector("#canvas").getContext("2d");
   let timer = root.querySelector("#canvas-timer");
   let scores = root.querySelector("#canvas-scores");

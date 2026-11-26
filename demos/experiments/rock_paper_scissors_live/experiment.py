@@ -249,7 +249,7 @@ def rock_paper_scissors_page(game):
         ),
         no_game_message="This game can't be played without your partner.",
         waiting_status="Waiting for your partner to open the game",
-        js_page_modules=["/static/rock-paper-scissors.js"],
+        module="/static/rock-paper-scissors.js",
         css_links=["/static/rock-paper-scissors.css"],
         time_estimate=60,
     )

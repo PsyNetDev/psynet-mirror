@@ -36,6 +36,42 @@ Keeping the document open avoids a full reload, but it also means that PsyNet
 must explicitly reproduce the resource cleanup and initialization that a reload
 would normally provide.
 
+Pages rendered in advance
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A page can carry ``upcoming_pages`` in its bootstrap data and fragment
+payload: the pages the browser may show before the server confirms them,
+each with the page UUID the participant will get on reaching it. When the
+participant answers, ``psynet.js`` swaps in the next one and queues the answer
+for ``/response``. A reply whose page UUID matches is adopted without another
+swap; any other reply replaces the page as usual.
+
+A page UUID follows from the participant, how many pages they have been shown
+and what the page is (``make_page_uuid``), so the server knows each upcoming
+page's UUID without storing it: a trial page is keyed by its trial, other
+pages by their position in the timeline. ``_upcoming_pages_payload`` sets it
+on each page rendered in advance before rendering it. Timeline pages are
+shared by all participants, so ``Timeline._pages_rendered_in_advance`` renders
+a copy of the next page.
+
+Going back
+~~~~~~~~~~
+
+The same rules decide whether a top-level page can go back to the page before
+it (``Timeline._page_to_go_back_to``). In addition, the page must have a Next
+button, for Back to sit beside, and the earlier page must collect no answer
+(its control is a ``NullControl``), so going back never revises an answer.
+``Timeline._back_button`` also shows Back, disabled, on a page that the next page can go back to, and the render passes the result to the template as ``back_button``. The
+page also sends the browser the earlier page as ``previous_page``, rendered
+with the page UUID and progress it will have, like the pages rendered in
+advance (``Page._page_uuid`` and ``Page._progress``). The Back button queues a ``/response`` with
+``back`` set instead of an answer. If no answers are queued, the browser shows
+``previous_page`` at once and sends the request in the background; otherwise
+it waits for the queued answers to be sent and shows the page in the reply.
+``Timeline.go_back`` moves ``elt_id`` back, takes back the earlier page's time
+credit and progress, and consumes that page again, so it gets the predicted
+page UUID. A rejected Back reloads the page.
+
 Server-side rendering
 ---------------------
 
@@ -209,7 +245,7 @@ Page bootstrap data
 -------------------
 
 ``#psynet-template-data`` is the server-to-browser contract for the active
-page. It includes page metadata, ``js_vars``, event definitions, media requests,
+page. It includes page metadata, ``page_config``, event definitions, media requests,
 managed JavaScript resources, routes, feature flags, and localized strings.
 
 On an in-place transition, ``psynet.refreshTemplateData()`` updates the
@@ -256,7 +292,8 @@ PsyNet then:
 7. imports and activates ``js_page_modules``;
 8. initializes trial progress, media, controls, and ``trialConstruct`` behavior;
 9. marks the page ready and registers the ``pageReady`` trial event;
-10. prepares and starts the trial, then enables response and submission.
+10. stops dimming an in-place page and calls page modules' ``update``;
+11. prepares and starts the trial, then enables response and submission.
 
 Readiness and trial startup
 ---------------------------
@@ -322,8 +359,22 @@ Page modules
 named ``activate(context)`` export. Modules are imported and cached normally,
 while ``activate()`` runs for every hosting page.
 
-The activation context contains ``root``, ``trial``, ``vars``, ``page``, and
-``psynet``. ``activate()`` may return an asynchronous cleanup function.
+The activation context contains ``root``, ``trial``, ``config`` (the page's
+``page_config``), ``page``, and ``psynet``, plus ``vars``, a deprecated name
+of ``config``. ``activate()`` may return an asynchronous cleanup function, or
+an object ``{update, cleanup}``. PsyNet calls
+``update({contents, upcomingContents, response, signal})`` after the page is
+ready, aborting the previous call's ``signal`` first and the last one when the
+page is left; see :doc:`/code/trials/keeping_a_task_on_one_page`. Answers
+given through ``response`` go to ``/response`` in the background, in order,
+from the answer queue in ``psynet.js``. A reply that keeps a ``JSPage`` on
+screen is adopted without an in-place swap (``psynet.keptPageFragment``): it
+must be a ``JSPage`` with the shown page's layout key and, if a trial was
+shown in advance, that trial's page UUID and contents. A page UUID is
+made from the participant's id, how many pages they have been shown and what
+the page is (its trial, or its position in the timeline; see
+``make_page_uuid``), so the server can tell the browser the page UUIDs of the
+next trials' pages without storing them.
 
 Most page code and modules do not require cleanup because PsyNet already
 removes page DOM, stops trial-owned resources, and resets response state.
@@ -627,8 +678,8 @@ contributes everything the page needs through the component hooks:
   no-game notice, opens the page's game socket at ``timelinePageReady`` if
   the page's own JavaScript hasn't already, and returns the cleanup that
   closes it;
-* ``get_participant_js_vars`` adds the game's id and channel to the page's
-  ``js_vars`` each time the page renders. It raises an error for a participant
+* ``get_participant_page_config`` adds the game's id and channel to the page's
+  ``page_config`` each time the page renders. It raises an error for a participant
   who hasn't reached the barrier of the ``PlayLiveGame`` the page belongs to.
 
 The socket's scope is the participant's ``websocketScope``, a ``.``,
@@ -659,8 +710,8 @@ Adding new frontend components
 For new Prompt and Control components:
 
 * keep templates focused on markup;
-* use ``get_js_vars()`` for serialized page configuration;
-* use ``get_participant_js_vars(experiment, participant)`` for configuration that
+* use ``get_page_config()`` for serialized page configuration;
+* use ``get_participant_page_config(experiment, participant)`` for configuration that
   depends on the participant, read each time the page renders;
 * use ``get_js_dependencies()`` for classic load-once libraries;
 * use ``get_js_page_code()`` for short inline activation snippets;

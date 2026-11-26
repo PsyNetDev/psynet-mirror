@@ -139,6 +139,93 @@ still repeat any work the function does. If that work is expensive, do it once
 in a code block, store the result in ``participant.var``, and have the page
 maker only read it.
 
+.. _showing_the_next_page_without_waiting:
+
+Showing the next page without waiting
+-------------------------------------
+
+Because a page outside a page maker shows every participant the same thing,
+PsyNet can render the next page in advance. When a page comes straight after
+the current one, the browser receives it with the current page. Once the
+participant clicks Next, the browser shows it at once and sends the answer to
+the server in the background. This needs ``inplace_timeline_transitions``,
+which is on by default.
+
+The browser waits for the server as usual when:
+
+* anything other than a page comes next, such as a code block, a condition, a
+  loop, a page maker, or the start or end of a module;
+* the server may turn down the current page's answer, as it does for pages
+  with a ``validate`` function and, by default, for
+  :class:`~psynet.modular_page.RadioButtonControl`,
+  :class:`~psynet.modular_page.CheckboxControl`,
+  :class:`~psynet.modular_page.DropdownControl` and
+  :class:`~psynet.modular_page.NumberControl`, which ask for a missing answer;
+* the current page overrides ``on_complete``, which may change what comes
+  next, as :class:`~psynet.page.WaitPage` does;
+* either page has a ``time_limit``, background recording, a ``session_id`` or
+  a full page reload;
+* the next page isn't built from components that allow it, such as an
+  :class:`~psynet.page.InfoPage`, a :class:`~psynet.page.JSPage` or a
+  :class:`~psynet.modular_page.ModularPage` whose prompt and control set
+  ``can_swap_in_advance = True`` (see
+  :ref:`the trial maker guide <prepared_trials_swapped_in>` for the built-in
+  ones);
+* the next page is a chat page, or one of its prompts or controls adds
+  ``page_config`` that depends on the participant;
+* the next page overrides ``consume`` or uses ``delegated_render``;
+* the answer includes a recording or another file to upload.
+
+PsyNet logs, once for each page, why the browser waits for it. These
+messages are at DEBUG level, so see :ref:`detailed_log_messages` to show
+them.
+
+If a page shows something that the previous answer changes, for example from
+``participant.var`` in a custom template, pass ``render_in_advance=False``:
+
+.. code-block:: python
+
+    Page(..., render_in_advance=False)
+
+While an answer is still being sent, the browser asks the participant before
+the page reloads or closes.
+
+.. _going_back_to_the_previous_page:
+
+Going back to the previous page
+-------------------------------
+
+For the same reason, a participant can go back to the page before the
+current one, for example to reread instructions. Such pages show a Back
+button just left of Next, which stays where it was. The browser already has
+the earlier page, so it appears at once. Going back returns the time
+credit and progress to what they were before the earlier page was answered. Like any page, the earlier page
+stores a new response, without an answer, each time the participant reaches
+it, so its responses appear once for each visit. The `back_button demo
+<https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/back_button>`__
+shows a run of instruction pages with Back buttons.
+
+A page shows a Back button only when it and the page before it both have a
+Next button, so that the participant can move on again, and are both :class:`~psynet.modular_page.ModularPage` pages
+directly next to each other in the timeline, which the browser could show
+without waiting for the server as described above. The earlier page must
+collect no answer, like :class:`~psynet.page.InfoPage`, so going back never
+changes an answer. It must also not override ``on_complete``, and the pages
+must not be inside a module that collects its answers or among the pages a
+barrier shows while participants wait. So questions, trial
+pages, and the first page after a code block, a condition or the start of a
+module, can't be gone back to. Pages whose controls answer on click, such
+as :class:`~psynet.modular_page.PushButtonControl`, have no Back button.
+
+A page that the next page can go back to shows Back disabled, so it doesn't
+appear from nowhere on the next page. Other pages have none.
+
+To hide the Back button on a page, pass ``show_back_button=False``:
+
+.. code-block:: python
+
+    InfoPage("Please read this page carefully.", time_estimate=5, show_back_button=False)
+
 Branching and repetition
 ------------------------
 

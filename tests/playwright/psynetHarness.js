@@ -600,6 +600,15 @@ async function clickNext(page, timeoutMs) {
   const oldUuid = await getPageUuid(page);
   await page.click("#next-button");
   await waitForPageChange(page, oldUuid, timeoutMs);
+  await waitForAnswersSent(page, timeoutMs);
+}
+
+// A page rendered in advance appears before the answer to the previous page
+// reaches the server, which sends it in the background.
+async function waitForAnswersSent(page, timeoutMs) {
+  await page.waitForFunction(() => !window.psynet?.answers?.queue?.length, null, {
+    timeout: timeoutMs
+  });
 }
 
 async function clickNextAndWait(page, timeoutMs = 60000) {
@@ -1592,6 +1601,9 @@ async function clickConsentButton(page, timeout = 120000) {
   await expect(consentButton).toBeVisible({ timeout });
   await expect(consentButton).toBeEnabled({ timeout });
   await waitForPageLoaded(page, timeout);
+  // PsyNet enables the button before the page is ready, and answers a click
+  // before then with a "Please wait" alert.
+  await waitForTimelinePageReady(page, timeout);
   await consentButton.click();
 }
 

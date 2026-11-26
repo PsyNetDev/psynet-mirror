@@ -8,8 +8,8 @@
 // arrived before this module activated, and fetches the display again from
 // the server when members have joined or left.
 
-export async function activate({root, vars}) {
-    var config = vars["group_prompt"] || {};
+export async function activate({root, config}) {
+    var config = config["group_prompt"] || {};
     if (!config.live_ticks && !config.live_members) return undefined;
     var announcer = root.querySelector(".psynet-group-announcer");
     var latestSeats = [];

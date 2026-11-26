@@ -18,6 +18,10 @@ function formatPageError(entry) {
     .join("\n");
 }
 
+// PsyNet logs this when a page shown in advance turned out different from the
+// server's, for example because show_trial depends on an earlier answer.
+const STALE_PAGE_WARNING = "The page shown in advance no longer matches the server's";
+
 const test = base.test.extend({
   // A test that times out never reaches its own stopExperiment, and the
   // server it leaves on the debug port would fail every later test. Declared
@@ -26,6 +30,26 @@ const test = base.test.extend({
     async ({}, use) => {
       await use();
       await stopRunningExperiments();
+    },
+    { auto: true }
+  ],
+  allowStalePages: [false, { option: true }],
+  failOnStalePages: [
+    async ({ context, allowStalePages }, use) => {
+      const warnings = [];
+      context.on("console", (message) => {
+        if (message.text().includes(STALE_PAGE_WARNING)) {
+          warnings.push(message.text());
+        }
+      });
+
+      await use();
+
+      if (warnings.length > 0 && !allowStalePages) {
+        throw new Error(
+          "Pages shown in advance didn't match the server's:\n\n" + warnings.join("\n")
+        );
+      }
     },
     { auto: true }
   ],
@@ -71,6 +95,7 @@ const test = base.test.extend({
 
 module.exports = {
   ...base,
+  STALE_PAGE_WARNING,
   test,
   expect: base.expect
 };

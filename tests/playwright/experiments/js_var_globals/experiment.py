@@ -11,17 +11,17 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         InfoPage(
             Markup('<p id="js-var-page-marker">Alpha page</p>'),
-            js_vars={"legacy_alpha": 1},
+            page_config={"legacy_alpha": 1},
             time_estimate=1,
         ),
         InfoPage(
             Markup('<p id="js-var-page-marker">Beta page</p>'),
-            js_vars={"legacy_beta": 2},
+            page_config={"legacy_beta": 2},
             time_estimate=1,
         ),
         InfoPage(
             Markup('<p id="js-var-page-marker">Descriptor page</p>'),
-            js_vars={
+            page_config={
                 "nonconfigurable_global": 4,
                 "restored_global": 3,
             },

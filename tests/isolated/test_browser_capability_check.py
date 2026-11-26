@@ -251,7 +251,7 @@ def test_browser_capability_check_label_propagates():
 def test_browser_capability_check_page():
     caps = {"microphone", "audio_playback"}
     page = BrowserCapabilityCheckPage(caps)
-    assert set(page.js_vars["capabilities"]) == caps
+    assert set(page.page_config["capabilities"]) == caps
     assert any("browser-capability-check.js" in m for m in page.js_page_modules)
     assert not any(isinstance(b, NextButton) for b in page.buttons)
 

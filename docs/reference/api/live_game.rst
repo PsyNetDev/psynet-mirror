@@ -5,7 +5,7 @@ Live games
 .. automodule:: psynet.live_game
     :members:
     :show-inheritance:
-    :exclude-members: resolve, model_config, validate, get_participant_js_vars, check_ready_for_response
+    :exclude-members: resolve, model_config, validate, get_participant_page_config, check_ready_for_response
 
 .. data:: NOT_STARTED_MESSAGE
     :value: "The game hasn't started yet."

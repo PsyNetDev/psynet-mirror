@@ -716,10 +716,10 @@ def test_jspsych_page_configures_timeline_module():
         time_estimate=1,
         js_dependencies=["/static/jspsych.js"],
         css_links=["/static/jspsych.css"],
-        js_vars={"welcome": "Hello"},
+        page_config={"welcome": "Hello"},
     )
 
-    assert page.js_vars == {
+    assert page.page_config == {
         "welcome": "Hello",
         "jspsych_timeline_module": "/static/reaction-time-task.js",
     }

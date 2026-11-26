@@ -44,7 +44,7 @@ test("legacy js_var globals warn, error, and restore across pages", { tag: "@inp
         explicitValue,
         bareValue,
         assignedValue: window.legacy_alpha,
-        canonicalValue: psynet.var.legacy_alpha,
+        canonicalValue: psynet.pageConfig.legacy_alpha,
         mode: psynetTemplateData.flags.legacyJsVarGlobals,
         missingType: Function("return typeof unrelated_missing")(),
         unrelatedValue: window.unrelated_existing
@@ -77,7 +77,7 @@ test("legacy js_var globals warn, error, and restore across pages", { tag: "@inp
             typeof Object.getOwnPropertyDescriptor(window, "legacy_alpha")?.get ===
             "function",
           legacyValue: window.legacy_alpha,
-          canonicalValue: psynet.var.legacy_alpha
+          canonicalValue: psynet.pageConfig.legacy_alpha
         };
       })
     ).toEqual({
@@ -100,7 +100,7 @@ test("legacy js_var globals warn, error, and restore across pages", { tag: "@inp
       return {
         hasGetter: typeof descriptor?.get === "function",
         legacyValue: window.legacy_alpha,
-        canonicalValue: psynet.var.legacy_alpha
+        canonicalValue: psynet.pageConfig.legacy_alpha
       };
     });
     expect(redefinedReinstallState).toEqual({
@@ -186,7 +186,7 @@ test("legacy js_var globals warn, error, and restore across pages", { tag: "@inp
           "legacy_alpha"
         ),
         assignmentError,
-        canonicalValue: psynet.var.legacy_beta,
+        canonicalValue: psynet.pageConfig.legacy_beta,
         error,
         globalPresent: "legacy_beta" in window,
         typeofError,
@@ -197,18 +197,18 @@ test("legacy js_var globals warn, error, and restore across pages", { tag: "@inp
       alphaDescriptor: undefined,
       assignmentError:
         'Legacy global js_vars access "legacy_beta" is disabled. ' +
-        'Use psynet.var["legacy_beta"] instead.',
+        'Use psynet.pageConfig["legacy_beta"] instead.',
       canonicalValue: 2,
       error: {
         name: "ReferenceError",
         message:
           'Legacy global js_vars access "legacy_beta" is disabled. ' +
-          'Use psynet.var["legacy_beta"] instead.'
+          'Use psynet.pageConfig["legacy_beta"] instead.'
       },
       globalPresent: true,
       typeofError:
         'Legacy global js_vars access "legacy_beta" is disabled. ' +
-        'Use psynet.var["legacy_beta"] instead.',
+        'Use psynet.pageConfig["legacy_beta"] instead.',
       unrelatedValue: 9
     });
 
@@ -240,9 +240,9 @@ test("legacy js_var globals warn, error, and restore across pages", { tag: "@inp
       return {
         hasGetter: typeof descriptor?.get === "function",
         legacyValue: window.restored_global,
-        canonicalValue: psynet.var.restored_global,
+        canonicalValue: psynet.pageConfig.restored_global,
         nonconfigurableValue: window.nonconfigurable_global,
-        nonconfigurableCanonicalValue: psynet.var.nonconfigurable_global
+        nonconfigurableCanonicalValue: psynet.pageConfig.nonconfigurable_global
       };
     });
     expect(descriptorState).toEqual({
@@ -293,7 +293,7 @@ test("legacy js_var globals warn, error, and restore across pages", { tag: "@inp
         hasGetter: typeof descriptor?.get === "function",
         restoredValue: window.restored_global,
         enumerable: descriptor?.enumerable,
-        canonicalValue: psynet.var.restored_global
+        canonicalValue: psynet.pageConfig.restored_global
       };
     });
     expect(offState).toEqual({
@@ -350,9 +350,9 @@ test("locked legacy global does not block a page transition", { tag: "@inplace-o
 
     expect(
       await experimentPage.evaluate(() => ({
-        canonicalValue: psynet.var.legacy_beta,
+        canonicalValue: psynet.pageConfig.legacy_beta,
         lockedValue: window.legacy_alpha,
-        oldCanonicalKeyPresent: "legacy_alpha" in psynet.var
+        oldCanonicalKeyPresent: "legacy_alpha" in psynet.pageConfig
       }))
     ).toEqual({
       canonicalValue: 2,

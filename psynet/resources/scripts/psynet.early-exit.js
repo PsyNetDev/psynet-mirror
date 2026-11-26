@@ -22,7 +22,7 @@
   // participant endpoint returns structured error codes. Replacing the history
   // entry also keeps Back off the page that just failed.
   function goToErrorPage(identity) {
-    global.psynet?.allowRecordingUnload?.();
+    global.psynet?.allowUnload?.();
     const source =
       identity || (global.dallinger && global.dallinger.identity) || {};
     const uniqueId =
@@ -44,7 +44,7 @@
 
   function continueToRelease(releaseUrl) {
     if (!releaseUrl) throw new Error("The server did not provide a release URL.");
-    global.psynet?.allowRecordingUnload?.();
+    global.psynet?.allowUnload?.();
     if (global.dallinger && global.dallinger.allowExit) {
       global.dallinger.allowExit();
     }
@@ -79,7 +79,7 @@
       // a persistently stale server cannot cause a reload loop.
       if (result.error_code === "stale_early_exit_offer") {
         if (reloadStaleOffer) {
-          global.psynet?.allowRecordingUnload?.();
+          global.psynet?.allowUnload?.();
           global.location.reload();
           return;
         }
@@ -187,7 +187,7 @@
         "click",
         () => {
           if (reloadOnRetry) {
-            global.psynet?.allowRecordingUnload?.();
+            global.psynet?.allowUnload?.();
             global.location.reload();
           } else {
             followParticipantAction();
@@ -222,7 +222,70 @@
       trigger.focus();
     }
 
-    function openModal() {
+    // A timeline page may have been rendered before the server served it, so
+    // it carries no offer: the browser asks for one for the page on screen,
+    // once the answers given ahead are saved.
+    const serverRendersOffer = Boolean(modal.dataset.offerId);
+    // If a reply replaced the page meanwhile, this page's dialog is gone, so
+    // the click is passed on to the new page's Leave button.
+    function leaveFromTheNewPage() {
+      (
+        document.getElementById("early-exit-button") ||
+        document.getElementById("early-exit-open")
+      )?.click();
+      return false;
+    }
+    async function prepareOffer() {
+      if (serverRendersOffer) return true;
+      // Answers given meanwhile start another send, so wait for each.
+      while (global.psynet?.answers?.sending) {
+        await global.psynet.answers.sending;
+        if (signal.aborted) return leaveFromTheNewPage();
+      }
+      const response = await fetch(
+        "/prepare_early_exit_plan/" + encodeURIComponent(modal.dataset.assignmentId),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // During a timeline hold the server's page is the hold's, while
+          // the page underneath stays on screen.
+          body: JSON.stringify({
+            page_uuid: global.psynet?.submissionPageUuid || global.pageUuid,
+          }),
+        },
+      );
+      const result = await response.json().catch(() => ({}));
+      if (signal.aborted) return leaveFromTheNewPage();
+      if (result.error_code === "stale_early_exit_offer") {
+        global.psynet?.allowUnload?.();
+        global.location.reload();
+        return false;
+      }
+      if (!response.ok || !result.offer_id) {
+        throw new Error("The server did not prepare an early-exit offer.");
+      }
+      modal.dataset.offerId = result.offer_id;
+      const copy = result.confirmation;
+      document.getElementById("early-exit-title").textContent = copy.title;
+      document.getElementById("early-exit-message").textContent = copy.message;
+      if (confirm) confirm.textContent = copy.confirm_label;
+      cancel.textContent = copy.cancel_label;
+      return true;
+    }
+
+    let opening = false;
+    async function openModal() {
+      if (opening) return;
+      opening = true;
+      try {
+        if (!(await prepareOffer())) return;
+      } catch (error) {
+        global.psynet?.log?.error(error.stack || String(error));
+        await global.psynet?.alert?.("We could not end the experiment. Please try again.");
+        return;
+      } finally {
+        opening = false;
+      }
       modal.hidden = false;
       modal.style.display = "block";
       cancel.focus();
