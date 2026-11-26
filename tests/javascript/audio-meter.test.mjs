@@ -26,6 +26,7 @@ function loadMeter(config, sliders = {}) {
   const text = element();
   const context = {
     psynet: {
+      media: { requireAudio() {} },
       page: { control: {} },
       trial: {
         onEvent() {},

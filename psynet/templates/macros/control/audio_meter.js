@@ -46,9 +46,6 @@ audioMeterControl.init = function(json) {
     this.mediaStreamSource = null;
     this.rafID = null;
 
-    this.timeLastTooLow = -1e20;
-    this.timeLastTooHigh = -1e20;
-
     this.timeLastNotTooLow = null;
     this.timeLastNotTooHigh = null;
 
@@ -232,15 +229,11 @@ audioMeterControl.onLevelChange = function(time) {
         this.resetMessage();
     }
 
-    if (this.audioMeter.volume.high >= this.threshold.high) {
-        this.timeLastTooHigh = time;
-    } else {
+    if (this.audioMeter.volume.high < this.threshold.high) {
         this.timeLastNotTooHigh = time;
     }
 
-    if (this.audioMeter.volume.low <= this.threshold.low) {
-        this.timeLastTooLow = time;
-    } else {
+    if (this.audioMeter.volume.low > this.threshold.low) {
         this.timeLastNotTooLow = time;
     }
 
