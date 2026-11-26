@@ -492,7 +492,10 @@ is the same for groups of two and four.
 
 ``test_barrier_arrival_get_sql_does_not_grow_with_group_size`` pins the whole
 ``GET /timeline`` for an arrival and for the last arrival: both issue the
-same number of statements for groups of three and seven.
+same number of statements for groups of three and seven. The test sets
+``CATCH_UP_SPINNER_SECONDS`` to zero: a hold page that shows its waiting
+message loads the partner who has not arrived (seven more statements), so
+otherwise the count would depend on how long the request took.
 
 ``GET /timeline`` Server-Timing splits that work from HTML render. In one
 local Playwright last-arrival run, a trio skip was about 180 ms
