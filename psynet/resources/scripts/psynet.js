@@ -1742,9 +1742,10 @@
     // Held pages are moved on by their hold wake. A pending submission
     // usually gets the failure page in its response; if it is rejected
     // instead, sendSubmission calls this again with failedDuringSubmit.
-    // While answers given in advance are being sent, the page shown is ahead
-    // of the failed one, and the reply to those answers brings the failure
-    // page.
+    // A page shown in advance has its own UUID, so a failure on an earlier
+    // page is left to the reply to the answers still being sent. Trials shown
+    // in advance on the same page keep its UUID, so the reload drops their
+    // unsent answers.
     psynet.moveOnAfterFailure = function (pageUuid) {
       if (
         !pageUuid ||
