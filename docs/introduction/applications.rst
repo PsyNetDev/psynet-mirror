@@ -227,8 +227,10 @@ When PsyNet isn't the right tool
 
 - Fixed questionnaires with no adaptive logic are quicker to build in a
   survey platform.
-- Tasks that require millisecond-precise timing from dedicated hardware are
-  better suited to lab software.
+- Tasks that need timing beyond what a web browser offers, such as response
+  boxes, EEG triggers or displays timed to the exact screen refresh, are
+  better suited to lab software. Ordinary reaction time tasks work well in
+  PsyNet: see the flanker demo in :doc:`/demos/index`.
 - PsyNet has no visual experiment builder: experiments are written as
   Python code, although a coding agent can write much of that code from a
   description.

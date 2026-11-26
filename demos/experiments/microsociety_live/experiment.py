@@ -76,7 +76,7 @@ COLOURS = ["purple", "green", "pink", "grey", "orange"]
 SPOT_LETTERS = "ABCDEFGH"
 # What the lake page needs to predict a move and draw the clock. The page
 # passes it to static/fishing.js.
-RULES = {"travel_seconds": TRAVEL_SECONDS, "stay_seconds": STAY_SECONDS}
+TIMINGS = {"travel_seconds": TRAVEL_SECONDS, "stay_seconds": STAY_SECONDS}
 
 # Why a member's game ended, which is their game's reason.
 RETIRED = "retired"
@@ -327,8 +327,11 @@ def lake_page():
         show_result_for=RESULTS_SECONDS,
         player_left_message=None,
         waiting_status="Waiting for the others to reach the lake…",
-        js_page_modules=["/static/fishing.js"],
-        js_vars={"fishing_rules": RULES},
+        module="/static/fishing.js",
+        # Fixed for the whole experiment. Settings that can differ between
+        # rounds go in the game's state and view instead, as in the
+        # public_goods_live demo.
+        page_config={"fishing_timings": TIMINGS},
         css_links=["/static/fishing.css"],
         time_estimate=STAY_SECONDS + RESULTS_SECONDS,
     )

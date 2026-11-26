@@ -19,6 +19,7 @@ from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 import psynet.bot
+from psynet import timeline_hold
 from psynet.async_job import LocalAsyncJob, WorkerAsyncJob
 from psynet.barrier_spec import (
     BarrierSpecError,
@@ -123,6 +124,12 @@ from timeline_hold_helpers import (  # noqa: E402
     _working_participants,
     new_participant,
 )
+
+
+@pytest.fixture(autouse=True)
+def _catch_up_holds_stay_silent(monkeypatch):
+    """Keep catch-up holds silent however slowly a test runs."""
+    monkeypatch.setattr(timeline_hold, "CATCH_UP_SPINNER_SECONDS", 3600)
 
 
 def get_random_id():
@@ -4504,10 +4511,56 @@ def test_last_arrival_post_does_not_skip_partner_cursors(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
+def test_reloaded_hold_hides_the_empty_page_but_not_the_indicator(
+    in_experiment_directory, db_session, deployment_info, monkeypatch
+):
+    """A full render of a hold has no page to keep, so it hides the empty card."""
+    from importlib import resources
+
+    from dallinger.experiment_server.experiment_server import app
+    from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
+
+    # Deployments copy PsyNet's templates next to Dallinger's; tests don't.
+    layout = (
+        "<html>{% block head %}{% endblock %}{% block body %}{% endblock %}"
+        "{% block scripts %}{% endblock %}</html>"
+    )
+    loader = ChoiceLoader(
+        [
+            FileSystemLoader(str(resources.files("psynet") / "templates")),
+            DictLoader({"base/layout.html": layout}),
+            app.jinja_loader,
+        ]
+    )
+    monkeypatch.setattr(app, "jinja_loader", loader)
+    monkeypatch.setattr(app.jinja_env, "loader", loader)
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = _stacked_partner_timeline(f"reload_{uuid.uuid4().hex[:8]}")
+    try:
+        (participant,) = _working_participants(exp, 1)
+        with app.test_request_context(
+            f"/timeline?unique_id={participant.unique_id}",
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        ):
+            html = Experiment._route_timeline(exp, participant, mode=None)
+        html = html if isinstance(html, str) else html.get_data(as_text=True)
+        indicator = html.index('id="psynet-timeline-hold-indicator"')
+        main_body = html.index('id="main-body"')
+        assert "Waiting for your partner" in html[indicator:main_body]
+        assert "#main-body:has(> .psynet-hold-without-page)" in html
+        assert html.index('class="psynet-hold-without-page"') > main_body
+    finally:
+        exp.timeline = original_timeline
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
 def test_last_arrival_catchup_hold_stays_silent(
     in_experiment_directory, db_session, monkeypatch
 ):
-    """A hold consumed after skipping a released wait stays a silent spinner."""
+    """A catch-up hold is a bare spinner until it lasts CATCH_UP_SPINNER_SECONDS."""
     from psynet.timeline_hold import compose_hold_overlay_html
 
     exp = get_experiment()
@@ -4568,6 +4621,13 @@ def test_last_arrival_catchup_hold_stays_silent(
         last_page = exp.timeline.get_current_elt(exp, last)
         assert last_page.overlay_html(last) == compose_hold_overlay_html("", None)
         assert _arrival_hold_messages(publications, last_id) == []
+        monkeypatch.setattr(timeline_hold, "CATCH_UP_SPINNER_SECONDS", 0)
+        resumed = _process_response(
+            exp, last, last_hold_uuid, timeline_hold_resume=True
+        )
+        hold = resumed.payload["page"]["attributes"]["timeline_hold"]
+        assert hold["silent"] is False
+        assert "Waiting for your partner" in hold["message"]
         _catch_up_until_action(exp, [first_id, second_id, last_id])
     finally:
         exp.timeline = original_timeline

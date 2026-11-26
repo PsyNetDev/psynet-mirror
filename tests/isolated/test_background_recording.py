@@ -301,6 +301,22 @@ def test_required_background_needs_trial(submission):
         VideoRecordConfig(required="yes")
 
 
+def test_required_background_between_trials_has_no_parent_trial(
+    submission, recording_trial
+):
+    from psynet.background_recording import _browser_config
+
+    exp, participant, _, _ = submission
+    page = InfoPage(
+        "Take a break",
+        time_estimate=1,
+        background_recording=VideoRecordConfig(required=True),
+    )
+    page._between_trials = True
+    with pytest.raises(ValueError, match="parent trial"):
+        _browser_config(page, exp, participant)
+
+
 def test_framework_task_pages_accept_background_capture():
     from psynet.page import JsPsychPage, UnityPage
 

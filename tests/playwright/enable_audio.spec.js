@@ -16,8 +16,24 @@ const EXPERIMENT_DIR = path.resolve("tests/playwright/experiments/enable_audio")
 // Playwright's own input counts as a click, so whether a real engine refuses
 // audio is not reproducible here; the test makes the browser refuse instead:
 // contexts report "suspended" and resume() never settles until allowed.
+// window.__audioPromptShows counts how often the dialog has opened.
 async function refuseAudioUntilAllowed(context) {
   await context.addInitScript(() => {
+    window.__audioPromptShows = 0;
+    let shown = false;
+    new MutationObserver(() => {
+      const modal = document.getElementById("resume-modal");
+      const nowShown = !!modal && getComputedStyle(modal).display !== "none";
+      if (nowShown && !shown) {
+        window.__audioPromptShows += 1;
+      }
+      shown = nowShown;
+    }).observe(document, {
+      attributes: true,
+      attributeFilter: ["style"],
+      childList: true,
+      subtree: true,
+    });
     if (!window.BaseAudioContext) {
       return;
     }
@@ -71,9 +87,17 @@ test(
       const enableButton = experimentPage.locator("#resume-button");
       await expect(enableButton).toBeVisible({ timeout: STEP_TIMEOUT_MS });
 
-      // A click the browser still refuses brings the dialog back.
+      // A click the browser still refuses brings the dialog back. The click
+      // hides it at once, so wait for it to open again, or enableAudio could
+      // let audio start before PsyNet re-checks and the dialog never returns.
+      const promptShows = () =>
+        experimentPage.evaluate(() => window.__audioPromptShows);
+      const showsBefore = await promptShows();
       await enableButton.click();
-      await expect(enableButton).toBeVisible({ timeout: STEP_TIMEOUT_MS });
+      await expect
+        .poll(promptShows, { timeout: STEP_TIMEOUT_MS })
+        .toBeGreaterThan(showsBefore);
+      await expect(enableButton).toBeVisible();
       await enableAudio(experimentPage);
 
       // The next page without audio does not ask, even if audio is blocked.

@@ -74,7 +74,7 @@
           alert(message);
         });
       };
-      if (psynetTemplateData.jsVars?.backgroundRecording) {
+      if (psynetTemplateData.pageState?.backgroundRecording) {
         // Start the engine only after the participant has answered the capture
         // permission dialog, so the task does not start behind it.
         let unityStarted = false;

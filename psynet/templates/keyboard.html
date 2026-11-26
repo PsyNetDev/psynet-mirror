@@ -29,10 +29,12 @@
         let fallbackType = 'ANSI';
         let keyboardType = fallbackType;
         let currentKeyboard = keyboardIDs.find(`[value="${keyboardID}"]`)[0];
+        // The layouts load asynchronously, so the participant may have left the page.
+        if (!currentKeyboard) return;
         let addLatinKeys = currentKeyboard.getAttribute('addLatinKeys') === 'true';
 
         if (autoCorrectType) {
-            keyboardType = currentKeyboard?.getAttribute('type') || fallbackType;
+            keyboardType = currentKeyboard.getAttribute('type') || fallbackType;
             $('#keyboardType').val(keyboardType);
         }
         keyboardState.instance = new InternationalKeyboard({
@@ -40,9 +42,9 @@
             containerID: 'keyboard',
             addLatinKeys,
             keyboardType,
-            cssStyle: psynet.var.cssStyle,
-            showKeys: psynet.var.showKeys,
-            highlightedKeys: psynet.var.highlightKeys
+            cssStyle: psynet.pageConfig.cssStyle,
+            showKeys: psynet.pageConfig.showKeys,
+            highlightedKeys: psynet.pageConfig.highlightKeys
         });
     }
 
@@ -91,7 +93,7 @@
         });
 
         psynet.addPageEventListener(nextButton, "click", function () {
-            if (isSubset(keyboardState.pressedKeys, psynet.var.pressKeys)) {
+            if (isSubset(keyboardState.pressedKeys, psynet.pageConfig.pressKeys)) {
                 onNextButton(nextButton);
             } else {
                 psynet.alert({{ gettext("You did not press all required keys.") | tojson }});

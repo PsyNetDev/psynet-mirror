@@ -18,4 +18,12 @@ class Exp(psynet.experiment.Experiment):
             ),
             time_estimate=5,
         ),
+        ModularPage(
+            "example_2",
+            MusicNotationPrompt(
+                content="C D E F | G A B c",
+                text="And here's a scale:",
+            ),
+            time_estimate=5,
+        ),
     )

@@ -2,21 +2,29 @@
 _psynet_entry returns, and the wrappers that keep it up to date.
 
 The ready step: the game starts once every player is ready, or at the
-game's ready_timeout. Once it starts, the game ends at its duration or its
-time limit, and rejects messages from then on. The entry also keeps track of
+game's ready_timeout. If fewer than its min_players are ready then, it
+doesn't start: ``too_few_ready`` ends it at once, without on_start, and its
+no-shows stay no-shows. Dallinger lets bots play only after a tick in a game
+with a tick_rate, so ``join_tick_at`` asks for a tick as a player joins
+during the ready step, which lets a bot send its ready message in time even
+if the first tick would come after the ready_timeout. Once it starts, the
+game ends at its duration or its time limit, and rejects messages from then
+on. The entry also keeps track of
 which players are away, and since when, so that a game with an
-away_timeout can end once too few players are left. A player added while
-the game runs gets the next number, and players whose game has ended, by
-the game's is_done, don't count towards min_players. Once the game's
-accepts_players returns False, ``accepts_players`` stays False, and a player
-added after that is in ``too_late``: the game's own methods never get
-them, and their game ends at once. ``last_event``, the
-time of the latest event the game handled once it started, other than
-rejected messages and ready messages, which can't end a started game, is
-when a started game ended,
-unless Dallinger's max_duration, which is only a safety net, ended it. Ending
-jobs and final views read absences at that time, so they agree on who didn't
-play.
+away_timeout can end once too few players are left. A player who isn't
+ready when the game starts is away from then until their page joins the
+game or, if it joined before the start, until its ready message arrives. A
+player added while the game runs gets the next number, and players whose
+game has ended, by the game's is_done, don't count towards min_players.
+Once the game's accepts_players returns False, ``accepts_players`` stays
+False, and a player added after that is in ``too_late``: the game's own
+methods never get them, and their game ends at once.
+
+``last_event``, the time of the latest event the game handled once it
+started, other than rejected messages and ready messages, which can't end a
+started game, is when a started game ended, unless Dallinger's
+max_duration, which is only a safety net, ended it. Ending jobs and final
+views read absences at that time, so they agree on who didn't play.
 
 The game's clock: Dallinger's session clock starts when the game is
 created, before the ready step, but the game's methods get ``now`` in
@@ -42,7 +50,9 @@ class PlayerReady(LiveMessage):
     """The message that says a player is ready to play. A game page sends it
     by itself a moment after it opens, once it has checked the server's time,
     and a bot sends it at once. The game starts when every player is
-    ready, or at the game's :attr:`~LiveGame.ready_timeout`.
+    ready, or at the game's :attr:`~LiveGame.ready_timeout`, unless fewer
+    than its :attr:`~LiveGame.min_players` are ready then, which ends it
+    with the reason :data:`~psynet.live_game.TOO_FEW_READY`.
 
     Every game reads it, so don't list it in a game's
     :attr:`~LiveGame.messages`. PsyNet handles it before the game's
@@ -55,6 +65,11 @@ class PlayerReady(LiveMessage):
     added once the game has started already count as ready, so bots added
     then, and newcomers who never open the game page, don't send it, but a
     newcomer's game page still sends it when it connects.
+
+    A player who wasn't ready when the game started is away until their
+    page joins the game or, for a page that joined just before the start,
+    until this message arrives. :meth:`~LiveGame.absences` says
+    ``"no_show"`` for them until it arrives.
     """
 
     type = "psynet_ready"
@@ -63,10 +78,15 @@ class PlayerReady(LiveMessage):
         """Mark the player ready, and start the game once every player
         is."""
         entry = _psynet_entry(state)
-        if player not in entry["ready"]:
-            entry["ready"].append(player)
-        playing = len(entry["participant_ids"]) - len(entry["too_late"])
-        if len(entry["ready"]) == playing:
+        if player in entry["ready"]:
+            return
+        entry["ready"].append(player)
+        if entry["started_at"] is not None and player in entry["away"]:
+            # The game started without them, which made them away, but only
+            # an open page sends it.
+            entry["away"].remove(player)
+            entry["away_since"][player] = None
+        if len(entry["ready"]) == _n_playing(entry):
             game._end_ready_step(state, now)
 
 
@@ -84,6 +104,11 @@ TIMEOUT = "timeout"
 #: too few players are left.
 PLAYERS_LEFT = "players_left"
 
+#: The reason a game ends with, without starting, when fewer than its
+#: :attr:`~LiveGame.min_players` players are ready at the end of the ready
+#: step, including when none of them opened the game page.
+TOO_FEW_READY = "too_few_ready"
+
 #: The reason the game of a player added after the game's
 #: :meth:`~LiveGame.accepts_players` returned ``False`` ends with, at once,
 #: and the ``done_reason`` of a participant who joined as the game ended.
@@ -98,6 +123,12 @@ def _psynet_entry(state, what="state"):
             f"The {what} has no 'psynet' entry, which PsyNet adds to the "
             "state initial_state returns, and to each view. Start from those."
         ) from None
+
+
+def _n_playing(entry):
+    """Return how many players the game sees: all but those who came too
+    late."""
+    return len(entry["participant_ids"]) - len(entry["too_late"])
 
 
 def _player(entry, player_id):
@@ -136,6 +167,11 @@ def _apply_once_started(self, method, outermost, state, player_id, message, now,
 
 def _tick_once_started(self, method, outermost, state, now):
     entry = _psynet_entry(state)
+    if outermost and entry["started_at"] is None:
+        # Dallinger lets the bots play after this tick, and runs no other
+        # for a deadline at or before it.
+        entry["join_tick_at"] = None
+        entry["last_tick"] = now
     if entry["started_at"] is None and (not outermost or now < self.ready_timeout):
         return _UNCHANGED
     if outermost:
@@ -195,6 +231,12 @@ def _record_join(self, method, outermost, state, player_id, now):
     if player in entry["too_late"]:
         # A bot joins as it's added, before its game ends.
         return _UNCHANGED
+    if entry["started_at"] is None and self.tick_rate:
+        # Dallinger lets bots play only after a tick, so a bot that joins
+        # gets one before the ready step ends without its ready message. A
+        # page's join gets one too: a tick that changes nothing but sends
+        # the views again.
+        entry["join_tick_at"] = now
     _record_event(entry, now)
     if player in entry["away"]:
         entry["away"].remove(player)
@@ -323,12 +365,14 @@ def _add_psynet_entry(self, method, outermost, players, *settings):
         "away": [],
         "away_since": [None] * len(participant_ids),
         "players_left": False,
+        "too_few_ready": False,
         "duration": self.duration,
         "started_at": None,
         "ends_at": None,
         "time_up": False,
         "last_tick": None,
         "last_event": None,
+        "join_tick_at": None,
         "accepts_players": True,
         "too_late": [],
         "group_id": new_session.get("group_id"),

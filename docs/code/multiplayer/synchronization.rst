@@ -641,6 +641,19 @@ have no side effects. Notices must fit on two lines of a phone screen:
         on_arrival_message=arrival_message,
     )
 
+To change only some kinds, return
+``default_group_barrier_arrival_message`` from ``psynet.timeline_hold`` for the
+others, as the ``story_chain`` demo does to hide the progress-bar notice:
+
+.. code-block:: python
+
+    from psynet.timeline_hold import default_group_barrier_arrival_message
+
+    def arrival_message(kind, **kwargs):
+        if kind == "notice":
+            return None
+        return default_group_barrier_arrival_message(kind=kind, **kwargs)
+
 Pages with a :class:`~psynet.group_prompt.GroupPrompt` that ticks members
 live don't show the notice, since the ticks say the same.
 

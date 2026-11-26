@@ -17,7 +17,7 @@ assert.ok(match, "could not extract psynet.initLucidTermination");
 function initLucidTermination(lucidRecruitment) {
   const calls = { redirectedTo: null, errors: [], uploadsAllowedToUnload: false };
   const psynet = {
-    allowRecordingUnload() {
+    allowUnload() {
       calls.uploadsAllowedToUnload = true;
     },
     clearLucidTermination() {},

@@ -1,8 +1,8 @@
-export async function activate({root, trial, vars, psynet}) {
+export async function activate({root, trial, config, psynet}) {
     const slider = psynet.page.control.slider.element;
 
     function findClosestAudio() {
-        const mediaLocations = vars.media_locations;
+        const mediaLocations = config.media_locations;
         const locations = Object.values(mediaLocations);
         const value = slider.getAttribute("random-wrap") === "true"
             ? slider.getAttribute("output-value")

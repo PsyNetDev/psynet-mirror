@@ -25,13 +25,15 @@ Participants visit nodes one at a time. At each visit:
 2. PsyNet creates a **trial**, the record of this participant's visit to
    this node. The trial starts with a copy of the node's definition and can
    add random variation of its own.
-3. The participant sees a page built from the trial's definition, and
-   responds.
+3. The participant sees the stimulus specified by the trial and responds.
 4. The answer is stored on the trial.
 
 The participant then moves on to another node, until the trial maker
 decides they have done enough, and they continue with the rest of the
 :doc:`timeline <timeline>`.
+
+Each trial usually has a page of its own, but a fast task can keep one page
+open for the whole sequence; see :doc:`presenting_trials`.
 
 What a node holds is up to you. Usually it is one stimulus, but it can
 equally be a question, a topic, or a condition. Trials on the same node

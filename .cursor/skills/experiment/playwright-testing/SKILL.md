@@ -112,6 +112,27 @@ await expect(page.locator("#main-body")).toContainText("How pleasant");
 A barrier or `wait_while` hold keeps the visible page and its
 `window.pageUuid` until the hold ends, so the helper also waits through holds.
 
+## Pages shown in advance
+
+With `prepare_trials_in_advance=True`, the server builds the next trials'
+pages before the earlier trials are answered. If a trial's page depends on
+an earlier answer, the browser logs "The page shown in advance no longer
+matches the server's" and replaces it with the server's page, so participants
+see the page flicker. Bot tests can't catch this. Fail the walk on it instead:
+
+```js
+let stalePages = [];
+test.beforeEach(({ context }) => {
+  stalePages = [];
+  context.on("console", (message) => {
+    if (message.text().includes("The page shown in advance no longer matches")) {
+      stalePages.push(message.text());
+    }
+  });
+});
+test.afterEach(() => expect(stalePages).toEqual([]));
+```
+
 ## Layout checks
 
 Every participant page loads `psynetLayout`. After the page is ready, call

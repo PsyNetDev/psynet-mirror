@@ -3,7 +3,7 @@ LiveGamePage, a ModularPage with that control.
 
 The control has the page load ``live-game.js``. Its page code creates
 ``psynet.liveGame`` and leaves the game when the participant leaves
-the page. ``get_participant_js_vars`` gives the script the game's id and
+the page. ``get_participant_page_config`` gives the script the game's id and
 channel each time the page renders. ``check_ready_for_response`` refuses the
 page's response until the game's result is saved, and ``validate`` then
 sets the answer to what the game's ``answer`` returns for the participant.
@@ -14,8 +14,10 @@ from datetime import timedelta
 
 from dallinger.models import timenow
 from dominate import tags
+from dominate.util import raw
 
 from ..modular_page import ModularPage, NullControl, Prompt
+from ..page import _authored_html
 from ..sync import _removed_from_group_notice
 from ..timeline import ResponseNotReady
 from ..utils import get_translator
@@ -186,7 +188,7 @@ class LiveGameControl(NullControl):
     def get_js_page_code(self):
         return ["return PsyNetLiveGame.activatePage(psynet);"]
 
-    def get_participant_js_vars(self, experiment, participant):
+    def get_participant_page_config(self, experiment, participant):
         _check_reached_game(participant, self._play_id())
         session_id = _live_game_id(participant, self._play_id())
         _p = get_translator(context=True)
@@ -236,17 +238,16 @@ class LiveGameControl(NullControl):
 
 
 class LiveGamePage(ModularPage):
-    """A game page: a :class:`~psynet.modular_page.ModularPage` that shows
-    ``content`` and plays the group's game. Give it to a
-    :class:`PlayLiveGame` as its ``page``.
+    """A game page: your own HTML and JavaScript module, which plays the
+    group's game. Give it to a :class:`PlayLiveGame` as its ``page``.
 
     ::
 
         LiveGamePage(
             "rock_paper_scissors",
             tags.div(tags.h4(id="status"), ...),
+            module="/static/rock-paper-scissors.js",
             waiting_status="Waiting for your partner",
-            js_page_modules=["/static/rock-paper-scissors.js"],
             time_estimate=60,
         )
 
@@ -263,10 +264,15 @@ class LiveGamePage(ModularPage):
     label
         The page's label.
 
-    content
-        What the page shows: HTML, such as a ``dominate`` tag, or a list of
-        tags, with the ``id`` of each element that the page's JavaScript
+    html
+        What the page shows: HTML as a string, a ``dominate`` tag or a list
+        of these, with the ``id`` of each element that the page's JavaScript
         finds.
+
+    module
+        URL of the JavaScript module that plays the game on the page; see
+        :ref:`live-games-page`. To load other code, import it from this
+        module or list it in ``js_dependencies``.
 
     auto_advance
         Whether the page moves on by itself once the game's result is
@@ -280,14 +286,17 @@ class LiveGamePage(ModularPage):
 
     player_left_message
         What a notice at the top of the page says while another player has
-        left the game page and not come back. By default it says "Another
+        left the game page and not come back, or, once the game has started
+        without them, hasn't opened it yet. By default it says "Another
         player has left the game." Set it to ``None`` for no notice.
 
     no_game_message
         What a notice at the top of the page says to a participant whose
-        group didn't start a game. By default it says "Your group couldn't
-        start the game." Set it to ``None`` for no notice. It isn't shown
-        when the page already says that the participant's group left them.
+        group didn't start a game, or, once it has ended, to a player whose
+        game too few players were ready for, which never started. By
+        default it says "Your group couldn't start the game." Set it to
+        ``None`` for no notice. It isn't shown when the page already says
+        that the participant's group left them.
 
     too_late_message
         What a notice at the top of the page says to a participant who
@@ -321,14 +330,14 @@ class LiveGamePage(ModularPage):
 
     **kwargs
         Any other parameter of :class:`~psynet.modular_page.ModularPage`,
-        such as ``js_page_modules``, ``css_links``, ``js_vars`` and
-        ``time_estimate``.
+        such as ``css_links``, ``page_config`` and ``time_estimate``.
     """
 
     def __init__(
         self,
         label,
-        content,
+        html,
+        module,
         *,
         auto_advance=True,
         show_result_for=0,
@@ -341,9 +350,10 @@ class LiveGamePage(ModularPage):
         player_info=None,
         **kwargs,
     ):
+        html = _authored_html(type(self).__name__, html, kwargs)
         super().__init__(
             label,
-            Prompt(tags.div(content, data_live_game=True)),
+            Prompt(tags.div(raw(html), data_live_game=True)),
             LiveGameControl(
                 auto_advance=auto_advance,
                 show_result_for=show_result_for,
@@ -355,6 +365,7 @@ class LiveGamePage(ModularPage):
                 names=names,
                 player_info=player_info,
             ),
+            js_page_modules=[module],
             **kwargs,
         )
 

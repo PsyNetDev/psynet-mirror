@@ -486,6 +486,9 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
     time_credit_fixes = Column(PythonList)
     # progress_fixes is analogous to time_credit_fixes, but for progress.
     progress_fixes = Column(PythonList)
+    # What Back restores: ``[page id, time credit, progress]`` from just before
+    # each page answered in the current run of pages that Back can return to.
+    back_restore_points = Column(PythonList)
 
     page_uuid = Column(String)
     # Framework bookkeeping, not author API: page_deadline, waiting_barrier_id,
@@ -1048,6 +1051,7 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.progress = 0.0
         self.time_credit_fixes = []
         self.progress_fixes = []
+        self.back_restore_points = []
         self.elt_id = ["main", -1]
         self.elt_id_max = []
         self.answer_accumulation_depth = 0
@@ -1167,12 +1171,16 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.time_credit = new_value
 
     def inc_progress(self, time_credit: float):
+        self.progress = self._progress_after(time_credit)
+
+    def _progress_after(self, time_credit: float, progress: Optional[float] = None):
+        """The progress after adding ``time_credit`` to ``progress`` (by default the current progress)."""
         if self.estimated_max_time_credit == 0.0:
-            new_value = 1.0
-        else:
-            new_value = self.progress + time_credit / self.estimated_max_time_credit
-            new_value = min([new_value, *self.progress_fixes])
-        self.progress = new_value
+            return 1.0
+        if progress is None:
+            progress = self.progress
+        new_value = progress + time_credit / self.estimated_max_time_credit
+        return min([new_value, *self.progress_fixes])
 
     def inc_performance_reward(self, value):
         self.performance_reward += value

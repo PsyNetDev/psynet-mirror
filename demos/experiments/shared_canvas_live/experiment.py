@@ -488,6 +488,7 @@ class Exp(psynet.experiment.Experiment):
             # later than this is failed.
             late_after=60,
             late_action="fail",
+            waiting_message="Waiting for everyone to open the game…",
             game_class=SharedCanvas,
             page=LiveGamePage(
                 "shared_canvas_live",
@@ -508,9 +509,12 @@ class Exp(psynet.experiment.Experiment):
                     tags.ul(id="canvas-scores"),
                     id="canvas-game",
                 ),
-                js_page_modules=["/static/shared-canvas.js"],
+                module="/static/shared-canvas.js",
                 css_links=["/static/shared-canvas.css"],
-                js_vars={"canvas_rules": RULES},
+                # Fixed for the whole experiment. Settings that can differ
+                # between rounds go in the game's state and view instead, as in
+                # the public_goods_live demo.
+                page_config={"canvas_rules": RULES},
                 time_estimate=60,
             ),
         ),

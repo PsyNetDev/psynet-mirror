@@ -15,6 +15,9 @@
   // The reason PsyNet ends the game of a player it adds after the game
   // stopped accepting players (TOO_LATE in psynet/live_game).
   const TOO_LATE = "too_late";
+  // The reason a game ends with when too few players were ready for it to
+  // start (TOO_FEW_READY in psynet/live_game).
+  const TOO_FEW_READY = "too_few_ready";
   // Dallinger's reason for a game that failed (FAILED in dallinger.realtime).
   const FAILED = "failed";
 
@@ -91,7 +94,7 @@
    * shows one after another each open one.
    *
    * @param {function} liveGame - Returns the page's ``liveGame`` variable,
-   *   from ``LiveGameControl.get_participant_js_vars``, or nothing on a page
+   *   from ``LiveGameControl.get_participant_page_config``, or nothing on a page
    *   that isn't a ``LiveGamePage``
    * @param {Object} page - The page's hooks: ``websocketScope()``,
    *   ``ready()``, ``nextPage()``, ``setNextButtonHidden(hidden)``,
@@ -276,8 +279,26 @@
       if (state.ended) {
         state.playingElements.forEach((element) => (element.disabled = true));
         state.away.update([]);
+        showTooFewReady(state);
       } else {
         state.away.update(view.psynet.away);
+      }
+    }
+
+    // Shows a player who was ready for a game that too few players were
+    // ready for, which never started, the no-game notice. The players who
+    // weren't are the ones it couldn't be played without.
+    function showTooFewReady(state) {
+      let view = state.lastView;
+      let message = state.session.noGameMessage;
+      if (
+        !state.left &&
+        state.endReason === TOO_FEW_READY &&
+        message &&
+        view !== null &&
+        view.psynet.ready.includes(view.psynet.you)
+      ) {
+        page.showNotice(NO_GAME_NOTICE, message);
       }
     }
 
@@ -1033,7 +1054,7 @@
   // ``psynet.liveGame`` as it loads.
   function activatePage(psynet) {
     if (!psynet.liveGame) {
-      psynet.liveGame = createLiveGame(() => psynet.var.liveGame, {
+      psynet.liveGame = createLiveGame(() => psynet.pageConfig.liveGame, {
         websocketScope: () => window.psynetTemplateData.websocketScope,
         ready: () => psynet.pageReady,
         nextPage: () => psynet.nextPage(),
