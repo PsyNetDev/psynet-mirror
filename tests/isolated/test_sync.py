@@ -1408,13 +1408,17 @@ def test_manual_sync_group_participant_failure_dissolves_group_below_min_size(
 @pytest.mark.parametrize(
     "experiment_directory", [path_to_test_experiment("consents")], indirect=True
 )
-@pytest.mark.parametrize("participant_status", ["approved", "returned"])
+@pytest.mark.parametrize(
+    "participant_status, branch",
+    [("approved", "main"), ("returned", "main"), ("working", "successful_end")],
+)
 def test_manual_sync_group_participant_failure_rejects_non_working_participants(
-    in_experiment_directory, db_session, participant_status
+    in_experiment_directory, db_session, participant_status, branch
 ):
     exp = get_experiment()
     participant = new_participant(exp)
     participant.status = participant_status
+    participant.elt_id = [branch, 0]
 
     group = SimpleSyncGroup(
         group_type="main",
@@ -1430,7 +1434,7 @@ def test_manual_sync_group_participant_failure_rejects_non_working_participants(
     db_session.commit()
 
     with pytest.raises(
-        ValueError, match="Only active working participants can be failed manually."
+        ValueError, match="Only participants still taking part can be failed"
     ):
         _fail_sync_group_participant(participant.id, group.id, "manual_failure")
 
@@ -5127,6 +5131,56 @@ def test_failing_a_held_participant_wakes_their_overlay(
             },
         )
     ]
+
+
+@pytest.mark.parametrize(
+    "experiment_directory", [path_to_test_experiment("consents")], indirect=True
+)
+def test_dashboard_fail_moves_the_failed_participants_open_page_on(
+    in_experiment_directory, db_session, monkeypatch
+):
+    exp = get_experiment()
+    original_timeline = exp.timeline
+    exp.timeline = Timeline(
+        InfoPage("playing", time_estimate=1),
+        CodeBlock(lambda participant: participant.fail("self")),
+        InfoPage("done", time_estimate=1),
+    )
+    try:
+        first, second = _working_participants(exp, 2)
+        group = SyncGroup(group_type="main")
+        db_session.add(group)
+        group.add_participant(first)
+        group.add_participant(second)
+        db_session.commit()
+        page = _json_timeline(exp, first).get_json()
+        assert page["attributes"]["arrival_updates"]["channel"]
+        page_uuid = Participant.query.get(first.id).page_uuid
+        publications = _hold_wake_publications(monkeypatch)
+
+        _fail_sync_group_participant(first.id, group.id, "manual_failure")
+        db_session.commit()
+        # For a page whose websocket connects after the message was published.
+        assert arrival_notice_payload(first.unique_id)["failed_on_page"] == page_uuid
+        # Not once the failure page is shown, nor for a failure in one's own request.
+        _json_timeline(exp, first)
+        _json_timeline(exp, second)
+        second = Participant.query.get(second.id)
+        _process_response(exp, second, second.page_uuid)
+        db_session.commit()
+        for participant in (first, second):
+            assert "failed_on_page" not in arrival_notice_payload(participant.unique_id)
+        assert Participant.query.get(second.id).failed
+    finally:
+        exp.timeline = original_timeline
+
+    assert (
+        first.id,
+        {
+            "type": "timeline_hold_wake",
+            "targets": [{"reason": "participant_failed", "page_uuid": page_uuid}],
+        },
+    ) in publications
 
 
 @pytest.mark.parametrize(
