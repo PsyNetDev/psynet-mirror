@@ -21,6 +21,7 @@ import pytest
 from dallinger import db
 from flask import Flask
 
+from psynet import timeline_hold
 from psynet.experiment import Experiment, get_experiment
 from psynet.modular_page import ModularPage
 from psynet.participant import Participant
@@ -564,8 +565,12 @@ def _cold_json_timeline(exp, participant_id):
     return _json_timeline(exp, Participant.query.get(participant_id))
 
 
-def test_barrier_arrival_get_sql_does_not_grow_with_group_size(db_session):
+def test_barrier_arrival_get_sql_does_not_grow_with_group_size(db_session, monkeypatch):
     """Arrival and last-arrival GETs must not load group members one by one."""
+    # A hold rendered after CATCH_UP_SPINNER_SECONDS shows its waiting message,
+    # which loads the missing partner; on a slow runner that happened for only
+    # one group size. Show the message from the start for both.
+    monkeypatch.setattr(timeline_hold, "CATCH_UP_SPINNER_SECONDS", 0.0)
     exp = get_experiment()
     _reset_experiment(exp)
     counts = {}
