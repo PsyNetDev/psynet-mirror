@@ -415,6 +415,10 @@ An update rebuilds only the image. It doesn't deposit new assets, set up
 networks, or run pre-deploy routines again, so a new stimulus set needs a fresh
 deploy. Participants' progress is a position in the timeline: don't change the
 page sequence, module IDs or trial makers while anyone is still taking part.
+Keep the Python, PsyNet and dill versions compatible with open
+:ref:`page-maker-visits`. A participant already inside a maker continues
+with its saved pages. Changing an experiment's Git revision alone leaves
+these visits readable.
 
 Hibernation
 -----------

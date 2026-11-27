@@ -125,7 +125,6 @@ def _signer(participant_id, path):
         sys.implementation.cache_tag,
         dill.__version__,
         launch.get("deployment_id"),
-        launch.get("git_commit_sha"),
         participant_id,
         path,
     )

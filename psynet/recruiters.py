@@ -1638,16 +1638,17 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
                 return self.request_return_for_bonus(participant)
             if plan.path is exit_domain.ExitPath.SCREEN_OUT:
                 from .end import RecordedSubmissionPage
-                from .timeline import Page
 
                 if self._submission_already_recorded(participant):
                     return self.confirm_recorded_submission(participant)
-                # The listener can finish after this visit has been saved.
-                # Keep custom multi-element release flows as authored.
-                handoff = self.submit_assignment()
-                if isinstance(handoff, Page):
-                    return RecordedSubmissionPage(pending_handoff=handoff)
-                return handoff
+                submit = self.submit_assignment
+                if (
+                    getattr(submit, "__func__", None)
+                    is PsyNetRecruiterMixin.submit_assignment
+                ):
+                    # The listener can finish after the default handoff was saved.
+                    return RecordedSubmissionPage(pending_handoff=submit())
+                return submit()
         if (
             participant.failed
             and not self.pays_unsuccessful_participants_via_screen_out

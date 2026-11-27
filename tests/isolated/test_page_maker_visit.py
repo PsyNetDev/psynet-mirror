@@ -107,8 +107,8 @@ def test_redirect_and_corrupt_snapshot(db_session, deployment_info, monkeypatch)
     visit.payload = original
     from psynet import deployment_info as launch
 
-    # The dashboard-visible metadata secret cannot authenticate snapshots.
-    launch.write(secret=uuid4())
+    # A compatible in-place app update keeps the deployment and private key.
+    launch.write(git_commit_sha="new-experiment-revision", secret=uuid4())
     assert timeline.get_current_elt(experiment, p).content
     with monkeypatch.context() as changed_worker:
         changed_worker.setenv("FLASK_SECRET_KEY", uuid4().hex)

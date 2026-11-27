@@ -440,6 +440,19 @@ def test_release_participant_branching(failed, payment_configured, expected):
         submit.assert_not_called()
 
 
+def test_prolific_screen_out_preserves_custom_single_page_handoff():
+    from psynet.modular_page import ModularPage, TextControl
+
+    recruiter = make_prolific_recruiter(make_config())
+    participant = MagicMock(
+        status="working",
+        exit_plan=_early_exit_test_plan(ExitPath.SCREEN_OUT).mark_committed().to_dict(),
+    )
+    handoff = ModularPage("exit_feedback", "Feedback", TextControl(), time_estimate=10)
+    with patch.object(recruiter, "submit_assignment", return_value=handoff):
+        assert recruiter.release_participant(MagicMock(), participant) is handoff
+
+
 @pytest.mark.parametrize("status", ["submitted", "approved", "screened_out"])
 def test_prolific_screen_out_release_confirms_when_submission_already_recorded(status):
     """After Submit, SCREEN_OUT must not send them through Submit to Prolific again."""
