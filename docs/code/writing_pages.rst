@@ -156,6 +156,9 @@ uses the choices saved for that visit. A random sample taken in the maker
 therefore survives a refresh and is also used when scoring the answer.
 To keep the selected stimuli in exported research data, record their IDs in
 the trial definition or a participant variable. See :ref:`page-maker-visits`.
+For :ref:`trials prepared in advance <showing_the_next_trials_without_waiting>`,
+choose the stimulus in :meth:`~psynet.trial.main.Trial.finalize_definition`
+so that the participant sees the same choices in the preview.
 
 To validate a response, subclass the control and implement ``validate``. The
 method returns ``None`` to accept the response, or a message for the

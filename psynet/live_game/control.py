@@ -20,7 +20,7 @@ from ..modular_page import ModularPage, NullControl, Prompt
 from ..page import _authored_html
 from ..sync import _removed_from_group_notice
 from ..timeline import ResponseNotReady
-from ..utils import get_translator
+from ..utils import NoArgumentProvided, get_translator
 from .play import _check_reached_game, _live_game_id, _set_live_game_answer
 from .psynet_entry import TOO_LATE
 from .record import (
@@ -45,7 +45,7 @@ _RETRY_AFTER = 1
 _SAVING_MARGIN = 60
 
 # The default text of a notice, translated as the page renders.
-_DEFAULT = object()
+_DEFAULT = NoArgumentProvided
 
 # How a game page shows the other players.
 _NAMES = ("shown", "anonymous")

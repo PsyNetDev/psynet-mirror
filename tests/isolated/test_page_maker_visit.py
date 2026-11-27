@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 from dallinger import db
 
+from psynet.asset import asset
 from psynet.export.database import _export_table_order, copy_database_to_csv_dir
 from psynet.page import InfoPage
 from psynet.page_maker_visit import PageMakerVisit, PageMakerVisitError
@@ -91,7 +92,7 @@ def test_visit_lifecycle(db_session, deployment_info, tmp_path):
     assert db.session.query(PageMakerVisit).count() == 0
 
 
-def test_redirect_and_corrupt_snapshot(db_session, deployment_info):
+def test_redirect_and_corrupt_snapshot(db_session, deployment_info, monkeypatch):
     timeline = Timeline(
         PageMaker(_draw, time_estimate=1),
         other=[InfoPage("Elsewhere", time_estimate=1)],
@@ -106,7 +107,20 @@ def test_redirect_and_corrupt_snapshot(db_session, deployment_info):
     visit.payload = original
     from psynet import deployment_info as launch
 
+    # The dashboard-visible metadata secret cannot authenticate snapshots.
     launch.write(secret=uuid4())
+    assert timeline.get_current_elt(experiment, p).content
+    with monkeypatch.context() as changed_worker:
+        changed_worker.setenv("FLASK_SECRET_KEY", uuid4().hex)
+        with pytest.raises(PageMakerVisitError, match="this deployment"):
+            timeline.get_current_elt(experiment, p)
+    with monkeypatch.context() as unconfigured_worker:
+        launch.write(mode="live")
+        unconfigured_worker.delenv("FLASK_SECRET_KEY", raising=False)
+        with pytest.raises(PageMakerVisitError, match="private server key"):
+            timeline.get_current_elt(experiment, p)
+    launch.write(mode="debug")
+    launch.write(deployment_id="different deployment")
     with pytest.raises(PageMakerVisitError, match="this deployment"):
         timeline.get_current_elt(experiment, p)
     timeline.redirect_to_branch(experiment, p, "other")
@@ -160,6 +174,27 @@ def test_shared_closures_and_detached_row(db_session, deployment_info):
     db.session.flush()
     with pytest.raises(PageMakerVisitError, match="Missing Participant row"):
         timeline.get_current_elt(experiment, p)
+
+
+def test_worker_rebinds_services_and_restores_asset_specification(
+    db_session, deployment_info
+):
+    def steps(experiment):
+        recruiter = experiment.recruiter
+        audio = asset(str, extension=".wav", on_demand=True)
+        page = InfoPage("Services and a new asset", time_estimate=1)
+        page.fetch = lambda: (experiment, recruiter, audio)
+        return page
+
+    timeline = Timeline(PageMaker(steps, time_estimate=1))
+    experiment, p = _participant(timeline)
+    experiment.recruiter = object()
+    timeline.advance_page(experiment, p)
+    db.session.commit()
+    worker = SimpleNamespace(timeline=timeline, recruiter=object())
+    restored_experiment, recruiter, audio = timeline.get_current_elt(worker, p).fetch()
+    assert restored_experiment is worker and recruiter is worker.recruiter
+    assert audio.id is None and audio.extension == ".wav"
 
 
 def test_jump_out_of_nested_makers_discards_both_visits(db_session, deployment_info):

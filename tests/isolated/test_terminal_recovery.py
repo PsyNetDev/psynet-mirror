@@ -435,7 +435,7 @@ def test_committed_return_for_bonus_continue_renders_payment_instructions(db_ses
 def test_prolific_screen_out_timeline_confirms_after_listener_records_submission(
     db_session,
 ):
-    """Submit's listener runs after execute; /timeline must re-evaluate release."""
+    """An open release page follows the listener's status on the next render."""
     from psynet.recruiters import PsyNetProlificRecruiterMixin
 
     participant = _make_participant(page_uuid="page-1", status="working")
@@ -478,13 +478,17 @@ def test_prolific_screen_out_timeline_confirms_after_listener_records_submission
         )
         Experiment._commit_stored_early_exit_plan(experiment, participant)
         Experiment._enter_early_exit_release(experiment, participant)
-        assert isinstance(
-            experiment.timeline.get_current_elt(experiment, participant),
-            ExecuteFrontEndJS,
-        )
-
+        page = experiment.timeline.get_current_elt(experiment, participant)
+        with patch.object(
+            ExecuteFrontEndJS, "render", return_value="handoff"
+        ) as handoff:
+            assert page.render(experiment, participant) == "handoff"
+            handoff.assert_called_once()
+        visit_uuid = participant.page_uuid
         participant.status = "submitted"
+        db.session.commit()
         current = experiment.timeline.get_current_elt(experiment, participant)
+        assert participant.page_uuid == visit_uuid
         assert type(current) is RecordedSubmissionPage
         heading, body = prolific._recorded_submission_copy()
         assert heading == "Your submission has been sent to Prolific."
@@ -497,13 +501,16 @@ def test_prolific_screen_out_timeline_confirms_after_listener_records_submission
                 environ_base={"REMOTE_ADDR": "127.0.0.1"},
             ),
             patch.object(
-                RecordedSubmissionPage, "render", return_value="sent"
+                experiment.recruiter,
+                "render_submission_page",
+                return_value="sent",
+                create=True,
             ) as render,
             patch.object(Experiment, "_render_error_page") as error_page,
         ):
             response = Experiment._route_timeline(experiment, participant, mode=None)
 
-    assert response == "sent"
+    assert response.get_data(as_text=True) == "sent"
     render.assert_called_once()
     error_page.assert_not_called()
 

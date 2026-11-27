@@ -264,7 +264,8 @@ class RecordedSubmissionPage(Page):
 
     requires_full_page_reload = True
 
-    def __init__(self):
+    def __init__(self, pending_handoff=None):
+        self.pending_handoff = pending_handoff
         super().__init__(
             time_estimate=0.0,
             delegated_render=True,
@@ -274,11 +275,34 @@ class RecordedSubmissionPage(Page):
             label="prolific_submission_sent",
         )
 
+    def _pending_page(self, participant):
+        from .recruiters import PsyNetProlificRecruiterMixin
+
+        if (
+            self.pending_handoff is not None
+            and not PsyNetProlificRecruiterMixin._submission_already_recorded(
+                participant
+            )
+        ):
+            self.pending_handoff.id = self.id
+            self.pending_handoff.requires_full_page_reload = True
+            return self.pending_handoff
+        return None
+
+    def __json__(self, participant, layout_key=None):
+        page = self._pending_page(participant)
+        if page is not None:
+            return page.__json__(participant, layout_key)
+        return super().__json__(participant, layout_key)
+
     def render(self, experiment, participant, partial_mode=False):
         """Render the shared Prolific confirmation document."""
         assert not partial_mode
         from flask import make_response
 
+        page = self._pending_page(participant)
+        if page is not None:
+            return page.render(experiment, participant)
         response = make_response(
             experiment.recruiter.render_submission_page(participant)
         )

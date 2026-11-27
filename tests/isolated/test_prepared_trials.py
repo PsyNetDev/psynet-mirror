@@ -82,6 +82,15 @@ def test_pages_are_pre_rendered_once_before_they_are_compared(monkeypatch):
     assert page in pre_rendered
     assert len(pre_rendered) == len({id(page) for page in pre_rendered})
 
+    # A refresh restores the saved trial page and runs this request's hook.
+    experiment = get_experiment()
+    for _ in range(2):
+        pre_rendered.clear()
+        current = experiment.get_current_page(experiment, participant)
+        assert pre_rendered.count(current) == 1
+        assert current.page_config["pre_rendered"]
+        assert len(current.upcoming_pages) == 2
+
 
 @pytest.mark.parametrize("experiment_directory", [EXPERIMENT], indirect=True)
 @pytest.mark.usefixtures("launched_experiment")

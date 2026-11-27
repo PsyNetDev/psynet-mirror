@@ -3611,7 +3611,7 @@ class Timeline:
         # Its parent expansions need not be deserialized to look up this child.
         position, index = path[:-1], path[-1]
         with forbid_commits(f"PageMaker at {position}"):
-            elements = PageMakerVisit.read(participant, position)
+            elements = PageMakerVisit.read(experiment, participant, position)
         if index >= len(elements):
             raise PageMakerFinishedError
         return elements[index]

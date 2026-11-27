@@ -8,13 +8,13 @@ archive) for offline analysis.
 Parts of an export
 ------------------
 
-The **database tables** are a copy of every table in the experiment's
-database, one CSV per table under ``database/``, except
-``lucid_submissions``, a cache of Lucid's session data that holds Lucid
-respondent and panelist IDs. They are read in one
-repeatable-read transaction, so they describe a single moment. The same
-tables let PsyNet restore the experiment to that state (see
-:doc:`/deploy/reference/deploy_from_archive`).
+The **database tables** are copied to CSV files under ``database/`` in one
+repeatable-read transaction, so they describe a single moment. Two tables
+are omitted. ``lucid_submissions`` caches Lucid session data that holds
+respondent and panelist IDs. ``page_maker_visit`` holds the executable
+pages for open :ref:`page-maker-visits`. When redeploying from an export,
+responses and trial data are available, but a participant who was inside
+a page maker cannot resume that visit. See :doc:`/deploy/reference/deploy_from_archive`.
 
 **Basic data** is a smaller set of files that you define for your analysis
 by implementing ``get_basic_data`` (see :doc:`/data/basic_data`). It is

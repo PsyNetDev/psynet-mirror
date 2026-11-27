@@ -1588,7 +1588,8 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             failure_message=self._submission_failure_copy(),
         )
 
-    def _submission_already_recorded(self, participant) -> bool:
+    @staticmethod
+    def _submission_already_recorded(participant) -> bool:
         """Return whether Prolific Submit has already posted the listener."""
         return getattr(participant, "status", None) in {
             "submitted",
@@ -1636,12 +1637,17 @@ class PsyNetProlificRecruiterMixin(PsyNetRecruiterMixin):
             if plan.path is exit_domain.ExitPath.RETURN_FOR_BONUS:
                 return self.request_return_for_bonus(participant)
             if plan.path is exit_domain.ExitPath.SCREEN_OUT:
-                # Submit posts the Prolific listener after executePlan advances
-                # the cursor. That first advance still sees status ``working``.
-                # The later ``GET /timeline`` resolves this method again.
+                from .end import RecordedSubmissionPage
+                from .timeline import Page
+
                 if self._submission_already_recorded(participant):
                     return self.confirm_recorded_submission(participant)
-                return self.submit_assignment()
+                # The listener can finish after this visit has been saved.
+                # Keep custom multi-element release flows as authored.
+                handoff = self.submit_assignment()
+                if isinstance(handoff, Page):
+                    return RecordedSubmissionPage(pending_handoff=handoff)
+                return handoff
         if (
             participant.failed
             and not self.pays_unsuccessful_participants_via_screen_out

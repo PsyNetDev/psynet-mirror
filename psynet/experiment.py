@@ -7543,13 +7543,18 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
             experiment.timeline.advance_page(experiment, participant)
 
         page = experiment.timeline.get_current_elt(experiment, participant)
-        cls._pre_render(page, participant)
+        cls._pre_render(page, participant, experiment)
 
         return page
 
     @staticmethod
-    def _pre_render(page, participant):
+    def _pre_render(page, participant, experiment):
         """Run ``pre_render`` for the page and, on a timeline hold, its waiting screen."""
+        trial = getattr(page, "_upcoming_trial", None)
+        if trial is not None:
+            page.upcoming_pages, page.upcoming_media = trial.trial_maker._upcoming(
+                trial, page, experiment, participant
+            )
         if getattr(page, "_pre_rendered", False):
             # Already pre-rendered for this request, to compare it with the
             # trials prepared in advance.
@@ -7565,7 +7570,7 @@ class Experiment(dallinger.experiment.Experiment, metaclass=ExperimentMeta):
         """Run write-phase preparation for the page that will be rendered."""
         if page is None:
             return page
-        cls._pre_render(page, participant)
+        cls._pre_render(page, participant, experiment)
         return page
 
     @staticmethod

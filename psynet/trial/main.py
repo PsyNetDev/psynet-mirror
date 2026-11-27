@@ -1816,9 +1816,9 @@ class Trial(SQLBase, SQLMixin, AssetParentMixin):
             if self.id is None:
                 db.session.flush([self])
             page._page_key = self._page_key
-            page.upcoming_pages, page.upcoming_media = self.trial_maker._upcoming(
-                self, page, experiment, participant
-            )
+            # Attach the persisted trial. Preview comparison and pre_render are
+            # request-local and must run after the page has been restored.
+            page._upcoming_trial = self
         return logic
 
     @classmethod

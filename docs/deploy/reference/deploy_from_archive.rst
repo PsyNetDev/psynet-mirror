@@ -24,6 +24,11 @@ whatever you pass to ``--archive`` before deploying it, so the recruiter
 identifier sidecars and any exported asset files in an ``export.zip`` stay on
 your computer.
 
+An export preserves recorded responses and trials. It omits the generated
+pages for open :ref:`page-maker-visits`. A participant whose cursor was inside
+a maker at export time cannot resume that visit on the new deployment, even
+when the experiment code and PsyNet version match.
+
 The deployment uses the code currently in your experiment directory, so you
 can fix small bugs before redeploying. The database structure depends on the
 PsyNet version, so don't upgrade PsyNet between exporting and redeploying

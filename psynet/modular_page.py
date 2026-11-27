@@ -1017,14 +1017,10 @@ class OptionControl(Control):
     The rejection message is the generic "You need to select an answer!",
     and the server logs a warning with the page label, the answer and the choices.
 
-    The experiment builds the page again when the response arrives, re-running a
-    :class:`~psynet.timeline.PageMaker` function or a trial's ``show_trial``,
-    and checks the answer against the choices of that new page.
-    So the choices must be the same each time the page is built:
-    choose random choices once, for example in ``finalize_definition``,
-    or store them in ``participant.var``.
-    Otherwise a genuine click can be rejected; if you cannot keep the choices stable,
-    pass ``restrict_to_choices=False``.
+    When a page maker constructs the choices, validation uses the choices saved
+    for that visit. For trials prepared in advance, choose the stimuli in the
+    trial definition so the preview agrees with the served page.
+    See :ref:`page-maker-visits` and :ref:`showing_the_next_trials_without_waiting`.
 
     Parameters
     ----------

@@ -7,6 +7,7 @@ and imports. Only the deployment which created a visit should execute it.
 
 import hashlib
 import io
+import os
 import pickle
 import secrets
 import socket
@@ -38,7 +39,23 @@ class PageMakerVisitError(ValueError):
 
 
 class _Pickler(dill.Pickler):
+    def __init__(self, stream, experiment):
+        super().__init__(stream, protocol=pickle.HIGHEST_PROTOCOL)
+        self.resources = {}
+        if experiment is not None:
+            self.resources[id(experiment)] = ("experiment", None)
+            # Dallinger's recruiter is a cached property. A bound callback
+            # already materialized it; avoid constructing a recruiter for other pages.
+            recruiter = vars(experiment).get("recruiter")
+            if recruiter is not None:
+                self.resources[id(recruiter)] = ("recruiter", None)
+            for name, maker in experiment.timeline.trial_makers.items():
+                self.resources[id(maker)] = ("trial_maker", name)
+
     def persistent_id(self, obj):
+        resource = self.resources.get(id(obj))
+        if resource:
+            return resource
         if isinstance(
             obj, (Session, scoped_session, Connection, io.IOBase, socket.socket)
         ):
@@ -46,7 +63,14 @@ class _Pickler(dill.Pickler):
                 f"A page maker captured a live {type(obj).__name__}."
             )
         state = inspect(obj, raiseerr=False)
-        if isinstance(state, InstanceState):
+        if isinstance(state, InstanceState) and state is not obj:
+            if state.transient:
+                from .asset import Asset
+
+                # Trial.cue can carry an asset specification that becomes a
+                # new row only when its registration code block runs.
+                if isinstance(obj, Asset):
+                    return None
             if (
                 state.identity is None
                 or state.was_deleted
@@ -60,8 +84,18 @@ class _Pickler(dill.Pickler):
 
 
 class _Unpickler(dill.Unpickler):
+    def __init__(self, stream, experiment):
+        super().__init__(stream)
+        self.experiment = experiment
+
     def persistent_load(self, reference):
         model, key = reference
+        if model == "experiment":
+            return self.experiment
+        if model == "recruiter":
+            return self.experiment.recruiter
+        if model == "trial_maker":
+            return self.experiment.timeline.get_trial_maker(key)
         row = db.session.get(model, key)
         if row is None:
             raise PageMakerVisitError(
@@ -76,18 +110,31 @@ _standalone_key = secrets.token_bytes(32)
 
 
 def _signer(participant_id, path):
-    # The launch secret is shared by HTTP and background workers. Binding the
-    # signature to the participant and position also detects swapped payloads.
-    salt = (
-        f"psynet.page-maker.v1/{psynet_version}/{sys.implementation.cache_tag}/"
-        f"{dill.__version__}/{participant_id}/{path!r}"
+    # Dallinger provisions the same private Flask key for its web and background
+    # workers. Deployment metadata is visible on the dashboard; it is context,
+    # never key material. Standalone timelines have only a process-local key.
+    launch = deployment_info.read_all() if deployment_info.is_available() else {}
+    key = os.environ.get("FLASK_SECRET_KEY")
+    if not key and launch.get("mode") in ("live", "sandbox"):
+        raise PageMakerVisitError(
+            "The deployment needs its private server key to use PageMaker."
+        )
+    context = (
+        "psynet.page-maker.v1",
+        psynet_version,
+        sys.implementation.cache_tag,
+        dill.__version__,
+        launch.get("deployment_id"),
+        launch.get("git_commit_sha"),
+        participant_id,
+        path,
     )
-    key = (
-        str(deployment_info.read("secret"))
-        if deployment_info.is_available()
-        else _standalone_key
+    return Signer(
+        key or _standalone_key,
+        salt=repr(context),
+        key_derivation="hmac",
+        digest_method=hashlib.sha256,
     )
-    return Signer(key, salt=salt, digest_method=hashlib.sha256)
 
 
 class PageMakerVisit(db.Base):
@@ -116,7 +163,7 @@ class PageMakerVisit(db.Base):
         elements = maker.resolve(experiment, participant, path)
         stream = io.BytesIO()
         try:
-            _Pickler(stream, protocol=pickle.HIGHEST_PROTOCOL).dump(elements)
+            _Pickler(stream, experiment).dump(elements)
         except (
             pickle.PicklingError,
             TypeError,
@@ -134,7 +181,7 @@ class PageMakerVisit(db.Base):
         )
 
     @staticmethod
-    def read(participant, path):
+    def read(experiment, participant, path):
         """Reconstruct a fresh graph for rendering, validation or scoring."""
         visit = participant._page_maker_visits.get(len(path))
         if visit is None or visit.path != path:
@@ -147,4 +194,4 @@ class PageMakerVisit(db.Base):
             raise PageMakerVisitError(
                 f"Cannot restore PageMaker at {path} with this deployment and runtime."
             ) from exc
-        return _Unpickler(io.BytesIO(zlib.decompress(compressed))).load()
+        return _Unpickler(io.BytesIO(zlib.decompress(compressed)), experiment).load()

@@ -74,7 +74,7 @@ def main():
     ):
         connection.autocommit = True
         deployment_info.path = str(Path(directory) / "deployment_info.json")
-        deployment_info.write_all({"secret": uuid4()})
+        deployment_info.write_all({"deployment_id": str(uuid4())})
         media = random.Random(17).randbytes(1024 * 1024)
 
         def captured_media():

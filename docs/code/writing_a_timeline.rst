@@ -129,6 +129,10 @@ PsyNet saves the whole sequence returned by the maker in the same transaction
 that advances the participant. Refreshing, validating and scoring use that saved
 sequence. Each trip around a loop starts a fresh visit. A database rollback
 can retry entry, so keep irreversible external actions out of the factory.
+Static trials that :ref:`prepare upcoming trials <showing_the_next_trials_without_waiting>`
+also call ``show_trial`` to build previews. Choose their random values in
+:meth:`~psynet.trial.main.Trial.finalize_definition` so the preview and the
+eventual visit agree.
 
 For a sequence of pages, defer anything that needs a later answer to a
 nested maker. The multiplication example in ``demos/features/page_maker``
@@ -149,16 +153,22 @@ reads the answer only after the participant submits it:
     )
 
 Callbacks can capture values, including a saved trial or participant.
-PsyNet looks up captured database rows in the current session. Each request
+PsyNet looks up captured database rows in the current session and uses the
+current worker's experiment, recruiter and registered trial makers. A new
+asset specification passed to :meth:`~psynet.trial.main.Trial.cue` is stored
+by value until the trial registers it. Each request
 loads a fresh copy of the saved pages, so keep changes that later requests
 need in participant or trial data. Open files, sockets and database sessions
 cannot be saved. Reference large stimuli by URL or asset ID, since capturing
 their bytes stores another copy for every active visit.
 
-The database keeps a compressed snapshot for each active level of nesting and
-removes it on exit. An abandoned visit stays until its participant is removed
-or leaves the maker. Research exports omit these temporary records. Finish
-active studies on the code and runtime that launched them.
+The database keeps one compressed snapshot per active level of nesting and
+removes it when the cursor leaves that maker. An abandoned visit can stay open.
+A completed participant can also keep a snapshot when their final page hands
+them back to a recruiter without advancing the timeline. These rows are
+removed with the participant. Research exports omit them, so a deployment
+restored from an export cannot resume a participant inside a maker. Finish
+active studies on the deployment and runtime that launched them.
 
 .. _showing_the_next_page_without_waiting:
 
