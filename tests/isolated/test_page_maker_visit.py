@@ -158,6 +158,7 @@ def test_shared_closures_and_detached_row(db_session, deployment_info):
         page.increment = increment
         page.read_counter = lambda: counter
         page.read_owner = lambda: owner
+        page.owner_type = type(owner)
         return page
 
     timeline = Timeline(PageMaker(make_page, time_estimate=1))
@@ -170,6 +171,7 @@ def test_shared_closures_and_detached_row(db_session, deployment_info):
     assert timeline.get_current_elt(experiment, p).read_counter() == 0
     live_owner = db.session.get(Participant, owner_id)
     assert page.read_owner() is live_owner
+    assert page.owner_type is type(live_owner)
     db.session.delete(live_owner)
     db.session.flush()
     with pytest.raises(PageMakerVisitError, match="Missing Participant row"):

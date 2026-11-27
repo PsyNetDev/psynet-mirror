@@ -13,6 +13,7 @@ import secrets
 import socket
 import sys
 import zlib
+from functools import cached_property
 
 import dill
 from dallinger import db
@@ -27,7 +28,7 @@ from sqlalchemy import (
     inspect,
 )
 from sqlalchemy.engine import Connection
-from sqlalchemy.orm import Session, scoped_session
+from sqlalchemy.orm import Mapper, Session, scoped_session
 from sqlalchemy.orm.state import InstanceState
 
 from . import deployment_info
@@ -36,6 +37,15 @@ from .version import psynet_version
 
 class PageMakerVisitError(ValueError):
     """A generated sequence cannot be saved or restored for this visit."""
+
+
+def _model_name(mapper):
+    model = mapper.class_
+    if mapper.registry is not db.Base.registry:
+        raise PageMakerVisitError(
+            f"{model.__name__} must use the experiment's database registry."
+        )
+    return model.__module__, model.__qualname__
 
 
 class _Pickler(dill.Pickler):
@@ -63,6 +73,8 @@ class _Pickler(dill.Pickler):
                 f"A page maker captured a live {type(obj).__name__}."
             )
         state = inspect(obj, raiseerr=False)
+        if isinstance(state, Mapper) and state.class_ is obj:
+            return _model_name(state), None
         if isinstance(state, InstanceState) and state is not obj:
             if state.transient:
                 from .asset import Asset
@@ -79,7 +91,7 @@ class _Pickler(dill.Pickler):
                 raise PageMakerVisitError(
                     f"A page maker captured an unsaved or deleted {type(obj).__name__}."
                 )
-            return state.mapper.class_, state.identity
+            return _model_name(state.mapper), state.identity
         return None
 
 
@@ -88,14 +100,25 @@ class _Unpickler(dill.Unpickler):
         super().__init__(stream)
         self.experiment = experiment
 
+    @cached_property
+    def models(self):
+        # Experiment modules can be loaded directly from their source path.
+        # Importing one again to unpickle a class would register its tables twice.
+        return {_model_name(m): m.class_ for m in db.Base.registry.mappers}
+
     def persistent_load(self, reference):
-        model, key = reference
-        if model == "experiment":
+        name, key = reference
+        if name == "experiment":
             return self.experiment
-        if model == "recruiter":
+        if name == "recruiter":
             return self.experiment.recruiter
-        if model == "trial_maker":
+        if name == "trial_maker":
             return self.experiment.timeline.get_trial_maker(key)
+        model = self.models.get(name)
+        if model is None:
+            raise PageMakerVisitError(f"Missing registered database model {name}.")
+        if key is None:
+            return model
         row = db.session.get(model, key)
         if row is None:
             raise PageMakerVisitError(
