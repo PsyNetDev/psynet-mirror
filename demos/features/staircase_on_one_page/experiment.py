@@ -40,25 +40,37 @@ class ContrastTrial(GeometricStaircaseTrial):
 
     def show_trial(self, experiment, participant):
         pair = self.definition
+        width = "width:min(30vw, 180px)"
+        row = "display:flex;justify-content:center;gap:8%"
         return JSPage(
             "contrast",
             tags.div(
+                tags.p(id="trial-counter", cls="text-muted small"),
                 tags.p("Which patch is brighter?"),
                 tags.div(
                     *[
-                        tags.span(
-                            id=f"{side}-patch",
-                            style="width:min(30vw, 180px);aspect-ratio:1",
-                        )
+                        tags.span(id=f"{side}-patch", style=f"{width};aspect-ratio:1")
                         for side in ("left", "right")
                     ],
                     id="patches",
-                    style="display:flex;justify-content:center;gap:8%;visibility:hidden",
+                    style=f"{row};visibility:hidden",
                 ),
-                tags.p("← Left　　Right →", cls="mt-3"),
+                tags.div(
+                    tags.span("← Left", id="left-label", style=width),
+                    tags.span("Right →", id="right-label", style=width),
+                    cls="mt-3",
+                    style=row,
+                ),
                 cls="text-center",
             ),
-            contents={"left": pair["left"], "right": pair["right"]},
+            # The page's HTML stays the same from trial to trial, so the
+            # trial number comes with the pair.
+            contents={
+                "left": pair["left"],
+                "right": pair["right"],
+                "trial": self.position + 1,
+                "n_trials": N_TRIALS,
+            },
             module="/static/contrast.js",
             bot_response="left" if pair["left"] > pair["right"] else "right",
             time_estimate=self.time_estimate,

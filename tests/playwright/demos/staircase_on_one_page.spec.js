@@ -25,6 +25,7 @@ test("the staircase answers each trial page on a key press", { tag: "@both" }, a
     await patches.evaluate((el) => (el.dataset.firstTrial = "true"));
     for (let trial = 0; trial < 8; trial++) {
       await expect(patches).toBeVisible();
+      await expect(participant.locator("#trial-counter")).toHaveText(`Trial ${trial + 1} of 8`);
       if (kept) await expect(patches).toHaveAttribute("data-first-trial", "true");
       const brighter = (await grey("left")) > (await grey("right")) ? "ArrowLeft" : "ArrowRight";
       await participant.keyboard.press(brighter);

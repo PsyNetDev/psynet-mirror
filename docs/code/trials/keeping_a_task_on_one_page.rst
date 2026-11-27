@@ -72,8 +72,14 @@ functions:
 .. literalinclude:: ../../../demos/features/staircase_on_one_page/static/contrast.js
    :language: javascript
 
-Answering hides the patches and clears ``response``, so that further key
-presses are ignored until ``update`` shows the next pair.
+Answering hides the patches, puts the chosen side's label in bold and
+clears ``response``, so that further key presses are ignored until
+``update`` shows the next pair. The next pair can arrive almost at once, so
+``update`` waits until the screen has been blank for at least 400 ms, which
+makes each answer visibly end its trial. It then shows the trial number,
+which comes in ``contents`` with the pair, since the page's HTML stays the
+same from trial to trial. ``update`` checks ``signal.aborted`` after
+waiting, as described below.
 
 The module keeps running from trial to trial. PsyNet calls ``activate`` once,
 when the first trial appears; ``update`` for each trial, including the
