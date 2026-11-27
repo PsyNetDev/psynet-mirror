@@ -1,6 +1,6 @@
 // The screen stays blank for at least this long between trials, with the
 // chosen side in bold, so that each answer visibly ends its trial.
-const GAP_MS = 400;
+const GAP_MS = 200;
 
 export function activate({root}) {
     const patches = root.querySelector("#patches");
