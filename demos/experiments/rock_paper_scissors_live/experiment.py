@@ -52,6 +52,9 @@ RESULT_SECONDS = 30
 # Seconds a partner can keep the other waiting for the next game, besides the
 # result page, whose time limit the wait allows for.
 LATE_AFTER = 20
+# A page opens within seconds, so a partner who hasn't opened the game this
+# long after the pair reached it isn't coming, and the game ends unplayed.
+READY_SECONDS = 20
 
 
 def result_for(player, choices):
@@ -115,8 +118,12 @@ class RockPaperScissors(LiveGame):
     name = "rock_paper_scissors"
     messages = [Choose]
     min_players = max_players = 2
-    # A player whose partner closes the page for good isn't left waiting:
-    # the game ends 30 seconds later, which allows for a reload.
+    # A game for two can't start without both players, so PsyNet ends it at
+    # once, with the reason TOO_FEW_READY, if a partner hasn't opened it by
+    # then.
+    ready_timeout = READY_SECONDS
+    # A player whose partner closes the page for good isn't left waiting: the
+    # game ends 30 seconds later, which allows for a reload.
     away_timeout = 30
     # A game takes a minute or two, so this ends it within five minutes even
     # if both players stop choosing.
@@ -242,7 +249,7 @@ def rock_paper_scissors_page(game):
         ),
         no_game_message="This game can't be played without your partner.",
         waiting_status="Waiting for your partner to open the game",
-        js_page_modules=["/static/rock-paper-scissors.js"],
+        module="/static/rock-paper-scissors.js",
         css_links=["/static/rock-paper-scissors.css"],
         time_estimate=60,
     )
@@ -273,8 +280,12 @@ class RockPaperScissorsTrial(Trial):
             # A partner who hasn't arrived LATE_AFTER seconds after their
             # result page ran out is failed, and so is the player waiting,
             # since the pair can't play without them.
+            # A partner who never opened the game page, or left it for good,
+            # is late here at the next game, so the other player still sees
+            # the game's result first.
             late_after=LATE_AFTER,
             late_action="fail",
+            waiting_message="Waiting for your partner to reach the game",
             page=rock_paper_scissors_page(game),
         )
 

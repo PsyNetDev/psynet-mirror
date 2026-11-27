@@ -101,6 +101,8 @@ class Exp(psynet.experiment.Experiment):
             nodes=get_nodes,
             expected_trials_per_participant="n_nodes",
             max_trials_per_participant="n_nodes",
+            # Downloads the next sounds while the participant rates this one.
+            prepare_trials_in_advance=True,
         ),
         InfoPage(
             """

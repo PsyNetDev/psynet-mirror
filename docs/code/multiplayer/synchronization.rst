@@ -184,9 +184,11 @@ A participant can be in groups of different ``group_type`` at the same time,
 but in only one group of each type. To regroup participants, close the group
 with a :class:`~psynet.sync.GroupCloser` and place another grouper with the
 same ``group_type``. A ``GroupCloser`` is a group barrier, so members wait
-there for each other; the end of the timeline needs none, because a group
-whose members have all finished closes by itself. The ``group_closer`` feature demo forms groups of three,
-then groups of two, and assigns roles at a barrier each time:
+there for each other. The end of the timeline needs none: a group isn't
+closed when its members finish, but nobody waits for it either, and the
+dashboard's **Sync groups** tab shows it as *Finished*. The ``group_closer``
+feature demo forms groups of three, then groups of two, and assigns roles at
+a barrier each time:
 
 .. literalinclude:: ../../../demos/features/group_closer/experiment.py
    :start-at: timeline = Timeline(
@@ -638,6 +640,19 @@ have no side effects. Notices must fit on two lines of a phone screen:
         waiting_message="Waiting for your partner",
         on_arrival_message=arrival_message,
     )
+
+To change only some kinds, return
+``default_group_barrier_arrival_message`` from ``psynet.timeline_hold`` for the
+others, as the ``story_chain`` demo does to hide the progress-bar notice:
+
+.. code-block:: python
+
+    from psynet.timeline_hold import default_group_barrier_arrival_message
+
+    def arrival_message(kind, **kwargs):
+        if kind == "notice":
+            return None
+        return default_group_barrier_arrival_message(kind=kind, **kwargs)
 
 Pages with a :class:`~psynet.group_prompt.GroupPrompt` that ticks members
 live don't show the notice, since the ticks say the same.
@@ -1701,29 +1716,30 @@ admission points but the timeline has none for it.
 After leaving a group
 ~~~~~~~~~~~~~~~~~~~~~
 
-A member removed from their group without being failed, through a
-barrier's ``"leave_group"`` or ``below_quorum="continue_without_group"``,
-stays in the experiment and continues the timeline without that group.
-Carrying on without the group is an advanced option, for designs where it
-is meaningful; usually, fail players who time out (``late_action="fail"``),
-and then only a newcomer who is turned away (``"not_admitted"``) leaves a
-player without the group. A member removed in these ways leaves only
-the group of that type: a player removed from a ``"pair"`` stays in their
-``"cohort"`` unless the barrier lists that group type in ``also_leave``
-(see :ref:`rounds-slow-players`). To take a player out of a game by hand,
-fail them on the dashboard's **Sync groups** tab, which removes them from
-all their groups. A participant whose grouper let them continue without
-a group (``max_wait_action="continue_without_group"``) is treated the same
-way for that group type, as if they had left a group. A notice on their
-progress bar tells them why. A member removed for being late sees "Your
-group went on without you. Please continue." on the page they are on, until
-they leave it, even if their leaving dissolved the group. The notices count the group as it was when they
-left it: if only one other member was left by then, for example in a group
-of three that had already lost someone, they read "Your partner went on
-without you. Please continue." instead. Whatever they submit there is saved,
-though the group has moved on, including into a participant variable
-through ``save_answer``; only the response's ``too_late_for_group`` (see
-below) marks it as late. An answer to a timed page usually arrives
+A member removed from their group without being failed, through a barrier's
+``"leave_group"`` or ``below_quorum="continue_without_group"``, stays in the
+experiment and continues the timeline without that group. Carrying on
+without the group is an advanced option, for designs where it is meaningful;
+usually, fail players who time out (``late_action="fail"``), and then only a
+newcomer who is turned away (``"not_admitted"``) leaves a player without the
+group. A member removed in these ways leaves only the group of that type: a
+player removed from a ``"pair"`` stays in their ``"cohort"`` unless the
+barrier lists that group type in ``also_leave`` (see
+:ref:`rounds-slow-players`). To take a player out of a game by hand, fail
+them on the dashboard's **Sync groups** tab, which removes them from all
+their groups and moves their open page on to the failure page if it is the
+page of a group member. A participant whose grouper let them continue
+without a group (``max_wait_action="continue_without_group"``) is treated
+like a member who left a group of that type. A notice on their progress bar
+tells them why. A member removed for being late sees "Your group went on
+without you. Please continue." on the page they are on, until they leave it,
+even if their leaving dissolved the group. The notices count the group as it
+was when they left it: if only one other member was left by then, for
+example in a group of three that had already lost someone, they read "Your
+partner went on without you. Please continue." instead. Whatever they submit
+there is saved, though the group has moved on, including into a participant
+variable through ``save_answer``; only the response's ``too_late_for_group``
+(see below) marks it as late. An answer to a timed page usually arrives
 after its time limit by then, so it is saved as ``None``. In other cases,
 such as when their group was dissolved under them or they waited too long,
 the notice appears on their next page.

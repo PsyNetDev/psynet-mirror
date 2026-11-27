@@ -10,10 +10,11 @@
 // in its metadata. The server records the page's time_limit_answer, or with
 // CURRENT_ANSWER (config.currentAnswer) the answer the page's controls hold.
 // If the server's deadline is still some way off, it returns the seconds
-// left and the countdown resumes.
+// left and the countdown resumes. The settings arrive in
+// psynet.pageState.timeLimit, not in the page's config.
 
-export function activate({root, vars, psynet}) {
-    var config = vars["timeLimit"];
+export function activate({root, psynet}) {
+    var config = psynet.pageState && psynet.pageState.timeLimit;
     if (!config) return undefined;
     // secondsLeft was measured when the server drew the page, before the
     // page's scripts loaded.
@@ -63,9 +64,14 @@ export function activate({root, vars, psynet}) {
         return (psynet.response && psynet.response.staged) || {};
     }
 
+    // Including a JSPage's answer, which is sent in the background.
+    function submitting() {
+        return Boolean(psynet.pageState.submitting || (psynet.answers && psynet.answers.sending));
+    }
+
     function submit() {
         if (submitted || stopped) return;
-        if (!psynet.pageReady || psynet.nextPagePending || psynet.timelineHold) {
+        if (!psynet.pageReady || submitting() || psynet.timelineHold) {
             // Another submission is under way, or the page is still loading.
             timer = window.setTimeout(submit, 500);
             return;
@@ -117,7 +123,7 @@ export function activate({root, vars, psynet}) {
         });
         if (line) {
             line.hidden = left === 0 || Boolean(
-                psynet.nextPagePending || psynet.timelineHold || (psynet.waiting && psynet.waiting.released)
+                submitting() || psynet.timelineHold || (psynet.waiting && psynet.waiting.released)
             );
         }
         if (left > 0) timer = window.setTimeout(tick, 250);

@@ -87,6 +87,7 @@ def get_timeline():
         GroupBarrier(
             id_="game_starts",
             group_type=GROUP,
+            waiting_message="Waiting for the other players…",
             late_after=LATE_AFTER,
             late_action="fail",
             stop_top_ups=True,
@@ -119,6 +120,7 @@ class EstimateTrial(Trial):
             GroupBarrier(
                 id_="estimates",
                 group_type=GROUP,
+                waiting_message="Waiting for the other players…",
                 late_after=LATE_AFTER,
                 late_action="fail",
                 on_release=self.score_round,

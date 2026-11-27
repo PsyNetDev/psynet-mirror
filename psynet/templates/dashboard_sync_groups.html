@@ -74,7 +74,11 @@ async function failSyncGroupParticipant(button) {
 {% if groups | length == 0 %}
     <p class="text-muted">No sync groups found.</p>
 {% else %}
-    <p class="text-muted">Showing up to 500 most recent sync groups (newest first).</p>
+    <p class="text-muted">
+        Showing up to 500 most recent sync groups (newest first).
+        Struck-through members have left the group; red members were failed.
+        Hover over a member to see why.
+    </p>
     <div class="table-responsive">
         <table class="table table-striped table-hover">
             <thead>
@@ -98,8 +102,10 @@ async function failSyncGroupParticipant(button) {
                     <td><code>{{ g.id }}</code></td>
                     <td>{{ g.group_type }}</td>
                     <td>
-                        {% if g.active %}
+                        {% if g.status == "active" %}
                         <span class="badge bg-success">Active</span>
+                        {% elif g.status == "finished" %}
+                        <span class="badge bg-info text-dark" title="Every member still in the group has reached the end of the experiment.">Finished</span>
                         {% else %}
                         <span class="badge bg-secondary">Closed</span>
                         {% endif %}
@@ -113,7 +119,7 @@ async function failSyncGroupParticipant(button) {
                             data-participant-id="{{ p.id }}"
                             title="Status: {{ p.status }}"
                             onclick="showParticipantActionModal(this)"
-                        >{{ p.id }}</button>{% else %}<span class="{% if not p.active_in_group %}text-decoration-line-through text-muted{% elif p.failed %}text-danger{% else %}text-success{% endif %}" title="{% if not p.active_in_group %}Removed from group{% endif %}{% if p.active_in_group %}Status: {{ p.status }}{% if p.failed_reason %} — Reason: {{ p.failed_reason }}{% endif %}{% endif %}">{{ p.id }}</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}<span class="text-muted">)</span>
+                        >{{ p.id }}</button>{% else %}<span class="{% if not p.active_in_group %}text-decoration-line-through {% endif %}{% if p.failed %}text-danger{% elif not p.active_in_group %}text-muted{% else %}text-success{% endif %}" title="{% if not p.active_in_group %}Left group{% if p.removal_reason %}: {{ p.removal_reason }}{% endif %}. {% endif %}Status: {{ p.status }}{% if p.failed_reason %}. Failed: {{ p.failed_reason }}{% endif %}">{{ p.id }}</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}<span class="text-muted">)</span>
                     </td>
                     <td>
                         {% if g.leader_id is not none %}
@@ -141,7 +147,7 @@ async function failSyncGroupParticipant(button) {
                         {% if g.initial_group_size is not none %}
                         <span class="text-muted">(init: {{ g.initial_group_size }})</span>
                         {% endif %}
-                        {% if g.accepts_top_ups %}
+                        {% if g.accepts_top_ups and g.status == "active" %}
                         <br><span class="text-muted">Accepts top-ups</span>
                         {% elif g.top_ups_stopped_at %}
                         <br><span class="text-muted">Top-ups stopped {{ g.top_ups_stopped_at.strftime("%Y-%m-%d %H:%M:%S") }}</span>

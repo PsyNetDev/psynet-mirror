@@ -108,6 +108,9 @@ Pages and controls
     with buttons, text boxes and audio recording. :doc:`/design/pages`,
     :doc:`/code/writing_pages`.
 
+`features/back_button <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/back_button>`__
+    Instruction pages with Back buttons that show the previous page at once. :ref:`going_back_to_the_previous_page`.
+
 `features/modular_page <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/modular_page>`__
     A gallery of prompt and control combinations, ending with custom
     ``Prompt`` and ``Control`` classes. :doc:`/code/pages/control_gallery`.
@@ -210,6 +213,28 @@ Trials
 `features/trial_cue_adaptive <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/trial_cue_adaptive>`__
     A 1-up/1-down staircase written with ``Trial.cue`` and ``while_loop``,
     with the adaptive rule in a separate, testable module.
+
+`features/staircase_on_one_page <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/staircase_on_one_page>`__
+    A brightness staircase on ordinary trial pages that answer on a key press,
+    while a ``GeometricStaircaseTrialMaker`` chooses the next brightness
+    difference after each answer.
+
+`experiments/flanker <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/experiments/flanker>`__
+    An Eriksen flanker reaction time task: a fixation cross, a row of arrows
+    and a key press per trial, with each trial following the last without
+    waiting for the server and reaction times measured from the frame that
+    shows the arrows. :doc:`/code/trials/keeping_a_task_on_one_page`.
+
+`features/rapid_ratings <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/rapid_ratings>`__
+    Picture ratings that show each picture as soon as the previous one is
+    rated, with ``prepare_trials_in_advance`` and a page module that preloads
+    the upcoming pictures. :doc:`/code/trials/keeping_a_task_on_one_page`.
+
+`features/rapid_ratings_built_in <https://gitlab.com/PsyNetDev/PsyNet/-/tree/master/demos/features/rapid_ratings_built_in>`__
+    The same picture ratings with a built-in ``ImagePrompt`` and
+    ``PushButtonControl``: the browser swaps in each trial's page, rendered in
+    advance, as soon as the previous picture is rated.
+    :ref:`showing_the_next_trials_without_waiting`.
 
 Chains
 ------

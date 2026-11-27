@@ -126,8 +126,9 @@ def test_regrouper_waits_for_a_late_member_until_they_leave_the_within_group(
 
 @in_consents_experiment
 def test_every_regrouper_splits_everyone_waiting_into_balanced_rooms(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
+    _freeze_clocks(monkeypatch, start=time.time() // 45 * 45 + 10)
     exp = get_experiment()
     rooms = Regrouper("room", group_size=3, every=45)
     participants = _working_participants(exp, 6)
@@ -154,9 +155,10 @@ def test_every_regrouper_splits_everyone_waiting_into_balanced_rooms(
 
 @in_consents_experiment
 def test_every_regrouper_leaves_the_split_to_the_poller(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
     """An arrival doesn't enact a due tick; the poller splits the pool instead."""
+    _freeze_clocks(monkeypatch, start=time.time() // 45 * 45 + 10)
     exp = get_experiment()
     rooms = Regrouper("room", group_size=2, every=45)
     players = _working_participants(exp, 3)
@@ -209,9 +211,10 @@ class _CustomCheck(Regrouper):
 @pytest.mark.parametrize("custom_rooms", [_CustomRelease, _CustomCheck])
 @in_consents_experiment
 def test_every_regrouper_subclass_with_custom_release_checks_on_arrival(
-    in_experiment_directory, db_session, custom_rooms
+    in_experiment_directory, db_session, monkeypatch, custom_rooms
 ):
     """A custom release rule might release on arrival, so arrivals keep the check."""
+    _freeze_clocks(monkeypatch, start=time.time() // 45 * 45 + 10)
     exp = get_experiment()
     rooms = custom_rooms("custom_room", group_size=2, every=45)
     players = _working_participants(exp, 3)
@@ -223,9 +226,10 @@ def test_every_regrouper_subclass_with_custom_release_checks_on_arrival(
 
 @in_consents_experiment
 def test_waiter_timeline_get_splits_a_due_every_regrouper_pool(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
     """A waiter's ``GET /timeline`` (a reload or a bot's poll) splits at a due tick."""
+    _freeze_clocks(monkeypatch, start=time.time() // 45 * 45 + 10)
     exp = get_experiment()
     original = exp.timeline
     rooms = Regrouper("poll_room", group_size=2, every=45)
@@ -495,8 +499,9 @@ def test_regrouper_left_over_waits_for_cohort_still_in_the_round(
 
 @in_consents_experiment
 def test_every_regrouper_left_over_waits_one_more_tick(
-    in_experiment_directory, db_session
+    in_experiment_directory, db_session, monkeypatch
 ):
+    _freeze_clocks(monkeypatch, start=time.time() // 15 * 15 + 5)
     exp = get_experiment()
     cohort_grouper = SimpleGrouper("cohort", initial_group_size=3, quorum=3)
     pairs = Regrouper(
@@ -1320,8 +1325,11 @@ def test_backdating_reaches_the_deadline_after_quick_splits(
 
 
 @in_consents_experiment
-def test_backdating_reaches_the_every_tick(in_experiment_directory, db_session):
+def test_backdating_reaches_the_every_tick(
+    in_experiment_directory, db_session, monkeypatch
+):
     """``regroup_now``'s backdating reaches the next ``every`` tick."""
+    _freeze_clocks(monkeypatch, start=time.time() // 600 * 600 + 10)
     exp = get_experiment()
     cohort_grouper = SimpleGrouper(
         "cohort", initial_group_size=4, quorum=2, below_quorum="fail"

@@ -218,7 +218,7 @@ class GroupPrompt(Prompt):
             .read_text(encoding="utf-8")
         ]
 
-    def get_js_vars(self):
+    def get_page_config(self):
         """Configuration for live ticks."""
         if self.group is None:
             return {}
@@ -451,7 +451,7 @@ def redrawn_group_html(unique_id, token):
     unique_id : str
         The participant's unique ID.
     token : str
-        The page's redraw token (see ``GroupPrompt.get_js_vars``).
+        The page's redraw token (see ``GroupPrompt.get_page_config``).
 
     Returns
     -------

@@ -9,10 +9,21 @@ from psynet.pytest_psynet import (
     bot_class,
     next_page,
     path_to_test_experiment,
+    wait_until,
 )
 from psynet.utils import get_config
 
 PYTEST_BOT_CLASS = bot_class()
+
+
+def open_leave_dialog(driver):
+    """Click Leave and wait for the dialog, which opens once the server sends the offer."""
+    driver.find_element(By.ID, "early-exit-button").click()
+    wait_until(
+        lambda: driver.find_element(By.ID, "early-exit-modal").is_displayed(),
+        max_wait=5,
+        error_message="The Leave dialog didn't open",
+    )
 
 
 @pytest.mark.parametrize(
@@ -37,15 +48,14 @@ class TestExp:
             # HotAir does not pay through PsyNet, so Exit is always available
             # with the plain leave pathway (no unpaid-below-threshold option).
             # Paid recruiters cover that unpaid pathway in unit tests.
-            exit_button = driver.find_element(By.ID, "early-exit-button")
-            exit_button.click()
+            open_leave_dialog(driver)
             assert_text(driver, "early-exit-title", "Leave without finishing?")
             assert_text(driver, "early-exit-confirm", "Leave")
             driver.find_element(By.ID, "early-exit-cancel").click()
 
             next_page(driver, "next-button")
 
-            driver.find_element(By.ID, "early-exit-button").click()
+            open_leave_dialog(driver)
             assert_text(driver, "early-exit-title", "Leave without finishing?")
             driver.find_element(By.ID, "early-exit-confirm").click()
             time.sleep(0.5)

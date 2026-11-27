@@ -33,7 +33,7 @@ from .method_wrappers import (
     _stores_json,
     _waits_for_start,
 )
-from .psynet_entry import PlayerReady, _absences, _psynet_entry
+from .psynet_entry import PlayerReady, _absences, _n_playing, _psynet_entry
 from .record import (
     _CLOSED_EFFECT,
     _MOMENT_EFFECT,
@@ -103,8 +103,12 @@ class LiveGame(RealtimeGame):
 
     #: Seconds after the wait at the :class:`PlayLiveGame` ends at which the
     #: game starts, even if some players aren't ready. They can still join
-    #: and play. If none of the players has opened the game page by then,
-    #: the game ends instead, with the reason ``"not_joined"``.
+    #: and play, and until they do they count as away, from the start, for
+    #: the :attr:`away_timeout`. If fewer than :attr:`min_players` players
+    #: are ready by then, because the others haven't opened the game page,
+    #: the game doesn't start: it ends at once, with the reason
+    #: :data:`~psynet.live_game.TOO_FEW_READY`, and :meth:`absences` says
+    #: ``"no_show"`` for the players who weren't ready.
     ready_timeout = 60
 
     #: Seconds the game lasts once it starts, after which it ends with the
@@ -123,8 +127,10 @@ class LiveGame(RealtimeGame):
     #: The fewest players a game needs. A group that reaches the
     #: :class:`PlayLiveGame` with fewer active members, for example
     #: because the others left it while it waited, starts no game, and its
-    #: members' game pages show the no-game notice. Set it to 1 for a game
-    #: that a player can play alone.
+    #: members' game pages show the no-game notice. A game that fewer
+    #: players are ready for at the end of the :attr:`ready_timeout` ends
+    #: without starting. Set it to 1 for a game that a player can play
+    #: alone, or lower it for a game that should carry on short-handed.
     min_players = 2
 
     #: The most players a game can have, or ``None``, the default, for no
@@ -135,8 +141,9 @@ class LiveGame(RealtimeGame):
     #: and PsyNet logs an error that says so.
     max_players = None
 
-    #: Seconds a player can be away, with none of their game pages open,
-    #: before they count as gone. Once fewer than :attr:`min_players` players
+    #: Seconds a player can be away, with none of their game pages open or
+    #: without having opened the game page when the game started, before
+    #: they count as gone. Once fewer than :attr:`min_players` players
     #: aren't gone, the game ends with the reason ``"players_left"``. Allow
     #: 30 seconds or more, for a reload. Set it to ``None`` for a game that
     #: carries on however many players are away (see :ref:`live-games-leaving`).
@@ -222,8 +229,9 @@ class LiveGame(RealtimeGame):
     def is_over(self, state):
         """Return whether the game is over, as a bool, as in Dallinger's
         ``is_over``. Once it is, :meth:`end_reason` says why. The game is
-        also over once its :attr:`duration` or :attr:`timeout` is up, or
-        too few players are left.
+        also over once its :attr:`duration` or :attr:`timeout` is up, once
+        too few players are left, or, without starting, once too few were
+        ready at its :attr:`ready_timeout`.
         """
         return super().is_over(state)
 
@@ -235,7 +243,8 @@ class LiveGame(RealtimeGame):
         :meth:`performance_reward` receive, and the game record's
         :attr:`~LiveGameRecord.end_reason`. By default, it's
         ``"finished"``. When PsyNet ended the game, the reason is PsyNet's
-        instead: ``"finished"`` at the end of the :attr:`duration`,
+        instead: ``"too_few_ready"`` when too few players were ready for
+        it to start, ``"finished"`` at the end of the :attr:`duration`,
         ``"timeout"`` at the :attr:`timeout`, or ``"players_left"``. Any
         other value than a non-empty string fails the game. It should only
         read ``state``, not change it.
@@ -312,8 +321,10 @@ class LiveGame(RealtimeGame):
     def on_start(self, state):
         """Respond to the game starting, the moment the game's clock, ``now``
         in its other methods, starts at 0. ``state["psynet"]["ready"]``
-        says which players were ready. A game can end here, through its
-        ``is_over``.
+        says which players were ready, and the others are in
+        ``state["psynet"]["away"]``. A game can end here, through its
+        ``is_over``. It doesn't run for a game that ends without starting
+        because fewer than :attr:`min_players` players were ready.
         """
 
     def absences(self, state):
@@ -378,12 +389,30 @@ class LiveGame(RealtimeGame):
 
     @_stores_json
     def _end_ready_step(self, state, now):
+        """Start the game, or, with fewer than min_players ready, end it
+        with TOO_FEW_READY instead, through is_over."""
         entry = _psynet_entry(state)
-        if entry["started_at"] is None:
+        if entry["started_at"] is None and not entry["too_few_ready"]:
+            # A group starts a game only with min_players, so a game that
+            # everyone is ready for starts, as does one a test plays with fewer.
+            if len(entry["ready"]) < min(self.min_players, _n_playing(entry)):
+                entry["too_few_ready"] = True
+                return
             entry["started_at"] = now
             limit = self.duration if self.duration is not None else self.timeout
             if limit is not None:
                 entry["ends_at"] = now + limit
+            # Away from the start, so an away_timeout covers a player who
+            # never opens the game page. A page that is open sends its ready
+            # message soon after, which ends this.
+            for player in range(len(entry["participant_ids"])):
+                if not (
+                    player in entry["ready"]
+                    or player in entry["away"]
+                    or player in entry["too_late"]
+                ):
+                    entry["away"].append(player)
+                    entry["away_since"][player] = now
             if queued_effects.get(None) is not None:
                 # Past this class's queue_effect, which refuses PsyNet's names.
                 RealtimeGame.queue_effect(self, _STARTED_EFFECT, {})
@@ -703,8 +732,9 @@ def _check_settings(game_class):
         )
     if "join_timeout" in own:
         raise TypeError(
-            f"{name} sets join_timeout, which PsyNet sets itself, to the "
-            "game's ready_timeout. Set its ready_timeout instead."
+            f"{name} sets join_timeout, which PsyNet sets itself: a game "
+            "that too few players open ends at its ready_timeout. Set its "
+            "ready_timeout instead."
         )
     min_players = game_class.min_players
     if not _is_whole_number(min_players, 1):
@@ -732,8 +762,8 @@ def _is_whole_number(value, least):
 
 
 def _set_max_duration(game_class):
-    """Set Dallinger's max_duration and join_timeout from a game's
-    duration, time limit and ready_timeout."""
+    """Set Dallinger's max_duration from a game's duration, time limit and
+    ready_timeout, and turn off its join_timeout."""
     limit = (
         game_class.duration if game_class.duration is not None else game_class.timeout
     )
@@ -742,8 +772,9 @@ def _set_max_duration(game_class):
         if limit is None
         else game_class.ready_timeout + limit + _MAX_DURATION_MARGIN
     )
-    # A game that nobody has opened by the ready timeout ends then.
-    game_class.join_timeout = game_class.ready_timeout
+    # The ready step ends a game that too few players have opened, nobody
+    # included, so Dallinger's own limit for that would only race it.
+    game_class.join_timeout = None
 
 
 def _index_message_types(game_class):

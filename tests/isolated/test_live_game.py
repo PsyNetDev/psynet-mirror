@@ -35,6 +35,7 @@ from psynet.live_game import (
     NOT_STARTED_MESSAGE,
     PLAYERS_LEFT,
     TIMEOUT,
+    TOO_FEW_READY,
     TOO_LATE,
     LiveGame,
     LiveGameFailed,
@@ -144,7 +145,7 @@ def _play(id_="trial_game", page=None, **kwargs):
     """A PlayLiveGame of the pick-numbers game, as a trial's show_trial
     builds one for each participant."""
     if page is None:
-        page = LiveGamePage(id_, "Play.", time_estimate=5)
+        page = LiveGamePage(id_, "Play.", "/static/game.js", time_estimate=5)
     kwargs.setdefault("game_class", type(_pick_numbers()))
     if "late_after" not in kwargs:
         kwargs.setdefault("max_wait_time", 60)
@@ -156,6 +157,7 @@ def _page_of(game_barrier, page_kwargs=None, **control_kwargs):
     page = LiveGamePage(
         "game",
         "Play.",
+        "/static/game.js",
         time_estimate=5,
         **control_kwargs,
         **(page_kwargs or {}),
@@ -430,7 +432,7 @@ def test_an_game_barrier_s_settings_can_t_use_a_key_its_saved_form_reserves():
         _trial_game_barrier({"__type__": "fast"})
 
 
-def _rendered_js_vars(page, participant, monkeypatch):
+def _rendered_page_config(page, participant, monkeypatch):
     rendered = {}
 
     def capture(template_string, **template_args):
@@ -440,7 +442,7 @@ def _rendered_js_vars(page, participant, monkeypatch):
     monkeypatch.setattr("psynet.timeline.render_string_with_translations", capture)
     with Flask(__name__).test_request_context("/timeline"):
         page.render(get_experiment(), participant)
-    return rendered["js_vars"]
+    return rendered["page_config"]
 
 
 def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
@@ -452,12 +454,12 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         match=f"Participant {members[0].id} hasn't reached the PlayLiveGame "
         f"'{game_barrier.id}', whose game page",
     ):
-        _rendered_js_vars(page, members[0], monkeypatch)
+        _rendered_page_config(page, members[0], monkeypatch)
     # A bot that doesn't render its pages is stopped too.
     with pytest.raises(ValueError, match="hasn't reached the PlayLiveGame"):
         page.control.check_ready_for_response(get_experiment(), members[0])
     _reach(game_barrier, members[0])
-    assert _rendered_js_vars(page, members[0], monkeypatch)["liveGame"] == {
+    assert _rendered_page_config(page, members[0], monkeypatch)["liveGame"] == {
         "playId": game_barrier.id,
         "liveGameId": None,
         "gameChannel": None,
@@ -474,7 +476,7 @@ def test_a_live_game_page_gets_its_game_when_it_renders(pair, monkeypatch):
         _arrive(game_barrier, member)
 
     session_id = _game_id(members[1], game_barrier.id)
-    js_vars = _rendered_js_vars(page, members[1], monkeypatch)["liveGame"]
+    js_vars = _rendered_page_config(page, members[1], monkeypatch)["liveGame"]
     assert [player["you"] for player in js_vars.pop("players")] == [
         member.id == members[1].id for member in sorted(members, key=lambda m: m.id)
     ]
@@ -497,7 +499,7 @@ def test_a_live_game_page_can_leave_moving_on_to_its_javascript(pair, monkeypatc
     page = _page_of(game_barrier, auto_advance=False)
 
     _reach(game_barrier, members[0])
-    js_vars = _rendered_js_vars(page, members[0], monkeypatch)
+    js_vars = _rendered_page_config(page, members[0], monkeypatch)
 
     assert js_vars["liveGame"]["autoAdvance"] is False
 
@@ -507,7 +509,7 @@ def test_a_live_game_page_can_leave_moving_on_to_its_javascript(pair, monkeypatc
 )
 def test_a_live_game_page_refuses_a_show_result_for_it_can_t_honour(kwargs):
     with pytest.raises(ValueError, match="show_result_for"):
-        LiveGamePage("game", "Play.", time_estimate=5, **kwargs)
+        LiveGamePage("game", "Play.", "/static/game.js", time_estimate=5, **kwargs)
 
 
 @pytest.mark.parametrize("message", ["Your partner has left.", None])
@@ -518,7 +520,7 @@ def test_a_live_game_page_can_change_or_hide_its_player_left_notice(
     page = _page_of(game_barrier, player_left_message=message)
 
     _reach(game_barrier, members[0])
-    js_vars = _rendered_js_vars(page, members[0], monkeypatch)
+    js_vars = _rendered_page_config(page, members[0], monkeypatch)
 
     assert js_vars["liveGame"]["playerLeftMessage"] == message
 
@@ -531,7 +533,7 @@ def test_a_live_game_page_can_change_or_hide_its_no_game_notice(
     page = _page_of(game_barrier, no_game_message=message)
 
     _reach(game_barrier, members[0])
-    js_vars = _rendered_js_vars(page, members[0], monkeypatch)
+    js_vars = _rendered_page_config(page, members[0], monkeypatch)
 
     assert js_vars["liveGame"]["noGameMessage"] == message
 
@@ -547,7 +549,7 @@ def test_a_live_game_page_shows_no_second_notice_when_the_group_has_left(
         "page_uuid": members[0].page_uuid,
         "text": "Your partner is no longer in your group. Please continue.",
     }
-    js_vars = _rendered_js_vars(page, members[0], monkeypatch)
+    js_vars = _rendered_page_config(page, members[0], monkeypatch)
 
     assert js_vars["liveGame"]["noGameMessage"] is None
 
@@ -556,7 +558,7 @@ def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
     unnamed = PlayLiveGame(
         group_type="pair",
         game_class=type(_pick_numbers()),
-        page=LiveGamePage("game", "Play.", time_estimate=5),
+        page=LiveGamePage("game", "Play.", "/static/game.js", time_estimate=5),
         max_wait_time=60,
     )
     assert unnamed.barrier.id == "pick_numbers"
@@ -564,10 +566,10 @@ def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
         PlayLiveGame(
             group_type="pair",
             game_class=type(_pick_numbers()),
-            page=LiveGamePage("game", "Play.", time_estimate=5),
+            page=LiveGamePage("game", "Play.", "/static/game.js", time_estimate=5),
         )
 
-    page = LiveGamePage("game", "Play.", time_estimate=5)
+    page = LiveGamePage("game", "Play.", "/static/game.js", time_estimate=5)
     # The page follows the barrier.
     assert _play("first", page).resolve()[-1] is page
     with pytest.raises(
@@ -579,7 +581,9 @@ def test_a_play_live_game_needs_a_game_page_of_its_own(pair):
 
 
 def test_a_live_game_page_marks_its_content_and_has_a_live_game_control():
-    page = LiveGamePage("game", tags.p("Play.", id="board"), time_estimate=5)
+    page = LiveGamePage(
+        "game", tags.p("Play.", id="board"), "/static/game.js", time_estimate=5
+    )
 
     assert isinstance(page.control, LiveGameControl)
     # PsyNet hides what's marked on a page without a game.
@@ -591,6 +595,7 @@ def test_a_live_game_page_passes_its_options_to_its_control():
     page = LiveGamePage(
         "game",
         "Play.",
+        "/static/game.js",
         names="anonymous",
         show_result_for=8,
         waiting_status="Waiting for your partner",
@@ -603,29 +608,31 @@ def test_a_live_game_page_passes_its_options_to_its_control():
     assert page.control.waiting_status == "Waiting for your partner"
     assert page.control.player_left_message is None
     with pytest.raises(ValueError, match="names must be one of"):
-        LiveGamePage("game", "Play.", names="hidden", time_estimate=5)
+        LiveGamePage(
+            "game", "Play.", "/static/game.js", names="hidden", time_estimate=5
+        )
 
 
 def test_a_live_game_page_has_to_belong_to_a_play_live_game(pair, monkeypatch):
     members, _ = pair
-    page = LiveGamePage("game", "Play.", time_estimate=5)
+    page = LiveGamePage("game", "Play.", "/static/game.js", time_estimate=5)
 
     with pytest.raises(TypeError, match="has to be the page of a PlayLiveGame"):
-        _rendered_js_vars(page, members[0], monkeypatch)
+        _rendered_page_config(page, members[0], monkeypatch)
 
 
 def test_a_page_variable_can_t_share_the_control_s_name(pair, monkeypatch):
     members, game_barrier = pair
-    page = _page_of(game_barrier, page_kwargs=dict(js_vars={"liveGame": "mine"}))
+    page = _page_of(game_barrier, page_kwargs=dict(page_config={"liveGame": "mine"}))
     _reach(game_barrier, members[0])
 
     with pytest.raises(
         ValueError,
-        match="Duplicate JavaScript variable 'liveGame': contributed by "
-        "the page's js_vars or a component's get_js_vars and control "
+        match="Duplicate page configuration key 'liveGame': contributed by "
+        "the page's page_config or a component's get_page_config and control "
         "LiveGameControl.",
     ):
-        _rendered_js_vars(page, members[0], monkeypatch)
+        _rendered_page_config(page, members[0], monkeypatch)
 
 
 def test_a_follower_who_reloads_finds_the_group_s_game(pair):
@@ -668,12 +675,14 @@ def _psynet(**fields):
         "ready": [],
         "away": [],
         "players_left": False,
+        "too_few_ready": False,
         "duration": None,
         "started_at": None,
         "ends_at": None,
         "time_up": False,
         "last_tick": None,
         "last_event": None,
+        "join_tick_at": None,
         "accepts_players": True,
         "too_late": [],
         "group_id": None,
@@ -766,7 +775,7 @@ def test_a_game_page_shows_its_players_by_pseudonym(pair):
     # The page's variables carry them, and the route gives the same.
     control = _game_page().control
     assert control.play_id == game_barrier.id
-    js_vars = control.get_participant_js_vars(None, first)
+    js_vars = control.get_participant_page_config(None, first)
     assert js_vars["liveGame"]["players"] == players
     assert _players_payload(first.unique_id, game_barrier.id) == {"players": players}
     assert _players_payload("nobody", game_barrier.id) == {"players": []}
@@ -778,7 +787,9 @@ def test_an_anonymous_game_page_never_gets_the_players_pseudonyms(db_session):
 
     experiment = get_experiment()
     members, _ = _pair(db_session, [new_participant(experiment) for _ in range(2)])
-    page = LiveGamePage("anonymous", "Play.", names="anonymous", time_estimate=5)
+    page = LiveGamePage(
+        "anonymous", "Play.", "/static/game.js", names="anonymous", time_estimate=5
+    )
     barrier = _play("anonymous", page=page).barrier
     assert barrier.names == "anonymous"
     for member in members:
@@ -790,7 +801,9 @@ def test_an_anonymous_game_page_never_gets_the_players_pseudonyms(db_session):
         assert (player["name"], player["css_color"], player["emoji"]) == (None,) * 3
         assert members[1].pseudonym.name not in str(player)
     with pytest.raises(ValueError, match="names must be one of"):
-        LiveGamePage("anonymous", "Play.", names="hidden", time_estimate=5)
+        LiveGamePage(
+            "anonymous", "Play.", "/static/game.js", names="hidden", time_estimate=5
+        )
 
 
 @pytest.mark.parametrize("names", ["shown", "anonymous"])
@@ -804,6 +817,7 @@ def test_a_game_page_shows_each_player_s_info(db_session, names):
     page = LiveGamePage(
         "avatars",
         "Play.",
+        "/static/game.js",
         names=names,
         player_info=lambda participant: {"avatar": participant.var.avatar},
         time_estimate=5,
@@ -824,13 +838,21 @@ def test_a_game_page_shows_each_player_s_info(db_session, names):
         None if names == "anonymous" else {"avatar": f"avatar-{members[1].id}"}
     )
     assert _players_payload(members[0].unique_id, "avatars") == {"players": players}
-    bad = LiveGamePage("bad", "Play.", player_info=lambda p: {1, 2}, time_estimate=5)
+    bad = LiveGamePage(
+        "bad", "Play.", "/static/game.js", player_info=lambda p: {1, 2}, time_estimate=5
+    )
     with pytest.raises(TypeError, match="can't be saved as JSON"):
         _play("bad", page=bad).resolve()[0].consume(experiment, members[0])
     with pytest.raises(TypeError, match="must be a function"):
-        LiveGamePage("bad", "Play.", player_info={"avatar": 1}, time_estimate=5)
+        LiveGamePage(
+            "bad",
+            "Play.",
+            "/static/game.js",
+            player_info={"avatar": 1},
+            time_estimate=5,
+        )
     # A later visit with a page without player_info shows none.
-    plain = LiveGamePage("avatars", "Play.", time_estimate=5)
+    plain = LiveGamePage("avatars", "Play.", "/static/game.js", time_estimate=5)
     _play("avatars", page=plain).resolve()[0].consume(experiment, members[0])
     (you,) = [player for player in _players(members[0], "avatars") if player["you"]]
     assert you["info"] is None
@@ -1803,6 +1825,7 @@ def relay(registry):
     class Relay(LiveGame):
         # A game for one, as the test plays it.
         away_timeout = None
+        min_players = 1
         name = "relay"
         messages = [Tap]
         ready_timeout = 10
@@ -1897,6 +1920,9 @@ def test_the_game_starts_at_the_ready_timeout_without_everyone(relay):
     assert state["psynet"] == _psynet(
         participant_ids=[1, 2],
         ready=[0],
+        # Away until their page opens.
+        away=[1],
+        away_since=[None, 10],
         started_at=10,
         ends_at=610,
         last_tick=10,
@@ -1910,6 +1936,7 @@ def test_the_game_starts_at_the_ready_timeout_without_everyone(relay):
     relay.apply(state, "2", READY, 11, Sent())
     relay.apply(state, "2", TAP, 12, Sent())
     assert state["psynet"]["started_at"] == 10
+    assert state["psynet"]["away"] == []
     assert state["taps"] == [[1, 2]]
 
 
@@ -2091,6 +2118,29 @@ def test_a_game_with_an_away_timeout_ends_once_too_few_players_are_left():
     assert game.is_over() and game.end_reason() == PLAYERS_LEFT
 
 
+@pytest.mark.parametrize("limit", [None, 30])
+def test_a_no_show_counts_with_the_leavers_towards_min_players(limit):
+    class Trio(_Game):
+        name = "trio_with_no_show"
+        away_timeout = limit
+
+    game = LocalGame(Trio, players=3, start=False)
+    for player in [0, 1]:
+        game.send(player, READY)
+    game.tick(Trio.ready_timeout)
+    # Two players are enough, until a second one leaves.
+    game.leave(1, now=5)
+    game.tick(35)
+
+    assert game.state["psynet"]["away"] == [2, 1]
+    if limit is None:
+        assert not game.is_over()
+        assert game.game.absences(game.state) == [None, None, "no_show"]
+    else:
+        assert game.is_over() and game.end_reason() == PLAYERS_LEFT
+        assert game.game.absences(game.state) == [None, "left_game", "no_show"]
+
+
 def test_by_default_a_game_for_two_ends_a_minute_after_one_player_leaves():
     class Pair(LiveGame):
         name = "pair_by_default"
@@ -2153,11 +2203,12 @@ def test_a_local_game_gives_the_game_s_reasons_or_the_defaults_and_refuses_an_em
     assert (game.end_reason(), game.done_reason(1)) == ("finished", "done")
 
 
-def test_a_game_s_join_timeout_is_its_ready_timeout(registry):
+def test_psynet_turns_off_a_game_s_join_timeout(registry):
     class Quick(LiveGame):
         ready_timeout = 20
 
-    assert Quick.join_timeout == 20
+    # The ready step ends a game that nobody opened.
+    assert Quick.join_timeout is None
     with pytest.raises(TypeError, match="Set its ready_timeout instead"):
 
         class Slow(LiveGame):
@@ -2300,6 +2351,121 @@ def test_a_deadline_due_by_the_ready_timeout_runs_when_the_game_starts(relay):
     assert json.loads(ended.saved)["state"]["ticks"] == [0]
 
 
+@pytest.mark.parametrize("rate", [0, 4])
+@pytest.mark.parametrize("opened", [["1"], []])
+def test_a_game_too_few_players_are_ready_for_ends_at_the_ready_timeout(
+    relay, rate, opened
+):
+    class Pair(type(relay)):
+        name = "pair_too_few_ready"
+        min_players = 2
+        away_timeout = 30
+        tick_rate = rate
+
+    game = Pair()
+    entries = [
+        entry
+        for player in opened
+        for entry in [
+            _session_entry("join", 0, player),
+            _session_entry("message", 1, player, READY),
+        ]
+    ]
+    waiting = run_pass(game, new_session(game, ["1", "2"]), entries, 2, CLOCK)
+    ended = run_pass(game, waiting.saved, [], Pair.ready_timeout, CLOCK)
+
+    assert waiting.ended is None
+    assert ended.ended["reason"] == TOO_FEW_READY
+    state = json.loads(ended.saved)["state"]
+    # The game never started, so its on_start, which sets a deadline, and its
+    # tick didn't run.
+    assert "deadline" not in state and state["ticks"] == []
+    assert game.absences(state) == [None if opened else "no_show", "no_show"]
+
+
+# None: player 2's page opens but sends no ready message in time. 10: it sends
+# one at the ready_timeout, which counts, since Dallinger handles a message
+# before a tick due at the same time.
+@pytest.mark.parametrize("ready_at", [None, 10])
+def test_only_a_ready_message_by_the_ready_timeout_counts_whatever_the_game_s_ending(
+    relay, ready_at
+):
+    class Pair(type(relay)):
+        name = "pair_with_its_own_ending"
+        min_players = 2
+
+        def is_over(self, state):
+            return False
+
+        def end_reason(self, state):
+            return "the_game_s_own"
+
+    game = Pair()
+    entries = [
+        _session_entry("join", 0, "1"),
+        _session_entry("message", 1, "1", READY),
+        _session_entry("join", 5, "2"),
+    ]
+    if ready_at is not None:
+        entries.append(_session_entry("message", ready_at, "2", READY))
+    result = run_pass(game, new_session(game, ["1", "2"]), entries, 10, CLOCK)
+
+    state = json.loads(result.saved)["state"]
+    if ready_at is None:
+        assert result.ended["reason"] == TOO_FEW_READY
+        assert game.absences(state) == [None, "no_show"]
+    else:
+        assert result.ended is None
+        assert state["psynet"]["started_at"] == 10
+
+
+def test_bots_are_ready_before_a_first_tick_that_comes_at_the_ready_timeout(relay):
+    class Slow(type(relay)):
+        name = "slow_ticking_pair"
+        min_players = 2
+        # Dallinger lets bots play only after a tick, and the first one
+        # comes at the ready_timeout of 10.
+        tick_rate = 0.1
+
+    game = Slow()
+    session = new_session(game, ["1", "2"], bots=["1", "2"])
+    result = run_pass(game, session, [], Slow.ready_timeout, CLOCK)
+
+    assert result.ended is None
+    assert json.loads(result.saved)["state"]["psynet"]["started_at"] == 0
+
+
+def test_a_no_show_s_away_deadline_runs_unless_their_ready_message_comes(relay):
+    class Trio(type(relay)):
+        name = "trio_waiting_for_a_no_show"
+        min_players = 2
+        away_timeout = 30
+
+        def next_deadline(self, state):
+            return None
+
+    game = Trio()
+    entries = [
+        *(_session_entry("join", 0, player) for player in ["1", "3"]),
+        *(_session_entry("message", 1, player, READY) for player in ["1", "3"]),
+        # Player 2's page opens just before the start, and sends its ready
+        # message just after.
+        _session_entry("join", 9, "2"),
+    ]
+    started = run_pass(game, new_session(game, ["1", "2", "3"]), entries, 10, CLOCK)
+    # Once player 3 leaves, the game can't lose player 2 too.
+    left = run_pass(game, started.saved, [_session_entry("leave", 10, "3")], 10, CLOCK)
+    ready = [_session_entry("message", 11, "2", READY)]
+    arrived = run_pass(game, left.saved, ready, 12, CLOCK)
+    ended = run_pass(game, left.saved, [], 40, CLOCK)
+
+    assert left.next_due == 40
+    entry = json.loads(arrived.saved)["state"]["psynet"]
+    assert (entry["away"], entry["away_since"]) == ([2], [None, None, 10])
+    assert arrived.next_due == 10 + Trio.timeout
+    assert ended.ended["reason"] == PLAYERS_LEFT
+
+
 def test_a_game_s_state_can_be_passed_by_keyword(relay):
     state = relay.initial_state(["1"])
     start_game(relay, state)
@@ -2427,8 +2593,8 @@ def test_a_handled_deadline_doesn_t_hide_the_game_s_duration(relay):
 def test_a_game_that_has_ticked_ends_with_psynet_s_reason_when_a_finished_player_leaves_too_few(
     relay,
 ):
-    class Pair(type(relay)):
-        name = "pair_with_ends"
+    class Trio(type(relay)):
+        name = "trio_with_ends"
         min_players = 2
         away_timeout = 30
         duration = 60
@@ -2445,16 +2611,15 @@ def test_a_game_that_has_ticked_ends_with_psynet_s_reason_when_a_finished_player
         def end_reason(self, state):
             return "not_psynet_s"
 
-    game = Pair()
+    game = Trio()
     entries = [
-        _session_entry("join", 0, "1"),
-        _session_entry("join", 0, "2"),
-        _session_entry("message", 1, "1", READY),
+        *(_session_entry("join", 0, player) for player in ["1", "2", "3"]),
+        *(_session_entry("message", 1, player, READY) for player in ["1", "2"]),
     ]
 
     # The game starts at its ready_timeout, which Dallinger counts as a tick.
-    started = run_pass(game, new_session(game, ["1", "2"]), entries, 10, CLOCK)
-    tapped = [_session_entry("message", 15, "1", TAP)]
+    started = run_pass(game, new_session(game, ["1", "2", "3"]), entries, 10, CLOCK)
+    tapped = [_session_entry("message", 15, player, TAP) for player in ["1", "2"]]
     ended = run_pass(game, started.saved, tapped, 16, CLOCK)
 
     assert json.loads(started.saved)["state"]["psynet"]["started_at"] == 10
@@ -3500,13 +3665,20 @@ class ValidatingPage(LiveGamePage):
 )
 def test_a_live_game_page_can_t_have_a_validate_of_its_own(page_type, kwargs):
     with pytest.raises(TypeError, match="has a validate function of its own"):
-        page_type("game", "Play", time_estimate=5, **kwargs)
+        page_type("game", "Play", "/static/game.js", time_estimate=5, **kwargs)
+
+
+def test_a_live_game_page_runs_one_module():
+    with pytest.raises(TypeError, match="one module, passed as module="):
+        LiveGamePage(
+            "game", "Play", "/static/game.js", js_page_modules=["/static/b.js"]
+        )
 
 
 def test_a_live_game_page_can_t_have_a_time_limit():
     # A page that runs out of time skips validate, which sets the answer.
     with pytest.raises(TypeError, match="can't have a time_limit"):
-        LiveGamePage("game", "Play", time_estimate=5, time_limit=30)
+        LiveGamePage("game", "Play", "/static/game.js", time_estimate=5, time_limit=30)
 
 
 class Shot(LiveMessage):
@@ -3732,7 +3904,7 @@ def test_a_newcomer_joins_the_group_s_running_game_and_finishes_before_it(
     db_session.commit()
     with pytest.raises(TypeError, match="has no on_add method"):
         _play(join_running_game=True)
-    page = LiveGamePage("growing", "Play.", time_estimate=5)
+    page = LiveGamePage("growing", "Play.", "/static/game.js", time_estimate=5)
     barrier = _play(
         "growing", page, game_class=_growing_picks(), join_running_game=True
     ).barrier
@@ -3818,7 +3990,7 @@ def _open_group(db_session, n_members, n_founders=2):
 
 def test_a_game_that_stops_taking_players_closes_its_group_to_newcomers(db_session):
     group, members = _open_group(db_session, 4)
-    page = LiveGamePage("takes_three", "Play.", time_estimate=5)
+    page = LiveGamePage("takes_three", "Play.", "/static/game.js", time_estimate=5)
     barrier = _play(
         "takes_three",
         page,
@@ -3866,7 +4038,7 @@ def test_a_newcomer_to_a_game_that_ended_before_adding_them_came_too_late(
 
         monkeypatch.setattr(_growing_picks(), "is_over", is_over)
     group, members = _open_group(db_session, 3)
-    page = LiveGamePage("growing", "Play.", time_estimate=5)
+    page = LiveGamePage("growing", "Play.", "/static/game.js", time_estimate=5)
     barrier = _play(
         "growing", page, game_class=_growing_picks(), join_running_game=True
     ).barrier
@@ -3895,7 +4067,7 @@ def test_a_newcomer_to_a_game_that_ended_before_adding_them_came_too_late(
         if written:
             _write_records()
         newcomer = db.session.get(Participant, int(ids[2]))
-        js_vars = _rendered_js_vars(page, newcomer, monkeypatch)["liveGame"]
+        js_vars = _rendered_page_config(page, newcomer, monkeypatch)["liveGame"]
         late = newcomer.live_games["growing"]
         ready = functools.partial(
             page.control.check_ready_for_response, get_experiment(), newcomer
@@ -4029,7 +4201,7 @@ def test_a_newcomer_waits_at_the_barrier_once_the_running_game_is_full(
         group.add_participant(member)
     group.leader = members[0]
     db_session.commit()
-    page = LiveGamePage("growing", "Play.", time_estimate=5)
+    page = LiveGamePage("growing", "Play.", "/static/game.js", time_estimate=5)
     barrier = _play(
         "growing", page, game_class=_growing_picks(), join_running_game=True
     ).barrier

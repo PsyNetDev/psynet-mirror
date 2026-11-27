@@ -9,8 +9,8 @@ const KEYS = {
   d: "right",
 };
 
-function drawSquare(context, rules, square, color, inset) {
-  let size = rules.square;
+function drawSquare(context, board, square, color, inset) {
+  let size = board.square;
   context.fillStyle = color;
   context.fillRect(
     square[0] * size + inset,
@@ -20,31 +20,31 @@ function drawSquare(context, rules, square, color, inset) {
   );
 }
 
-function draw(context, rules, view, me) {
-  let size = rules.size * rules.square;
+function draw(context, board, view, me) {
+  let size = board.size * board.square;
   context.fillStyle = "#f8fbff";
   context.fillRect(0, 0, size, size);
   for (let square of view.food) {
-    drawSquare(context, rules, square, "#f4c430", 4);
+    drawSquare(context, board, square, "#f4c430", 4);
   }
   view.snakes.forEach((snake, player) => {
-    let color = rules.colors[player];
+    let color = board.colors[player];
     for (let square of snake.body) {
-      drawSquare(context, rules, square, color, 1);
+      drawSquare(context, board, square, color, 1);
     }
     let head = snake.body[0];
     if (head) {
       // The heads are darker, and the player's own has a white center.
-      drawSquare(context, rules, head, "#111827", 1);
-      drawSquare(context, rules, head, player === me ? "#ffffff" : color, 5);
+      drawSquare(context, board, head, "#111827", 1);
+      drawSquare(context, board, head, player === me ? "#ffffff" : color, 5);
     }
   });
 }
 
-export function activate({ root, vars, psynet }) {
+export function activate({ root, config, psynet }) {
   let status = root.querySelector("#snake-status");
   let live = psynet.liveGame;
-  let rules = vars.snake_rules;
+  let board = config.snake_board;
   let context = root.querySelector("#snake-board").getContext("2d");
   let timer = root.querySelector("#snake-timer");
   let scores = root.querySelector("#snake-scores");
@@ -80,7 +80,7 @@ export function activate({ root, vars, psynet }) {
         let item = document.createElement("li");
         let swatch = document.createElement("span");
         swatch.className = "snake-swatch";
-        swatch.style.background = rules.colors[player];
+        swatch.style.background = board.colors[player];
         // "You", or the player's pseudonym, as the group's other pages show them.
         let name = live.players[player]?.label ?? `Player ${player + 1}`;
         let crashes = snake.crashes === 1 ? "1 crash" : `${snake.crashes} crashes`;
@@ -107,7 +107,7 @@ export function activate({ root, vars, psynet }) {
   // The game moves every snake on its ticks, and each tick's view shows the
   // whole board, so the page draws each view as it arrives.
   live.onChange((view) => {
-    draw(context, rules, view, live.player);
+    draw(context, board, view, live.player);
     showScores(view);
   });
 }

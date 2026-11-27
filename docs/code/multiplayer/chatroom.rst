@@ -124,7 +124,7 @@ Keep the macro to markup: inline ``<script>`` and ``<style>`` blocks in a
 custom template are rejected under in-place timeline transitions. Supply
 page-local CSS and JavaScript through the component's ``get_css()`` and
 ``get_js_page_modules()`` methods, and configuration through
-``get_js_vars()``. :class:`~psynet.modular_page.ModularPage` collects these
+``get_page_config()``. :class:`~psynet.modular_page.ModularPage` collects these
 from the chatroom and refreshes them for each page:
 
 .. code-block:: python
@@ -136,7 +136,7 @@ from the chatroom and refreshes them for each page:
         def get_css(self):
             return ["#chatroom-widget { height: 400px; }"]
 
-        def get_js_vars(self):
+        def get_page_config(self):
             return {
                 "my_chatroom_config": {
                     "room_id": self.room_id,
@@ -147,15 +147,15 @@ from the chatroom and refreshes them for each page:
         def get_js_page_modules(self):
             return ["/static/my-chatroom.js"]
 
-The script reads its configuration from ``psynet.var`` (``vars`` in
+The script reads its configuration from ``psynet.pageConfig`` (``config`` in
 ``activate()``), not from global variables. Deprecated ``window`` access to
-``js_vars`` is controlled by ``legacy_js_var_globals``; see
+``page_config`` is controlled by ``legacy_js_var_globals``; see
 :doc:`/whats_new/upgrading_to_psynet_14` and :doc:`/reference/configuration`.
 
 .. code-block:: javascript
 
-    export async function activate({root, trial, vars}) {
-        const config = vars["my_chatroom_config"];
+    export async function activate({root, trial, config}) {
+        const chatroom = config["my_chatroom_config"];
         // ... open the websocket and wire up elements beneath root ...
 
         return async function cleanup() {
@@ -164,7 +164,7 @@ The script reads its configuration from ``psynet.var`` (``vars`` in
     }
 
 The built-in ``ChatRoom`` works the same way; see ``get_css``,
-``get_js_vars`` and ``get_js_page_modules`` in ``psynet/chatroom.py``. PsyNet
+``get_page_config`` and ``get_js_page_modules`` in ``psynet/chatroom.py``. PsyNet
 activates the widget script for each page and calls the returned cleanup
 function before leaving. ``psynet/static/scripts/chatroom-widget.js`` shows
 the WebSocket protocol, message rendering, occupancy updates and cleanup.

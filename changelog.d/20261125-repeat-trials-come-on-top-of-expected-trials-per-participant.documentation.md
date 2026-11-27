@@ -1,0 +1,1 @@
+Documented that `StaticTrialMaker` and `ChainTrialMaker` count `expected_trials_per_participant` and `max_trials_per_participant` without repeat trials, which `n_repeat_trials` adds on top, and said so in the error raised when `expected_trials_per_participant` exceeds the number of nodes.

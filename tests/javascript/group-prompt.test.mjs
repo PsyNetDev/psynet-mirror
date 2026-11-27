@@ -69,7 +69,7 @@ afterEach(() => {
 it("ticks the members already waiting, then only those still waiting", async () => {
   const { send } = setUp([0, 2]);
   const root = groupRoot([0, 1, 2]);
-  await activate({ root, vars: { group_prompt: { group_id: 7, live_ticks: true } } });
+  await activate({ root, config: { group_prompt: { group_id: 7, live_ticks: true } } });
   assert.deepEqual(root.ticked(), [0, 2]);
 
   send({ groupId: 7, seats: [1] });
@@ -81,7 +81,7 @@ it("ticks the members already waiting, then only those still waiting", async () 
 it("gives members who ran out of time a dash instead of a tick", async () => {
   const { send } = setUp([0, 2], [2]);
   const root = groupRoot([0, 1, 2]);
-  await activate({ root, vars: { group_prompt: { group_id: 7, live_ticks: true } } });
+  await activate({ root, config: { group_prompt: { group_id: 7, live_ticks: true } } });
   assert.deepEqual([root.ticked(), root.dashed()], [[0], [2]]);
 
   send({ groupId: 7, seats: [1, 2], ranOutOfTime: [1] });
@@ -108,7 +108,7 @@ const LIVE_MEMBERS = { group_prompt: { group_id: 7, live_members: true, redraw_t
 it("redraws only when the members change", async () => {
   const { send } = setUp();
   const requests = mockAjax();
-  await activate({ root: groupRoot([0, 1]), vars: LIVE_MEMBERS });
+  await activate({ root: groupRoot([0, 1]), config: LIVE_MEMBERS });
 
   send({ groupId: 7, seats: [], members: [0, 1] });
   assert.equal(requests.length, 0);
@@ -121,7 +121,7 @@ it("runs a redraw asked for meanwhile instead of retrying a failed one", async (
   timers.enable({ apis: ["setTimeout"] });
   const { send } = setUp();
   const requests = mockAjax();
-  await activate({ root: groupRoot([0]), vars: LIVE_MEMBERS });
+  await activate({ root: groupRoot([0]), config: LIVE_MEMBERS });
 
   send({ groupId: 7, seats: [], members: [0, 1] });
   send({ groupId: 7, seats: [], members: [0, 1] });
@@ -139,7 +139,7 @@ it("ignores a redraw that ends after the page is cleaned up", async (t) => {
   const { send } = setUp();
   const requests = mockAjax();
   const root = groupRoot([0]);
-  const cleanup = await activate({ root, vars: LIVE_MEMBERS });
+  const cleanup = await activate({ root, config: LIVE_MEMBERS });
 
   send({ groupId: 7, seats: [], members: [0, 1] });
   cleanup();

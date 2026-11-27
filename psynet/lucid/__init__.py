@@ -1,3 +1,14 @@
+"""Client for the Lucid (Cint) Marketplace API used by the Lucid recruiters.
+
+:class:`LucidService` wraps the HTTP API. :class:`DevLucidService` simulates
+it for ``dev-lucid-recruiter``, so the server never sends that recruiter's
+requests to Lucid. That guarantee depends on every Lucid HTTP request going through
+:meth:`LucidService._request`, which the development service overrides to
+raise. Don't call ``requests`` directly from new service methods; if
+``dev-lucid-recruiter`` needs a new call, simulate it in
+:class:`DevLucidService`.
+"""
+
 import json
 import os.path
 from datetime import datetime, timedelta
@@ -82,6 +93,10 @@ class LucidService(object):
                 f"Response body: {response.text[:1000]}"
             )
 
+    def _request(self, method, url, **kwargs):
+        """Send an HTTP request to Lucid. Every Lucid API call goes through here."""
+        return requests.request(method, url, **kwargs)
+
     @property
     def request_base_url_v1(self):
         return "https://api.samplicio.us/Demand/v1"
@@ -125,7 +140,8 @@ class LucidService(object):
         survey_data["SurveyStatusCode"] = survey_status_code
 
         request_data = json.dumps({**params, **survey_data})
-        response = requests.post(
+        response = self._request(
+            "post",
             f"{self.request_base_url_v1}/Surveys/Create",
             data=request_data,
             headers=self.headers,
@@ -156,7 +172,8 @@ class LucidService(object):
 
     @cached_property
     def currency(self):
-        return requests.get(
+        return self._request(
+            "get",
             f"{self.request_base_url_v2_beta}/business-units",
             headers=self.headers,
         ).json()["result"][0]["currency_code"]
@@ -215,7 +232,8 @@ class LucidService(object):
 
         for qualification in qualifications:
             request_data = json.dumps(qualification)
-            response = requests.put(
+            response = self._request(
+                "put",
                 f"{self.request_base_url_v1}/SurveyQualifications/Update/{survey_number}",
                 data=request_data,
                 headers=self.headers,
@@ -241,7 +259,8 @@ class LucidService(object):
 
         for qualification in qualifications:
             request_data = json.dumps(qualification)
-            response = requests.post(
+            response = self._request(
+                "post",
                 f"{self.request_base_url_v1}/SurveyQualifications/Create/{survey_number}",
                 data=request_data,
                 headers=self.headers,
@@ -259,7 +278,7 @@ class LucidService(object):
 
     def get_qualifications(self, survey_number):
         url = f"https://api.samplicio.us/Demand/v1/SurveyQualifications/BySurveyNumber/{survey_number}"
-        response = requests.get(url, headers=self.headers)
+        response = self._request("get", url, headers=self.headers)
         assert response.status_code == 200
         return response.json()["Qualifications"]
 
@@ -310,7 +329,7 @@ class LucidService(object):
         self.log(
             f"Sending exit request for respondent with RID '{rid}' using redirect URL '{redirect_url}'."
         )
-        return requests.get(redirect_url, timeout=self.EXIT_REQUEST_TIMEOUT)
+        return self._request("get", redirect_url, timeout=self.EXIT_REQUEST_TIMEOUT)
 
     def complete_respondent(self, rid):
         _check_external_call_allowed()
@@ -449,7 +468,7 @@ class LucidService(object):
 
         entry_date_after = self._lookback_timestamp(days_lookback)
         url = f"{self.request_base_url_v2_beta}/sessions?survey_id={survey_number}&entry_date_after={entry_date_after}"
-        response = requests.get(url, headers=self.headers)
+        response = self._request("get", url, headers=self.headers)
         if response.ok:
             submissions = LucidSubmissions(response=response.json()["sessions"])
             db.session.add(submissions)
@@ -470,7 +489,7 @@ class LucidService(object):
 
     def get_lucid_country_language_lookup(self):
         url = "https://api.samplicio.us/Lookup/v1/BasicLookups/BundledLookups/CountryLanguages"
-        response = requests.get(url, headers=self.headers)
+        response = self._request("get", url, headers=self.headers)
         self._check_response(response)
         lookup = pd.DataFrame(response.json()["AllCountryLanguages"])
         codes = lookup.Code.apply(lambda x: x.split("-"))
@@ -487,7 +506,7 @@ class LucidService(object):
         if locale is None:
             locale = self.default_locale
         url = f"{self.request_base_url_v2_beta}/questions?id={question_id}&locale={locale}&fields={field}"
-        response = requests.get(url, headers=self.headers)
+        response = self._request("get", url, headers=self.headers)
         self._check_response(response)
         result = response.json()["result"]
         assert len(result) > 0, (
@@ -525,14 +544,14 @@ class LucidService(object):
         url += f"?fields={fields_str}&page_size={n}&order_by={order_by}"
         if allowed_statuses is not None:
             url += f"&status={','.join(allowed_statuses)}"
-        response = requests.get(url, headers=self.headers)
+        response = self._request("get", url, headers=self.headers)
         self._check_response(response)
         return response.json()["result"]
 
     def _get_survey_fields(self, survey_number, fields):
         fields_str = ",".join(fields)
         url = f"{self.request_base_url_v2_beta}/surveys?id={survey_number}&fields={fields_str}"
-        response = requests.get(url, headers=self.headers)
+        response = self._request("get", url, headers=self.headers)
         self._check_response(response)
         result = response.json()["result"]
         assert len(result) > 0, f"No survey with id {survey_number} found."
@@ -544,7 +563,7 @@ class LucidService(object):
     def get_summary(self, survey_number, days_lookback=60):
         entry_date_after = self._lookback_timestamp(days_lookback)
         url = f"{self.request_base_url_v2_beta}/sessions/statistics?survey_id={survey_number}&entry_date_after={entry_date_after}"
-        response = requests.get(url, headers=self.headers)
+        response = self._request("get", url, headers=self.headers)
         self._check_response(response)
         stats = response.json()["statistics"]
 
@@ -624,7 +643,9 @@ class LucidService(object):
 
     def _patch_survey(self, survey_number, data):
         url = f"{self.request_base_url_v2_beta}/surveys/{survey_number}"
-        response = requests.patch(url, data=json.dumps(data), headers=self.headers)
+        response = self._request(
+            "patch", url, data=json.dumps(data), headers=self.headers
+        )
         self._check_response(response)
         return response.json()
 
@@ -639,7 +660,7 @@ class LucidService(object):
             "Content-type": "application/json",
             "Accept": "text/plain",
         }
-        response = requests.post(url, data=data, headers=headers)
+        response = self._request("post", url, data=data, headers=headers)
         self._check_response(response)
         return response.json()
 
@@ -649,7 +670,7 @@ class LucidService(object):
         fields = ",".join(fields)
         class_name = "standard" if standard else "custom"
         url = f"{self.request_base_url_v2_beta}/questions?fields={fields}&class={class_name}"
-        response = requests.get(url, headers=self.headers)
+        response = self._request("get", url, headers=self.headers)
         self._check_response(response)
         return response.json()["result"]
 
@@ -667,7 +688,7 @@ class LucidService(object):
             "Accept": "text/plain",
             **self.headers,
         }
-        response = requests.post(url, data=data, headers=headers)
+        response = self._request("post", url, data=data, headers=headers)
         summary = response.json()["summary"]
         total_completes = summary["completes"]
         total_cost = float(summary["total_cost"])
@@ -789,7 +810,7 @@ class LucidService(object):
             "Accept": "text/plain",
             **self.headers,
         }
-        response = requests.post(url, data=data, headers=headers)
+        response = self._request("post", url, data=data, headers=headers)
 
         if not response.ok:
             handle_and_raise_recruitment_error(
@@ -836,6 +857,99 @@ class LucidService(object):
             print(f"    target: {bold(wage)} {self.currency}/h")
             print(f"    estimated: [{min_wage:.1f}, {max_wage:.1f}] {self.currency}/h")
         return result
+
+
+class DevLucidService(LucidService):
+    """A :class:`LucidService` that simulates the Lucid API instead of calling it.
+
+    ``dev-lucid-recruiter`` uses it, so that local runs and deployments with
+    that recruiter never create, change or close a Lucid survey, and the
+    server never sends respondent completions or terminations to Lucid. The
+    simulated survey stays ``awarded``, like a created survey that is not yet
+    live. Lucid API calls that the recruiter doesn't make raise
+    :class:`LucidServiceException` instead of reaching Lucid.
+
+    The participant's browser is still sent to Lucid's callback URL at the
+    end; Lucid rejects it and shows an error page.
+    """
+
+    SURVEY_NUMBER = 123456789
+    SURVEY_SID = "DEV-LUCID-SID"
+
+    def __init__(self, recruitment_config, exp_config=None):
+        super().__init__(
+            api_key="dev-lucid-api-key",
+            sha1_hashing_key="dev-lucid-sha1-hashing-key",
+            exp_config=exp_config,
+            recruitment_config=recruitment_config,
+        )
+
+    @classmethod
+    def log(cls, text):
+        logger.info(f"DEV LUCID RECRUITER (simulated, nothing sent to Lucid): {text}")
+
+    def _request(self, method, url, **kwargs):
+        raise LucidServiceException(
+            f"dev-lucid-recruiter does not simulate {method.upper()} {url}; "
+            "nothing was sent to Lucid."
+        )
+
+    def create_survey(
+        self,
+        publish_experiment,
+        bid_length_of_interview,
+        live_url,
+        name,
+        quota,
+        quota_cpi,
+    ):
+        """Return a simulated survey."""
+        self.log(
+            f"Create survey '{name}' with quota {quota}, CPI {quota_cpi} and "
+            f"entry link {live_url}."
+        )
+        return {
+            "SurveyNumber": self.SURVEY_NUMBER,
+            "SurveySID": self.SURVEY_SID,
+            "ClientSurveyLiveURL": live_url,
+        }
+
+    def remove_default_qualifications_from_survey(self, survey_number):
+        """Log the removal of Lucid's default qualifications."""
+        self.log(f"Remove default qualifications from survey {survey_number}.")
+
+    def add_qualifications_to_survey(self, survey_number):
+        """Log the qualifications that would be added."""
+        qualifications = self.recruitment_config.get("qualifications") or []
+        self.log(f"Add {len(qualifications)} qualifications to survey {survey_number}.")
+
+    def get_submissions(self, survey_number, days_lookback=90):
+        """Return no sessions, as nobody enters a simulated survey through Lucid."""
+        _check_external_call_allowed()
+        return []
+
+    def _get_survey_fields(self, survey_number, fields):
+        values = {
+            "status": "awarded",
+            "quantity": 0,
+            "total_completes": 0,
+            "total_screens": 0,
+            "last_complete_date": None,
+        }
+        return [values[field] for field in fields]
+
+    def _patch_survey(self, survey_number, data):
+        self.log(f"Update survey {survey_number} with {data}.")
+        return {}
+
+    def send_exit_request(self, rid, ris):
+        """Log the callback and return a successful response."""
+        self.log(
+            f"Exit request for RID '{rid}': {self.generate_submit_url(ris=ris, rid=rid)}"
+        )
+        response = requests.Response()
+        response.status_code = 200
+        return response
 
 
 def get_lucid_service(config=None, recruitment_config=None):

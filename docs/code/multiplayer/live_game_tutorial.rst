@@ -82,7 +82,8 @@ ordinary Python:
 its ``action`` field, and ``ACTIONS`` lists the three choices, for the page's
 buttons and the bots. ``GAMES``, ``RESULT_SECONDS`` and ``LATE_AFTER`` are
 used by the demo's trials and timeline, which "Playing it as trials" and
-"When a partner leaves" below describe.
+"When a partner leaves" below describe. ``READY_SECONDS`` is used by the
+game, which "The game and its state" describes.
 
 PsyNet numbers a game's players from 0, so the two players here are 0 and 1,
 and ``1 - player`` is the other one. A throw's
@@ -110,11 +111,15 @@ The game is the class ``RockPaperScissors``:
 ``name`` is a name for the game, which must differ from the name of every
 other game in the experiment. ``messages`` lists the kinds of message that a
 page can send, which the next section describes. ``min_players`` and
-``max_players`` say that the game is for exactly two players. If a player
-closes the game page and doesn't come back within 30 seconds, which allows
-for a reload, ``away_timeout`` ends the game, so their partner isn't left
-waiting. ``timeout`` ends it after five minutes even if both players stop
-choosing. :ref:`live-games-time-limits` lists all of a game's time limits.
+``max_players`` say that the game is for exactly two players. A game page
+opens within seconds, so if a player hasn't opened it 20 seconds after the
+pair reaches it, the ``ready_timeout``, they aren't coming: the game can't
+start with fewer than ``min_players``, so PsyNet ends it at once, unplayed,
+with the reason ``"too_few_ready"``. If a player closes the game page during
+the game and doesn't come back within 30 seconds, which allows for a
+reload, ``away_timeout`` ends the game, so their partner isn't left
+waiting. ``timeout`` ends it after five minutes even if
+both players stop choosing. :ref:`live-games-time-limits` lists all of a game's time limits.
 
 ``initial_state`` returns the state at the start of the game. It receives the
 players' numbers, ``[0, 1]``, and the game's settings:
@@ -249,13 +254,14 @@ in `Playing it as trials`_ below passes in:
 .. literalinclude:: ../../../demos/experiments/rock_paper_scissors_live/experiment.py
    :pyobject: rock_paper_scissors_page
 
-Its content holds the page's elements, each with an ``id`` so that the
+Its HTML holds the page's elements, each with an ``id`` so that the
 JavaScript can find it. PsyNet hides it on a page without a game. The other
 options change the page's texts: ``waiting_status`` is what the page says
 until both pages have opened,
 ``player_left_message`` the notice while the partner is away, and
-``no_game_message`` the notice on a page without a game.
-``js_page_modules`` lists the page's JavaScript.
+``no_game_message`` the notice on a page without a game, which a player
+also sees when their partner never opens the game page.
+``module`` is the page's JavaScript, as on a :class:`~psynet.page.JSPage`.
 
 The JavaScript is in ``static/rock-paper-scissors.js``. It exports an
 ``activate`` function, which PsyNet runs when the page opens
@@ -405,7 +411,7 @@ then shows each player their score:
             page=LiveGamePage(
                 "rock_paper_scissors",
                 tags.div(...),  # the elements shown above
-                js_page_modules=["/static/rock-paper-scissors.js"],
+                module="/static/rock-paper-scissors.js",
                 time_estimate=60,
             ),
             late_after=20,
@@ -466,7 +472,8 @@ then scores the game:
 - ``show_trial`` returns the ``PlayLiveGame``, with the number of throws and
   what a throw won pays from the trial's definition as its settings. Its barrier is the
   :class:`~psynet.sync.GroupBarrier` that a trial a group plays needs, so
-  this trial needs no other.
+  this trial needs no other. Its ``waiting_message`` is what a player sees
+  while they wait there for their partner.
 - ``rock_paper_scissors_page``, from `The game page`_ above, builds the
   page from the trial's definition, so its first element says which game
   this is, how many throws it has and what a throw won pays.
@@ -519,12 +526,14 @@ the game paid, as recorded on the trial, to ``show_result``:
    :pyobject: show_result
    :dedent:
 
-A game can start and end without a throw being played, when a player is
+A game can end without a throw being played, so ``show_result`` checks for
+that first. That happens when a player never opens the game page, which ends
+the game with ``"too_few_ready"`` at its ``ready_timeout``, when a player is
 away from the game page for its ``away_timeout`` before the first throw, or
-the game reaches its ``timeout`` first, so ``show_result`` checks for that
-first. A trial
-whose game never started has no answer, and ``gives_feedback`` skips its
-feedback.
+when the game reaches its ``timeout`` first. Each of these games still has an
+answer, with no throws in it. Only a trial whose pair didn't start a game at
+all, for example because the partner was late for it, has no answer, and
+``gives_feedback`` skips its feedback.
 
 Reference: :ref:`live-games-answer` and :ref:`live-games-rewards`.
 
@@ -547,7 +556,13 @@ The rest of the timeline deals with a partner who doesn't come back:
 - A partner who is late is failed, and the grouper's
   ``below_quorum="fail"`` fails the player left behind, who has nobody to
   play the second game with. Both keep what they earned in the first game.
-  Every player who stays in the loop is therefore still in their pair, so
+- A partner who never opened the first game's page, or left it for good,
+  is late in the same way, 30 seconds after the game ended, since they
+  never opened their result page. The player left behind sees their result
+  first. ``PlayLiveGame``'s ``absent_action="fail"`` would fail the absent
+  partner, and so the player left behind, as soon as the game's result is
+  saved, before they see it (see :ref:`live-games-absent`).
+- Every player who stays in the loop is therefore still in their pair, so
   the loop needs no check of its own.
 
 Reference: :ref:`live-games-leaving` and :doc:`late_slow_and_leaving_players`.
@@ -674,12 +689,18 @@ copy these into the JavaScript, the demo keeps them in one place:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/experiment.py
    :start-at: #: What the game page needs to draw the board.
-   :end-at: RULES = {
+   :end-at: BOARD = {
    :dedent:
 
 The game page passes it to the JavaScript with
-``js_vars={"snake_rules": RULES}``, and ``activate`` reads it from ``vars``.
-``live`` is short for ``psynet.liveGame``:
+``page_config={"snake_board": BOARD}``, and ``activate`` reads it from ``config``.
+``page_config`` suits configuration that stays the same for the whole
+experiment. A value that can differ between rounds, such as a condition's payoff,
+goes in the game's :ref:`settings <live-games-settings>`: the game keeps it in
+its state and sends it in its views, so the page shows what the server uses.
+The ``public_goods_live`` demo does this.
+
+In the page's JavaScript, ``live`` is short for ``psynet.liveGame``:
 
 .. literalinclude:: ../../../demos/experiments/snake_live/static/snake.js
    :language: javascript
@@ -697,7 +718,7 @@ Each view shows the whole board, so the page draws each view as it arrives:
 
 The view lists the snakes in player order, and ``live.player`` is this
 player's number, so their snake is ``view.snakes[live.player]``, and its
-color is ``rules.colors[live.player]``.
+color is ``board.colors[live.player]``.
 
 The page sends a turn when the player presses an arrow key, or W, A, S or D.
 It sends nothing before the game starts, after it ends or while the snake is
