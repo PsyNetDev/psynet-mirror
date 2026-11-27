@@ -617,8 +617,10 @@ group's other anonymous pages, ``sticker_html`` is the same neutral figure for a
 them, and the page is never sent their pseudonyms (see :doc:`pseudonyms`). A
 player who joins while the game runs is added a moment after the views first
 show them, and ``onChange`` then runs again, so a page that labels players in
-``onChange`` shows the newcomer's name. A game's colours for its pieces, such
-as each snake's, are the game's own, and needn't match the pseudonyms'.
+``onChange`` shows the newcomer's name. A game's colours for its pieces
+needn't match the pseudonyms', but matching them lets the stickers say
+whose piece is whose: the ``snake_live`` demo draws each snake in its
+player's ``css_color`` and shows their sticker next to their score.
 
 To show something else about each player that the game's rules don't
 need, such as an avatar they chose in the lobby, give the page a

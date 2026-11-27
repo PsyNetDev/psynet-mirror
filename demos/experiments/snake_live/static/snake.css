@@ -11,22 +11,35 @@
 #snake-board {
   display: block;
   /* Square, and small enough to fit the window with the text around it,
-     since the arrow keys that steer the snake would otherwise scroll the
-     page. */
-  width: min(100%, 100vh - 22rem);
+     including a row of scores for each player, since the arrow keys that
+     steer the snake would otherwise scroll the page. */
+  width: min(100%, 100vh - 19rem - var(--snake-players, 2) * 2rem);
   height: auto;
   margin: 0 auto;
   border: 1px solid #d8e2ef;
 }
 
+/* One player per row, the rows lined up on the left and centred together. */
 #snake-scores {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
+  display: grid;
+  gap: 0.25rem;
   justify-content: center;
+  justify-items: start;
   margin-top: 0.75rem;
   padding: 0;
   list-style: none;
+}
+
+#snake-scores li {
+  display: flex;
+  align-items: center;
+}
+
+/* A sticker is 3em across. */
+.snake-sticker {
+  margin-right: 0.4rem;
+  font-size: 0.6rem;
+  line-height: 1;
 }
 
 .snake-swatch {

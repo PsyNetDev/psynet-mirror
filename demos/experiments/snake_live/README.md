@@ -6,6 +6,11 @@ piece of food. If it hits a wall or any snake, its own body included, it
 crashes and comes back two seconds later somewhere else. Each piece of food
 eaten pays a reward.
 
+Each snake has its player's pseudonym colour, and the scores below the board
+show each player's sticker, so players can tell whose snake is whose. If two
+players in a group happen to share a colour, the snakes get the game's own
+colours instead, shown by a swatch next to each score.
+
 The game moves every snake one square on each of its ticks, eight times a
 second. A page only sends the game which way the player wants to turn. The
 game keeps up to two turns per player and makes one on each tick, so two

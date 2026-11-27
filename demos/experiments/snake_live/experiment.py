@@ -27,8 +27,9 @@ from psynet.page import InfoPage
 from psynet.sync import SimpleGrouper
 from psynet.timeline import PageMaker, Timeline
 
-#: Each player's color, by player number. There's one for each player a
-#: game can have.
+#: Each player's color, by player number, for when the page can't draw the
+#: snakes in their players' pseudonym colors: when two players share one, or
+#: on an anonymous page. There's one for each player a game can have.
 COLORS = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd"]
 
 #: Players in each game, from 2 to ``len(COLORS)``, the game's

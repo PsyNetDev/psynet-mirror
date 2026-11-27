@@ -20,15 +20,35 @@ function drawSquare(context, board, square, color, inset) {
   );
 }
 
-function draw(context, board, view, me) {
+function drawFood(context, board, square) {
+  let size = board.square;
+  context.font = `${size - 2}px sans-serif`;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText("🍎", (square[0] + 0.5) * size, (square[1] + 0.5) * size + 1);
+}
+
+// Each snake is drawn in its player's pseudonym colour, as their sticker in
+// the scores shows it. The game's own colours are used instead when two
+// players share a colour, or when the page doesn't know a player's, as on
+// an anonymous page.
+function snakeColors(board, players, count) {
+  let colors = Array.from({ length: count }, (_, player) => players[player]?.css_color);
+  if (colors.every(Boolean) && new Set(colors).size === count) {
+    return { colors, pseudonyms: true };
+  }
+  return { colors: board.colors.slice(0, count), pseudonyms: false };
+}
+
+function draw(context, board, view, me, colors) {
   let size = board.size * board.square;
   context.fillStyle = "#f8fbff";
   context.fillRect(0, 0, size, size);
   for (let square of view.food) {
-    drawSquare(context, board, square, "#f4c430", 4);
+    drawFood(context, board, square);
   }
   view.snakes.forEach((snake, player) => {
-    let color = board.colors[player];
+    let color = colors[player];
     for (let square of snake.body) {
       drawSquare(context, board, square, color, 1);
     }
@@ -69,8 +89,8 @@ export function activate({ root, config, psynet }) {
     }
   });
 
-  function showScores(view) {
-    let key = view.snakes.map((snake) => [snake.food, snake.crashes]).join();
+  function showScores(view, { colors, pseudonyms }) {
+    let key = JSON.stringify([view.snakes.map((snake) => [snake.food, snake.crashes]), colors]);
     if (key === shownScores) {
       return;
     }
@@ -78,13 +98,25 @@ export function activate({ root, config, psynet }) {
     scores.replaceChildren(
       ...view.snakes.map((snake, player) => {
         let item = document.createElement("li");
-        let swatch = document.createElement("span");
-        swatch.className = "snake-swatch";
-        swatch.style.background = board.colors[player];
+        let shown = live.players[player];
+        // The sticker shows the snake's colour, unless the snakes have the
+        // game's own colours, which a swatch then shows.
+        if (shown?.sticker_html) {
+          let sticker = document.createElement("span");
+          sticker.className = "snake-sticker";
+          sticker.innerHTML = shown.sticker_html;
+          item.append(sticker);
+        }
+        if (!pseudonyms) {
+          let swatch = document.createElement("span");
+          swatch.className = "snake-swatch";
+          swatch.style.background = colors[player];
+          item.append(swatch);
+        }
         // "You", or the player's pseudonym, as the group's other pages show them.
-        let name = live.players[player]?.label ?? `Player ${player + 1}`;
+        let name = shown?.label ?? `Player ${player + 1}`;
         let crashes = snake.crashes === 1 ? "1 crash" : `${snake.crashes} crashes`;
-        item.append(swatch, `${name}: ${snake.food} food, ${crashes}`);
+        item.append(`${name}: ${snake.food} food, ${crashes}`);
         return item;
       })
     );
@@ -107,7 +139,9 @@ export function activate({ root, config, psynet }) {
   // The game moves every snake on its ticks, and each tick's view shows the
   // whole board, so the page draws each view as it arrives.
   live.onChange((view) => {
-    draw(context, board, view, live.player);
-    showScores(view);
+    root.querySelector("#snake-game").style.setProperty("--snake-players", view.snakes.length);
+    let colors = snakeColors(board, live.players, view.snakes.length);
+    draw(context, board, view, live.player, colors.colors);
+    showScores(view, colors);
   });
 }

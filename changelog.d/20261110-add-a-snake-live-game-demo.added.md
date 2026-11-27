@@ -1,1 +1,1 @@
-Added `demos/experiments/snake_live`, a live game in which two to four players each steer a snake around a shared board and eat food for a bonus. The game moves every snake a square on each tick, and each page draws the views as they arrive.
+Added `demos/experiments/snake_live`, a live game in which two to four players each steer a snake around a shared board and eat food for a bonus. The game moves every snake a square on each tick, and each page draws the views as they arrive. Each snake has its player's pseudonym colour, and the scores list each player with their sticker.
