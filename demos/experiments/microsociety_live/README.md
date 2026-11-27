@@ -9,10 +9,10 @@ learn where to fish from each other as they play.
 It is the live counterpart of `microsociety`, played as one continuous game.
 The first participant founds the society and opens its lake at once, alone,
 so nobody waits for anyone. Newcomers sail onto the lake while the others
-fish, after seeing where the society has been catching fish lately and the
-tips of members who have left. Each member fishes for 40 seconds, and when a
-newcomer makes the lake more crowded than three boats, the longest-serving
-member retires. The lake closes once nobody is left on it, and the next
+fish, after reading the tips of members who have left. Each member fishes
+for 40 seconds, and when a newcomer makes the lake more crowded than three
+boats, the longest-serving member retires and leaves a tip for the newcomers
+who come after them. The lake closes once nobody is left on it, and the next
 participant founds a new society with a new lake.
 
 It shows a live game that players join while it runs (`join_running_game`

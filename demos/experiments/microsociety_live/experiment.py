@@ -9,8 +9,8 @@ pays ``FISH_VALUE``.
 
 The lake is one live game that runs for as long as the society has members.
 The first participant founds the society alone and opens its lake at once,
-so nobody waits for anyone. A newcomer joins the society, sees where its members have been catching fish
-lately and the tips of members who have left, and then sails onto the lake
+so nobody waits for anyone. A newcomer joins the society, reads the tips of
+members who have left, and then sails onto the lake
 while the others fish: the ``PlayLiveGame`` has ``join_running_game=True``,
 and the game's ``on_add`` gives them a boat. Each member fishes for
 ``STAY_SECONDS``, and when a newcomer makes the lake more crowded than
@@ -22,8 +22,8 @@ and the export read it from the member's record of the lake. The lake
 closes once nobody is left on it, and the next participant founds a new
 society with a new lake.
 
-The game records each catch with ``record``, so the newcomer's page and the
-export read the society's history from the lake's ``moments``.
+The game records each catch with ``record``, so the export reads the
+society's history from the lake's ``moments``.
 """
 
 import random
@@ -68,8 +68,6 @@ TRAVEL_SECONDS = 2
 # How long the lake page shows a member's results before moving on.
 RESULTS_SECONDS = 8
 GROUPING_WAIT = 120
-# The catches a newcomer sees before joining.
-HISTORY_CATCHES = 10
 TIPS_SHOWN = 3
 # Members are named by the colour of their boat, and spots by letter.
 COLOURS = ["purple", "green", "pink", "grey", "orange"]
@@ -420,16 +418,8 @@ def lake_is_open(participant: Participant) -> bool:
 
 
 def history_page(participant: Participant):
-    """Show a newcomer where the society has been catching fish lately and the tips of members who have left."""
+    """Show a newcomer the tips of members who have left."""
     society = participant.active_sync_groups["society"]
-    # The lake can close between the check and this page.
-    lake = society.running_live_games.get("fishing")
-    moments = [] if lake is None else lake.moments
-    catches = [moment for moment in moments if moment.name == "catch"]
-    spot_fish = [0] * N_SPOTS
-    for moment in catches[-HISTORY_CATCHES:]:
-        for c in moment.data["caught"]:
-            spot_fish[c["spot"] - 1] += c["fish"]
     tips = [
         link.participant.var.tip
         for link in society.participant_links
@@ -438,24 +428,13 @@ def history_page(participant: Participant):
     content = tags.div()
     with content:
         tags.p("Welcome to the society. The others are already fishing.")
-        if any(spot_fish):
-            tags.p("Where the members have been catching fish lately:")
-            with tags.ul():
-                for letter, fish in sorted(
-                    zip(SPOT_LETTERS, spot_fish), key=lambda spot: -spot[1]
-                ):
-                    if fish:
-                        tags.li(f"Spot {letter}: {fish} fish")
-        else:
-            tags.p(
-                "Nobody has caught anything yet, so you'll be among the first "
-                "to find the good spots."
-            )
         if tips:
             tags.p("Tips from members who have left:")
             with tags.ul():
                 for tip in tips[-TIPS_SHOWN:]:
                     tags.li(tip)
+        else:
+            tags.p("Nobody has left the society yet, so there are no tips.")
     return InfoPage(content, time_estimate=20)
 
 
@@ -468,7 +447,8 @@ def leave_a_tip(intro: str):
                 tags.div(
                     water(),
                     tags.p(
-                        f"{intro} Leave one tip for the members who come after you.",
+                        f"{intro} Leave one tip for the members who come after "
+                        "you. Newcomers will see it when they join the society.",
                         cls="fish-tip-intro",
                     ),
                 )

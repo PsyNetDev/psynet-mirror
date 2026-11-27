@@ -1445,8 +1445,8 @@ and its ``time`` in seconds since the game started, so
 ``[m for m in game.moments if m.name == "catch"]`` is the catches. Moments are saved with the game's
 messages, so like them they're written a few seconds behind the game, and
 they're in the exported ``realtime_event`` table, as effects with the name
-``psynet_moment``. The ``microsociety_live`` demo shows newcomers the
-recent catches from its moments, and exports a row for each catch.
+``psynet_moment``. The ``microsociety_live`` demo records each catch as a
+moment and exports a row for each.
 
 Dallinger also saves copies of the game's state, at most every five seconds
 by default (the game's ``checkpoint_interval``), and when the game ends.
