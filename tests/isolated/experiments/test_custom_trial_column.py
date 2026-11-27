@@ -1,3 +1,4 @@
+import io
 import shutil
 import sys
 import uuid
@@ -18,6 +19,7 @@ from sqlalchemy.orm import deferred
 from psynet.command_line import clean_sys_modules
 from psynet.data import InvalidDefinitionError
 from psynet.experiment import get_experiment, import_local_experiment
+from psynet.page_maker_visit import _Pickler, _Unpickler
 from psynet.participant import Participant
 from psynet.pytest_psynet import path_to_test_experiment
 from psynet.trial.static import StaticNode, StaticTrial
@@ -81,6 +83,8 @@ def test_experiment_with_custom_trial_column_imports_from_two_directories(tmp_pa
 
     with working_directory(source):
         first = import_local_experiment()["module"].CustomColumnTrial
+    saved = io.BytesIO()
+    _Pickler(saved, None).dump(first)
 
     clean_sys_modules()
 
@@ -88,6 +92,8 @@ def test_experiment_with_custom_trial_column_imports_from_two_directories(tmp_pa
         second = import_local_experiment()["module"].CustomColumnTrial
 
     assert first is not second
+    saved.seek(0)
+    assert _Unpickler(saved, None).load() is second
     assert first.__table__.c.item_id is second.__table__.c.item_id
     # A callable default cannot be compared between two classes, so reuse has to
     # recognize that this is the same class being declared again.

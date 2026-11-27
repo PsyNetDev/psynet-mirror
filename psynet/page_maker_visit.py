@@ -104,7 +104,17 @@ class _Unpickler(dill.Unpickler):
     def models(self):
         # Experiment modules can be loaded directly from their source path.
         # Importing one again to unpickle a class would register its tables twice.
-        return {_model_name(m): m.class_ for m in db.Base.registry.mappers}
+        models = {}
+        for mapper in db.Base.registry.mappers:
+            # Staging can redeclare a trial. SQLAlchemy uses the current
+            # polymorphic mapper when loading its rows, so use that one here too.
+            if (
+                mapper.polymorphic_map.get(mapper.polymorphic_identity, mapper)
+                is mapper
+            ):
+                name = _model_name(mapper)
+                models[name] = None if name in models else mapper.class_
+        return models
 
     def persistent_load(self, reference):
         name, key = reference
@@ -116,7 +126,9 @@ class _Unpickler(dill.Unpickler):
             return self.experiment.timeline.get_trial_maker(key)
         model = self.models.get(name)
         if model is None:
-            raise PageMakerVisitError(f"Missing registered database model {name}.")
+            raise PageMakerVisitError(
+                f"Cannot identify a unique registered database model {name}."
+            )
         if key is None:
             return model
         row = db.session.get(model, key)
