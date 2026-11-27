@@ -113,10 +113,18 @@ export function activate({ root, config, psynet }) {
           swatch.style.background = colors[player];
           item.append(swatch);
         }
-        // "You", or the player's pseudonym, as the group's other pages show them.
+        // The stickers show who's who, so only the player's own row says so
+        // ("You"). The others' pseudonyms are there for screen readers.
         let name = shown?.label ?? `Player ${player + 1}`;
         let crashes = snake.crashes === 1 ? "1 crash" : `${snake.crashes} crashes`;
-        item.append(`${name}: ${snake.food} food, ${crashes}`);
+        let label = document.createElement("span");
+        label.textContent = `${name}: `;
+        if (!shown?.you) {
+          label.className = "visually-hidden";
+        }
+        let text = document.createElement("span");
+        text.append(label, `${snake.food} food, ${crashes}`);
+        item.append(text);
         return item;
       })
     );

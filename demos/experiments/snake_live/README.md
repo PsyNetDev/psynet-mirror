@@ -7,7 +7,8 @@ crashes and comes back two seconds later somewhere else. Each piece of food
 eaten pays a reward.
 
 Each snake has its player's pseudonym colour, and the scores below the board
-show each player's sticker, so players can tell whose snake is whose. If two
+show each player's sticker in place of their name, so players can tell whose
+snake is whose. If two
 players in a group happen to share a colour, the snakes get the game's own
 colours instead, shown by a swatch next to each score.
 
