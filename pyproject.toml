@@ -63,6 +63,7 @@ experiment = [
     # Dallinger#10431 (live game runner stats) until it is released.
     "dallinger[docker] @ git+https://github.com/Dallinger/Dallinger.git@966e4688549c110f8519ee38221a65f0031a6799",
     "debugpy",
+    "dill==0.4.1",  # Same codec across deployment workers.
     "dominate>=3.1",
     "flask",
     "flask-login",

@@ -48,12 +48,11 @@ class Exp(psynet.experiment.Experiment):
                         participant.var.get("number_to_multiply") * 2,
                     )
                 ),
-                InfoPage(
-                    # Note that we have to use default values here so that we don't get an error
-                    # when the function is evaluated before number_input and multiplied_number
-                    # have been set.
-                    f"{participant.var.get('number_to_multiply', default=0.0)} * 2 = "
-                    f"{participant.var.get('multiplied_number', default=0.0)}",
+                PageMaker(
+                    lambda participant: InfoPage(
+                        f"{participant.var.number_to_multiply} * 2 = "
+                        f"{participant.var.multiplied_number}",
+                    ),
                     time_estimate=5,
                 ),
             ],

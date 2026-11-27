@@ -30,16 +30,8 @@ def get_timeline():
             ),
             time_estimate=5,
         ),
-        CodeBlock(
-            lambda participant: participant.var.set(
-                "random_number",
-                random.randint(0, 100),
-            )
-        ),
         PageMaker(
-            lambda participant: InfoPage(
-                f"Your random number is {participant.var.random_number}",
-            ),
+            lambda: InfoPage(f"Your random number is {random.randint(0, 100)}"),
             time_estimate=5,
         ),
         ModularPage(

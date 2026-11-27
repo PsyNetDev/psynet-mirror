@@ -33,9 +33,9 @@ from .paths import DATABASE_DIRNAME, EXPORT_FORMAT_VERSION
 logger = get_logger()
 
 
-#: Caches of recruiter API payloads. They hold raw recruiter identifiers that
-#: identifier separation does not cover, and the data can be fetched again.
-_UNEXPORTED_TABLES = {"lucid_submissions"}
+#: Recruiter payloads can contain raw identifiers. Active page-maker visits
+#: contain executable callbacks and belong only to their running deployment.
+_UNEXPORTED_TABLES = {"lucid_submissions", "page_maker_visit"}
 
 
 def _export_table_order(inspector=None) -> list[str]:
@@ -134,6 +134,8 @@ def copy_database_to_csv_dir(
     tables = (
         list(table_names) if table_names is not None else _export_table_order(inspector)
     )
+    # Executable visit snapshots are private even in explicitly selected exports.
+    tables = [name for name in tables if name != "page_maker_visit"]
     schema = validate_identifier_schema(inspector, tables) if pseudonymize else None
     conn = _connection or psycopg2.connect(dsn=_db_dsn())
     try:

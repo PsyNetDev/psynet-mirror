@@ -45,6 +45,7 @@ from .asset import AssetParticipant
 from .async_job import _deprecated_async_processes
 from .data import SQLMixinDallinger
 from .field import PythonDict, PythonList, PythonObject
+from .page_maker_visit import PageMakerVisit
 from .utils import (
     NoArgumentProvided,
     call_function_with_context,
@@ -471,8 +472,14 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
 
     _in_advance_page = False
 
+    _page_maker_visits = relationship(
+        PageMakerVisit,
+        collection_class=attribute_mapped_collection("depth"),
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     elt_id = Column(PythonList)
-    elt_id_max = Column(PythonList)
 
     time_credit = Column(Float)
     estimated_max_time_credit = Column(Float)
@@ -1053,7 +1060,6 @@ class Participant(SQLMixinDallinger, dallinger.models.Participant):
         self.progress_fixes = []
         self.back_restore_points = []
         self.elt_id = ["main", -1]
-        self.elt_id_max = []
         self.answer_accumulation_depth = 0
         self.for_loops = {}
         self.failure_tags = []

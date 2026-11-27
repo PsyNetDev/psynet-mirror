@@ -153,13 +153,10 @@ trial class's) that the trial was played in. Elsewhere, use
 ``participant.in_sync_group(group_type)`` tells whether they are still in a
 group of that type.
 
-A :class:`~psynet.timeline.PageMaker` builds its page again when the
-participant submits it, and by then they may have left their group. Read
-the group with ``participant.active_sync_groups.get(group_type)``, which
-returns ``None`` once they have left, rather than indexing it, which raises
-a ``KeyError``, and build the page without the group in that case. To keep
-using a value from the group, such as a chat room ID, store it in a
-participant variable when the page is first built.
+A :class:`~psynet.timeline.PageMaker` saves the page as the participant enters
+it. A later maker or response callback which needs current group membership
+should read ``participant.active_sync_groups.get(group_type)`` and handle
+``None`` if the participant has left.
 
 ``sync_group.participants`` is a read-only list of the group's members; change
 membership with ``sync_group.add_participant(participant)`` and
@@ -1755,8 +1752,8 @@ it. :meth:`participant.latest_sync_group(group_type)
 <psynet.participant.Participant.latest_sync_group>` still returns it, so a
 page can show the group's history, for example with
 :meth:`~psynet.sync.SyncGroup.rounds`, whether or not they are still in it.
-A page made by a ``PageMaker`` is made again when it is submitted, so a page
-that reads ``active_sync_groups`` fails for a member who left while on it.
+A response callback that reads current membership should allow for a member
+leaving while the page was open.
 
 For the rest of the timeline:
 

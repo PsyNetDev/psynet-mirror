@@ -1962,7 +1962,6 @@ def test_lambda_compiles_as_code_block_in_timeline():
 def _make_mock_participant(elt_id=None):
     p = SimpleNamespace(
         elt_id=elt_id if elt_id is not None else ["main", -1],
-        elt_id_max=[],
         _in_advance_page=False,
     )
     return p

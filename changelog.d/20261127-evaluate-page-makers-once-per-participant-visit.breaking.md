@@ -1,0 +1,1 @@
+Page makers now evaluate once per participant visit. Refresh and scoring use the saved sequence. Wrap feedback that depends on an earlier answer within the same maker in a nested `PageMaker`. Launch a fresh experiment database when upgrading.

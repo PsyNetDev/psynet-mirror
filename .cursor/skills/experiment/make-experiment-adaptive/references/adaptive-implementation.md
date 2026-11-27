@@ -72,12 +72,9 @@ def select_and_cue(participant, experiment):
     )
 ```
 
-PsyNet calls a page maker's function again when the participant moves between
-elements inside it and when the page is refreshed (see "When code runs" in
-`code/writing_a_timeline`). Only the first call creates the trial, but later
-calls repeat the selection work, so keep the function free of side effects. If
-selection is expensive, compute it once in a `CodeBlock`, store the result in
-`participant.var`, and have the page maker only read it.
+The maker evaluates the selection once per participant visit. Record the
+selected ID in the trial definition for analysis. See “When code runs” in
+`code/writing_a_timeline` for nested makers and rollback.
 
 **Custom selection in a trial maker.** Override `custom_node_filter` and
 `select_node` on a `StaticTrialMaker`, or `custom_chain_filter` and

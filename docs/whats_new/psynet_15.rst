@@ -6,6 +6,15 @@ PsyNet 15 is in development. This page collects its highlights as they land.
 The `changelog <https://gitlab.com/PsyNetDev/PsyNet/-/blob/master/CHANGELOG.md>`_
 lists every change.
 
+Page makers evaluate once per visit
+-----------------------------------
+
+A random choice in a :class:`~psynet.timeline.PageMaker` now survives refresh
+and scoring. Check multi-page makers that compute later screens from earlier
+answers. Wrap each such screen in a nested ``PageMaker`` so the answer exists
+when that screen is built. See :ref:`page-maker-visits` for a before-launch
+migration example.
+
 Pages without waiting for the server
 ------------------------------------
 

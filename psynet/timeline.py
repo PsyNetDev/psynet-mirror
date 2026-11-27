@@ -1,3 +1,10 @@
+"""Build and advance participant timelines.
+
+Each worker has the static timeline. Each participant's cursor and open
+page-maker visits live in the database. Advance them together in the caller's
+transaction so rendering and response handling can look up the same page.
+"""
+
 from typing import TYPE_CHECKING, Type
 
 if TYPE_CHECKING:
@@ -43,6 +50,7 @@ from .async_job import _deprecated_async_processes
 from .data import SQLBase, SQLMixin, register_table
 from .db import forbid_commits
 from .field import PythonObject
+from .page_maker_visit import PageMakerVisit
 from .serialize import is_lambda_function, prepare_function_for_serialization
 from .static_resources import package_static_url, version_static_urls
 from .utils import (
@@ -807,7 +815,13 @@ class GoTo(Elt):
 
     def consume(self, experiment, participant):
         target_elt = self.get_target(experiment, participant)
-        participant.elt_id = target_elt.id
+        # A jump can leave a nested maker without passing its final element.
+        if participant.elt_id[:-1] != target_elt.id[:-1]:
+            visits = participant._page_maker_visits
+            for depth, visit in list(visits.items()):
+                if depth >= len(target_elt.id) or target_elt.id[:depth] != visit.path:
+                    del visits[depth]
+        participant.elt_id = list(target_elt.id)
         # We subtract 1 because elt_id will be incremented again when
         # we return to the start of the advance page loop.
         # Remember that ``elt_id`` corresponds to a nested representation,
@@ -3208,8 +3222,8 @@ class Page(Elt):
 
 class PageMaker(Elt):
     """
-    A page maker is defined by a function that is executed when
-    the participant requests the relevant page.
+    A page maker builds timeline elements once when a participant enters it.
+    PsyNet saves the result for that visit, including any random choices.
 
     Parameters
     ----------
@@ -3222,11 +3236,10 @@ class PageMaker(Elt):
         The function should return either a single test element
         (e.g. :class:`psynet.timeline.Page`, :class:`psynet.timeline.PageMaker`,
         :class:`psynet.timeline.CodeBlock`) or a list of such elements.
-        Note that :class:`psynet.timeline.PageMaker` objects can be nested
-        arbitrarily deeply. Note also that, if the page maker returns multiple pages,
-        then the function will be recomputed each time the participant progresses
-        to the next page. This functionality can be used to make the latter
-        pages depend on the earlier pages in the page maker.
+        A nested page maker runs when the participant reaches it. Use one for
+        feedback that depends on an answer earlier in this sequence. Reloads
+        and submissions use the saved elements. A new loop visit draws again.
+        See :ref:`page-maker-visits` for examples and storage requirements.
 
     time_estimate:
         Time estimated to complete the segment. This time estimate is used
@@ -3429,8 +3442,9 @@ class Timeline:
         """
         if branch_name not in self.elts:
             raise ValueError(f"Unknown timeline branch: {branch_name!r}")
+        if len(participant.elt_id) > 2:
+            participant._page_maker_visits.clear()
         participant.elt_id = [branch_name, -1]
-        participant.elt_id_max = []
 
     def compile_modules(self):
         modules = {}
@@ -3587,38 +3601,20 @@ class Timeline:
 
     @log_time_taken
     def get_current_elt(self, experiment, participant):
-        # ``participant.elt_id`` is a list where the first element is the branch
-        # name (e.g. ``"main"``), the second element is the index within that
-        # branch, and any further elements represent position within nested
-        # page makers.
-        # For example, ``["main", 10, 3, 2]`` means: go to the ``main`` branch,
-        # element 10 (which must be a page maker), element 3 within that page
-        # maker (also a page maker), element 2 within that.
-        num_levels = len(participant.elt_id)
-        selected = self.elts
+        """Find a static element or a child in its immediately enclosing saved visit."""
+        path = participant.elt_id
+        if len(path) == 2:
+            branch, index = path
+            return self.elts[branch][index]
 
-        for depth, index in enumerate(participant.elt_id):
-            try:
-                index_max = participant.elt_id_max[depth]
-            except IndexError:
-                index_max = None
-
-            if isinstance(selected, PageMaker):
-                try:
-                    if index_max is not None and index > index_max:
-                        raise IndexError
-                    position = participant.elt_id[0:depth]
-                    with forbid_commits(_timeline_step_name(selected)):
-                        selected = selected.resolve(experiment, participant, position)
-                    if index_max is None:
-                        participant.elt_id_max.append(len(selected) - 1)
-                except IndexError:
-                    assert depth + 1 == num_levels
-                    raise PageMakerFinishedError
-
-            selected = selected[index]
-
-        return selected
+        # ["main", 10, 3, 2] selects child 2 of the maker at ["main", 10, 3].
+        # Its parent expansions need not be deserialized to look up this child.
+        position, index = path[:-1], path[-1]
+        with forbid_commits(f"PageMaker at {position}"):
+            elements = PageMakerVisit.read(participant, position)
+        if index >= len(elements):
+            raise PageMakerFinishedError
+        return elements[index]
 
     def _page_to_render_in_advance(self, participant, page):
         """The timeline page after ``page``, if the browser can show it before ``page`` is answered.
@@ -3811,10 +3807,12 @@ class Timeline:
                 try:
                     new_elt = self.get_current_elt(experiment, participant)
                 except PageMakerFinishedError:
+                    del participant._page_maker_visits[len(participant.elt_id) - 1]
                     participant.elt_id = participant.elt_id[:-1]
-                    participant.elt_id_max = participant.elt_id_max[:-1]
                     continue
                 if isinstance(new_elt, PageMaker):
+                    with forbid_commits(_timeline_step_name(new_elt)):
+                        PageMakerVisit.enter(new_elt, experiment, participant)
                     participant.elt_id.append(-1)
                     continue
 

@@ -108,36 +108,57 @@ variable during the experiment with ``set``:
 
     CodeBlock(lambda experiment: experiment.var.set("difficulty", 2))
 
+.. _page-maker-visits:
+
 When code runs
 --------------
 
-Everything at the top level of ``get_timeline`` runs when a server process
-imports ``experiment.py``. Each web and worker process imports it
-separately, so a random draw here is not tied to a participant and may
-differ between processes:
+Python evaluates arguments to a top-level page when it constructs the timeline.
+For example, ``InfoPage(str(random.randint(0, 100)))`` draws a number before
+any participant arrives. To draw when each participant enters the page, use
+a :class:`~psynet.timeline.PageMaker`:
 
 .. code-block:: python
 
-    # Wrong: drawn at import time, not per participant
-    InfoPage(f"Your number is {random.randint(0, 100)}", time_estimate=5)
+    PageMaker(
+        lambda: InfoPage(f"Your number is {random.randint(0, 100)}"),
+        time_estimate=5,
+    )
 
-Moving the draw into a page maker is also wrong, because page makers run
-again when the page is refreshed. Draw in a code block and display in a page
-maker, as the demo does:
+PsyNet saves the whole sequence returned by the maker in the same transaction
+that advances the participant. Refreshing, validating and scoring use that saved
+sequence. Each trip around a loop starts a fresh visit. A database rollback
+can retry entry, so keep irreversible external actions out of the factory.
 
-.. literalinclude:: ../../demos/features/timeline/experiment.py
-   :start-at: CodeBlock(
-   :end-before: ModularPage(
-   :dedent: 8
+For a sequence of pages, defer anything that needs a later answer to a
+nested maker. The multiplication example in ``demos/features/page_maker``
+reads the answer only after the participant submits it:
 
-More precisely, PsyNet calls a page maker's function again each time the
-participant moves to the next element inside it, when the function returns
-several elements, and whenever the page is refreshed. Keep the function free
-of side effects. When it returns :meth:`~psynet.trial.main.Trial.cue`, only
-the first call creates the trial, so later calls don't change it, but they
-still repeat any work the function does. If that work is expensive, do it once
-in a code block, store the result in ``participant.var``, and have the page
-maker only read it.
+.. code-block:: python
+
+    PageMaker(
+        lambda: [
+            ModularPage("number", "Enter a number", NumberControl(),
+                        save_answer="number", time_estimate=5),
+            PageMaker(
+                lambda participant: InfoPage(f"Twice that is {2 * participant.var.number}"),
+                time_estimate=5,
+            ),
+        ],
+        time_estimate=10,
+    )
+
+Callbacks can capture values, including a saved trial or participant.
+PsyNet looks up captured database rows in the current session. Each request
+loads a fresh copy of the saved pages, so keep changes that later requests
+need in participant or trial data. Open files, sockets and database sessions
+cannot be saved. Reference large stimuli by URL or asset ID, since capturing
+their bytes stores another copy for every active visit.
+
+The database keeps a compressed snapshot for each active level of nesting and
+removes it on exit. An abandoned visit stays until its participant is removed
+or leaves the maker. Research exports omit these temporary records. Finish
+active studies on the code and runtime that launched them.
 
 .. _showing_the_next_page_without_waiting:
 

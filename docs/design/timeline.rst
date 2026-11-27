@@ -47,13 +47,11 @@ Code in a timeline runs at three different times:
   each server process separately. Anything computed at that point is not tied
   to a participant, and a random draw there may differ between server
   processes, so it is not a reliable way to randomize.
-- **Code blocks** run each time a participant reaches them: once, unless
-  they are inside a loop. This is where per-participant randomness belongs.
-- **Page makers** run every time the page is displayed, including when the
-  participant refreshes. They should only *read* information, never draw new
-  random values, or a refresh will change what the participant sees.
-
-Decide things in code blocks and display them in page makers.
+- **Code blocks** run when a participant reaches them. Use them to save a
+  value for use later in the experiment.
+- **Page makers** run when a participant enters them. A random stimulus
+  drawn there stays the same through refresh and scoring. Entering the maker
+  again in a loop draws a fresh stimulus.
 
 Branching and repetition
 ------------------------
@@ -115,8 +113,7 @@ What to check when reviewing a timeline
 - Does the order of sections match your design, including practice,
   attention checks, and questionnaires?
 - Is every random choice (condition, stimulus order, random values) made in
-  a code block or a trial maker, not when the server starts or in a page
-  maker?
+  a page maker, code block or trial maker when the participant reaches it?
 - For each branch and loop, can you say which participants take which path?
 - Which things can end the experiment early (pre-screening tasks,
   performance checks, explicit end pages), and where in the timeline does

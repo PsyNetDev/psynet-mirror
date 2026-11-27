@@ -723,7 +723,7 @@ and code in ``render()`` or templates that changes the database.
   them; if it saves something other than a choice, such as a dictionary with a
   reaction time, set ``restrict_to_choices = False`` on the control class or
   pass ``restrict_to_choices=False`` to the control. Also search for ``random.`` in
-  ``PageMaker`` functions and ``show_trial``: the page is built again when the
+  ``PageMaker`` functions and ``show_trial``: in PsyNet 14 the page is built again when the
   response arrives, so random choices must be picked once (for example in
   ``finalize_definition`` or ``participant.var``). See
   :class:`~psynet.modular_page.OptionControl`.

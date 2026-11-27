@@ -255,9 +255,8 @@ Read these pages before acting. The "Documentation" section of the experiment's 
   `participant.active_sync_groups.get(group_type)`, which is `None` after
   the participant left the group, so show no `ChatRoom` then.
   `participant.sync_group` raises if more than one group is active.
-- A `PageMaker` builds its page again on submit, when the participant may
-  have left the group. Never index `active_sync_groups[group_type]` there:
-  it raises `KeyError`, which fails the participant.
+- A response callback may run after the participant leaves the group.
+  Use `active_sync_groups.get(group_type)` when reading current membership.
 - For games with turns one after the other, such as investor then trustee,
   follow "Turns one after the other" in
   `code/multiplayer/writing_a_round_based_experiment`.

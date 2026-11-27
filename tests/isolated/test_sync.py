@@ -2769,10 +2769,8 @@ def test_route_response_unready_hold_resume_rolls_back_identity_map_dirties(
 ):
     """``skip_write`` must drop overlay dirties before the route's outer commit.
 
-    Isolated tests usually call ``process_response``. ``get_current_elt`` can
-    dirty ``elt_id_max``; without rollback, ``with_transaction`` would commit
-    that and wait accounting. Inject a dirty so this POST proves the route
-    rolls it back.
+    Inject changes to participant and wait accounting during page lookup to
+    verify that the outer transaction rolls them back.
     """
     exp = get_experiment()
     original_timeline = exp.timeline
@@ -2787,7 +2785,6 @@ def test_route_response_unready_hold_resume_rolls_back_identity_map_dirties(
         hold_uuid = first.page_uuid
         credit_before = first.time_credit
         wait_before = first.total_wait_page_time
-        elt_max_before = list(first.elt_id_max or [])
         record = TimelineHoldRecord.query.filter_by(
             participant_id=first_id, page_uuid=hold_uuid
         ).one()
@@ -2799,7 +2796,6 @@ def test_route_response_unready_hold_resume_rolls_back_identity_map_dirties(
             participant.total_wait_page_time = (
                 participant.total_wait_page_time or 0.0
             ) + 99
-            participant.elt_id_max = list(participant.elt_id_max or []) + [99]
             participant.client_ip_address = "9.9.9.9"
             return page
 
@@ -2813,7 +2809,6 @@ def test_route_response_unready_hold_resume_rolls_back_identity_map_dirties(
         first = Participant.query.get(first_id)
         assert first.time_credit == credit_before
         assert first.total_wait_page_time == wait_before
-        assert list(first.elt_id_max or []) == elt_max_before
         assert first.client_ip_address != "9.9.9.9"
         record = TimelineHoldRecord.query.filter_by(
             participant_id=first_id, page_uuid=hold_uuid

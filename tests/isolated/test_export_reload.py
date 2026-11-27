@@ -21,6 +21,7 @@ from psynet.data import (
     SQLBase,
     copy_db_table_to_csv,
     ingest_to_model,
+    ingest_zip,
     sql_base_classes,
 )
 from psynet.export.database import copy_database_to_csv_dir, write_identifier_sidecars
@@ -397,3 +398,14 @@ def test_export_leaves_out_the_cached_lucid_api_payloads(db_session, tmp_path):
     assert "participant" in tables
     assert "lucid_submissions" not in tables
     assert not any("rid-1" in path.read_text() for path in tmp_path.iterdir())
+
+
+@in_consents_experiment
+def test_import_ignores_execution_snapshots(db_session, tmp_path):
+    from psynet.page_maker_visit import PageMakerVisit
+
+    database = tmp_path / "database"
+    database.mkdir()
+    (database / "page_maker_visit.csv").write_text("untrusted archive data")
+    ingest_zip(str(tmp_path))
+    assert db.session.query(PageMakerVisit).count() == 0

@@ -151,17 +151,11 @@ class attribute ``restrict_to_choices = False`` on your control subclass.
 ``TimedPushButtonControl`` does this for you. See
 :class:`~psynet.modular_page.OptionControl`.
 
-The experiment builds the page again when the response arrives, re-running a
-:class:`~psynet.timeline.PageMaker` function or a trial's ``show_trial``, and
-checks the answer against the choices of that new page. The choices must
-therefore be the same each time the page is built. If you pick them at random,
-for example with ``random.sample``, pick them once and reuse them: choose them in
-the trial's ``finalize_definition``, or store them in ``participant.var``
-(keyed by the repetition, if the page repeats in a loop).
-Otherwise the participant's click can be rejected with
-"You need to select an answer!"; the server log then shows a warning with the
-page label, the answer and the choices. If the choices cannot be kept stable,
-pass ``restrict_to_choices=False``.
+When a :class:`~psynet.timeline.PageMaker` constructs the choices, validation
+uses the choices saved for that visit. A random sample taken in the maker
+therefore survives a refresh and is also used when scoring the answer.
+To keep the selected stimuli in exported research data, record their IDs in
+the trial definition or a participant variable. See :ref:`page-maker-visits`.
 
 To validate a response, subclass the control and implement ``validate``. The
 method returns ``None`` to accept the response, or a message for the

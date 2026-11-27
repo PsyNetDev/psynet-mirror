@@ -1085,7 +1085,8 @@ def ingest_zip(path, engine=None):
     ]
 
     for n in all_table_names:
-        if n not in import_order:
+        # Research archives must never supply executable page-maker snapshots.
+        if n != "page_maker_visit" and n not in import_order:
             import_order.append(n)
 
     path = os.path.abspath(os.path.expanduser(path))
